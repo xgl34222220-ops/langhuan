@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.7.0-alpha01"
+        versionCode = 9
+        versionName = "0.8.0-alpha01"
     }
 
     buildFeatures { compose = true }
@@ -50,7 +50,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.foundation)
-    implementation(libs.androidx.compose.material.icons)
+    implementation(libs.androidx.material.icons)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
