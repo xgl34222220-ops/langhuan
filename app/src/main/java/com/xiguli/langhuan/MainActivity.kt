@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xiguli.langhuan.ui.LanghuanApp
+import com.xiguli.langhuan.ui.LanghuanRoot
 import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.theme.LanghuanTheme
 
@@ -16,9 +16,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             LanghuanTheme {
                 val studioViewModel: StudioViewModel = viewModel()
-                LanghuanApp(studioViewModel)
+                LanghuanRoot(studioViewModel)
             }
         }
     }
 }
-
