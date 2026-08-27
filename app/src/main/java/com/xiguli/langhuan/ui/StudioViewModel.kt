@@ -10,6 +10,7 @@ import com.xiguli.langhuan.data.ExportFormat
 import com.xiguli.langhuan.data.NewStoryRequest
 import com.xiguli.langhuan.data.PersistedStory
 import com.xiguli.langhuan.data.PersistentStoryRepository
+import com.xiguli.langhuan.data.ProjectBackupManager
 import com.xiguli.langhuan.data.ProviderSaveRequest
 import com.xiguli.langhuan.data.StoredAiProvider
 import com.xiguli.langhuan.data.StoredChapterVersion
@@ -29,6 +30,8 @@ import com.xiguli.langhuan.domain.OutlineNode
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.domain.TimelineEvent
+import com.xiguli.langhuan.engine.AgentActionKind
+import com.xiguli.langhuan.engine.AgentReview
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
@@ -36,6 +39,7 @@ import com.xiguli.langhuan.engine.ChapterPlanSuggestion
 import com.xiguli.langhuan.engine.DemoAiGateway
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.GenerationPipeline
+import com.xiguli.langhuan.engine.NovelAgentEngine
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.ProviderDiscovery
 import com.xiguli.langhuan.engine.UniversalAiGateway
@@ -102,9 +106,12 @@ data class StudioUiState(
     val streamPreview: String = "",
     val pendingPlan: ChapterPlanSuggestion? = null,
     val rewriteSuggestion: RewriteSuggestion? = null,
+    val agentReview: AgentReview? = null,
     val isGenerating: Boolean = false,
     val isPlanning: Boolean = false,
     val isRewriting: Boolean = false,
+    val isAgentReviewing: Boolean = false,
+    val isAuditing: Boolean = false,
     val isSaving: Boolean = false,
     val isCreatingStory: Boolean = false,
     val isImporting: Boolean = false,
@@ -143,6 +150,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     private val demo = DemoStoryRepository()
     private val repository = PersistentStoryRepository(application)
     private val projects = StoryProjectManager(application)
+    private val backups = ProjectBackupManager(application)
     private val detector = ProviderAutoDetector()
     private val _state = MutableStateFlow(
         StudioUiState(snapshot = demo.snapshot, draft = demo.currentDraft)
@@ -197,6 +205,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     isDraftDirty = false,
                     pendingPlan = null,
                     rewriteSuggestion = null,
+                    agentReview = null,
                     result = null,
                     error = null,
                 )
@@ -221,6 +230,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         streamPreview = "",
                         isCreatingStory = false,
                         isDraftDirty = false,
+                        agentReview = null,
                         result = null,
                         message = "已创建《${created.snapshot.novel.title}》",
                     )
@@ -248,6 +258,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                 result = null,
                                 pendingPlan = null,
                                 rewriteSuggestion = null,
+                                agentReview = null,
                                 error = null,
                             )
                         }
@@ -272,6 +283,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                             draft = persisted.draft,
                             isSaving = false,
                             isDraftDirty = false,
+                            agentReview = null,
                             message = "已创建第${persisted.draft.chapterNumber}章",
                         )
                     }
@@ -319,6 +331,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         snapshot = persisted.snapshot,
                         draft = persisted.draft,
                         pendingPlan = null,
+                        agentReview = null,
                         isSaving = false,
                         isDraftDirty = false,
                         message = "AI 章纲已加入第${persisted.draft.chapterNumber}章",
@@ -410,6 +423,14 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             locked = locked,
         )
         saveStructure(current.snapshot.copy(bible = current.snapshot.bible.filterNot { it.id == id } + entry), current.draft, "小说圣经已更新")
+    }
+
+    fun saveStyleTemplate(name: String, content: String) {
+        val current = _state.value
+        if (content.isBlank() || busy(current)) return
+        val existing = current.snapshot.bible.firstOrNull { it.category == BibleCategory.STYLE && it.name == name.trim().ifBlank { "主文风" } }
+            ?: current.snapshot.bible.firstOrNull { it.category == BibleCategory.STYLE }
+        saveBibleEntry(existing?.id, BibleCategory.STYLE, name.trim().ifBlank { "主文风" }, content, true)
     }
 
     fun deleteBibleEntry(id: String) {
@@ -596,6 +617,79 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
     fun dismissRewrite() = _state.update { it.copy(rewriteSuggestion = null) }
 
+    fun runChapterReview() {
+        val current = _state.value
+        if (busy(current)) return
+        if (current.draft.content.isBlank()) {
+            _state.update { it.copy(error = "当前章节还没有正文，无法复盘") }
+            return
+        }
+        viewModelScope.launch {
+            val gateway = configuredGateway()
+            if (gateway == null) {
+                _state.update { it.copy(error = "Agent 复盘需要先配置 AI 服务") }
+                return@launch
+            }
+            _state.update { it.copy(isAgentReviewing = true, error = null, agentReview = null) }
+            runCatching { NovelAgentEngine(gateway).reviewChapter(current.snapshot, current.draft) }
+                .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "Agent 章节复盘完成") } }
+                .onFailure { error -> _state.update { it.copy(isAgentReviewing = false, error = error.message ?: "Agent 章节复盘失败") } }
+        }
+    }
+
+    fun runFullBookAudit() {
+        val current = _state.value
+        if (busy(current)) return
+        viewModelScope.launch {
+            val gateway = configuredGateway()
+            if (gateway == null) {
+                _state.update { it.copy(error = "全书巡检需要先配置 AI 服务") }
+                return@launch
+            }
+            _state.update { it.copy(isAuditing = true, error = null, agentReview = null) }
+            runCatching {
+                val drafts = projects.chapterDrafts(current.snapshot.novel.id)
+                NovelAgentEngine(gateway).auditStory(current.snapshot, drafts)
+            }.onSuccess { review ->
+                _state.update { it.copy(isAuditing = false, agentReview = review, message = "全书一致性巡检完成") }
+            }.onFailure { error ->
+                _state.update { it.copy(isAuditing = false, error = error.message ?: "全书巡检失败") }
+            }
+        }
+    }
+
+    fun applyAgentMemory() {
+        val current = _state.value
+        val review = current.agentReview ?: return
+        if (busy(current) || review.memoryActions.isEmpty()) return
+        val updated = applyAgentActions(current.snapshot, current.draft.chapterNumber, review)
+        saveStructure(updated, current.draft, "Agent 提取的事实已写入长期记忆")
+        _state.update { it.copy(agentReview = null) }
+    }
+
+    fun useAgentNextOption(index: Int) {
+        val current = _state.value
+        val option = current.agentReview?.nextOptions?.getOrNull(index) ?: return
+        val viewpoint = current.snapshot.characters.firstOrNull()?.name ?: "主角"
+        val nextNumber = current.draft.chapterNumber + 1
+        _state.update {
+            it.copy(
+                pendingPlan = ChapterPlanSuggestion(
+                    title = option.title,
+                    objective = option.objective,
+                    conflict = option.conflict,
+                    turningPoint = option.turningPoint,
+                    scenes = listOf(
+                        ScenePlan(1, viewpoint, "承接上一章的场景", "承接上一章结果并进入本章目标", option.conflict, "冲突升级并暴露新的信息"),
+                        ScenePlan(2, viewpoint, "第${nextNumber}章核心场景", option.objective, option.conflict, option.turningPoint),
+                    ),
+                ),
+            )
+        }
+    }
+
+    fun dismissAgentReview() = _state.update { it.copy(agentReview = null) }
+
     fun restoreVersion(versionId: String) {
         val current = _state.value
         val version = current.versions.firstOrNull { it.id == versionId } ?: return
@@ -604,7 +698,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(isRestoringVersion = true, error = null) }
             runCatching { repository.restoreVersion(current.snapshot, current.draft, version.toStored()) }
                 .onSuccess { persisted ->
-                    _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isRestoringVersion = false, isDraftDirty = false, streamPreview = "", message = "已恢复为 v${version.version} 的内容，并保存为新版本") }
+                    _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isRestoringVersion = false, isDraftDirty = false, streamPreview = "", agentReview = null, message = "已恢复为 v${version.version} 的内容，并保存为新版本") }
                     refreshWorkspace()
                 }.onFailure { error -> _state.update { it.copy(isRestoringVersion = false, error = error.message ?: "恢复版本失败") } }
         }
@@ -620,11 +714,15 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     if (cursor.moveToFirst()) cursor.getString(0) else null
                 } ?: "导入稿件.txt"
                 val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取选择的文件")
-                val manuscript = StoryExchange.import(name, bytes)
-                require(manuscript.chapters.isNotEmpty()) { "没有识别到可导入的正文" }
-                projects.createImportedStory(manuscript)
+                if (StoryExchange.isProjectBackup(name)) {
+                    backups.restore(StoryExchange.importProject(bytes))
+                } else {
+                    val manuscript = StoryExchange.import(name, bytes)
+                    require(manuscript.chapters.isNotEmpty()) { "没有识别到可导入的正文" }
+                    projects.createImportedStory(manuscript)
+                }
             }.onSuccess { created ->
-                _state.update { it.copy(snapshot = created.snapshot, draft = created.draft, isImporting = false, isDraftDirty = false, message = "已导入《${created.snapshot.novel.title}》") }
+                _state.update { it.copy(snapshot = created.snapshot, draft = created.draft, isImporting = false, isDraftDirty = false, agentReview = null, message = "已导入《${created.snapshot.novel.title}》") }
                 refreshWorkspace()
             }.onFailure { error -> _state.update { it.copy(isImporting = false, error = error.message ?: "导入失败") } }
         }
@@ -640,7 +738,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use { it.write(artifact.bytes) }
                     ?: error("无法写入目标文件")
             }.onSuccess {
-                _state.update { it.copy(isExporting = false, message = "${format.name} 导出完成") }
+                _state.update { it.copy(isExporting = false, message = if (format == ExportFormat.PROJECT) "项目备份完成（不含 API Key）" else "${format.name} 导出完成") }
             }.onFailure { error -> _state.update { it.copy(isExporting = false, error = error.message ?: "导出失败") } }
         }
     }
@@ -750,8 +848,15 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching { repository.commitGenerated(current.snapshot, current.draft, result.chapter) }
                 .onSuccess { persisted ->
-                    _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, isDraftDirty = false, streamPreview = "", result = null, message = "正文、版本和长期记忆已保存") }
+                    _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, isDraftDirty = false, streamPreview = "", result = null, message = "正文、版本和长期记忆已保存；正在做 Agent 复盘") }
                     refreshWorkspace()
+                    val gateway = configuredGateway()
+                    if (gateway != null) {
+                        _state.update { it.copy(isAgentReviewing = true) }
+                        runCatching { NovelAgentEngine(gateway).reviewChapter(persisted.snapshot, persisted.draft) }
+                            .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "正文已保存，Agent 复盘完成") } }
+                            .onFailure { _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") } }
+                    }
                 }.onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "保存章节失败") } }
         }
     }
@@ -790,7 +895,126 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun busy(state: StudioUiState): Boolean = state.isGenerating || state.isSaving || state.isPlanning || state.isRewriting || state.isImporting || state.isExporting || state.isRestoringVersion
+    private fun applyAgentActions(snapshot: StorySnapshot, chapterNumber: Int, review: AgentReview): StorySnapshot {
+        val characters = snapshot.characters.toMutableList()
+        val timeline = snapshot.recentTimeline.toMutableList()
+        val foreshadowing = snapshot.relevantForeshadowing.toMutableList()
+
+        fun characterIndex(name: String): Int = characters.indexOfFirst { it.name.equals(name.trim(), ignoreCase = true) }
+        fun packed(value: String, limit: Int): List<String> = value.split("||", limit = limit).map { it.trim() }
+
+        review.memoryActions.forEach { action ->
+            when (action.kind) {
+                AgentActionKind.CHARACTER_NEW -> {
+                    if (action.subject.isNotBlank() && characterIndex(action.subject) < 0) {
+                        val p = packed(action.after, 4)
+                        characters += CharacterState(
+                            id = UUID.randomUUID().toString(),
+                            novelId = snapshot.novel.id,
+                            name = action.subject.trim(),
+                            personality = splitList(p.getOrNull(3).orEmpty()),
+                            location = p.getOrNull(0).orEmpty().ifBlank { "未知" },
+                            physicalState = "正常",
+                            emotionalState = p.getOrNull(1).orEmpty().ifBlank { "待观察" },
+                            goal = p.getOrNull(2).orEmpty(),
+                            lastUpdatedChapter = chapterNumber,
+                        )
+                    }
+                }
+                AgentActionKind.CHARACTER_LOCATION,
+                AgentActionKind.CHARACTER_EMOTION,
+                AgentActionKind.CHARACTER_GOAL -> {
+                    val index = characterIndex(action.subject)
+                    if (index >= 0 && action.after.isNotBlank()) {
+                        val current = characters[index]
+                        characters[index] = when (action.kind) {
+                            AgentActionKind.CHARACTER_LOCATION -> current.copy(location = action.after, lastUpdatedChapter = chapterNumber)
+                            AgentActionKind.CHARACTER_EMOTION -> current.copy(emotionalState = action.after, lastUpdatedChapter = chapterNumber)
+                            AgentActionKind.CHARACTER_GOAL -> current.copy(goal = action.after, lastUpdatedChapter = chapterNumber)
+                            else -> current
+                        }
+                    }
+                }
+                AgentActionKind.RELATION -> {
+                    val index = characterIndex(action.subject)
+                    val p = packed(action.after, 2)
+                    val target = p.getOrNull(0).orEmpty()
+                    val note = p.getOrNull(1).orEmpty()
+                    if (index >= 0 && target.isNotBlank() && note.isNotBlank()) {
+                        val current = characters[index]
+                        characters[index] = current.copy(
+                            relationshipNotes = current.relationshipNotes + (target to note),
+                            lastUpdatedChapter = chapterNumber,
+                        )
+                    }
+                }
+                AgentActionKind.TIMELINE -> {
+                    val p = packed(action.after, 5)
+                    val summary = p.getOrNull(3).orEmpty().ifBlank { action.subject }
+                    if (summary.isNotBlank() && timeline.none { it.chapter == chapterNumber && it.summary == summary }) {
+                        timeline += TimelineEvent(
+                            id = UUID.randomUUID().toString(),
+                            novelId = snapshot.novel.id,
+                            chapter = chapterNumber,
+                            storyTime = p.getOrNull(0).orEmpty(),
+                            location = p.getOrNull(1).orEmpty(),
+                            participants = splitList(p.getOrNull(2).orEmpty()),
+                            summary = summary,
+                            consequences = splitList(p.getOrNull(4).orEmpty()),
+                        )
+                    }
+                }
+                AgentActionKind.FORESHADOW_NEW -> {
+                    val p = packed(action.after, 4)
+                    if (action.subject.isNotBlank() && foreshadowing.none { it.title.equals(action.subject, ignoreCase = true) }) {
+                        val start = p.getOrNull(2)?.toIntOrNull()?.coerceAtLeast(chapterNumber + 1) ?: chapterNumber + 3
+                        val end = p.getOrNull(3)?.toIntOrNull()?.coerceAtLeast(start) ?: start + 10
+                        foreshadowing += Foreshadowing(
+                            id = UUID.randomUUID().toString(),
+                            novelId = snapshot.novel.id,
+                            title = action.subject.trim(),
+                            plantedChapter = chapterNumber,
+                            detail = p.getOrNull(0).orEmpty().ifBlank { action.evidence },
+                            expectedPayoff = p.getOrNull(1).orEmpty(),
+                            expectedChapterStart = start,
+                            expectedChapterEnd = end,
+                            status = ForeshadowStatus.PLANTED,
+                        )
+                    }
+                }
+                AgentActionKind.FORESHADOW_UPDATE -> {
+                    val index = foreshadowing.indexOfFirst { it.id == action.subject || it.title.equals(action.subject, ignoreCase = true) }
+                    if (index >= 0) {
+                        val p = packed(action.after, 2)
+                        val current = foreshadowing[index]
+                        val status = ForeshadowStatus.entries.firstOrNull { it.name == p.getOrNull(0).orEmpty().uppercase() } ?: current.status
+                        val note = p.getOrNull(1).orEmpty()
+                        foreshadowing[index] = current.copy(
+                            status = status,
+                            detail = if (note.isBlank() || current.detail.contains(note)) current.detail else "${current.detail}；第${chapterNumber}章：$note",
+                        )
+                    }
+                }
+                else -> Unit
+            }
+        }
+
+        review.touchedForeshadowingIds.forEach { id ->
+            val index = foreshadowing.indexOfFirst { it.id == id }
+            if (index >= 0 && foreshadowing[index].status == ForeshadowStatus.PLANTED) {
+                foreshadowing[index] = foreshadowing[index].copy(status = ForeshadowStatus.DEVELOPING)
+            }
+        }
+
+        return snapshot.copy(
+            characters = characters,
+            recentTimeline = timeline.sortedBy { it.chapter }.takeLast(120),
+            relevantForeshadowing = foreshadowing,
+        )
+    }
+
+    private fun busy(state: StudioUiState): Boolean =
+        state.isGenerating || state.isSaving || state.isPlanning || state.isRewriting || state.isAgentReviewing || state.isAuditing || state.isImporting || state.isExporting || state.isRestoringVersion
 
     private fun effectiveOutline(snapshot: StorySnapshot): List<OutlineNode> = (if (snapshot.outline.isEmpty()) snapshot.activeOutline else snapshot.outline).distinctBy { it.id }
 
