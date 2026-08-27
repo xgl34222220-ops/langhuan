@@ -43,7 +43,7 @@ object StoryExchange {
         return ExportArtifact("$safeName.${format.extension}", format.mimeType, bytes)
     }
 
-    fun parse(fileName: String, bytes: ByteArray): ImportedManuscript {
+    fun `import`(fileName: String, bytes: ByteArray): ImportedManuscript {
         val lower = fileName.lowercase()
         return if (lower.endsWith(".epub")) importEpub(fileName, bytes)
         else importText(fileName, bytes.toString(Charsets.UTF_8), markdown = lower.endsWith(".md") || lower.endsWith(".markdown"))
