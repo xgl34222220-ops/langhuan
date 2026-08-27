@@ -12,8 +12,13 @@ data class PromptBundle(
 class PromptAssembler {
     fun build(request: GenerationRequest): PromptBundle {
         val snapshot = request.snapshot
+        val styleRules = snapshot.bible
+            .filter { it.category == BibleCategory.STYLE }
+            .joinToString("\n") { "- ${it.name}: ${it.content}${if (it.locked) "（必须遵守）" else "（偏好）"}" }
+            .ifBlank { "- 暂无专门文风模板；保持自然、稳定、符合当前作品类型。" }
+
         val hardRules = snapshot.bible
-            .filter { it.locked || it.category == BibleCategory.FORBIDDEN }
+            .filter { it.category != BibleCategory.STYLE && (it.locked || it.category == BibleCategory.FORBIDDEN) }
             .joinToString("\n") { "- [${it.category}] ${it.name}: ${it.content}" }
 
         val outline = snapshot.activeOutline
@@ -29,7 +34,7 @@ class PromptAssembler {
 
         val characters = snapshot.characters.joinToString("\n") {
             "- ${it.name}: 地点=${it.location}; 身体=${it.physicalState}; 情绪=${it.emotionalState}; " +
-                "目标=${it.goal}; 性格=${it.personality.joinToString("、")}; 已知秘密=${it.knownSecrets.joinToString("、")}"
+                "目标=${it.goal}; 性格=${it.personality.joinToString("、")}; 关系=${it.relationshipNotes.entries.joinToString("；") { e -> "${e.key}=${e.value}" }}; 已知秘密=${it.knownSecrets.joinToString("、")}"
         }
 
         val timeline = snapshot.recentTimeline.joinToString("\n") {
@@ -60,12 +65,16 @@ class PromptAssembler {
                 5. 不得提前回收未到时机的伏笔；不得遗忘本章要求触及的伏笔。
                 6. 若用户临时要求与锁定设定冲突，以锁定设定为准。
                 7. 长期摘要、RAG 检索片段只作为历史证据；若与锁定圣经冲突，以锁定圣经为最高优先级。
-                8. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
+                8. 【文风模板】决定叙述语气、句式、节奏、视角距离和修辞偏好；它可以改变“怎么写”，但不能改变“发生什么”。
+                9. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
                 核心命题：${snapshot.novel.premise}
                 主题：${snapshot.novel.theme}
+
+                【文风模板】
+                $styleRules
 
                 【锁定设定】
                 $hardRules
@@ -98,7 +107,7 @@ class PromptAssembler {
 
                 返回字段：title、content、summary、stateChanges、touchedForeshadowingIds。
                 summary 必须是 120-260 字的高信息密度事实摘要，包含关键事件、人物状态变化、地点、获得/失去的信息和未解决问题，供后续长期记忆使用。
-                stateChanges 每项包含 subject、field、before、after、evidence。
+                stateChanges 每项包含 subject、field、before、after、evidence。人物关系变化请使用 field=relationship，after 写“目标人物=关系变化”；新出现但值得长期追踪的重要人物可使用 field=newCharacter，after 写“地点||情绪||目标||性格标签”。
             """.trimIndent(),
         )
     }
