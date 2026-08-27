@@ -61,11 +61,20 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     LaunchedEffect(libraryState.requestActivityReload) {
         if (libraryState.requestActivityReload) {
             libraryViewModel.consumeActivityReload()
-            (context as? Activity)?.recreate()
+            val activity = context as? Activity
+            if (activity != null) {
+                val intent = activity.intent
+                activity.finish()
+                activity.startActivity(intent)
+                @Suppress("DEPRECATION")
+                activity.overridePendingTransition(0, 0)
+            }
         }
     }
 
-    if (libraryState.stories.isEmpty()) showShelf = true
+    LaunchedEffect(libraryState.stories.isEmpty()) {
+        if (libraryState.stories.isEmpty()) showShelf = true
+    }
 
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
