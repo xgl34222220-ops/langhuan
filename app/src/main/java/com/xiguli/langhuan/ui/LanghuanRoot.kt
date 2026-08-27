@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -36,9 +37,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val libraryViewModel: LibraryExperienceViewModel = viewModel()
     val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
+    val creationViewModel: NewBookConversationViewModel = viewModel()
     val context = LocalContext.current
     var showAgent by remember { mutableStateOf(false) }
     var showShelf by remember { mutableStateOf(true) }
+    var showCreation by remember { mutableStateOf(false) }
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -73,13 +76,16 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     }
 
     LaunchedEffect(libraryState.stories.isEmpty()) {
-        if (libraryState.stories.isEmpty()) showShelf = true
+        if (libraryState.stories.isEmpty()) {
+            showShelf = true
+            showCreation = true
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
 
-        if (!showShelf && !showAgent) {
+        if (!showShelf && !showAgent && !showCreation) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -99,7 +105,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showShelf && !showAgent) {
+        if (showShelf && !showAgent && !showCreation) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 ReaderFirstLibrary(
                     viewModel = libraryViewModel,
@@ -108,6 +114,33 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                         showShelf = false
                     },
                     onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
+                )
+            }
+
+            ExtendedFloatingActionButton(
+                onClick = {
+                    creationViewModel.reset()
+                    showCreation = true
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp),
+                icon = { Icon(Icons.Rounded.AutoAwesome, null) },
+                text = { Text("AI 构思新书") },
+            )
+        }
+
+        if (showCreation && !showAgent) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                NewBookConversationPage(
+                    viewModel = creationViewModel,
+                    onClose = { showCreation = false },
+                    onCreated = { id ->
+                        showCreation = false
+                        showShelf = true
+                        libraryViewModel.openBook(id)
+                    },
                 )
             }
         }
