@@ -60,16 +60,24 @@ private enum class AppPage(val label: String, val icon: ImageVector) {
 fun LanghuanApp(viewModel: StudioViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var selected by remember { mutableIntStateOf(0) }
+    var showCreateStory by remember { mutableStateOf(false) }
+    var showBibleEditor by remember { mutableStateOf(false) }
+    var editingBible by remember { mutableStateOf<BibleEntry?>(null) }
     val appearance = LocalLanghuanAppearance.current
     val haze = rememberHazeState(blurEnabled = appearance.blurEnabled)
     val backdrop = rememberLayerBackdrop()
     val liquid = appearance.blurEnabled && appearance.glassEnabled && isRuntimeShaderSupported()
+
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().then(if (liquid) Modifier.layerBackdrop(backdrop) else Modifier.hazeSource(haze))) {
             Backdrop()
             AnimatedContent(selected, label = "page") { page ->
                 when (AppPage.entries[page]) {
-                    AppPage.Library -> LibraryPage(state.snapshot)
+                    AppPage.Library -> LibraryPage(
+                        state = state,
+                        createStory = { showCreateStory = true },
+                        selectStory = viewModel::selectStory,
+                    )
                     AppPage.Studio -> StudioPage(
                         state = state,
                         generate = viewModel::generateChapter,
@@ -77,7 +85,18 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                         saveDraft = viewModel::saveDraftVersion,
                         restoreVersion = viewModel::restoreVersion,
                     )
-                    AppPage.Memory -> MemoryPage(state.snapshot)
+                    AppPage.Memory -> MemoryPage(
+                        s = state.snapshot,
+                        addBible = {
+                            editingBible = null
+                            showBibleEditor = true
+                        },
+                        editBible = {
+                            editingBible = it
+                            showBibleEditor = true
+                        },
+                        deleteBible = viewModel::deleteBibleEntry,
+                    )
                     AppPage.Settings -> SettingsPage(
                         state.provider,
                         viewModel::setProviderName,
@@ -97,6 +116,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         }
         MiuixDock(AppPage.entries[selected], { selected = it.ordinal }, haze, backdrop.takeIf { liquid }, Modifier.align(Alignment.BottomCenter))
     }
+
     state.result?.let { result ->
         AlertDialog(
             onDismissRequest = viewModel::dismissResult,
@@ -112,6 +132,30 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                     if (state.isSaving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Text(if (result.canCommit) "保存正文与记忆" else "返回修改")
                 }
+            },
+        )
+    }
+
+    if (showCreateStory) {
+        NewStoryDialog(
+            busy = state.isCreatingStory,
+            dismiss = { if (!state.isCreatingStory) showCreateStory = false },
+            create = { title, genre, premise, theme, targetWords ->
+                viewModel.createStory(title, genre, premise, theme, targetWords)
+                showCreateStory = false
+                selected = AppPage.Studio.ordinal
+            },
+        )
+    }
+
+    if (showBibleEditor) {
+        BibleEditorDialog(
+            entry = editingBible,
+            busy = state.isSaving,
+            dismiss = { if (!state.isSaving) showBibleEditor = false },
+            save = { category, name, content, locked ->
+                viewModel.saveBibleEntry(editingBible?.id, category, name, content, locked)
+                showBibleEditor = false
             },
         )
     }
@@ -142,22 +186,36 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     }
 }
 
-@Composable private fun LibraryPage(s: StorySnapshot) = Page("琅嬛", "让长篇故事始终沿着主线生长") {
+@Composable private fun LibraryPage(
+    state: StudioUiState,
+    createStory: () -> Unit,
+    selectStory: (String) -> Unit,
+) = Page("琅嬛", "管理作品，选择一部长篇继续创作") {
+    val s = state.snapshot
     item { MiuixCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(s.novel.title, style = MaterialTheme.typography.headlineMedium)
                 Text(s.novel.genre, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
-            Pill("写作中", LocalMiuixTokens.current.success)
+            Pill("当前作品", LocalMiuixTokens.current.success)
         }
         Spacer(Modifier.height(15.dp)); Text(s.novel.premise); Spacer(Modifier.height(17.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("${s.novel.currentWords / 1000.0}k 字", fontWeight = FontWeight.Bold)
             Text("目标 ${s.novel.targetWords / 10_000} 万", color = LocalMiuixTokens.current.textSecondary)
         }
-        Spacer(Modifier.height(8.dp)); ProgressBar(s.novel.currentWords.toFloat() / s.novel.targetWords)
+        Spacer(Modifier.height(8.dp)); ProgressBar(s.novel.currentWords.toFloat() / s.novel.targetWords.coerceAtLeast(1))
     } }
+    item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Heading("作品书架")
+        Button(createStory, shape = RoundedCornerShape(16.dp)) {
+            Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(5.dp)); Text("新建小说")
+        }
+    } }
+    items(state.stories, key = { it.id }) { story ->
+        StoryShelfRow(story, story.id == s.novel.id) { selectStory(story.id) }
+    }
     item { Heading("故事健康度") }
     item { Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         Metric("锁定设定", s.bible.count { it.locked }, Modifier.weight(1f))
@@ -171,13 +229,36 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     } }
 }
 
+@Composable private fun StoryShelfRow(story: StoryShelfUi, active: Boolean, click: () -> Unit) {
+    val shape = RoundedCornerShape(23.dp)
+    Row(
+        Modifier.fillMaxWidth().squircleClip(23.dp)
+            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else LocalMiuixTokens.current.cardBackground.copy(alpha = .94f))
+            .border(if (active) 1.1.dp else .5.dp, if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape)
+            .clickable(onClick = click).padding(15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(48.dp).squircleClip(16.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .13f)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.MenuBook, null, tint = MaterialTheme.colorScheme.primary)
+        }
+        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(story.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (active) { Spacer(Modifier.width(7.dp)); Pill("当前", LocalMiuixTokens.current.success) }
+            }
+            Text("${story.genre} · 第${story.currentChapter}章 · ${story.currentWords} 字", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = LocalMiuixTokens.current.textSecondary)
+    }
+}
+
 @Composable private fun StudioPage(
     state: StudioUiState,
     generate: () -> Unit,
     editContent: (String) -> Unit,
     saveDraft: () -> Unit,
     restoreVersion: (String) -> Unit,
-) = Page("创作台", "语义记忆检索 → 流式生成 → 一致性门禁 → 版本入库") {
+) = Page("创作台", "混合向量 RAG → 流式生成 → 一致性门禁 → 版本入库") {
     val s = state.snapshot
     item { MiuixCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -251,7 +332,12 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     item { AnimatedVisibility(state.error != null) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) } }
 }
 
-@Composable private fun MemoryPage(s: StorySnapshot) = Page("长期记忆", "本地混合向量 RAG + 分层摘要，让几十万字仍能找回关键事实") {
+@Composable private fun MemoryPage(
+    s: StorySnapshot,
+    addBible: () -> Unit,
+    editBible: (BibleEntry) -> Unit,
+    deleteBible: (String) -> Unit,
+) = Page("长期记忆", "本地混合向量 RAG + 分层摘要 + 可编辑小说圣经") {
     item { MemorySection("小说圣经", "锁定世界规则和叙事边界", s.bible.size, Icons.Rounded.Lock) }
     item { MemorySection("人物状态", "位置、伤势、目标、秘密与物品", s.characters.size, Icons.Rounded.Psychology) }
     item { MemorySection("时间线", "事件先后、地点、参与者和后果", s.recentTimeline.size, Icons.Rounded.Timeline) }
@@ -267,11 +353,118 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             Text(s.longTermSummary, color = LocalMiuixTokens.current.textSecondary, maxLines = 12, overflow = TextOverflow.Ellipsis)
         } }
     }
-    item { Heading("锁定设定") }
-    items(s.bible) { e -> MiuixCard { Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.primary)
-        Column(Modifier.padding(start = 10.dp)) { Text(e.name, fontWeight = FontWeight.Bold); Text(e.content, color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-    } } }
+    item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Heading("小说圣经")
+        Button(addBible, shape = RoundedCornerShape(16.dp)) {
+            Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(5.dp)); Text("新增设定")
+        }
+    } }
+    if (s.bible.isEmpty()) {
+        item { MiuixCard {
+            Text("还没有锁定设定", fontWeight = FontWeight.Bold)
+            Text("先添加世界观、角色规则、地点、风格或禁用设定，AI 写作会优先遵守这些内容。", color = LocalMiuixTokens.current.textSecondary)
+        } }
+    }
+    items(s.bible, key = { it.id }) { e ->
+        MiuixCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (e.locked) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(e.name, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(7.dp)); Pill(e.category.name, MaterialTheme.colorScheme.primary)
+                    }
+                    Text(e.content, color = LocalMiuixTokens.current.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton({ editBible(e) }) { Icon(Icons.Rounded.Edit, "编辑") }
+                IconButton({ deleteBible(e.id) }) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+}
+
+@Composable private fun NewStoryDialog(
+    busy: Boolean,
+    dismiss: () -> Unit,
+    create: (String, String, String, String, Int) -> Unit,
+) {
+    var title by remember { mutableStateOf("") }
+    var genre by remember { mutableStateOf("") }
+    var premise by remember { mutableStateOf("") }
+    var theme by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("800000") }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("新建小说") },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("书名") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                OutlinedTextField(genre, { genre = it }, Modifier.fillMaxWidth(), label = { Text("类型") }, placeholder = { Text("悬疑 / 仙侠 / 科幻…") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                OutlinedTextField(premise, { premise = it }, Modifier.fillMaxWidth(), label = { Text("核心故事命题") }, placeholder = { Text("一句话说明主角、目标和主要矛盾") }, minLines = 3, shape = RoundedCornerShape(16.dp))
+                OutlinedTextField(theme, { theme = it }, Modifier.fillMaxWidth(), label = { Text("主题") }, placeholder = { Text("例如：真相与幸福的代价") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                OutlinedTextField(target, { target = it.filter(Char::isDigit).take(7) }, Modifier.fillMaxWidth(), label = { Text("目标字数") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                Text("创建后会自动生成总纲、第一卷、第一章的可编辑基础结构。", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { create(title, genre, premise, theme, target.toIntOrNull() ?: 800_000) },
+                enabled = title.isNotBlank() && premise.isNotBlank() && !busy,
+            ) {
+                if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.Add, null)
+                Spacer(Modifier.width(6.dp)); Text("创建并开始写作")
+            }
+        },
+        dismissButton = { TextButton(dismiss, enabled = !busy) { Text("取消") } },
+    )
+}
+
+@Composable private fun BibleEditorDialog(
+    entry: BibleEntry?,
+    busy: Boolean,
+    dismiss: () -> Unit,
+    save: (BibleCategory, String, String, Boolean) -> Unit,
+) {
+    var category by remember(entry?.id) { mutableStateOf(entry?.category ?: BibleCategory.WORLD) }
+    var name by remember(entry?.id) { mutableStateOf(entry?.name.orEmpty()) }
+    var content by remember(entry?.id) { mutableStateOf(entry?.content.orEmpty()) }
+    var locked by remember(entry?.id) { mutableStateOf(entry?.locked ?: true) }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text(if (entry == null) "新增小说设定" else "编辑小说设定") },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("类别", fontWeight = FontWeight.Bold)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    BibleCategory.entries.forEach { value ->
+                        FilterChip(
+                            selected = category == value,
+                            onClick = { category = value },
+                            label = { Text(value.name) },
+                        )
+                    }
+                }
+                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("名称") }, placeholder = { Text("例如：灵力规则 / 主角底线") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                OutlinedTextField(content, { content = it }, Modifier.fillMaxWidth(), label = { Text("设定内容") }, minLines = 5, shape = RoundedCornerShape(16.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.weight(1f)) {
+                        Text("锁定设定", fontWeight = FontWeight.Bold)
+                        Text("锁定后 AI 必须优先遵守", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = locked, onCheckedChange = { locked = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { save(category, name, content, locked) }, enabled = name.isNotBlank() && content.isNotBlank() && !busy) {
+                if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.Save, null)
+                Spacer(Modifier.width(6.dp)); Text("保存")
+            }
+        },
+        dismissButton = { TextButton(dismiss, enabled = !busy) { Text("取消") } },
+    )
 }
 
 @Composable private fun SettingsPage(

@@ -68,6 +68,9 @@ interface StoryStateDao {
     @Query("SELECT * FROM story_state WHERE novelId = :novelId LIMIT 1")
     suspend fun get(novelId: String): StoryStateEntity?
 
+    @Query("SELECT * FROM story_state ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<StoryStateEntity>>
+
     @Upsert
     suspend fun upsert(entity: StoryStateEntity)
 }

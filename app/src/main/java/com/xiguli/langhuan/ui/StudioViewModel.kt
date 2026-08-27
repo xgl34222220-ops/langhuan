@@ -4,11 +4,16 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.DemoStoryRepository
+import com.xiguli.langhuan.data.NewStoryRequest
 import com.xiguli.langhuan.data.PersistedStory
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.ProviderSaveRequest
 import com.xiguli.langhuan.data.StoredAiProvider
 import com.xiguli.langhuan.data.StoredChapterVersion
+import com.xiguli.langhuan.data.StoryProjectManager
+import com.xiguli.langhuan.data.StoryShelfItem
+import com.xiguli.langhuan.domain.BibleCategory
+import com.xiguli.langhuan.domain.BibleEntry
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.GenerationResult
@@ -21,6 +26,7 @@ import com.xiguli.langhuan.engine.GenerationPipeline
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.ProviderDiscovery
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,14 +54,25 @@ data class ChapterVersionUi(
     val createdAt: Long,
 )
 
+data class StoryShelfUi(
+    val id: String,
+    val title: String,
+    val genre: String,
+    val currentWords: Int,
+    val targetWords: Int,
+    val currentChapter: Int,
+)
+
 data class StudioUiState(
     val snapshot: StorySnapshot,
     val draft: ChapterDraft,
+    val stories: List<StoryShelfUi> = emptyList(),
     val provider: ProviderUiState = ProviderUiState(),
     val versions: List<ChapterVersionUi> = emptyList(),
     val streamPreview: String = "",
     val isGenerating: Boolean = false,
     val isSaving: Boolean = false,
+    val isCreatingStory: Boolean = false,
     val isRestoringVersion: Boolean = false,
     val isDraftDirty: Boolean = false,
     val result: GenerationResult? = null,
@@ -88,6 +105,7 @@ data class ProviderUiState(
 class StudioViewModel(application: Application) : AndroidViewModel(application) {
     private val demo = DemoStoryRepository()
     private val repository = PersistentStoryRepository(application)
+    private val projects = StoryProjectManager(application)
     private val detector = ProviderAutoDetector()
     private val _state = MutableStateFlow(
         StudioUiState(snapshot = demo.snapshot, draft = demo.currentDraft)
@@ -97,12 +115,20 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     init {
         viewModelScope.launch {
             repository.seedIfNeeded(demo)
-            val loaded = repository.loadStory(
-                demo.snapshot.novel.id,
-                PersistedStory(demo.snapshot, demo.currentDraft),
-            )
+            val preferredId = projects.activeStoryId() ?: demo.snapshot.novel.id
+            val loaded = projects.loadStory(preferredId)
+                ?: repository.loadStory(
+                    demo.snapshot.novel.id,
+                    PersistedStory(demo.snapshot, demo.currentDraft),
+                )
+            projects.setActiveStoryId(loaded.snapshot.novel.id)
             _state.update { it.copy(snapshot = loaded.snapshot, draft = loaded.draft) }
             refreshVersions()
+        }
+        viewModelScope.launch {
+            projects.observeStories().collect { stories ->
+                _state.update { state -> state.copy(stories = stories.map { it.toUi() }) }
+            }
         }
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
@@ -115,6 +141,108 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     state.copy(provider = state.provider.copy(savedProviders = ui, activeProviderId = active))
                 }
             }
+        }
+    }
+
+    fun selectStory(id: String) {
+        val current = _state.value
+        if (current.snapshot.novel.id == id || current.isGenerating || current.isSaving) return
+        viewModelScope.launch {
+            val loaded = projects.loadStory(id) ?: return@launch
+            projects.setActiveStoryId(id)
+            _state.update {
+                it.copy(
+                    snapshot = loaded.snapshot,
+                    draft = loaded.draft,
+                    versions = emptyList(),
+                    streamPreview = "",
+                    isDraftDirty = false,
+                    result = null,
+                    error = null,
+                )
+            }
+            refreshVersions()
+        }
+    }
+
+    fun createStory(
+        title: String,
+        genre: String,
+        premise: String,
+        theme: String,
+        targetWords: Int,
+    ) {
+        if (_state.value.isCreatingStory) return
+        viewModelScope.launch {
+            _state.update { it.copy(isCreatingStory = true, error = null) }
+            runCatching {
+                projects.createStory(
+                    NewStoryRequest(
+                        title = title,
+                        genre = genre,
+                        premise = premise,
+                        theme = theme,
+                        targetWords = targetWords,
+                    )
+                )
+            }.onSuccess { created ->
+                _state.update {
+                    it.copy(
+                        snapshot = created.snapshot,
+                        draft = created.draft,
+                        versions = emptyList(),
+                        streamPreview = "",
+                        isCreatingStory = false,
+                        isDraftDirty = false,
+                        result = null,
+                    )
+                }
+                refreshVersions()
+            }.onFailure { error ->
+                _state.update { it.copy(isCreatingStory = false, error = error.message ?: "新建小说失败") }
+            }
+        }
+    }
+
+    fun saveBibleEntry(
+        existingId: String?,
+        category: BibleCategory,
+        name: String,
+        content: String,
+        locked: Boolean,
+    ) {
+        if (name.isBlank() || content.isBlank() || _state.value.isSaving) return
+        val current = _state.value
+        val id = existingId ?: UUID.randomUUID().toString()
+        val entry = BibleEntry(
+            id = id,
+            novelId = current.snapshot.novel.id,
+            category = category,
+            name = name.trim(),
+            content = content.trim(),
+            aliases = current.snapshot.bible.firstOrNull { it.id == existingId }?.aliases.orEmpty(),
+            locked = locked,
+        )
+        val bible = current.snapshot.bible.filterNot { it.id == id } + entry
+        saveStructure(current.snapshot.copy(bible = bible), current.draft)
+    }
+
+    fun deleteBibleEntry(id: String) {
+        val current = _state.value
+        if (current.isSaving) return
+        saveStructure(current.snapshot.copy(bible = current.snapshot.bible.filterNot { it.id == id }), current.draft)
+    }
+
+    private fun saveStructure(snapshot: StorySnapshot, draft: ChapterDraft) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            runCatching { projects.saveStructure(snapshot, draft) }
+                .onSuccess { persisted ->
+                    _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false) }
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(isSaving = false, error = error.message ?: "保存设定失败") }
+                }
         }
     }
 
@@ -438,5 +566,14 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         content = content,
         summary = summary,
         createdAt = createdAt,
+    )
+
+    private fun StoryShelfItem.toUi() = StoryShelfUi(
+        id = id,
+        title = title,
+        genre = genre,
+        currentWords = currentWords,
+        targetWords = targetWords,
+        currentChapter = currentChapter,
     )
 }
