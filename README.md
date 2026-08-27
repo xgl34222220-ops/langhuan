@@ -28,7 +28,7 @@
 
 ## 打开方式
 
-使用较新的 Android Studio 打开项目目录并等待 Gradle 同步。项目使用 JDK 17、minSdk 28、targetSdk 36、compileSdk 36。
+使用较新的 Android Studio 打开项目目录并等待 Gradle 同步。项目使用 JDK 17、minSdk 28、targetSdk 36、compileSdk 37。
 
 仓库已配置 GitHub Actions。每次推送到 `main` 都会执行 Debug 构建，并上传 APK 构建产物。
 

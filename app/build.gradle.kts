@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.xiguli.langhuan"
-    compileSdk = 36
+    // Miuix 0.9.3 is published against API 37. targetSdk remains 36.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.xiguli.langhuan"

@@ -197,7 +197,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     item { Heading("锁定设定") }
     items(s.bible) { e -> MiuixCard { Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.primary)
-        Column(Modifier.padding(start = 10.dp)) { Text(e.title, fontWeight = FontWeight.Bold); Text(e.content, color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        Column(Modifier.padding(start = 10.dp)) { Text(e.name, fontWeight = FontWeight.Bold); Text(e.content, color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
     } } }
 }
 
@@ -255,9 +255,10 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     val inset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = RoundedCornerShape(31.dp)
     val surfaceBackdrop = rememberLayerBackdrop()
+    val shellTint = if (dark) MaterialTheme.colorScheme.surface.copy(alpha = .39f) else Color.White.copy(alpha = .4f)
     val shell = if (backdrop != null) Modifier.drawBackdrop(
         backdrop, shape = { shape }, effects = { padding = maxOf(padding, 30.dp.toPx()); colorControls(brightness = .02f, contrast = 1.05f, saturation = 1.4f); blur(9.dp.toPx(), 9.dp.toPx()); liquidGlassLens(17.dp.toPx(), 13.dp.toPx(), true, .045f) },
-        highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .82f) }, onDrawSurface = { drawRect(if (dark) MaterialTheme.colorScheme.surface.copy(alpha = .39f) else Color.White.copy(alpha = .4f)) }
+        highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .82f) }, onDrawSurface = { drawRect(shellTint) }
     ) else Modifier.hazeEffect(haze, HazeMaterials.ultraThin()) { blurRadius = 30.dp; noiseFactor = .018f }.background(if (dark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .35f))
     Box(modifier.padding(horizontal = 12.dp).padding(bottom = inset + 10.dp).fillMaxWidth().height(66.dp)) {
         Box(Modifier.fillMaxSize().shadow(18.dp, shape).squircleClip(31.dp).then(if (backdrop != null) Modifier.layerBackdrop(surfaceBackdrop) else Modifier).then(shell).border(.6.dp, Color.White.copy(alpha = .3f), shape))
@@ -269,7 +270,8 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     val width = maxWidth / AppPage.entries.size.toFloat()
     val x by animateDpAsState(width * current.ordinal, spring(dampingRatio = .68f, stiffness = Spring.StiffnessMediumLow), label = "dock")
     val shape = RoundedCornerShape(23.dp)
-    val lens = if (backdrop != null) Modifier.drawBackdrop(backdrop, shape = { shape }, effects = { padding = maxOf(padding, 22.dp.toPx()); blur(3.dp.toPx(), 3.dp.toPx()); liquidGlassLens(13.dp.toPx(), 14.dp.toPx(), true, .08f) }, highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f) }, onDrawSurface = { drawRect(MaterialTheme.colorScheme.primary.copy(alpha = .18f)) }) else Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = .13f))
+    val indicatorTint = MaterialTheme.colorScheme.primary.copy(alpha = .18f)
+    val lens = if (backdrop != null) Modifier.drawBackdrop(backdrop, shape = { shape }, effects = { padding = maxOf(padding, 22.dp.toPx()); blur(3.dp.toPx(), 3.dp.toPx()); liquidGlassLens(13.dp.toPx(), 14.dp.toPx(), true, .08f) }, highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f) }, onDrawSurface = { drawRect(indicatorTint) }) else Modifier.background(indicatorTint.copy(alpha = .72f))
     Box(Modifier.offset(x + 4.dp).width(width - 8.dp).height(54.dp).squircleClip(23.dp).then(lens))
     Row(Modifier.fillMaxWidth()) { AppPage.entries.forEach { p -> val chosen = p == current; val c = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f); Column(Modifier.width(width).height(54.dp).clickable(remember(p) { MutableInteractionSource() }, null) { select(p) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(p.icon, p.label, tint = c, modifier = Modifier.size(22.dp)); Text(p.label, color = c, fontSize = 11.sp, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium) } } }
 }
