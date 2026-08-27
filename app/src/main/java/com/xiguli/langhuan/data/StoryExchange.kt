@@ -15,7 +15,6 @@ enum class ExportFormat(val extension: String, val mimeType: String) {
     TXT("txt", "text/plain"),
     MARKDOWN("md", "text/markdown"),
     EPUB("epub", "application/epub+zip"),
-    PROJECT("lhproj", "application/json"),
 }
 
 data class ExportArtifact(
@@ -55,17 +54,22 @@ private val ExchangeJson = Json {
 object StoryExchange {
     fun export(snapshot: StorySnapshot, drafts: List<ChapterDraft>, format: ExportFormat): ExportArtifact {
         val ordered = drafts.sortedBy { it.chapterNumber }
-        val safeName = snapshot.novel.title.replace(Regex("[\\/:*?\"<>|]"), "_").ifBlank { "琅嬛小说" }
+        val safeName = safeName(snapshot.novel.title)
         val bytes = when (format) {
             ExportFormat.TXT -> exportText(snapshot, ordered).toByteArray(Charsets.UTF_8)
             ExportFormat.MARKDOWN -> exportMarkdown(snapshot, ordered).toByteArray(Charsets.UTF_8)
             ExportFormat.EPUB -> exportEpub(snapshot, ordered)
-            ExportFormat.PROJECT -> ExchangeJson.encodeToString(
-                StoryProjectBackup.serializer(),
-                StoryProjectBackup(snapshot = snapshot, chapters = ordered),
-            ).toByteArray(Charsets.UTF_8)
         }
         return ExportArtifact("$safeName.${format.extension}", format.mimeType, bytes)
+    }
+
+    fun exportProject(snapshot: StorySnapshot, drafts: List<ChapterDraft>): ExportArtifact {
+        val ordered = drafts.sortedBy { it.chapterNumber }
+        val bytes = ExchangeJson.encodeToString(
+            StoryProjectBackup.serializer(),
+            StoryProjectBackup(snapshot = snapshot, chapters = ordered),
+        ).toByteArray(Charsets.UTF_8)
+        return ExportArtifact("${safeName(snapshot.novel.title)}.lhproj", "application/json", bytes)
     }
 
     fun isProjectBackup(fileName: String): Boolean = fileName.lowercase().endsWith(".lhproj")
@@ -228,6 +232,9 @@ $paragraphs
             }
         return ImportedManuscript(title, chapters.ifEmpty { listOf(ImportedChapter("第一章", "")) })
     }
+
+    private fun safeName(value: String): String =
+        value.replace(Regex("[\\/:*?\"<>|]"), "_").ifBlank { "琅嬛小说" }
 
     private fun ZipOutputStream.writeEntry(path: String, value: String) {
         putNextEntry(ZipEntry(path))
