@@ -15,6 +15,8 @@ data class Novel(
     val currentWords: Int = 0,
     val currentChapter: Int = 1,
     val status: NovelStatus = NovelStatus.PLANNING,
+    /** 应用私有目录中的封面文件路径；默认值保证旧项目可直接升级。 */
+    val coverPath: String = "",
 )
 
 @Serializable
