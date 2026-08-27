@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -107,29 +106,26 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
 
         if (showShelf && !showAgent && !showCreation) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                ReaderFirstLibrary(
-                    viewModel = libraryViewModel,
-                    onEnterWorkspace = { id ->
-                        viewModel.selectStory(id)
-                        showShelf = false
-                    },
-                    onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
-                )
-            }
-
-            if (libraryState.openedBook == null && libraryState.readingChapter == null) {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        creationViewModel.reset()
-                        showCreation = true
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .navigationBarsPadding()
-                        .padding(end = 18.dp, bottom = 20.dp),
-                    icon = { Icon(Icons.Rounded.AutoAwesome, null) },
-                    text = { Text("AI 构思新书") },
-                )
+                if (libraryState.openedBook == null && libraryState.readingChapter == null) {
+                    AiFirstShelf(
+                        state = libraryState,
+                        onOpenBook = libraryViewModel::openBook,
+                        onStartCreation = {
+                            creationViewModel.reset()
+                            showCreation = true
+                        },
+                        onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
+                    )
+                } else {
+                    ReaderFirstLibrary(
+                        viewModel = libraryViewModel,
+                        onEnterWorkspace = { id ->
+                            viewModel.selectStory(id)
+                            showShelf = false
+                        },
+                        onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
+                    )
+                }
             }
         }
 
