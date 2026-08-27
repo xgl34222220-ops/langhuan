@@ -8,11 +8,14 @@ import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 enum class ExportFormat(val extension: String, val mimeType: String) {
     TXT("txt", "text/plain"),
     MARKDOWN("md", "text/markdown"),
     EPUB("epub", "application/epub+zip"),
+    PROJECT("lhproj", "application/json"),
 }
 
 data class ExportArtifact(
@@ -31,6 +34,24 @@ data class ImportedManuscript(
     val chapters: List<ImportedChapter>,
 )
 
+@Serializable
+data class StoryProjectBackup(
+    val formatVersion: Int = CURRENT_VERSION,
+    val snapshot: StorySnapshot,
+    val chapters: List<ChapterDraft>,
+) {
+    companion object {
+        const val CURRENT_VERSION = 1
+    }
+}
+
+private val ExchangeJson = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+    explicitNulls = false
+    prettyPrint = false
+}
+
 object StoryExchange {
     fun export(snapshot: StorySnapshot, drafts: List<ChapterDraft>, format: ExportFormat): ExportArtifact {
         val ordered = drafts.sortedBy { it.chapterNumber }
@@ -39,11 +60,22 @@ object StoryExchange {
             ExportFormat.TXT -> exportText(snapshot, ordered).toByteArray(Charsets.UTF_8)
             ExportFormat.MARKDOWN -> exportMarkdown(snapshot, ordered).toByteArray(Charsets.UTF_8)
             ExportFormat.EPUB -> exportEpub(snapshot, ordered)
+            ExportFormat.PROJECT -> ExchangeJson.encodeToString(
+                StoryProjectBackup.serializer(),
+                StoryProjectBackup(snapshot = snapshot, chapters = ordered),
+            ).toByteArray(Charsets.UTF_8)
         }
         return ExportArtifact("$safeName.${format.extension}", format.mimeType, bytes)
     }
 
+    fun isProjectBackup(fileName: String): Boolean = fileName.lowercase().endsWith(".lhproj")
+
+    fun importProject(bytes: ByteArray): StoryProjectBackup = runCatching {
+        ExchangeJson.decodeFromString(StoryProjectBackup.serializer(), bytes.toString(Charsets.UTF_8))
+    }.getOrElse { error("无法读取琅嬛项目备份：${it.message ?: "格式损坏"}") }
+
     fun `import`(fileName: String, bytes: ByteArray): ImportedManuscript {
+        require(!isProjectBackup(fileName)) { "这是琅嬛项目备份，请使用项目恢复流程" }
         val lower = fileName.lowercase()
         return if (lower.endsWith(".epub")) importEpub(fileName, bytes)
         else importText(fileName, bytes.toString(Charsets.UTF_8), markdown = lower.endsWith(".md") || lower.endsWith(".markdown"))
