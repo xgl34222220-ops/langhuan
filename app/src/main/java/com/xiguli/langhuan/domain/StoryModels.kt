@@ -129,4 +129,6 @@ data class StorySnapshot(
     val recentTimeline: List<TimelineEvent>,
     val relevantForeshadowing: List<Foreshadowing>,
     val recentSummaries: List<String>,
+    /** 被折叠的较早章节摘要。默认值保证 0.3 数据可直接反序列化。 */
+    val longTermSummary: String = "",
 )

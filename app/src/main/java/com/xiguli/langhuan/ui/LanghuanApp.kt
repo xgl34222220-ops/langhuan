@@ -70,7 +70,13 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             AnimatedContent(selected, label = "page") { page ->
                 when (AppPage.entries[page]) {
                     AppPage.Library -> LibraryPage(state.snapshot)
-                    AppPage.Studio -> StudioPage(state, viewModel::generateChapter)
+                    AppPage.Studio -> StudioPage(
+                        state = state,
+                        generate = viewModel::generateChapter,
+                        editContent = viewModel::setDraftContent,
+                        saveDraft = viewModel::saveDraftVersion,
+                        restoreVersion = viewModel::restoreVersion,
+                    )
                     AppPage.Memory -> MemoryPage(state.snapshot)
                     AppPage.Settings -> SettingsPage(
                         state.provider,
@@ -160,32 +166,38 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     } }
     item { MiuixCard {
         Text("当前章节", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        Text("第 ${s.novel.currentChapter} 章 · ${s.activeOutline.last().title}", style = MaterialTheme.typography.titleLarge)
-        Text(s.activeOutline.last().objective, color = LocalMiuixTokens.current.textSecondary)
+        Text("第 ${s.novel.currentChapter} 章 · ${s.activeOutline.lastOrNull()?.title.orEmpty()}", style = MaterialTheme.typography.titleLarge)
+        Text(s.activeOutline.lastOrNull()?.objective.orEmpty(), color = LocalMiuixTokens.current.textSecondary)
     } }
 }
 
-@Composable private fun StudioPage(state: StudioUiState, generate: () -> Unit) = Page("创作台", "先规划，后写作，再执行一致性审查") {
+@Composable private fun StudioPage(
+    state: StudioUiState,
+    generate: () -> Unit,
+    editContent: (String) -> Unit,
+    saveDraft: () -> Unit,
+    restoreVersion: (String) -> Unit,
+) = Page("创作台", "语义记忆检索 → 流式生成 → 一致性门禁 → 版本入库") {
     val s = state.snapshot
     item { MiuixCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
             Column(Modifier.padding(start = 11.dp).weight(1f)) {
-                Text("第 ${s.novel.currentChapter} 章", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                Text(s.activeOutline.last().title, style = MaterialTheme.typography.headlineSmall)
+                Text("第 ${state.draft.chapterNumber} 章", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text(state.draft.title, style = MaterialTheme.typography.headlineSmall)
             }
-            Pill("章纲已锁定", LocalMiuixTokens.current.success)
+            Pill("v${state.draft.version}", MaterialTheme.colorScheme.primary)
         }
-        Spacer(Modifier.height(14.dp)); Text("本章唯一目标", fontWeight = FontWeight.Bold); Text(s.activeOutline.last().objective)
+        Spacer(Modifier.height(14.dp)); Text("本章唯一目标", fontWeight = FontWeight.Bold); Text(state.draft.objective)
     } }
     item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Chip("三级大纲", "3/3", Icons.Rounded.Timeline); Chip("人物状态", "${s.characters.size}", Icons.Rounded.Psychology)
-        Chip("时间线", "${s.recentTimeline.size}", Icons.Rounded.History); Chip("伏笔", "${s.relevantForeshadowing.size}", Icons.Rounded.Hub)
+        Chip("三级大纲", "${s.activeOutline.size}/3", Icons.Rounded.Timeline); Chip("人物状态", "${s.characters.size}", Icons.Rounded.Psychology)
+        Chip("时间线", "${s.recentTimeline.size}", Icons.Rounded.History); Chip("版本", "${state.versions.size}", Icons.Rounded.Restore)
     } }
     item { MiuixCard {
         Text("防跑偏约束", style = MaterialTheme.typography.titleMedium)
-        Rule("锁定设定不可改写"); Rule("人物知识、地点和伤势必须连续")
-        Rule("本章必须完成章纲唯一目标"); Rule("写完自动检查冲突，阻止错误入库")
+        Rule("锁定设定不可改写"); Rule("混合向量 RAG 检索相关历史")
+        Rule("人物知识、地点和伤势必须连续"); Rule("生成完成后再做一致性门禁")
     } }
     item { MiuixCard {
         val ready = state.provider.ready
@@ -197,18 +209,64 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             }
         }
     } }
-    item { Button(generate, enabled = !state.isGenerating, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(20.dp)) {
+    item { Button(generate, enabled = !state.isGenerating && !state.isSaving, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(20.dp)) {
         if (state.isGenerating) { CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp); Spacer(Modifier.width(9.dp)) }
-        Text(if (state.isGenerating) "正在检索记忆、生成并检查…" else "生成本章正文", style = MaterialTheme.typography.titleMedium)
+        Text(if (state.isGenerating) "正在流式生成…" else "生成本章正文", style = MaterialTheme.typography.titleMedium)
     } }
+    item { AnimatedVisibility(state.isGenerating && state.streamPreview.isNotBlank()) {
+        MiuixCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text("实时正文", Modifier.padding(start = 9.dp), fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(state.streamPreview, color = LocalMiuixTokens.current.textSecondary, maxLines = 16, overflow = TextOverflow.Ellipsis)
+        }
+    } }
+    item { Heading("正文编辑器") }
+    item { MiuixCard {
+        OutlinedTextField(
+            value = state.draft.content,
+            onValueChange = editContent,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp),
+            label = { Text("章节正文") },
+            placeholder = { Text("AI 生成通过一致性检查并保存后会出现在这里，也可以手工编辑。") },
+            shape = RoundedCornerShape(18.dp),
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("${state.draft.content.length} 字符", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+            Button(saveDraft, enabled = state.isDraftDirty && !state.isSaving && !state.isGenerating, shape = RoundedCornerShape(15.dp)) {
+                if (state.isSaving) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.Save, null)
+                Spacer(Modifier.width(6.dp)); Text("保存新版本")
+            }
+        }
+    } }
+    if (state.versions.isNotEmpty()) {
+        item { Heading("版本历史") }
+        items(state.versions.take(8), key = { it.id }) { version ->
+            VersionRow(version, version.version == state.draft.version, state.isRestoringVersion) { restoreVersion(version.id) }
+        }
+    }
     item { AnimatedVisibility(state.error != null) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) } }
 }
 
-@Composable private fun MemoryPage(s: StorySnapshot) = Page("长期记忆", "Room 持久化 + 相关记忆检索，避免长篇越写越丢设定") {
+@Composable private fun MemoryPage(s: StorySnapshot) = Page("长期记忆", "本地混合向量 RAG + 分层摘要，让几十万字仍能找回关键事实") {
     item { MemorySection("小说圣经", "锁定世界规则和叙事边界", s.bible.size, Icons.Rounded.Lock) }
     item { MemorySection("人物状态", "位置、伤势、目标、秘密与物品", s.characters.size, Icons.Rounded.Psychology) }
     item { MemorySection("时间线", "事件先后、地点、参与者和后果", s.recentTimeline.size, Icons.Rounded.Timeline) }
     item { MemorySection("伏笔追踪", "埋设、发展、回收时机和状态", s.relevantForeshadowing.size, Icons.Rounded.Hub) }
+    if (s.longTermSummary.isNotBlank()) {
+        item { Heading("长期折叠摘要") }
+        item { MiuixCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary)
+                Text("较早剧情压缩记忆", Modifier.padding(start = 9.dp), fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(9.dp))
+            Text(s.longTermSummary, color = LocalMiuixTokens.current.textSecondary, maxLines = 12, overflow = TextOverflow.Ellipsis)
+        } }
+    }
     item { Heading("锁定设定") }
     items(s.bible) { e -> MiuixCard { Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.primary)
@@ -286,6 +344,32 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 Spacer(Modifier.width(8.dp)); Text(if (p.editingProviderId == null) "保存并设为当前 AI" else "保存修改并设为当前 AI")
             }
         }
+    }
+}
+
+@Composable private fun VersionRow(
+    version: ChapterVersionUi,
+    current: Boolean,
+    busy: Boolean,
+    restore: () -> Unit,
+) {
+    val shape = RoundedCornerShape(21.dp)
+    Row(
+        Modifier.fillMaxWidth().squircleClip(21.dp)
+            .background(if (current) MaterialTheme.colorScheme.primary.copy(alpha = .11f) else LocalMiuixTokens.current.cardBackground.copy(alpha = .94f))
+            .border(.6.dp, if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(42.dp).squircleClip(14.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
+            Text("v${version.version}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        }
+        Column(Modifier.padding(start = 11.dp).weight(1f)) {
+            Text(version.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${version.content.length} 字符 · ${version.summary.take(42)}", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (current) Pill("当前", LocalMiuixTokens.current.success)
+        else TextButton(restore, enabled = !busy) { Icon(Icons.Rounded.Restore, null); Spacer(Modifier.width(4.dp)); Text("恢复") }
     }
 }
 

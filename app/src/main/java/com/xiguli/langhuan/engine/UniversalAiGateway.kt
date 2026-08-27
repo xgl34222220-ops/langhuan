@@ -136,9 +136,7 @@ class UniversalAiGateway(
     override suspend fun generate(prompt: PromptBundle): GeneratedChapter = withContext(Dispatchers.IO) {
         require(config.baseUrl.isNotBlank()) { "请先配置 API 地址" }
         require(config.model.isNotBlank()) { "请先选择或填写模型" }
-        val protocol = if (config.protocol == ApiProtocol.AUTO) {
-            candidateOrder(normalizeBaseUrl(config.baseUrl)).first()
-        } else config.protocol
+        val protocol = resolvedProtocol()
         val response = when (protocol) {
             ApiProtocol.ANTHROPIC -> callAnthropic(prompt)
             ApiProtocol.GEMINI -> callGemini(prompt)
@@ -149,67 +147,180 @@ class UniversalAiGateway(
         decodeChapter(extractText(protocol, response))
     }
 
+    override suspend fun generateStreaming(
+        prompt: PromptBundle,
+        onDelta: (String) -> Unit,
+    ): GeneratedChapter = withContext(Dispatchers.IO) {
+        require(config.baseUrl.isNotBlank()) { "请先配置 API 地址" }
+        require(config.model.isNotBlank()) { "请先选择或填写模型" }
+        val protocol = resolvedProtocol()
+        runCatching {
+            val raw = when (protocol) {
+                ApiProtocol.ANTHROPIC -> streamAnthropic(prompt, onDelta)
+                ApiProtocol.GEMINI -> streamGemini(prompt, onDelta)
+                ApiProtocol.AZURE_OPENAI -> streamOpenAi(prompt, azure = true, onDelta)
+                ApiProtocol.OLLAMA -> streamOllama(prompt, onDelta)
+                else -> streamOpenAi(prompt, azure = false, onDelta)
+            }
+            decodeChapter(raw)
+        }.getOrElse {
+            // 某些中转站声明兼容但禁用了 SSE。自动回退普通请求，保证可用性。
+            val chapter = generate(prompt)
+            onDelta(chapter.content)
+            chapter
+        }
+    }
+
+    private fun resolvedProtocol(): ApiProtocol = if (config.protocol == ApiProtocol.AUTO) {
+        candidateOrder(normalizeBaseUrl(config.baseUrl)).first()
+    } else config.protocol
+
     private fun callOpenAi(prompt: PromptBundle, azure: Boolean): String {
         val endpoint = if (azure) azureChatEndpoint(config.baseUrl, config.model) else openAiChatEndpoint(config.baseUrl)
-        val body = buildJsonObject {
-            put("model", config.model)
-            put("temperature", config.temperature)
-            put("messages", buildJsonArray {
-                add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
-                add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
-            })
-            if (config.supportsJsonMode && !azure) {
-                put("response_format", buildJsonObject { put("type", "json_object") })
-            }
-        }
+        val body = openAiBody(prompt, stream = false, azure = azure)
         val protocol = if (azure) ApiProtocol.AZURE_OPENAI else ApiProtocol.OPENAI_COMPATIBLE
         return requireSuccess(http(endpoint, "POST", authHeaders(protocol, config.apiKey), body.toString()))
     }
 
-    private fun callAnthropic(prompt: PromptBundle): String {
-        val body = buildJsonObject {
-            put("model", config.model)
-            put("max_tokens", 8192)
-            put("temperature", config.temperature)
-            put("system", prompt.system)
-            put("messages", buildJsonArray {
-                add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
-            })
+    private fun streamOpenAi(prompt: PromptBundle, azure: Boolean, onDelta: (String) -> Unit): String {
+        val endpoint = if (azure) azureChatEndpoint(config.baseUrl, config.model) else openAiChatEndpoint(config.baseUrl)
+        val protocol = if (azure) ApiProtocol.AZURE_OPENAI else ApiProtocol.OPENAI_COMPATIBLE
+        val buffer = StringBuilder()
+        streamHttp(endpoint, authHeaders(protocol, config.apiKey), openAiBody(prompt, stream = true, azure = azure).toString()) { line ->
+            val data = line.removePrefix("data:").trim()
+            if (data.isBlank() || data == "[DONE]") return@streamHttp
+            val root = runCatching { WireJson.parseToJsonElement(data).jsonObject }.getOrNull() ?: return@streamHttp
+            val delta = root["choices"].asObjects().firstOrNull()
+                ?.get("delta")?.let { it as? JsonObject }?.string("content")
+                ?: root["choices"].asObjects().firstOrNull()
+                    ?.get("message")?.let { it as? JsonObject }?.string("content")
+            appendDelta(buffer, delta, onDelta)
         }
+        return buffer.toString().ifBlank { error("流式响应为空") }
+    }
+
+    private fun openAiBody(prompt: PromptBundle, stream: Boolean, azure: Boolean): JsonObject = buildJsonObject {
+        put("model", config.model)
+        put("temperature", config.temperature)
+        put("stream", stream)
+        put("messages", buildJsonArray {
+            add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
+            add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
+        })
+        if (config.supportsJsonMode && !azure) {
+            put("response_format", buildJsonObject { put("type", "json_object") })
+        }
+    }
+
+    private fun callAnthropic(prompt: PromptBundle): String {
+        val body = anthropicBody(prompt, stream = false)
         return requireSuccess(http(anthropicMessagesEndpoint(config.baseUrl), "POST", authHeaders(ApiProtocol.ANTHROPIC, config.apiKey), body.toString()))
     }
 
-    private fun callGemini(prompt: PromptBundle): String {
-        val body = buildJsonObject {
-            put("system_instruction", buildJsonObject {
-                put("parts", buildJsonArray { add(buildJsonObject { put("text", prompt.system) }) })
-            })
-            put("contents", buildJsonArray {
-                add(buildJsonObject {
-                    put("role", "user")
-                    put("parts", buildJsonArray { add(buildJsonObject { put("text", prompt.user) }) })
-                })
-            })
-            put("generationConfig", buildJsonObject {
-                put("temperature", config.temperature)
-                put("responseMimeType", "application/json")
-            })
+    private fun streamAnthropic(prompt: PromptBundle, onDelta: (String) -> Unit): String {
+        val buffer = StringBuilder()
+        streamHttp(
+            anthropicMessagesEndpoint(config.baseUrl),
+            authHeaders(ApiProtocol.ANTHROPIC, config.apiKey),
+            anthropicBody(prompt, stream = true).toString(),
+        ) { line ->
+            val data = line.removePrefix("data:").trim()
+            if (data.isBlank() || data == "[DONE]") return@streamHttp
+            val root = runCatching { WireJson.parseToJsonElement(data).jsonObject }.getOrNull() ?: return@streamHttp
+            val delta = (root["delta"] as? JsonObject)?.string("text")
+            appendDelta(buffer, delta, onDelta)
         }
-        return requireSuccess(http(geminiGenerateEndpoint(config.baseUrl, config.model, config.apiKey), "POST", emptyMap(), body.toString()))
+        return buffer.toString().ifBlank { error("Claude 流式响应为空") }
+    }
+
+    private fun anthropicBody(prompt: PromptBundle, stream: Boolean): JsonObject = buildJsonObject {
+        put("model", config.model)
+        put("max_tokens", 8192)
+        put("temperature", config.temperature)
+        put("stream", stream)
+        put("system", prompt.system)
+        put("messages", buildJsonArray {
+            add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
+        })
+    }
+
+    private fun callGemini(prompt: PromptBundle): String {
+        return requireSuccess(http(
+            geminiGenerateEndpoint(config.baseUrl, config.model, config.apiKey),
+            "POST",
+            emptyMap(),
+            geminiBody(prompt).toString(),
+        ))
+    }
+
+    private fun streamGemini(prompt: PromptBundle, onDelta: (String) -> Unit): String {
+        val buffer = StringBuilder()
+        streamHttp(
+            geminiStreamEndpoint(config.baseUrl, config.model, config.apiKey),
+            emptyMap(),
+            geminiBody(prompt).toString(),
+        ) { line ->
+            val data = line.removePrefix("data:").trim()
+            if (data.isBlank()) return@streamHttp
+            val root = runCatching { WireJson.parseToJsonElement(data).jsonObject }.getOrNull() ?: return@streamHttp
+            val delta = root["candidates"].asObjects().firstOrNull()
+                ?.get("content")?.let { it as? JsonObject }?.get("parts").asObjects()
+                .orEmpty().joinToString("") { it.string("text").orEmpty() }
+            appendDelta(buffer, delta, onDelta)
+        }
+        return buffer.toString().ifBlank { error("Gemini 流式响应为空") }
+    }
+
+    private fun geminiBody(prompt: PromptBundle): JsonObject = buildJsonObject {
+        put("system_instruction", buildJsonObject {
+            put("parts", buildJsonArray { add(buildJsonObject { put("text", prompt.system) }) })
+        })
+        put("contents", buildJsonArray {
+            add(buildJsonObject {
+                put("role", "user")
+                put("parts", buildJsonArray { add(buildJsonObject { put("text", prompt.user) }) })
+            })
+        })
+        put("generationConfig", buildJsonObject {
+            put("temperature", config.temperature)
+            put("responseMimeType", "application/json")
+        })
     }
 
     private fun callOllama(prompt: PromptBundle): String {
-        val body = buildJsonObject {
-            put("model", config.model)
-            put("stream", false)
-            put("format", "json")
-            put("messages", buildJsonArray {
-                add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
-                add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
-            })
-            put("options", buildJsonObject { put("temperature", config.temperature) })
+        return requireSuccess(http(
+            ollamaChatEndpoint(config.baseUrl),
+            "POST",
+            emptyMap(),
+            ollamaBody(prompt, stream = false).toString(),
+        ))
+    }
+
+    private fun streamOllama(prompt: PromptBundle, onDelta: (String) -> Unit): String {
+        val buffer = StringBuilder()
+        streamHttp(ollamaChatEndpoint(config.baseUrl), emptyMap(), ollamaBody(prompt, stream = true).toString()) { line ->
+            val root = runCatching { WireJson.parseToJsonElement(line.trim()).jsonObject }.getOrNull() ?: return@streamHttp
+            val delta = (root["message"] as? JsonObject)?.string("content")
+            appendDelta(buffer, delta, onDelta)
         }
-        return requireSuccess(http(ollamaChatEndpoint(config.baseUrl), "POST", emptyMap(), body.toString()))
+        return buffer.toString().ifBlank { error("Ollama 流式响应为空") }
+    }
+
+    private fun ollamaBody(prompt: PromptBundle, stream: Boolean): JsonObject = buildJsonObject {
+        put("model", config.model)
+        put("stream", stream)
+        put("format", "json")
+        put("messages", buildJsonArray {
+            add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
+            add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
+        })
+        put("options", buildJsonObject { put("temperature", config.temperature) })
+    }
+
+    private fun appendDelta(buffer: StringBuilder, delta: String?, onDelta: (String) -> Unit) {
+        if (delta.isNullOrEmpty()) return
+        buffer.append(delta)
+        onDelta(chapterContentPreview(buffer.toString()))
     }
 
     private fun extractText(protocol: ApiProtocol, body: String): String {
@@ -257,6 +368,65 @@ private fun http(url: String, method: String, headers: Map<String, String>, body
     } finally {
         connection.disconnect()
     }
+}
+
+private fun streamHttp(
+    url: String,
+    headers: Map<String, String>,
+    body: String,
+    onLine: (String) -> Unit,
+) {
+    val connection = URI(url).toURL().openConnection() as HttpURLConnection
+    try {
+        connection.requestMethod = "POST"
+        connection.connectTimeout = 25_000
+        connection.readTimeout = 180_000
+        connection.doOutput = true
+        connection.setRequestProperty("Accept", "text/event-stream, application/x-ndjson, application/json")
+        connection.setRequestProperty("Content-Type", "application/json")
+        headers.forEach(connection::setRequestProperty)
+        connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            val error = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            error("AI 服务返回 $status：${error.take(500)}")
+        }
+        connection.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+            lines.filter { it.isNotBlank() && !it.startsWith("event:") }.forEach(onLine)
+        }
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private fun chapterContentPreview(raw: String): String {
+    val match = Regex("\\\"content\\\"\\s*:\\s*\\\"").find(raw) ?: return "已接收 ${raw.length} 个字符…"
+    val value = raw.substring(match.range.last + 1)
+    val out = StringBuilder()
+    var escaped = false
+    var i = 0
+    while (i < value.length) {
+        val c = value[i]
+        if (escaped) {
+            when (c) {
+                'n' -> out.append('\n')
+                'r' -> Unit
+                't' -> out.append('\t')
+                '\\' -> out.append('\\')
+                '"' -> out.append('"')
+                else -> out.append(c)
+            }
+            escaped = false
+        } else if (c == '\\') {
+            escaped = true
+        } else if (c == '"') {
+            break
+        } else {
+            out.append(c)
+        }
+        i++
+    }
+    return out.toString().ifBlank { "正在生成正文…" }.takeLast(5_000)
 }
 
 private fun requireSuccess(result: HttpResult): String {
@@ -334,6 +504,11 @@ private fun anthropicMessagesEndpoint(input: String): String {
 private fun geminiGenerateEndpoint(input: String, model: String, key: String): String {
     val root = normalizeBaseUrl(input).substringBefore("/v1beta").trimEnd('/')
     return "$root/v1beta/models/${urlEncode(model.removePrefix("models/"))}:generateContent?key=${urlEncode(key)}"
+}
+
+private fun geminiStreamEndpoint(input: String, model: String, key: String): String {
+    val root = normalizeBaseUrl(input).substringBefore("/v1beta").trimEnd('/')
+    return "$root/v1beta/models/${urlEncode(model.removePrefix("models/"))}:streamGenerateContent?alt=sse&key=${urlEncode(key)}"
 }
 
 private fun azureChatEndpoint(input: String, deployment: String): String {

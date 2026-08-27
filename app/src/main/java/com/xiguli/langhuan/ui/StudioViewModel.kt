@@ -8,6 +8,7 @@ import com.xiguli.langhuan.data.PersistedStory
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.ProviderSaveRequest
 import com.xiguli.langhuan.data.StoredAiProvider
+import com.xiguli.langhuan.data.StoredChapterVersion
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.GenerationResult
@@ -37,12 +38,26 @@ data class SavedProviderUi(
     val hasApiKey: Boolean,
 )
 
+data class ChapterVersionUi(
+    val id: String,
+    val chapterNumber: Int,
+    val version: Int,
+    val title: String,
+    val content: String,
+    val summary: String,
+    val createdAt: Long,
+)
+
 data class StudioUiState(
     val snapshot: StorySnapshot,
     val draft: ChapterDraft,
     val provider: ProviderUiState = ProviderUiState(),
+    val versions: List<ChapterVersionUi> = emptyList(),
+    val streamPreview: String = "",
     val isGenerating: Boolean = false,
     val isSaving: Boolean = false,
+    val isRestoringVersion: Boolean = false,
+    val isDraftDirty: Boolean = false,
     val result: GenerationResult? = null,
     val error: String? = null,
 )
@@ -87,6 +102,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 PersistedStory(demo.snapshot, demo.currentDraft),
             )
             _state.update { it.copy(snapshot = loaded.snapshot, draft = loaded.draft) }
+            refreshVersions()
         }
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
@@ -116,6 +132,58 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectModel(model: DiscoveredModel) = updateProvider {
         it.copy(selectedModel = model.id, manualModel = "", error = null)
+    }
+
+    fun setDraftContent(value: String) {
+        _state.update { it.copy(draft = it.draft.copy(content = value), isDraftDirty = true, error = null) }
+    }
+
+    fun saveDraftVersion() {
+        val current = _state.value
+        if (current.isSaving || !current.isDraftDirty) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            runCatching { repository.saveDraft(current.snapshot, current.draft) }
+                .onSuccess { persisted ->
+                    _state.update {
+                        it.copy(
+                            snapshot = persisted.snapshot,
+                            draft = persisted.draft,
+                            isSaving = false,
+                            isDraftDirty = false,
+                        )
+                    }
+                    refreshVersions()
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(isSaving = false, error = error.message ?: "保存草稿版本失败") }
+                }
+        }
+    }
+
+    fun restoreVersion(versionId: String) {
+        val current = _state.value
+        val version = current.versions.firstOrNull { it.id == versionId } ?: return
+        if (current.isRestoringVersion || current.isSaving || current.isGenerating) return
+        viewModelScope.launch {
+            _state.update { it.copy(isRestoringVersion = true, error = null) }
+            runCatching {
+                repository.restoreVersion(current.snapshot, current.draft, version.toStored())
+            }.onSuccess { persisted ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isRestoringVersion = false,
+                        isDraftDirty = false,
+                        streamPreview = "",
+                    )
+                }
+                refreshVersions()
+            }.onFailure { error ->
+                _state.update { it.copy(isRestoringVersion = false, error = error.message ?: "恢复版本失败") }
+            }
+        }
     }
 
     fun newProvider() = updateProvider { current ->
@@ -251,15 +319,27 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     fun generateChapter() {
         if (_state.value.isGenerating) return
         viewModelScope.launch {
-            _state.update { it.copy(isGenerating = true, error = null) }
+            _state.update { it.copy(isGenerating = true, streamPreview = "正在分析章纲与长期记忆…", error = null) }
             val current = _state.value
             val provider = current.provider
+            val ragQuery = buildString {
+                append(current.draft.title).append(' ')
+                append(current.draft.objective).append(' ')
+                current.draft.scenePlan.forEach {
+                    append(it.viewpoint).append(' ').append(it.location).append(' ')
+                    append(it.purpose).append(' ').append(it.conflict).append(' ')
+                }
+                current.snapshot.activeOutline.forEach { append(it.objective).append(' ').append(it.turningPoint).append(' ') }
+                current.snapshot.characters.forEach { append(it.name).append(' ').append(it.goal).append(' ') }
+            }
             val memories = repository.retrieveRelevantMemories(
-                current.snapshot.novel.id,
-                "${current.draft.title} ${current.draft.objective} ${current.snapshot.activeOutline.lastOrNull()?.objective.orEmpty()}",
+                novelId = current.snapshot.novel.id,
+                query = ragQuery,
+                currentChapter = current.draft.chapterNumber,
+                limit = 8,
             )
             val snapshotForPrompt = current.snapshot.copy(
-                recentSummaries = (current.snapshot.recentSummaries + memories).distinct().takeLast(16)
+                recentSummaries = (current.snapshot.recentSummaries + memories).distinct().takeLast(18)
             )
             val savedConfig = provider.activeProviderId?.let { repository.providerConfig(it) }
             val transientConfig = provider.discovery?.takeIf { provider.formModel.isNotBlank() }?.let { discovery ->
@@ -279,11 +359,13 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         chapter = current.draft,
                         targetWords = 2_500,
                     )
-                )
+                ) { preview ->
+                    _state.update { state -> state.copy(streamPreview = preview) }
+                }
             }.onSuccess { result ->
-                _state.update { it.copy(isGenerating = false, result = result) }
+                _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
             }.onFailure { error ->
-                _state.update { it.copy(isGenerating = false, error = error.message ?: "生成失败") }
+                _state.update { it.copy(isGenerating = false, streamPreview = "", error = error.message ?: "生成失败") }
             }
         }
     }
@@ -302,16 +384,26 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         snapshot = persisted.snapshot,
                         draft = persisted.draft,
                         isSaving = false,
+                        isDraftDirty = false,
+                        streamPreview = "",
                         result = null,
                     )
                 }
+                refreshVersions()
             }.onFailure { error ->
                 _state.update { it.copy(isSaving = false, error = error.message ?: "保存章节失败") }
             }
         }
     }
 
-    fun dismissResult() = _state.update { it.copy(result = null) }
+    fun dismissResult() = _state.update { it.copy(result = null, streamPreview = "") }
+
+    private suspend fun refreshVersions() {
+        val current = _state.value
+        val versions = repository.chapterVersions(current.snapshot.novel.id, current.draft.chapterNumber)
+            .map { it.toUi() }
+        _state.update { it.copy(versions = versions) }
+    }
 
     private fun updateProvider(block: (ProviderUiState) -> ProviderUiState) {
         _state.update { it.copy(provider = block(it.provider)) }
@@ -326,5 +418,25 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         supportsJsonMode = supportsJsonMode,
         isDefault = isDefault,
         hasApiKey = hasApiKey,
+    )
+
+    private fun StoredChapterVersion.toUi() = ChapterVersionUi(
+        id = id,
+        chapterNumber = chapterNumber,
+        version = version,
+        title = title,
+        content = content,
+        summary = summary,
+        createdAt = createdAt,
+    )
+
+    private fun ChapterVersionUi.toStored() = StoredChapterVersion(
+        id = id,
+        chapterNumber = chapterNumber,
+        version = version,
+        title = title,
+        content = content,
+        summary = summary,
+        createdAt = createdAt,
     )
 }

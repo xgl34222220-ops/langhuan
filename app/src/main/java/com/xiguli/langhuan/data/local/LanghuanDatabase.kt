@@ -79,6 +79,9 @@ interface ChapterVersionDao {
 
     @Query("SELECT * FROM chapter_versions WHERE novelId = :novelId ORDER BY chapterNumber DESC, version DESC")
     suspend fun allForNovel(novelId: String): List<ChapterVersionEntity>
+
+    @Query("SELECT * FROM chapter_versions WHERE novelId = :novelId AND chapterNumber = :chapterNumber ORDER BY version DESC")
+    suspend fun forChapter(novelId: String, chapterNumber: Int): List<ChapterVersionEntity>
 }
 
 @Dao
@@ -115,6 +118,9 @@ interface MemoryChunkDao {
 
     @Query("DELETE FROM memory_chunks WHERE novelId = :novelId")
     suspend fun deleteForNovel(novelId: String)
+
+    @Query("DELETE FROM memory_chunks WHERE novelId = :novelId AND sourceType != 'CHAPTER'")
+    suspend fun deleteStructuredForNovel(novelId: String)
 }
 
 @Database(

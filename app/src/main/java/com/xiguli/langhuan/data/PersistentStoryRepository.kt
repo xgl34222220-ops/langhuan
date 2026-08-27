@@ -14,6 +14,8 @@ import com.xiguli.langhuan.domain.StateChange
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
+import com.xiguli.langhuan.engine.HybridMemoryRetriever
+import com.xiguli.langhuan.engine.MemoryCandidate
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -28,6 +30,16 @@ private val StoreJson = Json {
 data class PersistedStory(
     val snapshot: StorySnapshot,
     val draft: ChapterDraft,
+)
+
+data class StoredChapterVersion(
+    val id: String,
+    val chapterNumber: Int,
+    val version: Int,
+    val title: String,
+    val content: String,
+    val summary: String,
+    val createdAt: Long,
 )
 
 data class StoredAiProvider(
@@ -61,6 +73,7 @@ class PersistentStoryRepository(context: Context) {
     private val providerDao = db.aiProviderDao()
     private val memoryDao = db.memoryChunkDao()
     private val keyStore = SecureApiKeyStore(context)
+    private val memoryRetriever = HybridMemoryRetriever()
 
     suspend fun seedIfNeeded(demo: DemoStoryRepository) {
         if (storyDao.get(demo.snapshot.novel.id) != null) return
@@ -92,76 +105,92 @@ class PersistentStoryRepository(context: Context) {
         generated: GeneratedChapter,
     ): PersistedStory {
         val now = System.currentTimeMillis()
-        val newVersion = draft.version + 1
+        val latestVersion = chapterDao.forChapter(draft.novelId, draft.chapterNumber).firstOrNull()?.version ?: draft.version
+        val newVersion = maxOf(draft.version, latestVersion) + 1
         val newDraft = draft.copy(
             title = generated.title.ifBlank { draft.title },
             content = generated.content,
             summary = generated.summary,
             version = newVersion,
         )
-        val wordDelta = (generated.content.length - draft.content.length).coerceAtLeast(0)
+        val wordDelta = generated.content.length - draft.content.length
         val withChanges = applyCharacterChanges(snapshot, generated.stateChanges, draft.chapterNumber)
+        val chapterSummary = "第${draft.chapterNumber}章：${generated.summary}".trim()
+        val summaryHistory = (withChanges.recentSummaries + chapterSummary)
+            .filter { it.isNotBlank() }
+            .distinct()
+        val foldCount = (summaryHistory.size - 8).coerceAtLeast(0)
+        val folded = summaryHistory.take(foldCount)
         val newSnapshot = withChanges.copy(
-            novel = withChanges.novel.copy(currentWords = withChanges.novel.currentWords + wordDelta),
-            recentSummaries = (withChanges.recentSummaries + "第${draft.chapterNumber}章：${generated.summary}")
-                .filter { it.isNotBlank() }.distinct().takeLast(12),
+            novel = withChanges.novel.copy(
+                currentWords = (withChanges.novel.currentWords + wordDelta).coerceAtLeast(0),
+            ),
+            recentSummaries = summaryHistory.takeLast(8),
+            longTermSummary = foldLongTermSummary(withChanges.longTermSummary, folded),
         )
-        storyDao.upsert(
-            StoryStateEntity(
-                novelId = newSnapshot.novel.id,
-                snapshotJson = StoreJson.encodeToString(StorySnapshot.serializer(), newSnapshot),
-                draftJson = StoreJson.encodeToString(ChapterDraft.serializer(), newDraft),
-                updatedAt = now,
-            )
-        )
-        chapterDao.upsert(
-            ChapterVersionEntity(
-                id = "${newDraft.id}:v$newVersion",
-                novelId = newDraft.novelId,
-                chapterNumber = newDraft.chapterNumber,
-                version = newVersion,
-                title = newDraft.title,
-                content = newDraft.content,
-                summary = newDraft.summary,
-                createdAt = now,
-            )
-        )
+        persistStory(newSnapshot, newDraft, now)
+        saveChapterVersion(newDraft, now)
         rebuildMemoryIndex(newSnapshot)
-        memoryDao.upsert(
-            MemoryChunkEntity(
-                id = "chapter:${newDraft.id}:v$newVersion",
-                novelId = newDraft.novelId,
-                sourceType = "CHAPTER",
-                sourceId = newDraft.id,
-                chapterNumber = newDraft.chapterNumber,
-                text = buildString {
-                    append("第${newDraft.chapterNumber}章 ${newDraft.title}。")
-                    append(newDraft.summary)
-                    if (newDraft.content.isNotBlank()) append("\n").append(newDraft.content.take(2800))
-                },
-                updatedAt = now,
-            )
-        )
+        upsertChapterMemory(newDraft, now)
         return PersistedStory(newSnapshot, newDraft)
     }
 
-    suspend fun retrieveRelevantMemories(novelId: String, query: String, limit: Int = 6): List<String> {
-        val q = grams(query)
-        if (q.isEmpty()) return emptyList()
-        return memoryDao.recent(novelId, 900)
-            .asSequence()
-            .map { item ->
-                val grams = grams(item.text)
-                val overlap = grams.count { it in q }
-                val score = if (grams.isEmpty()) 0.0 else overlap.toDouble() / q.size.coerceAtLeast(1)
-                item to score
-            }
-            .filter { it.second > 0.0 }
-            .sortedByDescending { it.second }
-            .map { it.first.text }
-            .distinct()
-            .take(limit)
-            .toList()
+    suspend fun saveDraft(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory {
+        val now = System.currentTimeMillis()
+        val stored = storyDao.get(snapshot.novel.id)
+        val oldDraft = stored?.let {
+            runCatching { StoreJson.decodeFromString(ChapterDraft.serializer(), it.draftJson) }.getOrNull()
+        }
+        val latestVersion = chapterDao.forChapter(draft.novelId, draft.chapterNumber).firstOrNull()?.version ?: draft.version
+        val versionedDraft = draft.copy(version = maxOf(draft.version, latestVersion) + 1)
+        val delta = versionedDraft.content.length - (oldDraft?.content?.length ?: draft.content.length)
+        val updatedSnapshot = snapshot.copy(
+            novel = snapshot.novel.copy(currentWords = (snapshot.novel.currentWords + delta).coerceAtLeast(0)),
+        )
+        persistStory(updatedSnapshot, versionedDraft, now)
+        saveChapterVersion(versionedDraft, now)
+        rebuildMemoryIndex(updatedSnapshot)
+        upsertChapterMemory(versionedDraft, now)
+        return PersistedStory(updatedSnapshot, versionedDraft)
+    }
+
+    suspend fun chapterVersions(novelId: String, chapterNumber: Int): List<StoredChapterVersion> =
+        chapterDao.forChapter(novelId, chapterNumber).map { it.toStored() }
+
+    suspend fun restoreVersion(
+        snapshot: StorySnapshot,
+        draft: ChapterDraft,
+        version: StoredChapterVersion,
+    ): PersistedStory {
+        require(version.chapterNumber == draft.chapterNumber) { "版本不属于当前章节" }
+        return saveDraft(
+            snapshot,
+            draft.copy(
+                title = version.title,
+                content = version.content,
+                summary = version.summary,
+                version = maxOf(draft.version, version.version),
+            ),
+        )
+    }
+
+    suspend fun retrieveRelevantMemories(
+        novelId: String,
+        query: String,
+        currentChapter: Int,
+        limit: Int = 8,
+    ): List<String> {
+        val candidates = memoryDao.recent(novelId, 1_200).map {
+            MemoryCandidate(
+                text = it.text,
+                sourceType = it.sourceType,
+                sourceId = it.sourceId,
+                chapterNumber = it.chapterNumber,
+                updatedAt = it.updatedAt,
+            )
+        }
+        return memoryRetriever.rank(query, candidates, currentChapter, limit)
+            .map { hit -> "[${hit.candidate.sourceType}] ${hit.candidate.text}" }
     }
 
     fun observeProviders(): Flow<List<StoredAiProvider>> = providerDao.observeAll().map { list ->
@@ -214,6 +243,50 @@ class PersistentStoryRepository(context: Context) {
         )
     }
 
+    private suspend fun persistStory(snapshot: StorySnapshot, draft: ChapterDraft, now: Long) {
+        storyDao.upsert(
+            StoryStateEntity(
+                novelId = snapshot.novel.id,
+                snapshotJson = StoreJson.encodeToString(StorySnapshot.serializer(), snapshot),
+                draftJson = StoreJson.encodeToString(ChapterDraft.serializer(), draft),
+                updatedAt = now,
+            )
+        )
+    }
+
+    private suspend fun saveChapterVersion(draft: ChapterDraft, now: Long) {
+        chapterDao.upsert(
+            ChapterVersionEntity(
+                id = "${draft.id}:v${draft.version}",
+                novelId = draft.novelId,
+                chapterNumber = draft.chapterNumber,
+                version = draft.version,
+                title = draft.title,
+                content = draft.content,
+                summary = draft.summary,
+                createdAt = now,
+            )
+        )
+    }
+
+    private suspend fun upsertChapterMemory(draft: ChapterDraft, now: Long) {
+        memoryDao.upsert(
+            MemoryChunkEntity(
+                id = "chapter:${draft.id}:v${draft.version}",
+                novelId = draft.novelId,
+                sourceType = "CHAPTER",
+                sourceId = draft.id,
+                chapterNumber = draft.chapterNumber,
+                text = buildString {
+                    append("第${draft.chapterNumber}章 ${draft.title}。")
+                    if (draft.summary.isNotBlank()) append(draft.summary)
+                    if (draft.content.isNotBlank()) append("\n").append(draft.content.take(4_000))
+                },
+                updatedAt = now,
+            )
+        )
+    }
+
     private suspend fun rebuildMemoryIndex(snapshot: StorySnapshot) {
         val now = System.currentTimeMillis()
         val novelId = snapshot.novel.id
@@ -236,12 +309,25 @@ class PersistentStoryRepository(context: Context) {
             snapshot.relevantForeshadowing.forEach { item ->
                 add(MemoryChunkEntity("foreshadow:${item.id}", novelId, "FORESHADOW", item.id, item.plantedChapter, "伏笔「${item.title}」：${item.detail}；预计回收：${item.expectedPayoff}；状态：${item.status.name}", now))
             }
+            if (snapshot.longTermSummary.isNotBlank()) {
+                add(MemoryChunkEntity("long-summary:$novelId", novelId, "LONG_SUMMARY", "long-summary", null, snapshot.longTermSummary, now))
+            }
             snapshot.recentSummaries.forEachIndexed { index, text ->
                 add(MemoryChunkEntity("summary:${novelId}:$index", novelId, "SUMMARY", "summary-$index", null, text, now))
             }
         }
-        memoryDao.deleteForNovel(novelId)
+        // 只重建结构化记忆，历史章节块必须保留，否则长篇写到后面会遗失旧正文。
+        memoryDao.deleteStructuredForNovel(novelId)
         if (chunks.isNotEmpty()) memoryDao.upsertAll(chunks)
+    }
+
+    private fun foldLongTermSummary(existing: String, folded: List<String>): String {
+        if (folded.isEmpty()) return existing
+        val additions = folded.joinToString("\n") { it.take(360) }
+        val merged = listOf(existing.trim(), additions.trim()).filter { it.isNotBlank() }.joinToString("\n")
+        if (merged.length <= 6_500) return merged
+        // 保留最早的核心开头和最近的折叠摘要，避免上下文无限增长。
+        return merged.take(1_500) + "\n……\n" + merged.takeLast(4_700)
     }
 
     private fun applyCharacterChanges(snapshot: StorySnapshot, changes: List<StateChange>, chapter: Int): StorySnapshot {
@@ -282,12 +368,15 @@ class PersistentStoryRepository(context: Context) {
         hasApiKey = keyStore.has(id),
     )
 
-    private fun String.toProtocol(): ApiProtocol = ApiProtocol.entries.firstOrNull { it.name == this } ?: ApiProtocol.AUTO
+    private fun ChapterVersionEntity.toStored() = StoredChapterVersion(
+        id = id,
+        chapterNumber = chapterNumber,
+        version = version,
+        title = title,
+        content = content,
+        summary = summary,
+        createdAt = createdAt,
+    )
 
-    private fun grams(value: String): Set<String> {
-        val normalized = value.lowercase().filter { it.isLetterOrDigit() }
-        if (normalized.isBlank()) return emptySet()
-        if (normalized.length == 1) return setOf(normalized)
-        return normalized.windowed(size = 2, step = 1).toSet()
-    }
+    private fun String.toProtocol(): ApiProtocol = ApiProtocol.entries.firstOrNull { it.name == this } ?: ApiProtocol.AUTO
 }

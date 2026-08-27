@@ -45,6 +45,9 @@ class PromptAssembler {
                 "冲突=${it.conflict}; 结果=${it.outcome}"
         }
 
+        val recentMemory = snapshot.recentSummaries.joinToString("\n") { "- $it" }
+        val longTerm = snapshot.longTermSummary.ifBlank { "暂无；以锁定设定与最近事件为准。" }
+
         return PromptBundle(
             system = """
                 你是长篇小说写作引擎。你的首要任务是保持故事一致，而不是自由发挥。
@@ -56,7 +59,8 @@ class PromptAssembler {
                 4. 新增重要人物、规则、能力、地点或道具时，必须在 stateChanges 中明确声明。
                 5. 不得提前回收未到时机的伏笔；不得遗忘本章要求触及的伏笔。
                 6. 若用户临时要求与锁定设定冲突，以锁定设定为准。
-                7. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
+                7. 长期摘要、RAG 检索片段只作为历史证据；若与锁定圣经冲突，以锁定圣经为最高优先级。
+                8. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
@@ -68,6 +72,12 @@ class PromptAssembler {
 
                 【当前大纲链】
                 $outline
+
+                【长期故事摘要】
+                $longTerm
+
+                【RAG 检索与最近章节记忆】
+                $recentMemory
 
                 【人物当前状态】
                 $characters
@@ -87,9 +97,9 @@ class PromptAssembler {
                 补充要求：${request.extraInstruction.ifBlank { "无" }}
 
                 返回字段：title、content、summary、stateChanges、touchedForeshadowingIds。
+                summary 必须是 120-260 字的高信息密度事实摘要，包含关键事件、人物状态变化、地点、获得/失去的信息和未解决问题，供后续长期记忆使用。
                 stateChanges 每项包含 subject、field、before、after、evidence。
             """.trimIndent(),
         )
     }
 }
-
