@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.xiguli.langhuan"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.xiguli.langhuan"
