@@ -2,17 +2,19 @@
 
 面向长篇小说的 Android AI 创作 App。首版重点不是“一键续写”，而是通过小说圣经、三级大纲、结构化长期记忆和一致性审查，把每次生成限制在既定故事轨道内。
 
-- 当前版本：`0.1.0-alpha01`
+- 当前版本：`0.2.0-alpha01`
 - 作者：惜故里丶
 
 ## 当前里程碑
 
 - 原生 Android + Kotlin + Jetpack Compose 工程骨架
-- 书架、创作台、记忆库三个主页面
+- 书架、创作台、记忆库、AI 设置四个主页面
+- 与「洛书」同源的 MIUIX / HyperOS 视觉：Monet 动态色、Haze 模糊、Miuix Blur 液态玻璃和 Miuix Squircle
 - 小说、三级大纲、人物状态、时间线、伏笔、章节草稿等核心领域模型
 - 防跑题提示词组装器：生成前注入硬约束、当前章目标和相关历史
 - 本地一致性门禁：检查禁用设定、缺失章节目标、人物位置冲突、未引用大纲目标等
-- AI 接口抽象，后续可接 DeepSeek、OpenAI、Claude 或 OpenAI 兼容中转站
+- AI 中转站自动识别：OpenAI 兼容（含 DeepSeek）、Anthropic Claude、Gemini、Azure OpenAI、Ollama
+- 自动拉取模型列表、识别推理/视觉模型；中转站未开放列表时支持手填模型名
 - 演示数据与离线生成流程，可直接预览产品交互
 
 ## 防跑题链路
@@ -26,14 +28,14 @@
 
 ## 打开方式
 
-使用较新的 Android Studio 打开项目目录并等待 Gradle 同步。项目使用 JDK 17、minSdk 23、targetSdk 36。
+使用较新的 Android Studio 打开项目目录并等待 Gradle 同步。项目使用 JDK 17、minSdk 28、targetSdk 36、compileSdk 37。
 
 仓库已配置 GitHub Actions。每次推送到 `main` 都会执行 Debug 构建，并上传 APK 构建产物。
 
 ## 下一阶段
 
 - Room 本地数据库与自动迁移
-- OpenAI 兼容流式接口、模型设置与密钥安全存储
+- 流式输出、系统凭据加密存储与中转站配置管理
 - 小说创建向导和圣经编辑器
 - 分场景正文编辑、版本对比与局部重写
 - RAG 检索、章节摘要和记忆自动更新
