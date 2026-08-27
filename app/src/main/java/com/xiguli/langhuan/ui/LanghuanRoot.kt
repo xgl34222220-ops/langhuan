@@ -117,18 +117,20 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 )
             }
 
-            ExtendedFloatingActionButton(
-                onClick = {
-                    creationViewModel.reset()
-                    showCreation = true
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 20.dp),
-                icon = { Icon(Icons.Rounded.AutoAwesome, null) },
-                text = { Text("AI 构思新书") },
-            )
+            if (libraryState.openedBook == null && libraryState.readingChapter == null) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        creationViewModel.reset()
+                        showCreation = true
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(end = 18.dp, bottom = 20.dp),
+                    icon = { Icon(Icons.Rounded.AutoAwesome, null) },
+                    text = { Text("AI 构思新书") },
+                )
+            }
         }
 
         if (showCreation && !showAgent) {
