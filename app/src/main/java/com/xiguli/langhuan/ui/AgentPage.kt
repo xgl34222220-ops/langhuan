@@ -9,6 +9,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Save
@@ -28,7 +31,13 @@ import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
 @Composable
-internal fun AgentPage(state: StudioUiState, vm: StudioViewModel) {
+internal fun AgentPage(
+    state: StudioUiState,
+    vm: StudioViewModel,
+    onProjectBackup: () -> Unit,
+    onProjectRestore: () -> Unit,
+    onClose: () -> Unit,
+) {
     val style = state.snapshot.bible.firstOrNull { it.category == BibleCategory.STYLE }
     var styleName by remember(state.snapshot.novel.id, style?.id) { mutableStateOf(style?.name ?: "主文风") }
     var styleText by remember(state.snapshot.novel.id, style?.id) { mutableStateOf(style?.content.orEmpty()) }
@@ -36,12 +45,17 @@ internal fun AgentPage(state: StudioUiState, vm: StudioViewModel) {
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 116.dp),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 42.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Text("创作 Agent", style = MaterialTheme.typography.displaySmall, color = LocalMiuixTokens.current.textPrimary)
-            Text("自动复盘章节 · 全书一致性巡检 · 结构化记忆抽取 · 下一章候选", color = LocalMiuixTokens.current.textSecondary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("创作 Agent", style = MaterialTheme.typography.displaySmall, color = LocalMiuixTokens.current.textPrimary)
+                    Text("自动复盘章节 · 全书一致性巡检 · 结构化记忆抽取 · 下一章候选", color = LocalMiuixTokens.current.textSecondary)
+                }
+                IconButton(onClose) { Icon(Icons.Rounded.Close, "关闭 Agent") }
+            }
         }
 
         item {
@@ -108,6 +122,22 @@ internal fun AgentPage(state: StudioUiState, vm: StudioViewModel) {
                     shape = RoundedCornerShape(17.dp),
                 ) {
                     Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(7.dp)); Text("保存为当前文风")
+                }
+            }
+        }
+
+        item {
+            AgentCard {
+                Text("项目备份", style = MaterialTheme.typography.titleMedium)
+                Text(".lhproj 保存大纲、圣经、人物、关系、时间线、伏笔和所有章节；不会包含 API Key。恢复时生成新项目，不覆盖原书。", color = LocalMiuixTokens.current.textSecondary)
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onProjectBackup, Modifier.weight(1f), enabled = !state.isExporting, shape = RoundedCornerShape(16.dp)) {
+                        Icon(Icons.Rounded.FileDownload, null); Spacer(Modifier.width(5.dp)); Text("备份")
+                    }
+                    OutlinedButton(onProjectRestore, Modifier.weight(1f), enabled = !state.isImporting, shape = RoundedCornerShape(16.dp)) {
+                        Icon(Icons.Rounded.FileOpen, null); Spacer(Modifier.width(5.dp)); Text("恢复")
+                    }
                 }
             }
         }
