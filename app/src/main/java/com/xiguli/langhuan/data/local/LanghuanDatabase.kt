@@ -10,6 +10,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "story_state")
@@ -33,6 +35,18 @@ data class ChapterVersionEntity(
     val content: String,
     val summary: String,
     val createdAt: Long,
+)
+
+@Entity(
+    tableName = "chapter_state",
+    indices = [Index(value = ["novelId", "chapterNumber"], unique = true)],
+)
+data class ChapterStateEntity(
+    @PrimaryKey val id: String,
+    val novelId: String,
+    val chapterNumber: Int,
+    val draftJson: String,
+    val updatedAt: Long,
 )
 
 @Entity(tableName = "ai_providers")
@@ -88,6 +102,21 @@ interface ChapterVersionDao {
 }
 
 @Dao
+interface ChapterStateDao {
+    @Upsert
+    suspend fun upsert(entity: ChapterStateEntity)
+
+    @Query("SELECT * FROM chapter_state WHERE novelId = :novelId AND chapterNumber = :chapterNumber LIMIT 1")
+    suspend fun get(novelId: String, chapterNumber: Int): ChapterStateEntity?
+
+    @Query("SELECT * FROM chapter_state WHERE novelId = :novelId ORDER BY chapterNumber ASC")
+    suspend fun allForNovel(novelId: String): List<ChapterStateEntity>
+
+    @Query("DELETE FROM chapter_state WHERE novelId = :novelId AND chapterNumber = :chapterNumber")
+    suspend fun delete(novelId: String, chapterNumber: Int)
+}
+
+@Dao
 interface AiProviderDao {
     @Query("SELECT * FROM ai_providers ORDER BY isDefault DESC, updatedAt DESC")
     fun observeAll(): Flow<List<AiProviderEntity>>
@@ -127,25 +156,55 @@ interface MemoryChunkDao {
 }
 
 @Database(
-    entities = [StoryStateEntity::class, ChapterVersionEntity::class, AiProviderEntity::class, MemoryChunkEntity::class],
-    version = 1,
+    entities = [
+        StoryStateEntity::class,
+        ChapterVersionEntity::class,
+        ChapterStateEntity::class,
+        AiProviderEntity::class,
+        MemoryChunkEntity::class,
+    ],
+    version = 2,
     exportSchema = true,
 )
 abstract class LanghuanDatabase : RoomDatabase() {
     abstract fun storyStateDao(): StoryStateDao
     abstract fun chapterVersionDao(): ChapterVersionDao
+    abstract fun chapterStateDao(): ChapterStateDao
     abstract fun aiProviderDao(): AiProviderDao
     abstract fun memoryChunkDao(): MemoryChunkDao
 
     companion object {
         @Volatile private var instance: LanghuanDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `chapter_state` (
+                        `id` TEXT NOT NULL,
+                        `novelId` TEXT NOT NULL,
+                        `chapterNumber` INTEGER NOT NULL,
+                        `draftJson` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_chapter_state_novelId_chapterNumber` ON `chapter_state` (`novelId`, `chapterNumber`)"
+                )
+            }
+        }
+
         fun get(context: Context): LanghuanDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 LanghuanDatabase::class.java,
                 "langhuan.db",
-            ).build().also { instance = it }
+            )
+                .addMigrations(MIGRATION_1_2)
+                .build()
+                .also { instance = it }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.xiguli.langhuan.data
 
 import android.content.Context
 import com.xiguli.langhuan.data.local.AiProviderEntity
+import com.xiguli.langhuan.data.local.ChapterStateEntity
 import com.xiguli.langhuan.data.local.ChapterVersionEntity
 import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.data.local.MemoryChunkEntity
@@ -70,6 +71,7 @@ class PersistentStoryRepository(context: Context) {
     private val db = LanghuanDatabase.get(context)
     private val storyDao = db.storyStateDao()
     private val chapterDao = db.chapterVersionDao()
+    private val chapterStateDao = db.chapterStateDao()
     private val providerDao = db.aiProviderDao()
     private val memoryDao = db.memoryChunkDao()
     private val keyStore = SecureApiKeyStore(context)
@@ -78,14 +80,7 @@ class PersistentStoryRepository(context: Context) {
     suspend fun seedIfNeeded(demo: DemoStoryRepository) {
         if (storyDao.get(demo.snapshot.novel.id) != null) return
         val now = System.currentTimeMillis()
-        storyDao.upsert(
-            StoryStateEntity(
-                novelId = demo.snapshot.novel.id,
-                snapshotJson = StoreJson.encodeToString(StorySnapshot.serializer(), demo.snapshot),
-                draftJson = StoreJson.encodeToString(ChapterDraft.serializer(), demo.currentDraft),
-                updatedAt = now,
-            )
-        )
+        persistStory(demo.snapshot, demo.currentDraft, now)
         rebuildMemoryIndex(demo.snapshot)
     }
 
@@ -113,7 +108,8 @@ class PersistentStoryRepository(context: Context) {
             summary = generated.summary,
             version = newVersion,
         )
-        val wordDelta = generated.content.length - draft.content.length
+        val previous = chapterStateDao.get(draft.novelId, draft.chapterNumber)?.decodeDraftOrNull() ?: draft
+        val wordDelta = generated.content.length - previous.content.length
         val withChanges = applyCharacterChanges(snapshot, generated.stateChanges, draft.chapterNumber)
         val chapterSummary = "第${draft.chapterNumber}章：${generated.summary}".trim()
         val summaryHistory = (withChanges.recentSummaries + chapterSummary)
@@ -124,6 +120,7 @@ class PersistentStoryRepository(context: Context) {
         val newSnapshot = withChanges.copy(
             novel = withChanges.novel.copy(
                 currentWords = (withChanges.novel.currentWords + wordDelta).coerceAtLeast(0),
+                currentChapter = draft.chapterNumber,
             ),
             recentSummaries = summaryHistory.takeLast(8),
             longTermSummary = foldLongTermSummary(withChanges.longTermSummary, folded),
@@ -137,15 +134,15 @@ class PersistentStoryRepository(context: Context) {
 
     suspend fun saveDraft(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory {
         val now = System.currentTimeMillis()
-        val stored = storyDao.get(snapshot.novel.id)
-        val oldDraft = stored?.let {
-            runCatching { StoreJson.decodeFromString(ChapterDraft.serializer(), it.draftJson) }.getOrNull()
-        }
+        val oldDraft = chapterStateDao.get(draft.novelId, draft.chapterNumber)?.decodeDraftOrNull() ?: draft
         val latestVersion = chapterDao.forChapter(draft.novelId, draft.chapterNumber).firstOrNull()?.version ?: draft.version
         val versionedDraft = draft.copy(version = maxOf(draft.version, latestVersion) + 1)
-        val delta = versionedDraft.content.length - (oldDraft?.content?.length ?: draft.content.length)
+        val delta = versionedDraft.content.length - oldDraft.content.length
         val updatedSnapshot = snapshot.copy(
-            novel = snapshot.novel.copy(currentWords = (snapshot.novel.currentWords + delta).coerceAtLeast(0)),
+            novel = snapshot.novel.copy(
+                currentWords = (snapshot.novel.currentWords + delta).coerceAtLeast(0),
+                currentChapter = draft.chapterNumber,
+            ),
         )
         persistStory(updatedSnapshot, versionedDraft, now)
         saveChapterVersion(versionedDraft, now)
@@ -252,6 +249,15 @@ class PersistentStoryRepository(context: Context) {
                 updatedAt = now,
             )
         )
+        chapterStateDao.upsert(
+            ChapterStateEntity(
+                id = draft.id,
+                novelId = draft.novelId,
+                chapterNumber = draft.chapterNumber,
+                draftJson = StoreJson.encodeToString(ChapterDraft.serializer(), draft),
+                updatedAt = now,
+            )
+        )
     }
 
     private suspend fun saveChapterVersion(draft: ChapterDraft, now: Long) {
@@ -298,7 +304,7 @@ class PersistentStoryRepository(context: Context) {
                 add(
                     MemoryChunkEntity(
                         "character:${item.id}", novelId, "CHARACTER", item.id, item.lastUpdatedChapter,
-                        "${item.name}。性格：${item.personality.joinToString("、")}。地点：${item.location}。身体：${item.physicalState}。情绪：${item.emotionalState}。目标：${item.goal}。已知秘密：${item.knownSecrets.joinToString("、")}。持有：${item.possessions.joinToString("、")}。",
+                        "${item.name}。性格：${item.personality.joinToString("、")}。地点：${item.location}。身体：${item.physicalState}。情绪：${item.emotionalState}。目标：${item.goal}。关系：${item.relationshipNotes.entries.joinToString("；") { "${it.key}=${it.value}" }}。已知秘密：${item.knownSecrets.joinToString("、")}。持有：${item.possessions.joinToString("、")}。",
                         now,
                     )
                 )
@@ -316,7 +322,6 @@ class PersistentStoryRepository(context: Context) {
                 add(MemoryChunkEntity("summary:${novelId}:$index", novelId, "SUMMARY", "summary-$index", null, text, now))
             }
         }
-        // 只重建结构化记忆，历史章节块必须保留，否则长篇写到后面会遗失旧正文。
         memoryDao.deleteStructuredForNovel(novelId)
         if (chunks.isNotEmpty()) memoryDao.upsertAll(chunks)
     }
@@ -326,7 +331,6 @@ class PersistentStoryRepository(context: Context) {
         val additions = folded.joinToString("\n") { it.take(360) }
         val merged = listOf(existing.trim(), additions.trim()).filter { it.isNotBlank() }.joinToString("\n")
         if (merged.length <= 6_500) return merged
-        // 保留最早的核心开头和最近的折叠摘要，避免上下文无限增长。
         return merged.take(1_500) + "\n……\n" + merged.takeLast(4_700)
     }
 
@@ -355,6 +359,10 @@ class PersistentStoryRepository(context: Context) {
         )
         else -> this
     }
+
+    private fun ChapterStateEntity.decodeDraftOrNull(): ChapterDraft? = runCatching {
+        StoreJson.decodeFromString(ChapterDraft.serializer(), draftJson)
+    }.getOrNull()
 
     private fun AiProviderEntity.toStored() = StoredAiProvider(
         id = id,

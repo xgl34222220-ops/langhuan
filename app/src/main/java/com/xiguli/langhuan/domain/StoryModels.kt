@@ -123,6 +123,7 @@ data class ScenePlan(
 @Serializable
 data class StorySnapshot(
     val novel: Novel,
+    /** 当前章节所处的总纲→卷纲→章纲链，直接送入写作 Prompt。 */
     val activeOutline: List<OutlineNode>,
     val bible: List<BibleEntry>,
     val characters: List<CharacterState>,
@@ -131,4 +132,6 @@ data class StorySnapshot(
     val recentSummaries: List<String>,
     /** 被折叠的较早章节摘要。默认值保证 0.3 数据可直接反序列化。 */
     val longTermSummary: String = "",
+    /** 完整三级大纲。0.4 以前没有该字段，加载时为空则用 activeOutline 自动补齐。 */
+    val outline: List<OutlineNode> = emptyList(),
 )
