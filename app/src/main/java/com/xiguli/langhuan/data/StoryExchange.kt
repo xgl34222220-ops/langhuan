@@ -14,7 +14,12 @@ import kotlinx.serialization.json.Json
 enum class ExportFormat(val extension: String, val mimeType: String) {
     TXT("txt", "text/plain"),
     MARKDOWN("md", "text/markdown"),
-    EPUB("epub", "application/epub+zip"),
+    EPUB("epub", "application/epub+zip");
+
+    companion object {
+        /** Compatibility sentinel for 0.6 transition; project backups use StoryExchange.exportProject. */
+        val PROJECT: Nothing? = null
+    }
 }
 
 data class ExportArtifact(
