@@ -73,8 +73,18 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                     AppPage.Studio -> StudioPage(state, viewModel::generateChapter)
                     AppPage.Memory -> MemoryPage(state.snapshot)
                     AppPage.Settings -> SettingsPage(
-                        state.provider, viewModel::setBaseUrl, viewModel::setApiKey,
-                        viewModel::detectProvider, viewModel::selectModel, viewModel::setManualModel,
+                        state.provider,
+                        viewModel::setProviderName,
+                        viewModel::setBaseUrl,
+                        viewModel::setApiKey,
+                        viewModel::detectProvider,
+                        viewModel::selectModel,
+                        viewModel::setManualModel,
+                        viewModel::newProvider,
+                        viewModel::editProvider,
+                        viewModel::activateProvider,
+                        viewModel::deleteProvider,
+                        viewModel::saveProvider,
                     )
                 }
             }
@@ -91,7 +101,12 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 if (result.issues.isEmpty()) Pill("0 个冲突 · 可以保存", LocalMiuixTokens.current.success)
                 result.issues.forEach { IssueRow(it) }
             } },
-            confirmButton = { Button(viewModel::dismissResult) { Text(if (result.canCommit) "进入正文" else "按建议重写") } },
+            confirmButton = {
+                Button(onClick = if (result.canCommit) viewModel::commitResult else viewModel::dismissResult, enabled = !state.isSaving) {
+                    if (state.isSaving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text(if (result.canCommit) "保存正文与记忆" else "返回修改")
+                }
+            },
         )
     }
 }
@@ -177,19 +192,19 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(if (ready) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff, null, tint = if (ready) LocalMiuixTokens.current.success else LocalMiuixTokens.current.textSecondary)
             Column(Modifier.padding(start = 10.dp)) {
-                Text(if (ready) state.provider.discovery?.providerLabel.orEmpty() else "离线体验模式", fontWeight = FontWeight.Bold)
-                Text(if (ready) state.provider.activeModel else "到设置中接入 AI 中转站", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(if (ready) state.provider.activeProviderLabel else "离线体验模式", fontWeight = FontWeight.Bold)
+                Text(if (ready) state.provider.generationModel else "到设置中接入 AI 中转站", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         }
     } }
     item { Button(generate, enabled = !state.isGenerating, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(20.dp)) {
         if (state.isGenerating) { CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp); Spacer(Modifier.width(9.dp)) }
-        Text(if (state.isGenerating) "正在生成并检查…" else "生成本章正文", style = MaterialTheme.typography.titleMedium)
+        Text(if (state.isGenerating) "正在检索记忆、生成并检查…" else "生成本章正文", style = MaterialTheme.typography.titleMedium)
     } }
     item { AnimatedVisibility(state.error != null) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) } }
 }
 
-@Composable private fun MemoryPage(s: StorySnapshot) = Page("长期记忆", "把剧情事实变成 AI 可检索的结构化状态") {
+@Composable private fun MemoryPage(s: StorySnapshot) = Page("长期记忆", "Room 持久化 + 相关记忆检索，避免长篇越写越丢设定") {
     item { MemorySection("小说圣经", "锁定世界规则和叙事边界", s.bible.size, Icons.Rounded.Lock) }
     item { MemorySection("人物状态", "位置、伤势、目标、秘密与物品", s.characters.size, Icons.Rounded.Psychology) }
     item { MemorySection("时间线", "事件先后、地点、参与者和后果", s.recentTimeline.size, Icons.Rounded.Timeline) }
@@ -202,19 +217,53 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 }
 
 @Composable private fun SettingsPage(
-    p: ProviderUiState, base: (String) -> Unit, key: (String) -> Unit, detect: () -> Unit,
-    select: (DiscoveredModel) -> Unit, manual: (String) -> Unit,
-) = Page("AI 服务", "自动识别中转站协议与可用大模型") {
+    p: ProviderUiState,
+    name: (String) -> Unit,
+    base: (String) -> Unit,
+    key: (String) -> Unit,
+    detect: () -> Unit,
+    select: (DiscoveredModel) -> Unit,
+    manual: (String) -> Unit,
+    createNew: () -> Unit,
+    edit: (String) -> Unit,
+    activate: (String) -> Unit,
+    delete: (String) -> Unit,
+    save: () -> Unit,
+) = Page("AI 服务", "多个中转站独立保存、随时切换，密钥加密存储") {
+    if (p.savedProviders.isNotEmpty()) {
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Heading("已保存 AI")
+            Pill("${p.savedProviders.size} 个", MaterialTheme.colorScheme.primary)
+        } }
+        items(p.savedProviders, key = { it.id }) { provider ->
+            SavedProviderRow(
+                provider = provider,
+                active = provider.id == p.activeProviderId,
+                onActivate = { activate(provider.id) },
+                onEdit = { edit(provider.id) },
+                onDelete = { delete(provider.id) },
+            )
+        }
+        item { OutlinedButton(createNew, Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+            Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(8.dp)); Text("添加新的 AI 服务")
+        } }
+    }
+
     item { MiuixCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.Hub, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
-            Column(Modifier.padding(start = 11.dp)) { Text("通用模型兼容层", style = MaterialTheme.typography.titleMedium); Text("OpenAI · Claude · Gemini · Azure · Ollama", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall) }
+            Column(Modifier.padding(start = 11.dp)) {
+                Text(if (p.editingProviderId == null) "添加 AI 服务" else "编辑 AI 服务", style = MaterialTheme.typography.titleMedium)
+                Text("OpenAI · Claude · Gemini · Azure · Ollama", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+            }
         }
         Spacer(Modifier.height(15.dp))
+        OutlinedTextField(p.providerName, name, Modifier.fillMaxWidth(), label = { Text("名称") }, placeholder = { Text("例如：DeepSeek 主力 / Claude 长文") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+        Spacer(Modifier.height(9.dp))
         OutlinedTextField(p.baseUrl, base, Modifier.fillMaxWidth(), label = { Text("API 地址") }, placeholder = { Text("https://api.example.com/v1") }, singleLine = true, shape = RoundedCornerShape(16.dp))
         Spacer(Modifier.height(9.dp))
-        OutlinedTextField(p.apiKey, key, Modifier.fillMaxWidth(), label = { Text("API Key") }, leadingIcon = { Icon(Icons.Rounded.Key, null) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, shape = RoundedCornerShape(16.dp))
-        Text("密钥仅保留在本次运行内，不写入明文文件。", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(p.apiKey, key, Modifier.fillMaxWidth(), label = { Text(if (p.hasStoredKey) "API Key（留空沿用已保存密钥）" else "API Key") }, leadingIcon = { Icon(Icons.Rounded.Key, null) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, shape = RoundedCornerShape(16.dp))
+        Text(if (p.hasStoredKey) "已有密钥保存在 Android Keystore 加密存储中。" else "密钥不会写入 Room 数据库或明文配置文件。", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(13.dp))
         Button(detect, enabled = p.baseUrl.isNotBlank() && !p.isDetecting, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(17.dp)) {
             if (p.isDetecting) CircularProgressIndicator(Modifier.size(19.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Rounded.Refresh, null)
@@ -231,7 +280,42 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         item { Heading("选择模型") }
         items(d.models) { m -> ModelRow(m, p.selectedModel == m.id) { select(m) } }
         item { OutlinedTextField(p.manualModel, manual, Modifier.fillMaxWidth(), label = { Text(if (d.models.isEmpty()) "模型名 / Azure 部署名" else "或手动填写模型名") }, placeholder = { Text("例如 deepseek-chat") }, singleLine = true, shape = RoundedCornerShape(16.dp)) }
-        if (p.ready) item { MiuixCard { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.CloudDone, null, tint = LocalMiuixTokens.current.success); Text("已就绪：${p.activeModel}", Modifier.padding(start = 10.dp), fontWeight = FontWeight.Bold) } } }
+        if (p.transientReady) item {
+            Button(save, enabled = !p.isSaving, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) {
+                if (p.isSaving) CircularProgressIndicator(Modifier.size(19.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Rounded.Save, null)
+                Spacer(Modifier.width(8.dp)); Text(if (p.editingProviderId == null) "保存并设为当前 AI" else "保存修改并设为当前 AI")
+            }
+        }
+    }
+}
+
+@Composable private fun SavedProviderRow(
+    provider: SavedProviderUi,
+    active: Boolean,
+    onActivate: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val shape = RoundedCornerShape(23.dp)
+    Row(
+        Modifier.fillMaxWidth().squircleClip(23.dp)
+            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else LocalMiuixTokens.current.cardBackground.copy(alpha = .94f))
+            .border(if (active) 1.1.dp else .5.dp, if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape)
+            .clickable(onClick = onActivate).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(44.dp).squircleClip(15.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
+            Icon(if (active) Icons.Rounded.CloudDone else Icons.Rounded.CloudQueue, null, tint = MaterialTheme.colorScheme.primary)
+        }
+        Column(Modifier.padding(start = 11.dp).weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(provider.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (active) { Spacer(Modifier.width(7.dp)); Pill("当前", LocalMiuixTokens.current.success) }
+            }
+            Text("${provider.model} · ${provider.protocol.label}", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        IconButton(onEdit) { Icon(Icons.Rounded.Edit, "编辑") }
+        IconButton(onDelete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) }
     }
 }
 
