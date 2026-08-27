@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.xiguli.langhuan.data.ExportFormat
 
 @Composable
 fun LanghuanRoot(viewModel: StudioViewModel) {
@@ -32,7 +31,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        if (uri != null) viewModel.exportDocument(uri, ExportFormat.PROJECT)
+        if (uri != null) viewModel.exportProjectBackup(uri)
     }
     val restoreLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
