@@ -92,14 +92,15 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
                         compareByDescending<DiscoveredModel> { it.id == provider.model }
                             .thenBy { it.displayName.lowercase() }
                     )
+                    val unsupported = ordered.count { modelRoute(provider.baseUrl, it.id).supported.not() }
                     _state.update {
                         it.copy(
                             isLoadingModels = false,
                             models = ordered,
-                            message = if (ordered.isEmpty()) {
-                                "接口可识别，但没有开放模型列表；请在 AI 服务编辑页手动填写模型名。"
-                            } else {
-                                "已读取 ${ordered.size} 个模型"
+                            message = when {
+                                ordered.isEmpty() -> "接口可识别，但没有开放模型列表；请在 AI 服务编辑页手动填写模型名。"
+                                unsupported > 0 -> "已读取 ${ordered.size} 个模型；其中 $unsupported 个使用当前版本尚未支持的 Responses/Messages 路由。"
+                                else -> "已读取 ${ordered.size} 个模型"
                             },
                         )
                     }
@@ -113,6 +114,11 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
     fun switchModel(modelId: String) {
         val provider = _state.value.selectedProvider ?: return
         if (modelId.isBlank() || _state.value.isSwitching) return
+        val route = modelRoute(provider.baseUrl, modelId)
+        if (!route.supported) {
+            _state.update { it.copy(error = "${route.label} 模型需要按模型自动路由，当前 0.18 不会伪装成 Chat Completions 请求。") }
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(isSwitching = true, error = null) }
             runCatching {
@@ -135,6 +141,26 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
                 _state.update { it.copy(isSwitching = false, error = error.message ?: "切换模型失败") }
             }
         }
+    }
+}
+
+private data class QuickModelRoute(val label: String, val supported: Boolean)
+
+/** OpenCode Go 同一个 /models 会返回多种协议模型，0.18 先明确标出而不是假装都能走 Chat API。 */
+private fun modelRoute(baseUrl: String, modelId: String): QuickModelRoute {
+    if (!baseUrl.contains("opencode.ai/zen/go", ignoreCase = true)) {
+        return QuickModelRoute("当前服务协议", true)
+    }
+    val id = modelId.substringAfterLast('/').lowercase()
+    val responses = setOf("grok-4.6", "gpt-5.6-luna", "muse-spark-1.2-contributor")
+    val messages = setOf(
+        "minimax-m3", "minimax-m2.7", "minimax-m2.5",
+        "qwen3.8-max", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+    )
+    return when (id) {
+        in responses -> QuickModelRoute("OpenAI Responses · 暂不可用", false)
+        in messages -> QuickModelRoute("Anthropic Messages · 暂不可用", false)
+        else -> QuickModelRoute("OpenAI Chat Completions", true)
     }
 }
 
@@ -223,11 +249,13 @@ fun ProviderQuickSwitchSheet(
                         verticalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
                         items(state.models.take(60), key = { it.id }) { model ->
-                            val selected = model.id == state.selectedProvider?.model
+                            val provider = state.selectedProvider
+                            val route = provider?.let { modelRoute(it.baseUrl, model.id) } ?: QuickModelRoute("当前服务协议", true)
+                            val selected = model.id == provider?.model
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable(enabled = !state.isSwitching) {
+                                    .clickable(enabled = !state.isSwitching && route.supported) {
                                         state.selectedProviderId?.let(onProviderActivated)
                                         viewModel.switchModel(model.id)
                                     },
@@ -235,11 +263,15 @@ fun ProviderQuickSwitchSheet(
                                 color = if (selected) {
                                     MaterialTheme.colorScheme.primaryContainer
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f)
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (route.supported) .45f else .25f)
                                 },
                             ) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary)
+                                    Icon(
+                                        Icons.Rounded.Psychology,
+                                        null,
+                                        tint = if (route.supported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                     Column(Modifier.padding(start = 9.dp).weight(1f)) {
                                         Text(
                                             model.displayName,
@@ -247,15 +279,13 @@ fun ProviderQuickSwitchSheet(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
-                                        if (model.id != model.displayName) {
-                                            Text(
-                                                model.id,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
+                                        Text(
+                                            if (provider?.baseUrl?.contains("opencode.ai/zen/go", ignoreCase = true) == true) route.label else model.id,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (route.supported) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
                                     if (selected) {
                                         Text("当前", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
