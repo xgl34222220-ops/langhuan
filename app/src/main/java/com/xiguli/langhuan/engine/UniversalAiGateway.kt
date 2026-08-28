@@ -4,7 +4,9 @@ import com.xiguli.langhuan.domain.GeneratedChapter
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -14,7 +16,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -96,7 +97,11 @@ class ProviderAutoDetector {
         if (protocol == ApiProtocol.AZURE_OPENAI) {
             val models = inferredModels(protocol, base)
             return ProviderDiscovery(
-                protocol, "Azure OpenAI", base, models, false,
+                protocol,
+                "Azure OpenAI",
+                base,
+                models,
+                false,
                 if (models.isEmpty()) "已识别 Azure OpenAI，请填写部署名称" else "已从部署地址识别模型",
             )
         }
@@ -108,14 +113,17 @@ class ProviderAutoDetector {
         val models = when (protocol) {
             ApiProtocol.OPENAI_COMPATIBLE, ApiProtocol.ANTHROPIC ->
                 root["data"].asObjects().mapNotNull { item -> item.string("id")?.toModel() }
+
             ApiProtocol.GEMINI -> root["models"].asObjects().mapNotNull { item ->
                 val methods = item["supportedGenerationMethods"] as? JsonArray
                 if (methods != null && methods.none { it.jsonPrimitive.contentOrNull == "generateContent" }) return@mapNotNull null
                 item.string("name")?.removePrefix("models/")?.toModel(item.string("displayName"))
             }
+
             ApiProtocol.OLLAMA -> root["models"].asObjects().mapNotNull { item ->
                 item.string("name")?.toModel(item.string("name"))
             }
+
             else -> emptyList()
         }.distinctBy { it.id }.sortedBy { it.id.lowercase() }
 
@@ -150,21 +158,34 @@ class UniversalAiGateway(
     override suspend fun generateStreaming(
         prompt: PromptBundle,
         onDelta: (String) -> Unit,
-    ): GeneratedChapter = withContext(Dispatchers.IO) {
+    ): GeneratedChapter {
         require(config.baseUrl.isNotBlank()) { "请先配置 API 地址" }
         require(config.model.isNotBlank()) { "请先选择或填写模型" }
         val protocol = resolvedProtocol()
-        runCatching {
+        var emitted = false
+        val guardedDelta: (String) -> Unit = { preview ->
+            emitted = true
+            onDelta(preview)
+        }
+
+        return try {
             val raw = when (protocol) {
-                ApiProtocol.ANTHROPIC -> streamAnthropic(prompt, onDelta)
-                ApiProtocol.GEMINI -> streamGemini(prompt, onDelta)
-                ApiProtocol.AZURE_OPENAI -> streamOpenAi(prompt, azure = true, onDelta)
-                ApiProtocol.OLLAMA -> streamOllama(prompt, onDelta)
-                else -> streamOpenAi(prompt, azure = false, onDelta)
+                ApiProtocol.ANTHROPIC -> streamAnthropic(prompt, guardedDelta)
+                ApiProtocol.GEMINI -> streamGemini(prompt, guardedDelta)
+                ApiProtocol.AZURE_OPENAI -> streamOpenAi(prompt, azure = true, guardedDelta)
+                ApiProtocol.OLLAMA -> streamOllama(prompt, guardedDelta)
+                else -> streamOpenAi(prompt, azure = false, guardedDelta)
             }
             decodeChapter(raw)
-        }.getOrElse {
-            // 某些中转站声明兼容但禁用了 SSE。自动回退普通请求，保证可用性。
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            if (emitted) {
+                throw IllegalStateException(
+                    "流式连接在已经开始返回正文后中断。为避免重复扣费，琅嬛没有自动发起第二次请求；可手动重新生成。",
+                    error,
+                )
+            }
             val chapter = generate(prompt)
             onDelta(chapter.content)
             chapter
@@ -182,7 +203,7 @@ class UniversalAiGateway(
         return requireSuccess(http(endpoint, "POST", authHeaders(protocol, config.apiKey), body.toString()))
     }
 
-    private fun streamOpenAi(prompt: PromptBundle, azure: Boolean, onDelta: (String) -> Unit): String {
+    private suspend fun streamOpenAi(prompt: PromptBundle, azure: Boolean, onDelta: (String) -> Unit): String {
         val endpoint = if (azure) azureChatEndpoint(config.baseUrl, config.model) else openAiChatEndpoint(config.baseUrl)
         val protocol = if (azure) ApiProtocol.AZURE_OPENAI else ApiProtocol.OPENAI_COMPATIBLE
         val buffer = StringBuilder()
@@ -217,7 +238,7 @@ class UniversalAiGateway(
         return requireSuccess(http(anthropicMessagesEndpoint(config.baseUrl), "POST", authHeaders(ApiProtocol.ANTHROPIC, config.apiKey), body.toString()))
     }
 
-    private fun streamAnthropic(prompt: PromptBundle, onDelta: (String) -> Unit): String {
+    private suspend fun streamAnthropic(prompt: PromptBundle, onDelta: (String) -> Unit): String {
         val buffer = StringBuilder()
         streamHttp(
             anthropicMessagesEndpoint(config.baseUrl),
@@ -245,15 +266,17 @@ class UniversalAiGateway(
     }
 
     private fun callGemini(prompt: PromptBundle): String {
-        return requireSuccess(http(
-            geminiGenerateEndpoint(config.baseUrl, config.model, config.apiKey),
-            "POST",
-            emptyMap(),
-            geminiBody(prompt).toString(),
-        ))
+        return requireSuccess(
+            http(
+                geminiGenerateEndpoint(config.baseUrl, config.model, config.apiKey),
+                "POST",
+                emptyMap(),
+                geminiBody(prompt).toString(),
+            )
+        )
     }
 
-    private fun streamGemini(prompt: PromptBundle, onDelta: (String) -> Unit): String {
+    private suspend fun streamGemini(prompt: PromptBundle, onDelta: (String) -> Unit): String {
         val buffer = StringBuilder()
         streamHttp(
             geminiStreamEndpoint(config.baseUrl, config.model, config.apiKey),
@@ -288,15 +311,17 @@ class UniversalAiGateway(
     }
 
     private fun callOllama(prompt: PromptBundle): String {
-        return requireSuccess(http(
-            ollamaChatEndpoint(config.baseUrl),
-            "POST",
-            emptyMap(),
-            ollamaBody(prompt, stream = false).toString(),
-        ))
+        return requireSuccess(
+            http(
+                ollamaChatEndpoint(config.baseUrl),
+                "POST",
+                emptyMap(),
+                ollamaBody(prompt, stream = false).toString(),
+            )
+        )
     }
 
-    private fun streamOllama(prompt: PromptBundle, onDelta: (String) -> Unit): String {
+    private suspend fun streamOllama(prompt: PromptBundle, onDelta: (String) -> Unit): String {
         val buffer = StringBuilder()
         streamHttp(ollamaChatEndpoint(config.baseUrl), emptyMap(), ollamaBody(prompt, stream = true).toString()) { line ->
             val root = runCatching { WireJson.parseToJsonElement(line.trim()).jsonObject }.getOrNull() ?: return@streamHttp
@@ -326,11 +351,11 @@ class UniversalAiGateway(
     private fun extractText(protocol: ApiProtocol, body: String): String {
         val root = WireJson.parseToJsonElement(body).jsonObject
         return when (protocol) {
-            ApiProtocol.ANTHROPIC -> root["content"].asObjects()
-                .firstNotNullOfOrNull { it.string("text") }
+            ApiProtocol.ANTHROPIC -> root["content"].asObjects().firstNotNullOfOrNull { it.string("text") }
             ApiProtocol.GEMINI -> root["candidates"].asObjects().firstOrNull()
                 ?.get("content")?.let { it as? JsonObject }?.get("parts").asObjects()
                 .orEmpty().joinToString("") { it.string("text").orEmpty() }
+
             ApiProtocol.OLLAMA -> root["message"]?.jsonObject?.string("content")
             else -> root["choices"].asObjects().firstOrNull()
                 ?.get("message")?.jsonObject?.string("content")
@@ -370,12 +395,12 @@ private fun http(url: String, method: String, headers: Map<String, String>, body
     }
 }
 
-private fun streamHttp(
+private suspend fun streamHttp(
     url: String,
     headers: Map<String, String>,
     body: String,
     onLine: (String) -> Unit,
-) {
+) = runInterruptible(Dispatchers.IO) {
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     try {
         connection.requestMethod = "POST"
@@ -391,8 +416,12 @@ private fun streamHttp(
             val error = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             error("AI 服务返回 $status：${error.take(500)}")
         }
-        connection.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
-            lines.filter { it.isNotBlank() && !it.startsWith("event:") }.forEach(onLine)
+        connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+            while (true) {
+                val line = reader.readLine() ?: break
+                if (Thread.currentThread().isInterrupted) throw InterruptedException("AI stream cancelled")
+                if (line.isNotBlank() && !line.startsWith("event:")) onLine(line)
+            }
         }
     } finally {
         connection.disconnect()
@@ -464,21 +493,25 @@ private fun modelEndpoint(protocol: ApiProtocol, base: String, key: String): Str
         base.endsWith("/v1") -> "$base/models"
         else -> "$base/v1/models"
     }
+
     ApiProtocol.ANTHROPIC -> when {
         base.endsWith("/messages") -> base.removeSuffix("/messages") + "/models"
         base.endsWith("/models") -> base
         base.endsWith("/v1") -> "$base/models"
         else -> "$base/v1/models"
     }
+
     ApiProtocol.GEMINI -> {
         val root = base.substringBefore("/v1beta").trimEnd('/')
         "$root/v1beta/models?key=${urlEncode(key)}"
     }
+
     ApiProtocol.OLLAMA -> when {
         base.endsWith("/api/chat") -> base.removeSuffix("/api/chat") + "/api/tags"
         base.endsWith("/api/tags") -> base
         else -> "$base/api/tags"
     }
+
     else -> base
 }
 
