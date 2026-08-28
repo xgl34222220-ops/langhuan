@@ -120,64 +120,93 @@ fun AiFirstShelf(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(18.dp, 20.dp, 18.dp, 110.dp),
+        contentPadding = PaddingValues(18.dp, 18.dp, 18.dp, 110.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("琅嬛书架", style = MaterialTheme.typography.displaySmall)
-                    Text("先和 AI 聊出一本书，再进入长期创作", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("琅嬛书架", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
+                    Text(
+                        "聊出一本书 · 蒸馏参考 · 长期创作",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
                 if (state.stories.isNotEmpty()) {
-                    IconButton(onClick = onCloseShelf) { Icon(Icons.Rounded.Close, "进入工作台") }
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        IconButton(onClick = onCloseShelf) { Icon(Icons.Rounded.Close, "进入工作台") }
+                    }
                 }
             }
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Button(
-                    onClick = if (aiReady) onStartCreation else onConfigureAi,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    enabled = !state.isBusy,
-                    shape = RoundedCornerShape(19.dp),
-                ) {
-                    Icon(if (aiReady) Icons.Rounded.AutoAwesome else Icons.Rounded.Key, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (aiReady) "和 AI 聊出一本新小说" else "先配置 AI，再开始聊新小说")
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 1.dp,
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = if (aiReady) onStartCreation else onConfigureAi,
+                        modifier = Modifier.fillMaxWidth().height(58.dp),
+                        enabled = !state.isBusy,
+                        shape = RoundedCornerShape(19.dp),
+                    ) {
+                        Icon(if (aiReady) Icons.Rounded.AutoAwesome else Icons.Rounded.Key, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (aiReady) "和 AI 聊出一本新小说" else "先配置 AI，再开始创作", fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        FilledTonalButton(
+                            onClick = onConfigureAi,
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            enabled = !state.isBusy,
+                            shape = RoundedCornerShape(17.dp),
+                        ) {
+                            Icon(Icons.Rounded.Key, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("AI / Key", maxLines = 1)
+                        }
+                        FilledTonalButton(
+                            onClick = if (aiReady) onDistillReference else onConfigureAi,
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            enabled = !state.isBusy,
+                            shape = RoundedCornerShape(17.dp),
+                        ) {
+                            Icon(Icons.Rounded.AutoFixHigh, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("导入蒸馏", maxLines = 1)
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ShelfPill("TXT / EPUB / MD")
+                        ShelfPill("Style + Story DNA")
+                        ShelfPill("断点续跑")
+                    }
+                    Text(
+                        "整本小说先做全书结构扫描，AI 再按书长深度分层阅读；长篇不再固定只抽 30 章。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                FilledTonalButton(
-                    onClick = onConfigureAi,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    enabled = !state.isBusy,
-                    shape = RoundedCornerShape(17.dp),
-                ) {
-                    Icon(Icons.Rounded.Key, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (aiReady) "AI 服务 / API Key" else "添加 API Key")
-                }
-                OutlinedButton(
-                    onClick = if (aiReady) onDistillReference else onConfigureAi,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    enabled = !state.isBusy,
-                    shape = RoundedCornerShape(17.dp),
-                ) {
-                    Icon(Icons.Rounded.AutoFixHigh, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (aiReady) "导入参考小说 · AI 后台蒸馏" else "配置 AI 后导入参考小说")
-                }
-                Text(
-                    "支持 TXT / Markdown / EPUB。全部章节都会参与本地结构统计；AI 会按篇幅自动增加分层样本。每批成功结果都会保存断点，网络失败后可从下一批继续，不必重新花额度跑完前面批次。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 
         if (distillationTasks.isNotEmpty()) {
             item {
-                Text("参考小说蒸馏任务", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("参考小说蒸馏", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "后台任务",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             items(distillationTasks, key = { it.id }) { task ->
                 ReferenceDistillationTaskCard(
@@ -203,20 +232,30 @@ fun AiFirstShelf(
 
         if (state.stories.isEmpty()) {
             item {
-                Surface(shape = RoundedCornerShape(28.dp), tonalElevation = 2.dp) {
+                Surface(
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                ) {
                     Column(
-                        Modifier.fillMaxWidth().padding(28.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Icon(Icons.Rounded.AutoStories, null, Modifier.size(54.dp), tint = MaterialTheme.colorScheme.primary)
+                        Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                            Icon(
+                                Icons.Rounded.AutoStories,
+                                null,
+                                Modifier.padding(15.dp).size(38.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Spacer(Modifier.height(14.dp))
-                        Text("从一个想法开始", style = MaterialTheme.typography.headlineSmall)
-                        Spacer(Modifier.height(6.dp))
+                        Text("从一个想法开始", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(7.dp))
                         Text(
                             if (aiReady) {
-                                "不用先想好书名、类型和简介。告诉 AI 一个题材、一个画面，或者你喜欢的作品气质，聊到满意后再创建。"
+                                "不用先填表。说一个题材、画面、主角，或选一份蒸馏模板，AI 会陪你把它聊成完整蓝图。"
                             } else {
-                                "第一次使用先在上面添加 AI 服务和 API Key。配置完成后，就可以直接从一个题材、画面或角色开始聊天建书。"
+                                "先添加 AI 服务和 API Key，然后就可以从一个题材、画面或角色直接开始。"
                             },
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -232,6 +271,21 @@ fun AiFirstShelf(
 }
 
 @Composable
+private fun ShelfPill(text: String) {
+    Surface(
+        shape = RoundedCornerShape(99.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun ReferenceDistillationTaskCard(
     task: ReferenceDistillationTaskUi,
     fallbackProvider: String,
@@ -242,19 +296,19 @@ private fun ReferenceDistillationTaskCard(
 ) {
     val progress = task.progress.coerceIn(0, 100)
     val stageLabel = when {
-        task.state == WorkInfo.State.SUCCEEDED -> "蒸馏完成 · 已写入长期研究档案"
-        task.state == WorkInfo.State.FAILED && task.resumable -> "蒸馏中断 · 已保存 ${task.completedBatches}/${task.batches} 批断点"
+        task.state == WorkInfo.State.SUCCEEDED -> "双层 DNA 完成 · 已入长期研究档案"
+        task.state == WorkInfo.State.FAILED && task.resumable -> "任务中断 · 已保存 ${task.completedBatches}/${task.batches} 批断点"
         task.state == WorkInfo.State.FAILED -> "蒸馏失败"
         task.state == WorkInfo.State.CANCELLED -> "任务已取消"
         task.state == WorkInfo.State.ENQUEUED && task.runAttemptCount > 0 -> "等待自动重试 · 第 ${task.runAttemptCount + 1} 次尝试"
         task.state == WorkInfo.State.ENQUEUED -> "等待后台调度 / 网络连接"
         task.state == WorkInfo.State.BLOCKED -> "等待前置条件"
-        task.stage == "parse" -> "正在读取并解析小说"
-        task.stage == "prepare" -> "小说已解析 · 正在准备 AI 分层蒸馏"
-        task.stage == "distill" && task.batches > 0 -> "AI 正在分层蒸馏 Style DNA · ${task.batch}/${task.batches}"
-        task.stage == "aggregate" -> "AI 分批蒸馏完成 · 正在聚合整部 Style DNA"
-        task.stage == "done" -> "正在完成长期研究档案入库"
-        else -> "AI 蒸馏任务正在运行"
+        task.stage == "parse" -> "正在扫描全书结构"
+        task.stage == "prepare" -> "已解析 · 准备双层 DNA"
+        task.stage == "distill" && task.batches > 0 -> "AI 深度分层阅读 · ${task.batch}/${task.batches} 批"
+        task.stage == "aggregate" -> "正在聚合 Style + Story DNA"
+        task.stage == "done" -> "正在保存研究档案"
+        else -> "AI 后台蒸馏正在运行"
     }
     val icon = when (task.state) {
         WorkInfo.State.SUCCEEDED -> Icons.Rounded.CheckCircle
@@ -267,23 +321,39 @@ private fun ReferenceDistillationTaskCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(24.dp),
+        color = when (task.state) {
+            WorkInfo.State.FAILED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.42f)
+            WorkInfo.State.SUCCEEDED -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.40f)
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        tonalElevation = 1.dp,
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+                Surface(
+                    shape = RoundedCornerShape(13.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                ) {
+                    Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp))
+                }
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(stageLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("$progress%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text("$progress%", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
             }
 
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(7.dp)
+                    .height(6.dp)
                     .clip(RoundedCornerShape(99.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
@@ -298,20 +368,21 @@ private fun ReferenceDistillationTaskCard(
 
             if (task.active || task.state == WorkInfo.State.SUCCEEDED || task.resumable) {
                 Text(
-                    "AI：$provider · $model",
+                    "$provider · $model",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+
             if (task.active) {
-                Text(
-                    "这是实际 AI 分析任务。每个已完成批次会原子保存为断点；自动重试继续锁定任务启动时的服务商/模型，不会因为你中途切模型而偷偷换引擎。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ShelfPill("AI 真分析")
+                    ShelfPill("锁定模型")
+                    ShelfPill("批次断点")
+                }
+                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
                     Icon(Icons.Rounded.Close, null)
                     Spacer(Modifier.width(7.dp))
                     Text("取消后台蒸馏")
@@ -321,33 +392,36 @@ private fun ReferenceDistillationTaskCard(
             if (task.state == WorkInfo.State.SUCCEEDED) {
                 val coverage = if (task.chapters > 0) (task.samples * 100 / task.chapters).coerceAtMost(100) else 0
                 Text(
-                    "全书结构统计 ${task.chapters.coerceAtLeast(0)} 章 · AI 分层阅读 ${task.samples.coerceAtLeast(0)} 章${if (task.chapters > 0) "（约 $coverage% 章节覆盖）" else ""}",
+                    "全书扫描 ${task.chapters.coerceAtLeast(0)} 章 · AI 深度 ${task.samples.coerceAtLeast(0)} 章${if (task.chapters > 0) " · 约 $coverage% 深度覆盖" else ""}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                FilledTonalButton(onClick = onOpenReport, modifier = Modifier.fillMaxWidth()) {
+                FilledTonalButton(onClick = onOpenReport, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
                     Icon(Icons.Rounded.AutoFixHigh, null)
                     Spacer(Modifier.width(7.dp))
-                    Text("查看蒸馏报告 / Style DNA")
+                    Text("查看 Story + Style DNA")
                 }
             }
+
             if (task.state == WorkInfo.State.FAILED) {
                 if (task.error.isNotBlank()) {
                     Text(
                         task.error,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 if (task.sourceAvailable) {
-                    FilledTonalButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                    FilledTonalButton(onClick = onRetry, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
                         Icon(Icons.Rounded.Refresh, null)
                         Spacer(Modifier.width(7.dp))
-                        Text(if (task.resumable) "从断点继续蒸馏" else "重试蒸馏")
+                        Text(if (task.resumable) "从断点继续" else "重新尝试")
                     }
                 } else {
                     Text(
-                        "原导入文件副本已经不可用，请重新选择参考小说。已有完整报告不会受影响。",
+                        "原导入副本已不可用，请重新选择小说；已有完整报告不会受影响。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -403,8 +477,9 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                 .sortedWith(
                     compareByDescending<ReferenceDistillationTaskUi> { it.active }
                         .thenByDescending { it.state == WorkInfo.State.FAILED && it.resumable }
+                        .thenByDescending { it.state == WorkInfo.State.SUCCEEDED }
                 )
-                .take(3)
+                .take(5)
             delay(if (tasks.any { it.active }) 1_000L else 4_000L)
         }
     }
@@ -416,11 +491,12 @@ private fun AiShelfBookCard(book: ReaderBookUi, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(26.dp),
-        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            AiShelfCover(book, Modifier.width(88.dp).height(126.dp))
-            Column(Modifier.padding(start = 16.dp).weight(1f)) {
+        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+            AiShelfCover(book, Modifier.width(84.dp).height(120.dp))
+            Column(Modifier.padding(start = 15.dp).weight(1f)) {
                 Text(
                     book.title,
                     style = MaterialTheme.typography.titleLarge,
@@ -428,23 +504,24 @@ private fun AiShelfBookCard(book: ReaderBookUi, onClick: () -> Unit) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(5.dp))
-                Text(book.genre, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(book.genre, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(7.dp))
                 Text(
                     book.premise,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(9.dp))
-                Text(
-                    "${book.currentWords} 字 · 写到第 ${book.currentChapter} 章",
                     style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "${book.currentWords} 字 · 第 ${book.currentChapter} 章",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Icon(Icons.Rounded.ChevronRight, null)
+            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -460,11 +537,11 @@ private fun AiShelfCover(book: ReaderBookUi, modifier: Modifier) {
         Image(
             bitmap = bitmap,
             contentDescription = book.title,
-            modifier = modifier.clip(RoundedCornerShape(16.dp)),
+            modifier = modifier.clip(RoundedCornerShape(18.dp)),
             contentScale = ContentScale.Crop,
         )
     } else {
-        Surface(modifier = modifier, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+        Surface(modifier = modifier, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.MenuBook, null, tint = MaterialTheme.colorScheme.primary)
