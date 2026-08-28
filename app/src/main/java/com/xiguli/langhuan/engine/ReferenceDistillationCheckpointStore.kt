@@ -21,12 +21,18 @@ data class ReferenceDistillationCheckpoint(
     val totalBatches: Int,
     val observations: List<String>,
     val localMetrics: String,
+    /** Hierarchical final aggregation progress. Old checkpoints decode with these safe defaults. */
+    val completedAggregateGroups: Int = 0,
+    val totalAggregateGroups: Int = 0,
+    val aggregateSummaries: List<String> = emptyList(),
+    val aggregationVersion: Int = 1,
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
 /**
  * Persists only distilled observations and progress. It never stores imported novel prose, so a
- * retry can resume from the next AI batch without turning the reference text into permanent memory.
+ * retry can resume from the next AI batch or aggregation group without turning the reference text
+ * into permanent memory.
  */
 class ReferenceDistillationCheckpointStore(context: Context) {
     private val json = Json {
