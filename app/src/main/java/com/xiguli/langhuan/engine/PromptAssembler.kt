@@ -26,140 +26,240 @@ data class PromptAttachment(
 
 class PromptAssembler(
     private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
-    private val longFormEngine: LongFormContinuityEngine = LongFormContinuityEngine(),
 ) {
-    fun build(request: GenerationRequest): PromptBundle {
+    /**
+     * Pure prose prompt. The author never has to maintain database fields while writing.
+     * It only receives the current chapter's dramatic job plus past facts needed for continuity.
+     */
+    fun buildProse(request: GenerationRequest): PromptBundle {
         val snapshot = request.snapshot
-        val currentChapter = request.chapter.chapterNumber.coerceAtLeast(1)
+        val chapterNumber = request.chapter.chapterNumber.coerceAtLeast(1)
         val styleRules = snapshot.bible
             .filter { it.category == BibleCategory.STYLE }
             .joinToString("\n") { "- ${it.name}: ${it.content}${if (it.locked) "（必须遵守）" else "（偏好）"}" }
-            .ifBlank { "- 暂无专门文风模板；保持自然、稳定、符合当前作品类型。" }
+            .ifBlank { "- 保持自然、具体、有场景感的中文小说叙事；不要写成设定说明或案件报告。" }
 
         val hardRules = snapshot.bible
             .filter { it.category != BibleCategory.STYLE && (it.locked || it.category == BibleCategory.FORBIDDEN) }
             .joinToString("\n") { "- [${it.category}] ${it.name}: ${it.content}" }
 
-        val outline = snapshot.activeOutline
+        // Higher-level outlines provide direction only. Their later turning points are deliberately hidden
+        // from the prose author so it cannot spend future chapters' reveals early.
+        val direction = snapshot.activeOutline
+            .filter { it.level != OutlineLevel.CHAPTER }
             .sortedWith(compareBy({ it.level.ordinal }, { it.order }))
             .joinToString("\n") { node ->
-                val level = when (node.level) {
-                    OutlineLevel.MASTER -> "总纲"
-                    OutlineLevel.VOLUME -> "卷纲"
-                    OutlineLevel.CHAPTER -> "章纲"
-                }
-                buildString {
-                    append("- [$level] ${node.title}｜目标:${node.objective}｜冲突:${node.conflict}｜转折:${node.turningPoint}")
-                    if (node.mustInclude.isNotEmpty()) append("｜必须包含:${node.mustInclude.joinToString("、")}")
-                    if (node.forbidden.isNotEmpty()) append("｜本层禁止:${node.forbidden.joinToString("、")}")
-                }
+                val level = if (node.level == OutlineLevel.MASTER) "全书方向" else "本卷方向"
+                "- [$level] ${node.title}｜阶段目标=${node.objective}｜长期冲突=${node.conflict}"
             }
+            .ifBlank { "- 以当前章纲为准。" }
+
+        val chapterOutline = snapshot.activeOutline
+            .lastOrNull { it.level == OutlineLevel.CHAPTER }
+        val chapterTask = buildString {
+            appendLine("章节：第${request.chapter.chapterNumber}章 ${request.chapter.title}")
+            appendLine("本章唯一主目标：${request.chapter.objective}")
+            chapterOutline?.let { node ->
+                appendLine("本章冲突：${node.conflict}")
+                appendLine("本章转折/落点：${node.turningPoint}")
+                if (node.mustInclude.isNotEmpty()) appendLine("本章必须出现：${node.mustInclude.joinToString("、")}")
+                if (node.forbidden.isNotEmpty()) appendLine("本章绝对禁止：${node.forbidden.joinToString("、")}")
+            }
+        }.trim()
 
         val characters = snapshot.characters.joinToString("\n") {
             "- ${it.name}: 地点=${it.location}; 身体=${it.physicalState}; 情绪=${it.emotionalState}; " +
-                "目标=${it.goal}; 性格=${it.personality.joinToString("、")}; 关系=${it.relationshipNotes.entries.joinToString("；") { e -> "${e.key}=${e.value}" }}; 已知秘密=${it.knownSecrets.joinToString("、")}"
+                "当前目标=${it.goal}; 性格=${it.personality.joinToString("、")}; " +
+                "关系=${it.relationshipNotes.entries.joinToString("；") { e -> "${e.key}=${e.value}" }}; " +
+                "本人已知=${it.knownSecrets.joinToString("、")}"
         }
 
         val timeline = snapshot.recentTimeline
             .sortedWith(compareBy({ it.chapter }, { it.orderInChapter }))
-            .takeLast(40)
+            .takeLast(24)
             .joinToString("\n") {
                 val structured = if (it.storyDay > 0) {
                     "故事第${it.storyDay}天·${it.timeOfDay.ifBlank { it.storyTime }}｜距上次=${it.elapsedFromPrevious.ifBlank { "未记录" }}${if (it.isFlashback) "｜闪回" else ""}"
                 } else it.storyTime.ifBlank { "旧时间记录未结构化" }
-                "- 第${it.chapter}章/$structured/${it.location}: ${it.summary}; 后果=${it.consequences.joinToString("、")}"
+                "- 第${it.chapter}章/$structured/${it.location}: ${it.summary}"
             }
 
-        val foreshadowing = snapshot.relevantForeshadowing.joinToString("\n") { item ->
-            val urgency = when {
-                item.status in setOf(ForeshadowStatus.RESOLVED, ForeshadowStatus.ABANDONED) -> ""
-                item.expectedChapterEnd > 0 && currentChapter > item.expectedChapterEnd -> "；回收提醒=已超过计划窗口"
-                item.expectedChapterStart > 0 && currentChapter >= item.expectedChapterStart -> "；回收提醒=已进入计划窗口"
-                else -> ""
+        val foreshadowing = snapshot.relevantForeshadowing
+            .filter { it.status !in setOf(ForeshadowStatus.RESOLVED, ForeshadowStatus.ABANDONED) }
+            .joinToString("\n") { item ->
+                val due = item.expectedChapterStart > 0 && chapterNumber >= item.expectedChapterStart
+                if (due) {
+                    "- ${item.title}: 已进入可触及窗口；已有线索=${item.detail}；本章只有章纲需要时才自然推进。"
+                } else {
+                    "- ${item.title}: 已有线索=${item.detail}；尚未到解释/回收期，本章禁止揭示答案。"
+                }
             }
-            "- id=${item.id}; ${item.title}; 状态=${item.status}; 计划窗口=${item.expectedChapterStart}-${item.expectedChapterEnd}$urgency; 细节=${item.detail}; 预期回收=${item.expectedPayoff}"
-        }
+            .ifBlank { "- 无需主动处理伏笔。" }
 
         val scenes = request.chapter.scenePlan.sortedBy { it.order }.joinToString("\n") {
             val clock = if (it.storyDay > 0 || it.timeOfDay.isNotBlank()) {
                 "故事第${it.storyDay.takeIf { day -> day > 0 } ?: 0}天·${it.timeOfDay.ifBlank { "待锁定" }}; 距上一场=${it.elapsedFromPrevious.ifBlank { "连续" }}; ${if (it.isFlashback) "闪回" else "主时间线"}; "
             } else "时间沿用时间轴锁; "
-            "- 场景${it.order}: $clock 视角=${it.viewpoint}; 地点=${it.location}; 目的=${it.purpose}; 冲突=${it.conflict}; 结果=${it.outcome}"
+            "- 场景${it.order}: $clock 视角=${it.viewpoint}; 地点=${it.location}; 目的=${it.purpose}; 冲突=${it.conflict}; 场景落点=${it.outcome}"
         }
 
-        val recentMemory = snapshot.recentSummaries.joinToString("\n") { "- $it" }
-        val longTerm = snapshot.longTermSummary.ifBlank { "暂无；以锁定设定与最近事件为准。" }
+        val recentMemory = snapshot.recentSummaries.takeLast(12).joinToString("\n") { "- $it" }
         val chronology = chronologyGuard.promptText(snapshot, request.chapter.scenePlan)
-        val longFormNavigation = longFormEngine.promptText(snapshot)
 
         return PromptBundle(
             system = """
-                你是长篇小说写作引擎。你的首要任务是保持故事一致，而不是自由发挥。
+                你现在只担任长篇小说的“正文作者”。你的唯一输出是可以直接发布的小说正文，不做摘要、不做数据库维护、不解释写作过程。
 
-                不可违反的规则：
-                1. 被锁定的设定是事实，不得修改、否定或绕过。
-                2. 本章必须完成章纲目标，并服务于卷纲和总纲主题。
-                3. 不得让角色拥有其尚未知晓的信息，不得瞬移，不得无因改变性格、关系或能力。
-                4. 新增重要人物、规则、能力、地点或道具时，必须在 stateChanges 中明确声明。
-                5. 不得提前回收未到时机的伏笔；进入计划回收窗口后可自然触及或回收，超过计划窗口的旧伏笔应优先寻找自然处理机会，但禁止为了清提醒而机械硬塞。
-                6. 若用户临时要求与锁定设定冲突，以锁定设定为准。
-                7. 长期摘要、RAG 检索片段只作为历史证据；若与锁定圣经冲突，以锁定圣经为最高优先级。
-                8. 【文风模板】决定叙述语气、句式、节奏、视角距离和修辞偏好；它可以改变“怎么写”，但不能改变“发生什么”。
-                9. 大纲中的“必须包含”属于硬性验收条件；“本层禁止”与 FORBIDDEN 圣经同级，不得以任何方式绕过或变相出现。
-                10. 每个场景必须产生信息、代价、关系变化、目标进展或新的选择之一；禁止连续大段原地解释和无状态变化的过场。
-                11. 【时间轴锁】与锁定设定同级。没有场景计划或章纲授权，禁止擅自跨天、跨月、跨年、切闪回或改变事件先后顺序。
-                12. 场景之间必须体现合理耗时。人物换地点、睡眠、等待、调查和交通不能出现“空间到了但时间没走”的瞬移。
-                13. 任何过去叙事都要区分“人物短暂回忆”与“真正闪回场景”；只有后者才能改变叙事时间层。
-                14. 【超长篇导航】是滚动规划与压缩记忆，不高于锁定圣经；但本章应优先推进当前剧情弧，避免在旧弧未收束时无理由再开一条同等级主线。
-                15. 角色成长必须由选择、代价和章级事件推动。不得因为“已经写了很多章”就自动性格突变，也不得让成长曲线长期完全静止。
-                16. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
+                写作硬规则：
+                1. 只完成【本章任务】。全书方向和本卷方向只是背景，不得把未来章节的谜底、转折、势力、能力、证据或终局提前搬进本章。
+                2. 锁定设定是事实，但“作者知道”不等于“读者现在应该知道”。除非本章场景确实需要，否则不要解释世界观，不要集中罗列规则。
+                3. 把信息写成场景：人物行动、选择、对话、观察、记忆和后果。禁止把材料整理成报告、百科、案件清单、会议纪要或调查总结。
+                4. 禁止正文中出现“他目前掌握的信息”“本章总结”“状态更新”“已确认事实”“伏笔”“章纲”“场景计划”“本章约X字”等创作后台措辞。
+                5. 不要为了证明设定完整而一次性枚举大量姓名、职业、死法、规则或证据。若多个个案只承担同一叙事功能，选择最有戏剧价值的少数例子，其余用自然概括。
+                6. 人物首先是人，不是检索器。每个重要调查/推理动作都要有欲望、情绪、犹豫、关系或代价支撑；不要连续“搜索—核对—记录—分类”而没有人物戏。
+                7. 悬疑靠信息差和递进建立。每个异常最多推进一层认知；尚未到回收期的伏笔只允许保持存在感，不解释答案。
+                8. 现实场景必须可信。普通人不能无理由获取保密档案、进入受限场所、让工作人员违反常识或制度来服务剧情；如必须做到，正文中先建立可信渠道和代价。
+                9. 恐怖/异常优先使用安静而具体的现实错位，不要机械叠加水雾、敲门、血字、怪声等模板惊吓。异常越少越要精准。
+                10. 严格遵守人物已知信息、地点、时间轴和场景耗时；不得瞬移、无因跳时、无因改变关系/能力/性格。
+                11. 本章结尾必须由本章已有因果自然推出一个新的问题、选择或威胁，形成钩子，但不能靠提前揭底制造刺激。
+                12. 文风服从作品模板。避免AI腔：少用排比式解释、总结句、反复加粗式强调、同义复述和“不是A，是B”连续句型。
+                13. 目标字数是节奏参考，不为凑字重复信息，也不要用清单填充篇幅。
+                14. 只输出小说正文。不要 Markdown 标题、不要前言、不要后记、不要说明。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
                 核心命题：${snapshot.novel.premise}
                 主题：${snapshot.novel.theme}
 
-                【文风模板】
+                【文风】
                 $styleRules
 
-                【锁定设定】
+                【锁定设定｜只能按本章需要显露】
                 $hardRules
 
-                【当前大纲链】
-                $outline
+                【长期方向｜只用于不跑偏，禁止提前兑现】
+                $direction
 
-                【超长篇导航】
-                $longFormNavigation
+                【本章任务】
+                $chapterTask
 
-                【时间轴锁】
-                $chronology
-
-                【长期故事摘要】
-                $longTerm
-
-                【RAG 检索与最近章节记忆】
-                $recentMemory
+                【本章场景计划】
+                ${scenes.ifBlank { "尚未拆场景；严格围绕本章唯一主目标组织 2-5 个递进场景。" }}
 
                 【人物当前状态】
                 $characters
 
-                【最近时间线】
-                $timeline
+                【时间轴锁】
+                $chronology
 
-                【相关伏笔】
+                【最近已发生剧情】
+                ${recentMemory.ifBlank { "暂无前章正文；把本章当作故事真实起点来写。" }}
+
+                【最近时间线】
+                ${timeline.ifBlank { "暂无。" }}
+
+                【伏笔可见范围】
                 $foreshadowing
 
-                【本章任务】
-                章节：第${request.chapter.chapterNumber}章 ${request.chapter.title}
-                唯一主目标：${request.chapter.objective}
-                场景计划：
-                $scenes
-                目标字数：约${request.targetWords}字
-                补充要求：${request.extraInstruction.ifBlank { "无" }}
+                【用户补充要求】
+                ${request.extraInstruction.ifBlank { "无。" }}
 
-                返回字段：title、content、summary、stateChanges、touchedForeshadowingIds。
-                summary 必须是 120-260 字的高信息密度事实摘要，包含关键事件、人物状态变化、地点、获得/失去的信息、未解决问题，并在末尾明确写“本章结束时=故事第N天·时段”。
-                stateChanges 每项包含 subject、field、before、after、evidence。人物关系变化请使用 field=relationship，after 写“目标人物=关系变化”；新出现但值得长期追踪的重要人物可使用 field=newCharacter，after 写“地点||情绪||目标||性格标签”。
+                正文目标：约${request.targetWords}字。只写正文。
+            """.trimIndent(),
+            jsonMode = false,
+        )
+    }
+
+    /** Reviewer is allowed to see later chapter beats solely to detect premature reveals. */
+    fun buildQualityReview(request: GenerationRequest, prose: String): PromptBundle {
+        val snapshot = request.snapshot
+        val current = request.chapter.chapterNumber.coerceAtLeast(1)
+        val future = snapshot.outline
+            .filter { it.level == OutlineLevel.CHAPTER && it.order > current }
+            .sortedBy { it.order }
+            .take(10)
+            .joinToString("\n") {
+                "- 第${it.order}章 ${it.title}｜目标=${it.objective}｜转折=${it.turningPoint}｜必须=${it.mustInclude.joinToString("、")}"
+            }
+            .ifBlank { "- 暂无后续章纲。" }
+        val currentNode = snapshot.activeOutline.lastOrNull { it.level == OutlineLevel.CHAPTER }
+        return PromptBundle(
+            system = """
+                你是严苛的中文长篇小说章节主编。你不续写，只判断这版正文是否可以交付。
+                输出 GeneratedChapter JSON，不要 Markdown：
+                - title 只能是 PASS 或 REWRITE。
+                - content：若 REWRITE，列出最关键的重写指令；若 PASS 写“通过”。
+                - summary：用一句话说明判断理由。
+                - stateChanges=[]；touchedForeshadowingIds=[]。
+
+                任何一项成立都必须 REWRITE：
+                1. 把后续章节才该发生/揭示的内容提前写进本章，抢了后面的戏。
+                2. 大量罗列姓名、职业、案件、规则、设定、证据，像报告/说明书而不是小说。
+                3. 正文出现“目前掌握的信息/本章总结/状态更新/伏笔/章纲/场景计划/本章约X字”等后台总结。
+                4. 主角连续执行检索、核对、记录等功能动作，却缺乏明确欲望、情绪、关系或代价。
+                5. 现实逻辑明显为了推进剧情开绿灯，例如普通人无铺垫取得保密材料或进入受限地点。
+                6. 异常/恐怖元素机械堆叠，缺乏单一精准的核心异常。
+                7. 设定通过作者解释而不是场景呈现；同一信息重复解释。
+                8. 未完成本章唯一目标，或结尾钩子与本章因果无关。
+                9. 人物知道了不该知道的信息、时间地点不连续、与锁定设定冲突。
+                10. 正文不是纯小说文本，包含创作说明或面向用户的解释。
+            """.trimIndent(),
+            user = """
+                【本章】第${request.chapter.chapterNumber}章 ${request.chapter.title}
+                唯一目标：${request.chapter.objective}
+                本章冲突：${currentNode?.conflict.orEmpty()}
+                本章转折：${currentNode?.turningPoint.orEmpty()}
+                本章必须：${currentNode?.mustInclude.orEmpty().joinToString("、")}
+                本章禁止：${currentNode?.forbidden.orEmpty().joinToString("、")}
+
+                【后续章纲｜只用于检查本章是否提前抢戏】
+                $future
+
+                【待审正文】
+                $prose
+            """.trimIndent(),
+        )
+    }
+
+    fun buildRewrite(request: GenerationRequest, prose: String, instructions: String): PromptBundle {
+        val base = buildProse(request)
+        return base.copy(
+            system = base.system + "\n\n这是第二稿。必须根据主编意见从头重写整章，不要在旧稿后追加修补，不要解释修改过程。",
+            user = base.user + "\n\n【上一稿】\n$prose\n\n【主编退回意见】\n$instructions\n\n请从头给出完整新正文。",
+            jsonMode = false,
+        )
+    }
+
+    /** Metadata is extracted after prose is frozen, so it can never leak into the visible chapter. */
+    fun buildMetadata(request: GenerationRequest, prose: String): PromptBundle {
+        val snapshot = request.snapshot
+        val chronology = chronologyGuard.promptText(snapshot, request.chapter.scenePlan)
+        return PromptBundle(
+            system = """
+                你是“琅嬛”的章节事实提取器。正文已经写完且不可改动。你的任务只是从正文中提取结构化记忆，绝不能续写、润色或新增事实。
+                输出必须是 GeneratedChapter JSON：
+                - title=当前章节标题；
+                - content=""（必须为空，正文由 App 单独保存）；
+                - summary=120-260字高信息密度事实摘要，只写正文真实发生的事，并在末尾写“本章结束时=故事第N天·时段”；
+                - stateChanges=正文明确造成的状态变化。每项含 subject、field、before、after、evidence；没有变化就空数组；
+                - touchedForeshadowingIds=正文确实触及的既有伏笔 id；没有就空数组。
+                禁止把推测当事实，禁止根据大纲补正文没有发生的事件。
+            """.trimIndent(),
+            user = """
+                小说：${snapshot.novel.title}
+                章节：第${request.chapter.chapterNumber}章 ${request.chapter.title}
+
+                【人物写前状态】
+                ${snapshot.characters.joinToString("\n") { "- ${it.name}: 地点=${it.location}; 身体=${it.physicalState}; 情绪=${it.emotionalState}; 目标=${it.goal}; 已知秘密=${it.knownSecrets.joinToString("、")}" }}
+
+                【时间轴锁】
+                $chronology
+
+                【既有伏笔】
+                ${snapshot.relevantForeshadowing.joinToString("\n") { "- id=${it.id}; ${it.title}; ${it.detail}; 状态=${it.status}" }}
+
+                【已冻结正文】
+                $prose
             """.trimIndent(),
         )
     }
