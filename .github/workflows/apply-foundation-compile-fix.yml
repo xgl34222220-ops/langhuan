@@ -1,0 +1,70 @@
+name: Apply foundation compile fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-foundation-compile-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/com/xiguli/langhuan/ui/ProgressiveFoundationEngine.kt')
+          s = p.read_text()
+          s = s.replace('starts.mapNotNullIndexed { idx, start ->', 'starts.mapIndexedNotNull { idx, start ->')
+          s = s.replace('return@mapNotNullIndexed null', 'return@mapIndexedNotNull null')
+          old = '''    private suspend fun requestOptional(stage: String, prompt: PromptBundle): GeneratedChapter? = try {
+              withTimeout(STAGE_TIMEOUT_MS) { gateway.generate(prompt) }
+          } catch (_: TimeoutCancellationException) {
+              null
+          } catch (_: Throwable) {
+              null
+          }
+          '''
+          new = '''    private suspend fun requestOptional(stage: String, prompt: PromptBundle): GeneratedChapter? = try {
+              withTimeout(STAGE_TIMEOUT_MS) { gateway.generate(prompt) }
+          } catch (_: TimeoutCancellationException) {
+              null
+          } catch (cancelled: kotlinx.coroutines.CancellationException) {
+              throw cancelled
+          } catch (_: Throwable) {
+              null
+          }
+          '''
+          assert old in s, 'requestOptional anchor missing'
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/xiguli/langhuan/ui/NewBookConversation.kt')
+          s = p.read_text()
+          s = s.replace(
+              '"以会谈里最后确认的决定为准，重新设计一套明显不同但更自洽的角色、规则、分卷结构和前期章节路线。任何已被用户否定或替换的旧方案都不得复用。"',
+              '"以会谈和用户上传作品设定为硬约束，重新整理并补全蓝图。只重做 AI 补充部分；附件明确的人物、规则、势力、卷数、卷序、主线节点和终局不得改动。"',
+              1,
+          )
+          s = s.replace(
+              '"以会谈里最后确认的决定为唯一准绳，把当前最新新书方案扩展成可直接开始长篇写作的完整建书蓝图。旧简介、旧能力、旧冲突若已被后续决定替换，禁止回滚。"',
+              '"以会谈最新决定和用户上传作品设定为唯一准绳，把当前方案扩展成可写作蓝图。附件原文是硬约束；AI 只能补缺口，禁止删卷、并卷、把类别当人物或偷换既定规则。"',
+              1,
+          )
+          p.write_text(s)
+          PY
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "xgl34222220-ops"
+          git config user.email "xgl34222220@gmail.com"
+          git add app/src/main/java/com/xiguli/langhuan/ui/ProgressiveFoundationEngine.kt app/src/main/java/com/xiguli/langhuan/ui/NewBookConversation.kt
+          git commit -m "fix: compile locked blueprint engine and propagate cancellation"
+          git push origin HEAD:main
