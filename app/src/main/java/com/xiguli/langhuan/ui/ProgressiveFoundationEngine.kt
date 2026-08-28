@@ -8,13 +8,16 @@ import com.xiguli.langhuan.data.FoundationVolume
 import com.xiguli.langhuan.data.StoryFoundation
 import com.xiguli.langhuan.domain.BibleCategory
 import com.xiguli.langhuan.domain.GeneratedChapter
+import com.xiguli.langhuan.domain.StateChange
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 
 /**
- * Builds a new-book foundation in bounded requests instead of asking one model call to emit dozens
- * of records at once. Each completed stage can be checkpointed by the caller so a timeout in a later
- * stage does not force the user to pay for and regenerate earlier successful stages.
+ * Relay-friendly new-book foundation builder.
+ *
+ * The UI still exposes three meaningful checkpoints, but large stages are internally split into
+ * smaller JSON requests. This avoids asking a relay/model to emit dozens of records in one response
+ * and also avoids SSE compatibility problems for structured generation.
  */
 internal class ProgressiveFoundationEngine(
     private val gateway: AiGateway,
@@ -30,137 +33,178 @@ internal class ProgressiveFoundationEngine(
         onCheckpoint: (Int, StoryFoundation) -> Unit = { _, _ -> },
     ): StoryFoundation {
         val conversation = compactConversation(messages)
-        val currentSummary = current?.let(::compactFoundation).orEmpty()
         val safeResume = resumeStage.coerceIn(0, 2)
-        var foundation = current
+        var working = current
 
-        if (safeResume < 1 || foundation == null) {
-            onStage("1/3 · 正在搭建世界规则、核心角色和分卷主线……")
-            val coreOutput = request(
-                PromptBundle(
-                    system = CORE_SYSTEM,
+        if (safeResume < 1 || working == null || !coreUsable(working)) {
+            onStage("1/3 · 正在生成世界、规则与总纲……")
+            val world = request(
+                stage = "1/3 世界与总纲",
+                prompt = PromptBundle(
+                    system = WORLD_SYSTEM,
                     user = buildString {
-                        appendLine("【已确认方案】")
-                        appendLine("书名：${proposal.title}")
-                        appendLine("类型：${proposal.genre}")
-                        appendLine("平台简介：${proposal.premise}")
-                        appendLine("主题：${proposal.theme}")
-                        appendLine("目标字数：${proposal.targetWords}")
-                        appendLine("核心钩子：${proposal.coreHook}")
-                        appendLine("封面方向：${proposal.coverBrief}")
-                        appendLine("内部策划：${proposal.rationale}")
+                        appendProposal(proposal)
                         if (referenceContext.isNotBlank()) {
                             appendLine()
-                            appendLine(referenceContext.take(7_000))
-                            appendLine("上面的 Style DNA 是用户本次显式选中的唯一参考集合。未选择的蒸馏作品禁止自动混入。")
+                            appendLine("【本次显式选中的参考 DNA】")
+                            appendLine(referenceContext.take(4_200))
                         }
                         appendLine()
                         appendLine("【用户确认过的会谈事实】")
                         appendLine(conversation)
-                        if (currentSummary.isNotBlank()) {
-                            appendLine()
-                            appendLine("【当前已有蓝图】")
-                            appendLine(currentSummary)
-                        }
                         appendLine()
                         appendLine("【本轮要求】")
                         appendLine(instruction)
-                        appendLine()
-                        appendLine("只完成核心架构，不生成详细章纲和伏笔。")
                     },
-                )
+                ),
             )
-            validateCoreOutput(coreOutput)
-            foundation = parseCore(coreOutput, proposal, current)
-            onCheckpoint(1, foundation)
-        } else {
-            onStage("1/3 · 已恢复核心蓝图断点，跳过重复生成")
-        }
 
-        var working = requireNotNull(foundation)
-        val existingChapterCount = working.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
-        if (safeResume < 2 || existingChapterCount < 8) {
-            onStage("2/3 · 正在展开第一卷 10–12 章因果链……")
-            val chapterOutput = request(
-                PromptBundle(
-                    system = CHAPTER_SYSTEM,
+            onStage("1/3 · 正在生成核心人物与分卷路线……")
+            val cast = request(
+                stage = "1/3 人物与分卷",
+                prompt = PromptBundle(
+                    system = CAST_SYSTEM,
                     user = buildString {
-                        appendLine("【核心蓝图】")
-                        appendLine(compactFoundation(working))
+                        appendProposal(proposal)
+                        appendLine()
+                        appendLine("【刚生成的世界/总纲摘要】")
+                        appendLine(compactGenerated(world).take(3_800))
                         if (referenceContext.isNotBlank()) {
                             appendLine()
-                            appendLine("【已选 Style DNA 的节奏/信息释放约束】")
-                            appendLine(referenceContext.take(2_800))
+                            appendLine("【参考 DNA 的人物/结构约束】")
+                            appendLine(referenceContext.take(2_200))
                         }
                         appendLine()
-                        appendLine("【本轮要求】")
-                        appendLine(instruction)
-                        appendLine()
-                        appendLine("只输出第一卷详细章纲，必须形成连续因果链。")
+                        appendLine("只补人物与分卷，不重写 META / STYLE / MASTER / BIBLE。")
                     },
-                )
+                ),
             )
-            val chapterRecords = chapterOutput.stateChanges.count {
-                it.subject.startsWith("CHAPTER:1:", ignoreCase = true)
+
+            val combined = world.copy(
+                stateChanges = world.stateChanges + cast.stateChanges,
+                summary = world.summary.ifBlank { cast.summary },
+            )
+            working = parseCore(combined, proposal, current)
+            validateCore(working)
+            onCheckpoint(1, working)
+        } else {
+            onStage("1/3 · 已恢复核心蓝图断点")
+        }
+
+        working = requireNotNull(working)
+
+        if (safeResume < 2 || firstVolumeChapterCount(working) < 8) {
+            var chapterCount = firstVolumeChapterCount(working)
+            if (chapterCount < 5) {
+                onStage("2/3 · 正在生成第一卷第 1–5 章……")
+                val firstHalf = request(
+                    stage = "2/3 第1–5章",
+                    prompt = chapterPrompt(
+                        foundation = working,
+                        referenceContext = referenceContext,
+                        start = 1,
+                        end = 5,
+                        prior = emptyList(),
+                    ),
+                )
+                working = mergeChapters(working, firstHalf)
+                chapterCount = firstVolumeChapterCount(working)
+                require(chapterCount >= 4) {
+                    "2/3 第1–5章只解析到 $chapterCount 条有效章纲。核心蓝图已保留，可直接重试本阶段。"
+                }
+                // Keep stage=1 so retry knows the chapter stage is unfinished, but persist the useful half.
+                onCheckpoint(1, working)
             }
-            require(chapterRecords >= 8) {
-                "AI 只返回了 $chapterRecords 条有效第一卷章纲，未达到最低 8 条。核心蓝图断点已保留；重试只会重新生成第 2 阶段。"
+
+            chapterCount = firstVolumeChapterCount(working)
+            if (chapterCount < 8) {
+                onStage("2/3 · 正在生成第一卷第 6–10 章……")
+                val secondHalf = request(
+                    stage = "2/3 第6–10章",
+                    prompt = chapterPrompt(
+                        foundation = working,
+                        referenceContext = referenceContext,
+                        start = 6,
+                        end = 10,
+                        prior = working.volumes.firstOrNull { it.order == 1 }?.chapters.orEmpty(),
+                    ),
+                )
+                working = mergeChapters(working, secondHalf)
+                chapterCount = firstVolumeChapterCount(working)
             }
-            working = mergeChapters(working, chapterOutput)
-            val chapterCount = working.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
+
             require(chapterCount >= 8) {
-                "第一卷章纲解析后不足 8 条，核心蓝图断点已保留；可直接重试第 2 阶段。"
+                "2/3 第一卷目前只有 $chapterCount 条有效章纲，至少需要 8 条。已成功内容不会丢，重试会继续补齐。"
             }
             onCheckpoint(2, working)
         } else {
-            onStage("2/3 · 已恢复第一卷章纲断点，跳过重复生成")
+            onStage("2/3 · 已恢复第一卷章纲断点")
         }
 
-        onStage("3/3 · 正在布置伏笔并做蓝图收口……")
-        val foreshadowOutput = request(
-            PromptBundle(
+        onStage("3/3 · 正在布置可观察、可回收的伏笔……")
+        val foreshadow = request(
+            stage = "3/3 伏笔计划",
+            prompt = PromptBundle(
                 system = FORESHADOW_SYSTEM,
                 user = buildString {
                     appendLine("【核心蓝图 + 第一卷章纲】")
-                    appendLine(compactFoundation(working, includeChapters = true))
+                    appendLine(compactFoundation(working, includeChapters = true).take(6_000))
                     if (referenceContext.isNotBlank()) {
                         appendLine()
-                        appendLine("【已选 Style DNA】")
-                        appendLine(referenceContext.take(1_800))
+                        appendLine("【已选参考 DNA】")
+                        appendLine(referenceContext.take(1_200))
                     }
                     appendLine()
-                    appendLine("请只输出 3–6 条跨章节伏笔计划；不要重写其它结构。")
+                    appendLine("只输出伏笔计划，不重写其它结构。")
                 },
-            )
+            ),
         )
-        val foreshadowRecords = foreshadowOutput.stateChanges.count {
-            it.subject.equals("FORESHADOW", ignoreCase = true) && it.field.isNotBlank()
-        }
-        require(foreshadowRecords >= 3) {
-            "AI 只返回了 $foreshadowRecords 条有效伏笔，未达到最低 3 条。前两阶段断点已保留；重试只会重新生成伏笔阶段。"
-        }
-        working = mergeForeshadowing(working, foreshadowOutput)
+        working = mergeForeshadowing(working, foreshadow)
         require(working.foreshadowing.size >= 3) {
-            "伏笔解析结果不足 3 条，前两阶段断点已保留；不会把半成品蓝图标记为完成。"
+            "3/3 伏笔阶段只解析到 ${working.foreshadowing.size} 条有效伏笔。前两阶段已保存，重试只需继续伏笔阶段。"
         }
         onCheckpoint(3, working)
-
         return working
     }
 
-    private suspend fun request(prompt: PromptBundle): GeneratedChapter =
-        gateway.generateStreaming(prompt) { /* structured generation: progress is represented by stages */ }
-
-    private fun validateCoreOutput(output: GeneratedChapter) {
-        val changes = output.stateChanges
-        val bible = changes.count { it.subject.startsWith("BIBLE:", ignoreCase = true) && it.field.isNotBlank() }
-        val characters = changes.count { it.subject.equals("CHAR", ignoreCase = true) && it.field.isNotBlank() }
-        val volumes = changes.count { it.subject.startsWith("VOLUME:", ignoreCase = true) && it.field.isNotBlank() }
-        val hasMaster = changes.any { it.subject.equals("MASTER", ignoreCase = true) }
-        require(bible >= 4 && characters >= 2 && volumes >= 1 && hasMaster) {
-            "核心蓝图不完整：有效圣经 $bible 条、角色 $characters 个、分卷 $volumes 个、总纲=${if (hasMaster) "有" else "缺失"}。未保存这个半成品，请重试第 1 阶段。"
-        }
+    private suspend fun request(stage: String, prompt: PromptBundle): GeneratedChapter = try {
+        // Structured JSON is deliberately non-streaming. Several OpenAI-compatible relays expose a
+        // flaky/partial SSE implementation even though normal chat-completions JSON works reliably.
+        gateway.generate(prompt)
+    } catch (error: Throwable) {
+        throw IllegalStateException("$stage 失败：${error.message ?: "AI 没有返回可解析结果"}", error)
     }
+
+    private fun chapterPrompt(
+        foundation: StoryFoundation,
+        referenceContext: String,
+        start: Int,
+        end: Int,
+        prior: List<FoundationChapter>,
+    ): PromptBundle = PromptBundle(
+        system = """
+            你是“琅嬛”的第一卷章纲设计师。只生成第一卷第 $start–$end 章，不修改书名、世界规则、人物设定或卷纲。
+            输出 GeneratedChapter JSON：title="FIRST_VOLUME_${start}_${end}"；content=""；summary=本批节奏摘要；touchedForeshadowingIds=[]。
+            stateChanges 只放 CHAPTER:1:序号，序号必须覆盖 $start 到 $end：field=章名；before=本章明确目标；after=本章具体冲突；evidence=章末转折。
+            每章必须承接上一章结果，形成连续因果链。不要写正文，不要一次输出其它结构。
+        """.trimIndent(),
+        user = buildString {
+            appendLine("【核心蓝图】")
+            appendLine(compactFoundation(foundation).take(4_800))
+            if (prior.isNotEmpty()) {
+                appendLine()
+                appendLine("【已经确认的前置章纲】")
+                prior.sortedBy { it.order }.takeLast(6).forEach { chapter ->
+                    appendLine("${chapter.order}. ${chapter.title}：${chapter.objective} / ${chapter.conflict} / ${chapter.turningPoint}")
+                }
+            }
+            if (referenceContext.isNotBlank()) {
+                appendLine()
+                appendLine("【已选参考 DNA 的节奏/信息释放约束】")
+                appendLine(referenceContext.take(1_800))
+            }
+        },
+    )
 
     private fun parseCore(
         output: GeneratedChapter,
@@ -168,25 +212,27 @@ internal class ProgressiveFoundationEngine(
         current: StoryFoundation?,
     ): StoryFoundation {
         val changes = output.stateChanges
-        val meta = changes.firstOrNull { it.subject.equals("META", true) }
-        val style = changes.firstOrNull { it.subject.equals("STYLE", true) }
-        val master = changes.firstOrNull { it.subject.equals("MASTER", true) }
+        val meta = changes.firstOrNull { subject(it) in setOf("META", "BOOK_META") }
+        val style = changes.firstOrNull { subject(it) in setOf("STYLE", "STYLE_GUIDE") }
+        val master = changes.firstOrNull { subject(it) in setOf("MASTER", "MASTER_OUTLINE", "OUTLINE") }
 
         val bible = changes.mapNotNull { change ->
-            if (!change.subject.startsWith("BIBLE:", true)) return@mapNotNull null
-            val category = runCatching {
-                BibleCategory.valueOf(change.subject.substringAfter(':').trim().uppercase())
-            }.getOrNull() ?: return@mapNotNull null
+            val normalized = subject(change)
+            if (!normalized.startsWith("BIBLE:")) return@mapNotNull null
+            val category = bibleCategory(normalized.substringAfter(':')) ?: return@mapNotNull null
+            val name = change.field.trim()
+            val content = change.before.trim().ifBlank { change.after.trim() }
+            if (name.isBlank() || content.isBlank()) return@mapNotNull null
             FoundationBibleItem(
                 category = category,
-                name = change.field.trim(),
-                content = change.before.trim(),
-                aliases = split(change.after),
+                name = name,
+                content = content,
+                aliases = split(change.after).filterNot { it == content },
                 locked = true,
             )
-        }.filter { it.name.isNotBlank() && it.content.isNotBlank() }.take(18)
+        }.distinctBy { it.category to it.name }.take(14)
 
-        val characters = changes.filter { it.subject.equals("CHAR", true) }.mapNotNull { change ->
+        val characters = changes.filter { isCharacterSubject(subject(it)) }.mapNotNull { change ->
             val name = change.field.trim()
             if (name.isBlank()) return@mapNotNull null
             val parts = change.evidence.split("||")
@@ -201,38 +247,32 @@ internal class ProgressiveFoundationEngine(
                 possessions = split(parts.getOrNull(4).orEmpty()),
                 relationships = parseRelationships(parts.getOrNull(5).orEmpty()),
             )
-        }.take(8)
+        }.distinctBy { it.name }.take(7)
 
         val volumes = changes.mapNotNull { change ->
-            if (!change.subject.startsWith("VOLUME:", true)) return@mapNotNull null
-            val order = change.subject.substringAfter(':').trim().toIntOrNull() ?: return@mapNotNull null
+            val order = volumeOrder(subject(change)) ?: return@mapNotNull null
             FoundationVolume(
                 order = order,
                 title = change.field.trim().ifBlank { "第${order}卷" },
-                objective = change.before.trim(),
-                conflict = change.after.trim(),
-                turningPoint = change.evidence.trim(),
+                objective = change.before.trim().ifBlank { "推进第${order}阶段主线" },
+                conflict = change.after.trim().ifBlank { "核心目标遭遇新的不可回避阻力" },
+                turningPoint = change.evidence.trim().ifBlank { "本卷末改变下一阶段条件" },
                 chapters = current?.volumes?.firstOrNull { it.order == order }?.chapters.orEmpty(),
             )
-        }.sortedBy { it.order }.distinctBy { it.order }.take(5)
+        }.sortedBy { it.order }.distinctBy { it.order }.take(4)
 
         val targetWords = meta?.before?.filter(Char::isDigit)?.toIntOrNull()
             ?.coerceIn(10_000, 5_000_000)
             ?: fallback.targetWords
-
-        val safeTitle = output.title.trim().takeIf { it.filterNot(Char::isWhitespace).length in 2..12 }
+        val safeTitle = output.title.trim().takeIf { it.filterNot(Char::isWhitespace).length in 2..18 }
             ?: fallback.title
-        val safePremise = output.content.trim().takeIf { it.filterNot(Char::isWhitespace).length in 80..260 }
+        val safePremise = output.content.trim().takeIf { it.filterNot(Char::isWhitespace).length in 50..420 }
             ?: fallback.premise
-        val genre = meaningfulValue(
-            meta?.field,
-            placeholders = setOf("类型", "小说类型", "题材", "genre"),
-            fallback = fallback.genre,
-        )
+        val genre = meaningfulValue(meta?.field, setOf("类型", "小说类型", "题材", "genre"), fallback.genre)
         val theme = meaningfulValue(
             meta?.after,
-            placeholders = setOf("主题", "主题命题", "核心主题", "theme"),
-            fallback = fallback.theme.takeUnless { it in setOf("主题", "主题命题") }
+            setOf("主题", "主题命题", "核心主题", "theme"),
+            fallback.theme.takeUnless { it in setOf("主题", "主题命题") }
                 ?: "人在真相、执念与代价之间如何选择",
         )
 
@@ -243,16 +283,13 @@ internal class ProgressiveFoundationEngine(
             theme = theme,
             targetWords = targetWords,
             coreHook = meta?.evidence?.trim().orEmpty().ifBlank { fallback.coreHook },
-            storyPromise = output.summary.trim().ifBlank { style?.before?.trim().orEmpty() }
-                .ifBlank { fallback.rationale },
+            storyPromise = output.summary.trim().ifBlank { style?.before?.trim().orEmpty() }.ifBlank { fallback.rationale },
             styleGuide = style?.after?.trim().orEmpty().ifBlank {
                 current?.styleGuide ?: "人物行动必须有因果，信息逐层释放，不临时改规则，不靠降智推动剧情。"
             },
             coverBrief = style?.evidence?.trim().orEmpty().ifBlank { fallback.coverBrief },
             masterTitle = master?.field?.trim().orEmpty().ifBlank { current?.masterTitle ?: "总纲" },
-            masterObjective = master?.before?.trim().orEmpty().ifBlank {
-                current?.masterObjective ?: fallback.premise
-            },
+            masterObjective = master?.before?.trim().orEmpty().ifBlank { current?.masterObjective ?: fallback.premise },
             masterConflict = master?.after?.trim().orEmpty().ifBlank {
                 current?.masterConflict ?: "主角追求核心目标的同时，必须承担不断升级且不可回避的代价。"
             },
@@ -272,41 +309,52 @@ internal class ProgressiveFoundationEngine(
                     )
                 )
             },
-            volumes = volumes.ifEmpty {
-                current?.volumes.orEmpty().ifEmpty {
-                    listOf(
-                        FoundationVolume(
-                            order = 1,
-                            title = "第一卷",
-                            objective = "建立主角、规则与核心问题，并迫使主角主动进入主线。",
-                            conflict = "现实目标与核心异常正面冲突。",
-                            turningPoint = "主角获得无法忽视的新证据。",
-                            chapters = emptyList(),
-                        )
+            volumes = volumes.ifEmpty { current?.volumes.orEmpty() }.ifEmpty {
+                listOf(
+                    FoundationVolume(
+                        order = 1,
+                        title = "第一卷",
+                        objective = "建立主角、规则与核心问题，并迫使主角主动进入主线。",
+                        conflict = "现实目标与核心异常正面冲突。",
+                        turningPoint = "主角获得无法忽视的新证据。",
+                        chapters = emptyList(),
                     )
-                }
+                )
             },
             foreshadowing = current?.foreshadowing.orEmpty(),
         )
     }
 
+    private fun validateCore(foundation: StoryFoundation) {
+        require(foundation.bible.size >= 3) {
+            "1/3 世界规则只解析到 ${foundation.bible.size} 条，至少需要 3 条。请重试第 1 阶段。"
+        }
+        require(foundation.characters.size >= 2) {
+            "1/3 核心人物只解析到 ${foundation.characters.size} 个，至少需要 2 个。请重试第 1 阶段。"
+        }
+        require(foundation.volumes.isNotEmpty()) { "1/3 没有解析到有效分卷路线，请重试第 1 阶段。" }
+    }
+
+    private fun coreUsable(foundation: StoryFoundation): Boolean =
+        foundation.bible.size >= 3 && foundation.characters.size >= 2 && foundation.volumes.isNotEmpty()
+
     private fun mergeChapters(foundation: StoryFoundation, output: GeneratedChapter): StoryFoundation {
-        val chapters = output.stateChanges.mapNotNull { change ->
-            if (!change.subject.startsWith("CHAPTER:", true)) return@mapNotNull null
-            val parts = change.subject.split(':')
-            val volume = parts.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
-            val order = parts.getOrNull(2)?.toIntOrNull() ?: return@mapNotNull null
-            if (volume != 1) return@mapNotNull null
+        val incoming = output.stateChanges.mapNotNull { change ->
+            val parsed = chapterNumbers(subject(change)) ?: return@mapNotNull null
+            val (volume, order) = parsed
+            if (volume != 1 || order !in 1..14) return@mapNotNull null
             FoundationChapter(
                 order = order,
                 title = change.field.trim().ifBlank { "第${order}章" },
-                objective = change.before.trim(),
-                conflict = change.after.trim(),
-                turningPoint = change.evidence.trim(),
+                objective = change.before.trim().ifBlank { "推动本章明确目标" },
+                conflict = change.after.trim().ifBlank { "本章目标遭遇直接阻力" },
+                turningPoint = change.evidence.trim().ifBlank { "章末结果改变下一章条件" },
             )
-        }.sortedBy { it.order }.distinctBy { it.order }.take(14)
+        }
+        if (incoming.isEmpty()) return foundation
 
-        if (chapters.isEmpty()) return foundation
+        val existing = foundation.volumes.firstOrNull { it.order == 1 }?.chapters.orEmpty()
+        val chapters = (existing + incoming).distinctBy { it.order }.sortedBy { it.order }.take(14)
         val volumes = if (foundation.volumes.any { it.order == 1 }) {
             foundation.volumes.map { if (it.order == 1) it.copy(chapters = chapters) else it }
         } else {
@@ -326,7 +374,7 @@ internal class ProgressiveFoundationEngine(
 
     private fun mergeForeshadowing(foundation: StoryFoundation, output: GeneratedChapter): StoryFoundation {
         val foreshadowing = output.stateChanges.mapNotNull { change ->
-            if (!change.subject.equals("FORESHADOW", true)) return@mapNotNull null
+            if (!isForeshadowSubject(subject(change))) return@mapNotNull null
             val title = change.field.trim()
             if (title.isBlank()) return@mapNotNull null
             val range = Regex("(\\d+)\\D+(\\d+)").find(change.evidence)
@@ -334,46 +382,109 @@ internal class ProgressiveFoundationEngine(
             val end = range?.groupValues?.getOrNull(2)?.toIntOrNull() ?: maxOf(start + 3, 12)
             FoundationForeshadow(
                 title = title,
-                detail = change.before.trim(),
-                expectedPayoff = change.after.trim(),
+                detail = change.before.trim().ifBlank { "前期以可观察细节出现" },
+                expectedPayoff = change.after.trim().ifBlank { "后续通过因果链完成回收" },
                 expectedChapterStart = start,
                 expectedChapterEnd = end,
             )
-        }.take(8)
+        }.distinctBy { it.title }.take(7)
         return if (foreshadowing.isEmpty()) foundation else foundation.copy(foreshadowing = foreshadowing)
     }
 
+    private fun firstVolumeChapterCount(foundation: StoryFoundation): Int =
+        foundation.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
+
+    private fun subject(change: StateChange): String = change.subject
+        .trim()
+        .replace('：', ':')
+        .replace(Regex("\\s+"), "_")
+        .uppercase()
+
+    private fun isCharacterSubject(value: String): Boolean =
+        value in setOf("CHAR", "CHARACTER", "ROLE", "人物", "角色")
+
+    private fun isForeshadowSubject(value: String): Boolean =
+        value in setOf("FORESHADOW", "FORESHADOWING", "伏笔")
+
+    private fun volumeOrder(value: String): Int? {
+        val normalized = value.replace("VOL:", "VOLUME:")
+        if (!normalized.startsWith("VOLUME:")) return null
+        return normalized.substringAfter(':').filter(Char::isDigit).toIntOrNull()
+    }
+
+    private fun chapterNumbers(value: String): Pair<Int, Int>? {
+        val normalized = value.replace('：', ':')
+        val match = Regex("(?:CHAPTER|章纲)[:_ -]*(\\d+)[:_ -]+(\\d+)", RegexOption.IGNORE_CASE).find(normalized)
+            ?: return null
+        val volume = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return null
+        val order = match.groupValues.getOrNull(2)?.toIntOrNull() ?: return null
+        return volume to order
+    }
+
+    private fun bibleCategory(raw: String): BibleCategory? {
+        val value = raw.trim().uppercase()
+        return when {
+            value in setOf("WORLD", "世界", "世界观") -> BibleCategory.WORLD
+            value in setOf("RULE", "RULES", "规则", "规则体系") -> BibleCategory.RULE
+            value in setOf("CHARACTER", "CHAR", "人物", "角色") -> BibleCategory.CHARACTER
+            value in setOf("FACTION", "势力", "组织") -> BibleCategory.FACTION
+            value in setOf("LOCATION", "PLACE", "地点", "场景") -> BibleCategory.LOCATION
+            value in setOf("ITEM", "OBJECT", "物品", "道具") -> BibleCategory.ITEM
+            value in setOf("STYLE", "风格") -> BibleCategory.STYLE
+            value in setOf("FORBIDDEN", "TABOO", "禁忌", "禁止") -> BibleCategory.FORBIDDEN
+            else -> runCatching { BibleCategory.valueOf(value) }.getOrNull()
+        }
+    }
+
     private fun compactConversation(messages: List<CreationChatMessage>): String = messages
-        .takeLast(14)
+        .takeLast(12)
         .joinToString("\n") { message ->
-            val raw = if (message.role == "user") {
-                message.text.substringBefore(RESEARCH_MARKER).trimEnd()
-            } else message.text
-            val text = raw.take(700)
+            val raw = if (message.role == "user") message.text.substringBefore(RESEARCH_MARKER).trimEnd() else message.text
+            val text = raw.take(520)
             if (message.role == "user") "用户：$text" else "琅嬛：$text"
         }
-        .takeLast(6_000)
+        .takeLast(3_800)
+
+    private fun compactGenerated(output: GeneratedChapter): String = buildString {
+        if (output.title.isNotBlank()) appendLine("书名：${output.title}")
+        if (output.content.isNotBlank()) appendLine("简介：${output.content.take(500)}")
+        if (output.summary.isNotBlank()) appendLine("摘要：${output.summary.take(400)}")
+        output.stateChanges.take(14).forEach { change ->
+            appendLine("${subject(change)} | ${change.field} | ${change.before.take(180)} | ${change.after.take(180)} | ${change.evidence.take(120)}")
+        }
+    }
 
     private fun compactFoundation(foundation: StoryFoundation, includeChapters: Boolean = false): String = buildString {
         appendLine("书名：${foundation.title}")
         appendLine("类型：${foundation.genre}")
-        appendLine("简介：${foundation.premise}")
+        appendLine("简介：${foundation.premise.take(500)}")
         appendLine("主题：${foundation.theme}")
         appendLine("核心钩子：${foundation.coreHook}")
         appendLine("故事承诺：${foundation.storyPromise}")
-        appendLine("风格：${foundation.styleGuide}")
         appendLine("总纲：${foundation.masterObjective} / ${foundation.masterConflict} / ${foundation.masterTurningPoint}")
-        appendLine("圣经：${foundation.bible.take(14).joinToString("；") { "${it.category.name}:${it.name}=${it.content.take(180)}" }}")
-        appendLine("角色：${foundation.characters.take(8).joinToString("；") { "${it.name}[${it.personality.joinToString("、")}]目标=${it.goal.take(120)}" }}")
-        foundation.volumes.take(5).forEach { volume ->
+        appendLine("圣经：${foundation.bible.take(10).joinToString("；") { "${it.category.name}:${it.name}=${it.content.take(120)}" }}")
+        appendLine("角色：${foundation.characters.take(6).joinToString("；") { "${it.name}[${it.personality.joinToString("、")}]目标=${it.goal.take(100)}" }}")
+        foundation.volumes.take(4).forEach { volume ->
             appendLine("第${volume.order}卷 ${volume.title}：${volume.objective} / ${volume.conflict} / ${volume.turningPoint}")
             if (includeChapters && volume.order == 1) {
-                volume.chapters.take(14).forEach { chapter ->
+                volume.chapters.take(12).forEach { chapter ->
                     appendLine("  ${chapter.order}. ${chapter.title}：${chapter.objective} / ${chapter.conflict} / ${chapter.turningPoint}")
                 }
             }
         }
-    }.take(9_000)
+    }.take(7_000)
+
+    private fun StringBuilder.appendProposal(proposal: NewBookProposal) {
+        appendLine("【已确认方案】")
+        appendLine("书名：${proposal.title}")
+        appendLine("类型：${proposal.genre}")
+        appendLine("平台简介：${proposal.premise}")
+        appendLine("主题：${proposal.theme}")
+        appendLine("目标字数：${proposal.targetWords}")
+        appendLine("核心钩子：${proposal.coreHook}")
+        appendLine("封面方向：${proposal.coverBrief}")
+        appendLine("内部策划：${proposal.rationale.take(500)}")
+    }
 
     private fun meaningfulValue(value: String?, placeholders: Set<String>, fallback: String): String {
         val clean = value.orEmpty().trim()
@@ -398,32 +509,32 @@ internal class ProgressiveFoundationEngine(
     private companion object {
         const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
 
-        val CORE_SYSTEM = """
-            你是“琅嬛”的长篇小说总架构师。现在只完成核心架构，不写详细章纲，不写正文。
-            必须输出 GeneratedChapter JSON：
-            - title：正式书名；content：120-190字平台简介；summary：80-180字故事承诺；touchedForeshadowingIds=[]。
-            - stateChanges 只允许：
-              1. 1条 META：subject 必须固定写 META；field 必须填写“实际小说类型”，例如“中式灵异悬疑”，禁止原样写“类型/小说类型”；before=目标总字数纯数字；after 必须填写一句“实际主题命题”，禁止原样写“主题/主题命题”；evidence=一句话核心钩子。
-              2. 1条 STYLE：subject=STYLE；field=叙事风格；before=故事承诺补充；after=具体风格基线；evidence=封面方向。
-              3. 1条 MASTER：subject=MASTER；field=总纲标题；before=全书目标；after=核心冲突；evidence=最大转折/终局方向。
-              4. 6-12条 BIBLE:分类；分类仅 WORLD/RULE/CHARACTER/FACTION/LOCATION/ITEM/STYLE/FORBIDDEN。
-              5. 3-6条 CHAR；field=角色名；before=性格词；after=长期目标；evidence=地点||身体||情绪||秘密||物品||关系。
-              6. 3-5条 VOLUME:序号；field=卷名；before=本卷目标；after=核心冲突；evidence=关键转折。
-            禁止输出 CHAPTER 和 FORESHADOW。设定少而硬，人物选择有代价，不临时改规则；参考作品只提炼高层技巧，不复制角色、专名、句式和剧情骨架。
+        val WORLD_SYSTEM = """
+            你是“琅嬛”的长篇小说世界与总纲架构师。这一请求必须短而完整，只生成世界规则和总纲，不生成角色列表、分卷、章纲或伏笔。
+            输出 GeneratedChapter JSON：
+            - title=正式书名；content=80-180字平台简介；summary=80-160字故事承诺；touchedForeshadowingIds=[]。
+            - stateChanges：
+              * META 1条：field=实际小说类型；before=目标总字数纯数字；after=实际主题命题；evidence=核心钩子。
+              * STYLE 1条：field=叙事风格；before=阅读承诺；after=风格基线；evidence=封面方向。
+              * MASTER 1条：field=总纲标题；before=全书目标；after=核心冲突；evidence=最大转折/终局方向。
+              * BIBLE:* 4-7条，分类可用 WORLD/RULE/FACTION/LOCATION/ITEM/FORBIDDEN/STYLE；field=名称；before=硬设定内容；after=别名可留空。
+            不要输出 CHAR、VOLUME、CHAPTER、FORESHADOW。设定必须少而硬，禁止复制参考作品的专名、人物或独特剧情骨架。
         """.trimIndent()
 
-        val CHAPTER_SYSTEM = """
-            你是“琅嬛”的第一卷章纲设计师。只负责第一卷详细章纲，不修改书名、简介、人物、世界规则和其它卷纲。
-            输出 GeneratedChapter JSON：title="FIRST_VOLUME_CHAPTERS"；content=""；summary=第一卷节奏摘要；touchedForeshadowingIds=[]。
-            stateChanges 必须且只能包含 10-12 条 CHAPTER:1:序号，从1连续编号：field=章名；before=本章明确目标；after=本章具体冲突；evidence=章末转折。
-            10-12章必须是连续因果链：上一章结果改变下一章条件；每2-3章至少一次信息差或关系变化；不要连续堆怪事，不要提前揭完终局真相。
+        val CAST_SYSTEM = """
+            你是“琅嬛”的长篇人物与分卷架构师。只补核心人物与分卷路线，不重写世界规则和总纲。
+            输出 GeneratedChapter JSON：title="CAST_AND_VOLUMES"；content=""；summary=人物/分卷总体关系；touchedForeshadowingIds=[]。
+            stateChanges 只允许：
+            - CHAR 2-4条：field=角色名；before=2-5个性格/行为倾向；after=长期目标；evidence=地点||身体||情绪||秘密||物品||关系。
+            - VOLUME:序号 2-4条：field=卷名；before=本卷目标；after=核心冲突；evidence=关键转折。
+            至少包含主角和一个长期重要关系角色。分卷必须形成逐级升级，而不是重复同一目标。
         """.trimIndent()
 
         val FORESHADOW_SYSTEM = """
-            你是“琅嬛”的长篇伏笔编辑。只根据既有核心蓝图和第一卷章纲设计伏笔，不修改其它结构。
+            你是“琅嬛”的长篇伏笔编辑。只根据既有蓝图设计伏笔，不修改其它结构。
             输出 GeneratedChapter JSON：title="FORESHADOW_PLAN"；content=""；summary=伏笔整体策略；touchedForeshadowingIds=[]。
-            stateChanges 必须且只能包含 3-6 条 FORESHADOW：field=伏笔名；before=首次呈现时读者能看到的细节；after=预期回收方式；evidence=预计开始章-结束章，例如 2-18。
-            伏笔必须可观察、可误解、可回收；禁止用“作者知道但正文从未出现”的秘密冒充伏笔。
+            stateChanges 只包含 3-5 条 FORESHADOW：field=伏笔名；before=首次呈现时可观察细节；after=预期回收方式；evidence=预计开始章-结束章，例如 2-18。
+            伏笔必须可观察、可误解、可回收；禁止把正文从未出现的作者秘密冒充伏笔。
         """.trimIndent()
     }
 }
