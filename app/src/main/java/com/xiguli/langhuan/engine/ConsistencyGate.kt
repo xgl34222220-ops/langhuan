@@ -6,7 +6,9 @@ import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.IssueSeverity
 
-class ConsistencyGate {
+class ConsistencyGate(
+    private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
+) {
     fun inspect(request: GenerationRequest, output: GeneratedChapter): List<ConsistencyIssue> {
         val issues = mutableListOf<ConsistencyIssue>()
         val text = output.content
@@ -19,6 +21,8 @@ class ConsistencyGate {
         if (request.chapter.objective.isBlank()) {
             issues += blocking("MISSING_OBJECTIVE", "本章没有明确目标", "先补全章纲目标再生成")
         }
+
+        issues += chronologyGuard.inspect(request, output)
 
         request.snapshot.bible
             .filter { it.category == BibleCategory.FORBIDDEN }
@@ -68,11 +72,11 @@ class ConsistencyGate {
                 severity = IssueSeverity.WARNING,
                 code = "MISSING_SUMMARY",
                 message = "缺少可写入长期记忆的章节摘要",
-                repairInstruction = "补充不超过 300 字的事实性摘要",
+                repairInstruction = "补充不超过 300 字的事实性摘要，并写明本章结束时的故事日与时段",
             )
         }
 
-        return issues
+        return issues.distinctBy { listOf(it.code, it.message, it.evidence) }
     }
 
     private fun blocking(
@@ -82,4 +86,3 @@ class ConsistencyGate {
         evidence: String = "",
     ) = ConsistencyIssue(IssueSeverity.BLOCKING, code, message, evidence, repair)
 }
-
