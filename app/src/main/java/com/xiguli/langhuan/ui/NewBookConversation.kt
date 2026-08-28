@@ -508,16 +508,17 @@ private class NewBookConversationEngine(
                     你是“琅嬛”的新书策划搭档。通过自然对话把模糊想法发展成原创长篇小说方案，不要先让用户填表。
 
                     规则：
-                    1. 先理解用户想要的阅读体验，一次最多追问1-2个关键问题；已经明确回答过的问题禁止重复追问。
+                    1. 先理解用户想要的阅读体验。普通创作会谈回复控制在80-260字，一次最多追问1个真正会改变路线的问题；已经明确回答过的问题禁止重复追问。不要写长篇分析、不要连续抛三套以上方案、不要用“如果你愿意我可以……”收尾。
                     2. 当前轮若带有琅嬛联网资料/长期研究档案，用它核对公开事实；用户明确纠正的作者-作品关系属于项目事实，网页暂未核验只能标待核验，不能反复否定。
                     3. 参考模板有两种用途，必须区分：
                        - 原作事实问答：用户问模板/原作主角姓名、人物、能力、世界观、规则、势力、地点、剧情结构等时，可以并且应该直接说出所选 STORY DNA 已保存的原作事实、人物名和专名；报告没保存的事实就明确说“当前蒸馏报告未确认”。
                        - 新书创作：只能迁移高层机制，必须重新设计原创角色、规则、谜团和剧情；不得复用原作专名、具体能力规则、标志性句式和剧情骨架。
                        “禁止照搬”只约束新书创作，绝不能用来拒绝回答用户对模板本身的事实问题。
                     4. 会谈是唯一事实源。越新的用户明确决定优先级越高；用户说“B吧/就这个/改成/不要/换掉/天生不怕吧”这类短句也属于有效决定，必须结合前文理解并覆盖旧方案。
+                       用户说“他们/它们/这两本/前面那几本”时，必须承接最近明确出现或隐藏研究上下文已经解析出的作品，绝不能把代词本身当作书名或新设定。
                     5. 如果已经存在“当前方案”，用户这一轮又修改了主角能力、身份、目标、世界规则、核心冲突、题材、阅读体验、书名或简介，你必须返回一套完整更新后的方案，不能只聊天后继续保留旧 proposal。
                     6. 用户这一轮如果是提问（尤其是模板/原作事实提问），只回答问题，不重写方案、不追问已回答事项、不输出新 proposal。此时输出 GeneratedChapter JSON：title="__CHAT__"；content=直接答案；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    7. 只有确实仍缺关键选择、或者用户只是普通聊天而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=自然回复或必要追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    7. 只有确实仍缺一个会改变主线的关键选择、或者用户只是普通聊天而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=简短直接回答或一个必要追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。能从会谈确定就直接确定，禁止为了显得专业而反复确认。
                     8. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
                     9. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。只要核心设定已经改变，就必须按最新事实重写简介，禁止为了省事复用旧简介。
                     10. 若存在“用户显式选择的参考双层 DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
@@ -553,7 +554,7 @@ private class NewBookConversationEngine(
         }
 
         val meta = output.stateChanges.first()
-        val proposal = NewBookProposal(
+        val rawProposal = NewBookProposal(
             title = sanitizeTitle(output.title),
             genre = sanitizeMetaValue(meta.subject, GENRE_PLACEHOLDERS, currentProposal?.genre ?: "未分类"),
             premise = sanitizeSynopsis(output.content),
@@ -565,6 +566,16 @@ private class NewBookConversationEngine(
             coverBrief = meta.evidence.trim().ifBlank { currentProposal?.coverBrief.orEmpty() },
             rationale = output.summary.trim().ifBlank { currentProposal?.rationale.orEmpty() },
         ).sanitizePlaceholders()
+        val proposal = SynopsisQualityEditor(gateway).ensure(
+            proposal = rawProposal,
+            decisionLedger = buildString {
+                appendLine("越新的用户决定优先。最近用户输入：$latest")
+                messages.filter { it.role == "user" }.takeLast(8).forEach { message ->
+                    appendLine("- ${message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim().take(500)}")
+                }
+            }.take(1_500),
+            force = true,
+        )
         return ConversationTurn(
             reply = buildString {
                 append(if (currentProposal == null) "我已经把方向收束成一套可以落地的方案。" else "我已经按你刚才的决定更新了当前方案。")
@@ -638,7 +649,7 @@ private object IdentityRefiner {
         ) { }
         return proposal.copy(
             title = sanitizeTitle(output.title).ifBlank { proposal.title },
-            premise = sanitizeSynopsis(output.content).ifBlank { proposal.premise },
+            premise = SynopsisQuality.normalize(sanitizeSynopsis(output.content)).ifBlank { proposal.premise },
         ).sanitizePlaceholders()
     }
 }

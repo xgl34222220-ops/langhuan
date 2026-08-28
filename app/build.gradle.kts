@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 42
-        versionName = "0.24.3-alpha01"
+        versionCode = 43
+        versionName = "0.24.4-alpha01"
     }
 
     buildFeatures { compose = true }
@@ -62,5 +62,6 @@ dependencies {
     implementation(libs.haze.materials)
     implementation(libs.miuix.blur)
     implementation(libs.miuix.squircle)
+    testImplementation(libs.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

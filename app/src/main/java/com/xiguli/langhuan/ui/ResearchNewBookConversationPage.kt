@@ -81,7 +81,9 @@ fun ResearchNewBookConversationPage(
         }
 
         scope.launch {
-            val primary = runCatching { research.researchForCreation(text) }.getOrNull()
+            val primary = runCatching {
+                research.researchForCreation(text, preResolvedTargets = detected)
+            }.getOrNull()
             var bundle = primary
 
             if (bundle?.hasSources != true) {
@@ -283,6 +285,10 @@ private fun buildResearchPrompt(
     appendLine()
     appendLine("这是琅嬛 App 的创作研究上下文。联网结果只是‘新增证据’，不是一次性答案；此前查过的作者/作品保存在长期研究档案里。")
     appendLine("本轮目标优先级：先确定用户真正指的是哪个作者/作品，再核对作者归属、代表作、主角、能力、主题、剧情、世界规则和公开评价，最后提炼可借鉴机制。")
+    val resolvedTargets = bundle?.groups.orEmpty().map { it.target }.filter(String::isNotBlank)
+    if (resolvedTargets.isNotEmpty()) {
+        appendLine("【本轮已解析指代】参考对象明确为：${resolvedTargets.joinToString("、")}。用户本轮说的‘他们/它们/这两本’只能指这些对象，禁止把代词本身当作作品名。")
+    }
     appendLine("用户在当前或历史会话中明确说‘这些书是某作者写的’、纠正作者或作品归属时，把它作为用户提供的项目事实继续推理。若网页暂时找不到，只标‘用户提供，待网页核验’，绝对不能反复说‘没有作者绑定硬证据所以无法分析’。")
     appendLine("本轮没有新网页证据时，只能说‘本轮没有新增证据’，不能清空长期档案，也不能把模型原本知道的内容清空。")
     appendLine("网页主要负责核对公开事实；具体章节不是每轮都必须拿到。你拥有自己的训练知识，对本来就有把握的高层事实可以和档案合并，但不得捏造具体章节、原句、数字或不确定人物。")
@@ -400,11 +406,11 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
             if (targets.isNotEmpty()) {
                 Text("参考对象：${targets.joinToString(" · ")}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
             }
-            sources.take(6).forEach { source ->
-                Text("• ${source.title}${if (source.detail.isNotBlank()) " · 已深读" else ""}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                if (source.snippet.isNotBlank()) Text(source.snippet, style = MaterialTheme.typography.labelSmall, maxLines = 3)
+            sources.take(3).forEach { source ->
+                Text("• ${source.title}${if (source.detail.isNotBlank()) " · 已深读" else ""}", style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
-            if (sources.isNotEmpty()) Text("公开资料会并入本地长期档案；模型会结合已有知识继续补全，拿不准的具体细节单独标注。", style = MaterialTheme.typography.labelSmall)
+            if (sources.size > 3) Text("另有 ${sources.size - 3} 条线索已归档，不在对话里展开。", style = MaterialTheme.typography.labelSmall)
+            if (sources.isNotEmpty()) Text("资料已交给 AI 归纳；对话只显示结论，不再铺满搜索摘要。", style = MaterialTheme.typography.labelSmall)
         }
     }
 }

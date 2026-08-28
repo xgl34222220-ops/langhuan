@@ -85,6 +85,7 @@ class WebResearchEngine {
     suspend fun researchForCreation(
         userText: String,
         perTargetLimit: Int = 5,
+        preResolvedTargets: List<String> = emptyList(),
     ): CreationResearchBundle = coroutineScope {
         val explicitAuthor = authorTarget(userText)
         val contextualAuthor = explicitAuthor ?: lastAuthorTarget?.takeIf { isAuthorFollowUp(userText) }
@@ -103,12 +104,23 @@ class WebResearchEngine {
             )
         }
 
-        val targets = referenceTargets(userText)
+        // The UI resolves once before showing the status card. Reuse that exact result here so a
+        // second pass cannot reinterpret a trailing pronoun (for example “他们”) as a new title.
+        val targets = preResolvedTargets
+            .map(::cleanReferenceTarget)
+            .filter(::isUsableTarget)
+            .distinct()
+            .take(6)
+            .ifEmpty { referenceTargets(userText) }
         val contextualWorks = if (targets.isEmpty() && isWorkFollowUp(userText)) lastWorkTargets else emptyList()
         val fallback = cleanReferenceTarget(normalizeQuery(userText))
         val effectiveTargets = when {
             targets.isNotEmpty() -> targets
             contextualWorks.isNotEmpty() -> contextualWorks
+            // Never send a bare pronoun or a whole instruction sentence to the search engine as if
+            // it were a book title. With no resolvable title we return an empty evidence bundle and
+            // let the conversation ask one concise clarification question.
+            looksLikeUnresolvedReference(userText) -> emptyList()
             else -> listOf(fallback)
         }
             .filter { isUsableTarget(it) }
@@ -175,7 +187,6 @@ class WebResearchEngine {
         }
 
         if (lastAuthorTarget != null && isAuthorFollowUp(text)) return listOf(lastAuthorTarget!!)
-        if (lastWorkTargets.isNotEmpty() && isWorkFollowUp(text)) return lastWorkTargets
 
         val exact = linkedSetOf<String>()
         val direct = linkedSetOf<String>()
@@ -185,6 +196,7 @@ class WebResearchEngine {
             "优点", "特点", "风格", "这本", "这部", "高层设定", "部分设定", "核心设定", "中式悬疑",
             "中式灵异", "无限流", "惊悚无限流", "我的小说", "进我的小说", "融合进我的小说",
             "其他小说", "其它小说", "其他作品", "其它作品", "他的其他小说", "他的其它小说",
+            "他", "他们", "它", "它们", "他们的", "它们的", "你知不知道", "知不知道", "你知道吗",
         )
 
         fun sanitize(raw: String): String = cleanReferenceTarget(raw).removeSuffix("的").trim()
@@ -193,7 +205,7 @@ class WebResearchEngine {
             if (isUsableTarget(candidate) && candidate !in ignored && !looksLikeInstruction(candidate)) set += candidate
         }
         fun splitTargets(raw: String, destination: LinkedHashSet<String>) {
-            raw.split(Regex("[、,，/+]|和|与"))
+            raw.split(Regex("[、,，/+]|以及|还有|和|与"))
                 .map(String::trim)
                 .filter(String::isNotBlank)
                 .forEach { addTo(destination, it) }
@@ -204,6 +216,35 @@ class WebResearchEngine {
         }
         if (exact.isNotEmpty()) {
             val found = exact.take(6)
+            lastWorkTargets = found
+            return found
+        }
+
+        // Natural Chinese often omits book-title brackets. Resolve the noun phrase nearest the
+        // research action before the broader fusion regex. Examples:
+        // - “搜迷雾之上和神秘复苏的核心设定”
+        // - “神秘复苏和迷雾之上设定融合，你知不知道他们的特点”
+        val bareWorks = linkedSetOf<String>()
+        val barePatterns = listOf(
+            Regex("(?:搜一下|搜|搜索一下|搜索|查一下|查查|研究一下|研究|了解一下|了解)\\s*([^，。！？!?\\n]{2,100}?)(?:的)?(?:核心)?(?:设定|世界观|规则|特点|优点|剧情|主角|能力)(?:是什么|有哪些|如何|怎么)?"),
+            Regex("([^，。！？!?\\n]{2,100}?)(?:的)?(?:核心)?设定\\s*(?:进行|来|做)?(?:融合|结合|混合|对比|分析|研究)"),
+            Regex("(?:融合|结合|混合|参考|借鉴)\\s*([^，。！？!?\\n]{2,100}?)(?:的)?(?:核心)?(?:设定|世界观|规则|特点|优点)"),
+        )
+        barePatterns.forEach { pattern ->
+            pattern.findAll(text).forEach { match ->
+                val raw = match.groupValues.getOrNull(1).orEmpty()
+                    .replace(Regex("^(?:一下|一下子|看看|一下看看)"), "")
+                    .removeSuffix("的")
+                    .trim()
+                if (Regex("[、,，/+]|以及|还有|和|与").containsMatchIn(raw)) {
+                    splitTargets(raw, bareWorks)
+                } else {
+                    addTo(bareWorks, raw)
+                }
+            }
+        }
+        if (bareWorks.isNotEmpty()) {
+            val found = bareWorks.take(6)
             lastWorkTargets = found
             return found
         }
@@ -221,6 +262,10 @@ class WebResearchEngine {
             lastWorkTargets = found
             return found
         }
+
+        // Only fall back to prior works after all explicit-title forms have been checked. Otherwise
+        // a sentence containing both new titles and “他们” would incorrectly reuse an older turn.
+        if (lastWorkTargets.isNotEmpty() && isWorkFollowUp(text)) return lastWorkTargets
 
         val fusionAfter = Regex(
             "(?:融合|结合|混合|参考|借鉴)\\s*([^。！？!?\\n]{2,120}?)(?:的(?:部分)?(?:设定|世界观|优点|特点|风格|机制|叙事)|来写|$)"
@@ -262,9 +307,10 @@ class WebResearchEngine {
     private fun isWorkFollowUp(text: String): Boolean {
         val value = text.trim()
         val referent = listOf(
-            "这本", "这部", "这几本", "这些作品", "这些小说", "它", "它的", "它们", "前面那本", "刚才那本",
+            "这本", "这部", "这两本", "这几本", "这些作品", "这些小说", "他", "他们", "他们的",
+            "它", "它的", "它们", "它们的", "前面那本", "前面两本", "前面那几本", "刚才那本", "刚才两本",
         ).any(value::contains)
-        val continuation = listOf("再看看", "继续", "深入", "详细", "主角", "能力", "剧情", "主题", "设定", "风格").any(value::contains)
+        val continuation = listOf("再看看", "继续", "深入", "详细", "主角", "能力", "剧情", "主题", "设定", "核心设定", "世界观", "规则", "特点", "优点", "风格").any(value::contains)
         return referent && continuation
     }
 
@@ -287,9 +333,17 @@ class WebResearchEngine {
         if (value.length !in 2..40) return false
         val noise = listOf(
             "我的小说", "进我的", "融合进", "可以融合", "有什么可以", "再看看他的", "其他小说", "其它小说",
-            "其他作品", "其它作品",
+            "其他作品", "其它作品", "你知不知道", "知不知道", "你知道吗", "什么意思", "是什么",
         )
-        return noise.none(value::contains)
+        val pronouns = setOf("他", "他们", "他们的", "它", "它们", "它们的", "这本", "这部", "这两本", "这些")
+        return value !in pronouns && noise.none(value::contains)
+    }
+
+    private fun looksLikeUnresolvedReference(text: String): Boolean {
+        val value = text.trim()
+        val pronoun = listOf("他们", "他们的", "它们", "它们的", "这两本", "这几本", "这些作品", "前面那几本")
+            .any(value::contains)
+        return pronoun && lastWorkTargets.isEmpty() && referenceTargets(value).isEmpty()
     }
 
     private fun looksLikeInstruction(value: String): Boolean {

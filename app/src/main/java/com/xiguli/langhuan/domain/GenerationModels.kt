@@ -7,6 +7,7 @@ import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
@@ -158,24 +159,8 @@ object GeneratedChapterSerializer : KSerializer<GeneratedChapter> {
     }
 
     private fun parseStateChanges(element: JsonElement?): List<StateChange> {
-        val objects: List<Pair<String?, JsonObject>> = when (element) {
-            null, JsonNull -> emptyList()
-            is JsonArray -> element.mapNotNull { item ->
-                (item as? JsonObject)?.let { null to it }
-            }
-            is JsonObject -> {
-                if (element.looksLikeStateChange()) {
-                    listOf(null to element)
-                } else {
-                    element.mapNotNull { (key, value) ->
-                        (value as? JsonObject)?.let { key to it }
-                    }
-                }
-            }
-            else -> emptyList()
-        }
-
-        return objects.mapNotNull { (mapKey, obj) ->
+        val parsed = collectStateChanges(element)
+        return parsed.mapNotNull { (mapKey, obj) ->
             val subject = obj.stringAny("subject", "kind", "type", "category", "scope")
                 .ifBlank { mapKey.orEmpty() }
             val field = obj.stringAny("field", "name", "dimension", "key", "title")
@@ -195,7 +180,74 @@ object GeneratedChapterSerializer : KSerializer<GeneratedChapter> {
                     evidence = evidence,
                 )
             }
+        }.plus(collectTextStateChanges(element)).distinctBy {
+            listOf(it.subject, it.field, it.before, it.after, it.evidence).joinToString("\u0000")
         }
+    }
+
+    /**
+     * Relays commonly reshape an array into a keyed object, a keyed array, or even a JSON string.
+     * Walk all of those shapes while carrying the map key as the missing subject label.
+     */
+    private fun collectStateChanges(
+        element: JsonElement?,
+        inheritedSubject: String? = null,
+    ): List<Pair<String?, JsonObject>> = when (element) {
+        null, JsonNull -> emptyList()
+        is JsonArray -> element.flatMap { collectStateChanges(it, inheritedSubject) }
+        is JsonObject -> if (element.looksLikeStateChange()) {
+            listOf(inheritedSubject to element)
+        } else {
+            element.flatMap { (key, value) -> collectStateChanges(value, key) }
+        }
+        is JsonPrimitive -> {
+            val raw = element.contentOrNull.orEmpty().trim()
+            if ((raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))) {
+                runCatching { Json.parseToJsonElement(raw) }
+                    .getOrNull()
+                    ?.let { collectStateChanges(it, inheritedSubject) }
+                    .orEmpty()
+            } else {
+                emptyList()
+            }
+        }
+        else -> emptyList()
+    }
+
+    /** Accept compact relay output such as `BIBLE:WORLD|名称|内容|别名|证据`. */
+    private fun collectTextStateChanges(
+        element: JsonElement?,
+        inheritedSubject: String? = null,
+    ): List<StateChange> = when (element) {
+        null, JsonNull -> emptyList()
+        is JsonArray -> element.flatMap { collectTextStateChanges(it, inheritedSubject) }
+        is JsonObject -> if (element.looksLikeStateChange()) {
+            emptyList()
+        } else {
+            element.flatMap { (key, value) -> collectTextStateChanges(value, key) }
+        }
+        is JsonPrimitive -> {
+            val raw = element.contentOrNull.orEmpty().trim()
+            if (raw.isBlank() || raw.startsWith("{") || raw.startsWith("[")) {
+                emptyList()
+            } else {
+                raw.lines().mapNotNull { line ->
+                    val parts = line.trim().trimStart('-', '•').split(Regex("\\s*[|｜]\\s*"), limit = 5)
+                    val subject = inheritedSubject.orEmpty().ifBlank { parts.getOrNull(0).orEmpty() }.trim()
+                    val offset = if (inheritedSubject.isNullOrBlank()) 1 else 0
+                    val field = parts.getOrNull(offset)?.trim().orEmpty()
+                    if (subject.isBlank() || field.isBlank()) return@mapNotNull null
+                    StateChange(
+                        subject = subject,
+                        field = field,
+                        before = parts.getOrNull(offset + 1)?.trim().orEmpty(),
+                        after = parts.getOrNull(offset + 2)?.trim().orEmpty(),
+                        evidence = parts.getOrNull(offset + 3)?.trim().orEmpty(),
+                    )
+                }
+            }
+        }
+        else -> emptyList()
     }
 
     private fun JsonObject.looksLikeStateChange(): Boolean =

@@ -88,6 +88,31 @@ internal class ProgressiveFoundationEngine(
                 summary = world.summary.ifBlank { cast.summary },
             )
             working = parseCore(combined, proposal, current)
+            if (!coreUsable(working)) {
+                onStage("1/3 · 返回结构不标准，正在自动整理蓝图……")
+                val normalized = request(
+                    stage = "1/3 蓝图自动整理",
+                    prompt = PromptBundle(
+                        system = CORE_NORMALIZER_SYSTEM,
+                        user = buildString {
+                            appendProposal(proposal)
+                            appendLine()
+                            appendLine("【第一次返回的可读内容】")
+                            appendLine(compactGenerated(combined).take(5_000))
+                            appendLine()
+                            appendLine("当前缺口：世界规则 ${working.bible.size}/3；核心人物 ${working.characters.size}/2；分卷 ${working.volumes.size}/1。")
+                            appendLine("请重新输出一份短而完整的标准结构，不能只解释标签，不能把条目写进正文。")
+                        },
+                    ),
+                )
+                val repaired = combined.copy(
+                    title = normalized.title.ifBlank { combined.title },
+                    content = normalized.content.ifBlank { combined.content },
+                    summary = normalized.summary.ifBlank { combined.summary },
+                    stateChanges = combined.stateChanges + normalized.stateChanges,
+                )
+                working = parseCore(repaired, proposal, current)
+            }
             validateCore(working)
             onCheckpoint(1, working)
         } else {
@@ -326,12 +351,12 @@ internal class ProgressiveFoundationEngine(
 
     private fun validateCore(foundation: StoryFoundation) {
         require(foundation.bible.size >= 3) {
-            "1/3 世界规则只解析到 ${foundation.bible.size} 条，至少需要 3 条。已兼容 BIBLE:WORLD、BIBLE_WORLD、世界、规则等常见标签；请直接重试第 1 阶段。"
+            "模型连续两次都没有给出可用的世界规则（${foundation.bible.size}/3）。会谈和当前方案已经保留，请直接重试；若仍失败请临时切换另一个模型。"
         }
         require(foundation.characters.size >= 2) {
-            "1/3 核心人物只解析到 ${foundation.characters.size} 个，至少需要 2 个。请重试第 1 阶段。"
+            "模型连续两次都没有给出完整核心人物（${foundation.characters.size}/2）。会谈和当前方案已经保留，请直接重试。"
         }
-        require(foundation.volumes.isNotEmpty()) { "1/3 没有解析到有效分卷路线。已兼容 VOLUME:1、VOLUME_1、分卷1、卷1 等常见标签；请重试第 1 阶段。" }
+        require(foundation.volumes.isNotEmpty()) { "模型连续两次都没有给出有效分卷路线。会谈和当前方案已经保留，请直接重试。" }
     }
 
     private fun coreUsable(foundation: StoryFoundation): Boolean =
@@ -608,6 +633,20 @@ internal class ProgressiveFoundationEngine(
             输出 GeneratedChapter JSON：title="FORESHADOW_PLAN"；content=""；summary=伏笔整体策略；touchedForeshadowingIds=[]。
             stateChanges 只包含 3-5 条 FORESHADOW：field=伏笔名；before=首次呈现时可观察细节；after=预期回收方式；evidence=预计开始章-结束章，例如 2-18。
             伏笔必须可观察、可误解、可回收；禁止把正文从未出现的作者秘密冒充伏笔。
+        """.trimIndent()
+
+        val CORE_NORMALIZER_SYSTEM = """
+            你是“琅嬛”的蓝图结构整理器。上一个模型返回的内容可能被中转站改了字段或把数组压成了文本；你必须根据当前方案重新输出一份短小、完整、标准的 GeneratedChapter JSON。
+            不要解释，不要输出 Markdown，不要把条目写在 content/summary 里。
+            title=正式书名；content=100-180字平台简介；summary=80-150字故事承诺；touchedForeshadowingIds=[]。
+            stateChanges 必须是 JSON 数组，并完整包含：
+            - META 1条：field=实际小说类型；before=目标字数纯数字；after=主题；evidence=核心钩子。
+            - STYLE 1条：field=叙事风格；before=阅读承诺；after=风格基线；evidence=封面方向。
+            - MASTER 1条：field=总纲名；before=全书目标；after=核心冲突；evidence=终局转折方向。
+            - BIBLE:WORLD / BIBLE:RULE / BIBLE:LOCATION / BIBLE:FACTION / BIBLE:FORBIDDEN 中至少4条：field=设定名；before=不可随意改变的硬设定；after=别名或空字符串。
+            - CHAR 至少2条：field=角色名；before=性格；after=长期目标；evidence=地点||身体||情绪||秘密||物品||关系。
+            - VOLUME:1、VOLUME:2 至少2条：field=卷名；before=本卷目标；after=本卷冲突；evidence=卷末转折。
+            所有角色、规则、专名和因果链必须原创；后出现的用户决定优先，禁止恢复被否定的旧设定。
         """.trimIndent()
     }
 }

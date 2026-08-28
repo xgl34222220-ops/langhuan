@@ -16,6 +16,8 @@ internal class ProposalConsolidator(
         current: NewBookProposal,
         messages: List<CreationChatMessage>,
     ): NewBookProposal {
+        val ledger = runCatching { buildDecisionLedger(current, messages) }
+            .getOrElse { fallbackLedger(current, messages) }
         val output = gateway.generate(
             PromptBundle(
                 system = """
@@ -23,7 +25,7 @@ internal class ProposalConsolidator(
 
                     优先级必须严格遵守：
                     1. 越新的用户明确决定优先级越高；用户后面说“改成/不要/就选B/按这个/不是这样/换掉”时，旧设定立刻失效。
-                    2. 用户的话高于琅嬛之前的建议。琅嬛提出但用户没有接受的内容不能当成已确认事实。
+                    2. 用户的话高于琅嬛之前的建议。你收到的“确认事实账本”已经把短句指代和新旧覆盖关系整理好；不得再从旧助手建议里捡设定。
                     3. “当前缓存方案”只是旧基线，可能已经过期；只要与后续用户决定冲突，就必须丢弃旧内容，不能为了保持连续而偷偷复用。
                     4. 如果主角能力、身份、目标、世界规则、核心冲突、故事起点或阅读体验发生变化，平台简介必须基于最新方案重新写，禁止原封不动保留旧简介。
                     5. 参考作品只提炼高层机制，所有角色、专名、规则和剧情骨架必须原创。
@@ -35,7 +37,7 @@ internal class ProposalConsolidator(
                     - stateChanges 只返回1项：subject=实际小说类型；field=一句实际主题命题；before=目标总字数纯数字；after=一句话核心钩子；evidence=封面视觉简报；
                     - touchedForeshadowingIds=[]。
 
-                    平台简介只写故事起点、主角当下目标、核心异常/规则和眼前代价/悬念，不泄露中后期答案。不要解释你做了什么，只返回结构化结果。
+                    平台简介必须是一个连贯故事，不是设定清单：第1句写主角身份与触发事件，第2句写眼前目标，第3句写阻碍他的核心规则/异常，第4句用具体代价或危险收住。120-200字，不加“简介/核心钩子/主题”等小标题，不写参考、融合、借鉴过程，不泄露中后期答案。不要解释你做了什么，只返回结构化结果。
                 """.trimIndent(),
                 user = buildString {
                     appendLine("【当前缓存方案：可能已经过期】")
@@ -48,41 +50,77 @@ internal class ProposalConsolidator(
                     appendLine("封面：${current.coverBrief}")
                     appendLine("内部策划：${current.rationale.take(500)}")
                     appendLine()
-                    appendLine("【会谈记录：按时间顺序，后面的用户决定覆盖前面】")
+                    appendLine("【确认事实账本：这是本轮生成唯一允许采用的创作事实】")
+                    appendLine(ledger)
+                    appendLine()
+                    appendLine("【最近会谈，仅用于核对措辞；若与事实账本冲突，以事实账本为准】")
                     appendLine(decisionTranscript(messages))
                 },
             )
         )
 
         val meta = output.stateChanges.firstOrNull()
-            ?: throw IllegalStateException("最终方案合并失败：AI 没有返回方案元数据")
         val title = normalizeTitle(output.title).ifBlank { current.title }
         val premise = normalizeSynopsis(output.content)
-        require(premise.length >= 40) { "最终方案合并失败：AI 返回的简介过短" }
-
-        return NewBookProposal(
+        val proposal = NewBookProposal(
             title = title,
-            genre = meta.subject.trim().takeUnless(::isGenrePlaceholder) ?: current.genre,
-            premise = premise,
-            theme = meta.field.trim().takeUnless(::isThemePlaceholder) ?: current.theme,
-            targetWords = meta.before.filter(Char::isDigit).toIntOrNull()
+            genre = meta?.subject.orEmpty().trim().takeUnless(::isGenrePlaceholder) ?: current.genre,
+            premise = premise.ifBlank { current.premise },
+            theme = meta?.field.orEmpty().trim().takeUnless(::isThemePlaceholder) ?: current.theme,
+            targetWords = meta?.before.orEmpty().filter(Char::isDigit).toIntOrNull()
                 ?.coerceIn(10_000, 5_000_000)
                 ?: current.targetWords,
-            coreHook = meta.after.trim().ifBlank { current.coreHook },
-            coverBrief = meta.evidence.trim().ifBlank { current.coverBrief },
+            coreHook = meta?.after.orEmpty().trim().ifBlank { current.coreHook },
+            coverBrief = meta?.evidence.orEmpty().trim().ifBlank { current.coverBrief },
             rationale = output.summary.trim().ifBlank { current.rationale },
         )
+        return SynopsisQualityEditor(gateway).ensure(proposal, ledger)
     }
 
+    private suspend fun buildDecisionLedger(
+        current: NewBookProposal,
+        messages: List<CreationChatMessage>,
+    ): String {
+        val output = gateway.generate(
+            PromptBundle(
+                system = """
+                    你是新书会谈事实整理员，不写小说方案、不发挥创意，只整理用户已经确认的决定。
+                    时间越新的用户消息优先级越高。“B吧/就这个/换成/不要/他/他们/这两本”等短句必须结合紧邻上下文解析；被用户否定、纠正或替换的旧内容放入“已作废”，绝不能继续算确认事实。
+                    助手曾经提出的选项只有在用户明确选择后才成立；研究资料只能说明参考作品，不自动成为新书设定。
+                    输出 GeneratedChapter JSON：title="DECISION_LEDGER"；content=不超过1000字的事实账本，按“确认事实 / 已作废 / 仍未确定”三段书写；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    确认事实至少覆盖能确认的：题材体验、主角身份/能力/目标、故事起点、世界规则、核心冲突、参考作品只借鉴什么、明确禁止什么。没有确认就写未确定，禁止补空白。
+                """.trimIndent(),
+                user = buildString {
+                    appendLine("【当前缓存，仅作为最早基线】")
+                    appendLine("${current.title}｜${current.genre}｜${current.premise}｜${current.theme}｜${current.coreHook}")
+                    appendLine()
+                    appendLine("【按时间顺序的会谈】")
+                    appendLine(decisionTranscript(messages))
+                },
+            )
+        )
+        return output.content.trim().take(1_200).ifBlank { fallbackLedger(current, messages) }
+    }
+
+    private fun fallbackLedger(current: NewBookProposal, messages: List<CreationChatMessage>): String = buildString {
+        appendLine("确认事实：当前有效方案为《${current.title}》；类型=${current.genre}；主题=${current.theme}；核心钩子=${current.coreHook}。")
+        appendLine("最近用户决定：")
+        messages.filter { it.role == "user" }.takeLast(10).forEach { message ->
+            appendLine("- ${message.text.substringBefore(RESEARCH_MARKER).trim().take(500)}")
+        }
+        appendLine("已作废：凡与更晚用户决定冲突的旧方案。")
+        appendLine("仍未确定：会谈中没有被用户明确确认的细节。")
+    }.take(1_500)
+
     private fun decisionTranscript(messages: List<CreationChatMessage>): String {
-        val recent = messages.takeLast(28)
+        val recent = messages.takeLast(32)
         return recent.joinToString("\n") { message ->
             val plain = if (message.role == "user") {
                 message.text.substringBefore(RESEARCH_MARKER).trimEnd().take(1_000)
             } else {
                 message.text.take(420)
             }
-            if (message.role == "user") "用户：$plain" else "琅嬛：$plain"
+            if (message.role == "user") "用户决定/问题：$plain" else "助手上下文（仅用于解析用户短句，不等于已确认）：$plain"
         }.takeLast(12_000)
     }
 
@@ -107,5 +145,54 @@ internal class ProposalConsolidator(
 
     private companion object {
         const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
+    }
+}
+
+internal object SynopsisQuality {
+    fun normalize(value: String): String = value.trim()
+        .replace(Regex("^(?:#+\\s*)?(?:平台)?(?:故事)?简介[:：]?\\s*"), "")
+        .replace(Regex("(?m)^\\s*(?:[-*•]|\\d+[.、])\\s*"), "")
+        .replace(Regex("\\n{2,}"), "\n")
+        .take(220)
+
+    fun needsRewrite(value: String): Boolean {
+        val text = normalize(value)
+        val compact = text.filterNot(Char::isWhitespace)
+        if (compact.length !in 90..220) return true
+        if (Regex("(?:简介|核心钩子|主题|设定融合|参考《|借鉴《|本书将|故事讲述的是)[:：]").containsMatchIn(text)) return true
+        if (text.lines().size > 3) return true
+        val sentenceCount = Regex("[。！？!?]").findAll(text).count()
+        return sentenceCount < 2
+    }
+}
+
+internal class SynopsisQualityEditor(private val gateway: AiGateway) {
+    suspend fun ensure(
+        proposal: NewBookProposal,
+        decisionLedger: String,
+        force: Boolean = false,
+    ): NewBookProposal {
+        val normalized = proposal.copy(premise = SynopsisQuality.normalize(proposal.premise))
+        if (!force && !SynopsisQuality.needsRewrite(normalized.premise)) return normalized
+        val output = gateway.generate(
+            PromptBundle(
+                system = """
+                    你是中文网文平台的简介主编。只改简介，不添加、删除或偷换任何设定。
+                    输出 GeneratedChapter JSON：title="SYNOPSIS"；content=120-200字完整平台简介；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    必须写成连续故事：①主角身份与触发事件；②主角眼前必须完成的目标；③阻碍他的核心异常/规则；④失败的具体代价或迫近危险。
+                    不写世界观说明书，不罗列名词，不出现“参考/融合/借鉴/主题/核心钩子/本书”，不剧透幕后真相和终局反转，不凭空补人物、能力或规则。句子之间必须因果连贯，主角称谓和人称保持一致。
+                """.trimIndent(),
+                user = """
+                    书名：${proposal.title}
+                    类型：${proposal.genre}
+                    主题：${proposal.theme}
+                    核心钩子：${proposal.coreHook}
+                    当前简介：${proposal.premise}
+                    确认事实账本：${decisionLedger.take(1_200)}
+                """.trimIndent(),
+            )
+        )
+        val rewritten = SynopsisQuality.normalize(output.content)
+        return if (rewritten.length >= 70) normalized.copy(premise = rewritten) else normalized
     }
 }
