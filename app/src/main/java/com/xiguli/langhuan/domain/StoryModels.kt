@@ -94,7 +94,16 @@ data class TimelineEvent(
 )
 
 @Serializable
-enum class ForeshadowStatus { PLANTED, DEVELOPING, RESOLVED, ABANDONED }
+enum class ForeshadowStatus {
+    PLANTED,
+    DEVELOPING,
+    /** 已进入计划回收窗口，但正文尚未确认回收。 */
+    PAYOFF_DUE,
+    /** 已超过计划最晚回收章节，长篇体检会持续提醒。 */
+    OVERDUE,
+    RESOLVED,
+    ABANDONED,
+}
 
 @Serializable
 data class Foreshadowing(
@@ -173,4 +182,9 @@ data class StorySnapshot(
     val outline: List<OutlineNode> = emptyList(),
     /** 结构化长期事实的章级来源。旧项目为空；新写入事实逐章累积，供依赖分析和安全回滚使用。 */
     val factHistory: List<FactProvenance> = emptyList(),
+    /**
+     * 百万字/两百万字连续创作状态。使用带默认值的 JSON 字段，因此旧项目无需 Room migration。
+     * 只保存压缩后的剧情弧、成长轨迹和中期记忆，不复制整章正文。
+     */
+    val longForm: LongFormState = LongFormState(),
 )
