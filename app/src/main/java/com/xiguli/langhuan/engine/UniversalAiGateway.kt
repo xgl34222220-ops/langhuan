@@ -485,8 +485,8 @@ private fun http(url: String, method: String, headers: Map<String, String>, body
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     return try {
         connection.requestMethod = method
-        connection.connectTimeout = 25_000
-        connection.readTimeout = 180_000
+        connection.connectTimeout = 0
+        connection.readTimeout = 0
         connection.setRequestProperty("Accept", "application/json")
         headers.forEach(connection::setRequestProperty)
         if (body != null) {
@@ -512,8 +512,8 @@ private suspend fun streamHttp(
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     try {
         connection.requestMethod = "POST"
-        connection.connectTimeout = 25_000
-        connection.readTimeout = 180_000
+        connection.connectTimeout = 0
+        connection.readTimeout = 0
         connection.doOutput = true
         connection.setRequestProperty("Accept", "text/event-stream, application/x-ndjson, application/json")
         connection.setRequestProperty("Content-Type", "application/json")

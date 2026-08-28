@@ -416,13 +416,11 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
             runCatching {
                 val refreshed = runCatching {
-          kotlinx.coroutines.withTimeout(75_000L) {
-              ProposalConsolidator(gateway).consolidate(
-                  current = baseline,
-                  messages = before.messages,
-              )
-          }
-      }.getOrElse { baseline }
+                    ProposalConsolidator(gateway).consolidate(
+                        current = baseline,
+                        messages = before.messages,
+                    )
+                }.getOrElse { baseline }
                 _state.update {
                     it.copy(
                         proposal = refreshed,
@@ -855,7 +853,7 @@ private fun friendlyAiError(error: Throwable, fallback: String): String {
     val message = error.message.orEmpty()
     val timeout = message.contains("timed out", true) || message.contains("timeout", true) || message.contains("超时")
     return if (timeout) {
-        "$fallback：当前阶段请求超时。已经成功完成的蓝图阶段会保留为断点；直接重试会从下一阶段继续，不需要重新发送整批网页资料，也不会重复生成已完成阶段。"
+        "$fallback：AI 服务或中转站主动返回了超时/断开。琅嬛本身没有设置生成倒计时，也没有因为等待时间过长主动终止请求。"
     } else {
         message.ifBlank { fallback }
     }

@@ -11,8 +11,6 @@ import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.domain.StateChange
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withTimeout
 
 /**
  * 分阶段建书引擎。
@@ -169,11 +167,12 @@ internal class ProgressiveFoundationEngine(
         return working
     }
 
-    /** 单个阶段最多等待 75 秒，避免 UI 永久卡在 2/3。 */
+    /**
+     * 不设置任何 App 侧生成时限。不同模型/中转站的思考耗时差异很大，
+     * 只允许用户主动取消，琅嬛不再因为固定秒数擅自终止正常请求。
+     */
     private suspend fun requestOptional(stage: String, prompt: PromptBundle): GeneratedChapter? = try {
-        withTimeout(STAGE_TIMEOUT_MS) { gateway.generate(prompt) }
-    } catch (_: TimeoutCancellationException) {
-        null
+        gateway.generate(prompt)
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (_: Throwable) {
@@ -768,7 +767,6 @@ internal class ProgressiveFoundationEngine(
 
     private companion object {
         const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
-        const val STAGE_TIMEOUT_MS = 75_000L
         const val MAX_LOCKED_SECTION_CHARS = 5_000
         val META_SUBJECTS = setOf("META", "BOOK_META", "BOOKMETA", "书籍信息", "元信息")
         val STYLE_SUBJECTS = setOf("STYLE", "STYLE_GUIDE", "STYLEGUIDE", "风格", "叙事风格")
