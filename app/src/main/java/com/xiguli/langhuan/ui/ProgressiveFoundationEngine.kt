@@ -27,6 +27,7 @@ internal class ProgressiveFoundationEngine(
         messages: List<CreationChatMessage>,
         current: StoryFoundation?,
         instruction: String,
+        referenceContext: String = "",
         onStage: (String) -> Unit = {},
     ): StoryFoundation {
         val conversation = compactConversation(messages)
@@ -46,6 +47,11 @@ internal class ProgressiveFoundationEngine(
                     appendLine("核心钩子：${proposal.coreHook}")
                     appendLine("封面方向：${proposal.coverBrief}")
                     appendLine("内部策划：${proposal.rationale}")
+                    if (referenceContext.isNotBlank()) {
+                        appendLine()
+                        appendLine(referenceContext.take(7_000))
+                        appendLine("上面的 Style DNA 是用户本次显式选中的唯一参考集合。未选择的蒸馏作品禁止自动混入。")
+                    }
                     appendLine()
                     appendLine("【用户确认过的会谈事实】")
                     appendLine(conversation)
@@ -71,6 +77,11 @@ internal class ProgressiveFoundationEngine(
                 user = buildString {
                     appendLine("【核心蓝图】")
                     appendLine(compactFoundation(foundation))
+                    if (referenceContext.isNotBlank()) {
+                        appendLine()
+                        appendLine("【已选 Style DNA 的节奏/信息释放约束】")
+                        appendLine(referenceContext.take(2_800))
+                    }
                     appendLine()
                     appendLine("【本轮要求】")
                     appendLine(instruction)
@@ -88,6 +99,11 @@ internal class ProgressiveFoundationEngine(
                 user = buildString {
                     appendLine("【核心蓝图 + 第一卷章纲】")
                     appendLine(compactFoundation(foundation, includeChapters = true))
+                    if (referenceContext.isNotBlank()) {
+                        appendLine()
+                        appendLine("【已选 Style DNA】")
+                        appendLine(referenceContext.take(1_800))
+                    }
                     appendLine()
                     appendLine("请只输出 3–6 条跨章节伏笔计划；不要重写其它结构。")
                 },

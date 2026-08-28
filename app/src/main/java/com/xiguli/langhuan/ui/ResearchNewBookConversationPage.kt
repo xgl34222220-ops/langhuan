@@ -199,6 +199,7 @@ fun ResearchNewBookConversationPage(
                     ResearchStarterChip("融合《迷雾之上》《十日终焉》《诡舍》的部分优点，但角色、规则和主线全部原创", ::submit)
                 }
             }
+            item { ReferenceTemplateSelectionPanel(viewModel) }
             if (archiveState.entries.isNotEmpty()) item { ResearchArchiveMemoryCard(archiveState) }
             items(state.messages) { message -> ResearchChatBubble(message) }
             researchMessage?.let { message -> item { ResearchStatusCard(message, lastTargets, lastSources) } }

@@ -9,6 +9,7 @@ import com.xiguli.langhuan.data.StoryFoundation
 import com.xiguli.langhuan.data.StoryFoundationApplier
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
+import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -61,14 +62,16 @@ data class NewBookConversationState(
     val busyLabel: String = "",
     val createdStoryId: String? = null,
     val error: String? = null,
+    val selectedReferenceTemplateIds: List<String> = emptyList(),
 )
 
 @Serializable
 private data class NewBookConversationDraft(
-    val schemaVersion: Int = 3,
+    val schemaVersion: Int = 4,
     val messages: List<CreationChatMessage>,
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
+    val selectedReferenceTemplateIds: List<String> = emptyList(),
 )
 
 private class NewBookConversationDraftStore(application: Application) {
@@ -87,6 +90,7 @@ private class NewBookConversationDraftStore(application: Application) {
             messages = draft.messages.map(::compactStoredMessage),
             proposal = draft.proposal?.sanitizePlaceholders(),
             foundation = draft.foundation?.sanitizeFoundationPlaceholders(),
+            selectedReferenceTemplateIds = draft.selectedReferenceTemplateIds.distinct(),
         )
     }.getOrElse {
         clear()
@@ -94,7 +98,7 @@ private class NewBookConversationDraftStore(application: Application) {
     }
 
     fun persist(state: NewBookConversationState) {
-        if (state.messages.size <= 1 && state.proposal == null && state.foundation == null) {
+        if (state.messages.size <= 1 && state.proposal == null && state.foundation == null && state.selectedReferenceTemplateIds.isEmpty()) {
             clear()
             return
         }
@@ -103,6 +107,7 @@ private class NewBookConversationDraftStore(application: Application) {
                 messages = state.messages.map(::compactStoredMessage),
                 proposal = state.proposal?.sanitizePlaceholders(),
                 foundation = state.foundation?.sanitizeFoundationPlaceholders(),
+                selectedReferenceTemplateIds = state.selectedReferenceTemplateIds.distinct(),
             )
         ).toByteArray(Charsets.UTF_8)
         val output = runCatching { atomicFile.startWrite() }.getOrNull() ?: return
@@ -127,6 +132,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     private val repository = PersistentStoryRepository(application)
     private val foundationApplier = StoryFoundationApplier(application)
     private val draftStore = NewBookConversationDraftStore(application)
+    private val referenceReportStore = ReferenceDistillationReportStore(application)
     private val _state = MutableStateFlow(draftStore.restore() ?: NewBookConversationState())
     val state: StateFlow<NewBookConversationState> = _state.asStateFlow()
     private var activeProviderId: String? = null
@@ -209,6 +215,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         messages = history,
                         current = before.foundation.sanitizeFoundationPlaceholders(),
                         instruction = plainInstruction,
+                        referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
                         onStage = { label -> _state.update { it.copy(busyLabel = label) } },
                     )
                 }.onSuccess { foundation ->
@@ -232,7 +239,10 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
 
             runCatching {
-                NewBookConversationEngine(gateway).reply(history)
+                NewBookConversationEngine(gateway).reply(
+                    messages = history,
+                    referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
+                )
             }.onSuccess { turn ->
                 _state.update {
                     it.copy(
@@ -277,6 +287,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     messages = before.messages,
                     current = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders(),
                     instruction = instruction,
+                    referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
                     onStage = { label -> _state.update { it.copy(busyLabel = label) } },
                 )
             }.onSuccess { foundation ->
@@ -343,6 +354,13 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         _state.update { it.copy(createdStoryId = null) }
     }
 
+    fun setReferenceTemplateIds(ids: List<String>) {
+        val valid = referenceReportStore.listReports().map { it.taskId }.toSet()
+        _state.update {
+            it.copy(selectedReferenceTemplateIds = ids.filter(valid::contains).distinct())
+        }
+    }
+
     private suspend fun activeGateway(): AiGateway? {
         val id = activeProviderId ?: return null
         return repository.providerConfig(id)?.let(::UniversalAiGateway)
@@ -357,7 +375,7 @@ private data class ConversationTurn(
 private class NewBookConversationEngine(
     private val gateway: AiGateway,
 ) {
-    suspend fun reply(messages: List<CreationChatMessage>): ConversationTurn {
+    suspend fun reply(messages: List<CreationChatMessage>, referenceContext: String = ""): ConversationTurn {
         val transcript = conversationTranscript(messages, keepLatestResearch = true)
         val output = gateway.generateStreaming(
             PromptBundle(
@@ -371,8 +389,11 @@ private class NewBookConversationEngine(
                     4. 信息不足时输出 GeneratedChapter JSON：title="__CHAT__"；content=自然回复或追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
                     5. 信息足够时输出方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject 必须填写“实际小说类型”（例如“中式灵异悬疑”，禁止原样输出“小说类型/类型/题材”），field 必须填写“一句实际主题命题”（禁止原样输出“主题命题/主题”），before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
                     6. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。
+                    7. 若存在“用户显式选择的参考 Style DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
                 """.trimIndent(),
                 user = """
+                    ${if (referenceContext.isBlank()) "【参考 Style DNA】本次未选择任何蒸馏模板。" else referenceContext}
+
                     【本次新书创作会谈】
                     $transcript
                 """.trimIndent(),
