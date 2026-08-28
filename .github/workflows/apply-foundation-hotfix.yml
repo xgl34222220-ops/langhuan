@@ -1,0 +1,214 @@
+name: Apply foundation creation hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-foundation-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch creation flow
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/com/xiguli/langhuan/ui/NewBookConversation.kt')
+          s = p.read_text()
+
+          old = '''    private var activeProviderId: String? = null
+              @Volatile private var suppressDraftPersistence = false
+          '''
+          new = '''    private var activeProviderId: String? = null
+              private var foundationJob: kotlinx.coroutines.Job? = null
+              @Volatile private var suppressDraftPersistence = false
+          '''
+          assert old in s, 'field anchor not found'
+          s = s.replace(old, new, 1)
+
+          old = '''    fun generateFoundation(regenerate: Boolean = false) {
+              val before = _state.value
+              val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders() ?: return
+              if (before.isBusy) return
+              val resumeStage = if (regenerate || before.blueprintDirty) 0 else before.foundationStage.coerceIn(0, 2)
+              val resumeFoundation = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders()
+              viewModelScope.launch {
+          '''
+          new = '''    fun generateFoundation(regenerate: Boolean = false) {
+              val before = _state.value
+              val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders() ?: return
+              if (before.isBusy) return
+              val resumeStage = if (regenerate || before.blueprintDirty) 0 else before.foundationStage.coerceIn(0, 2)
+              val resumeFoundation = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders()
+              foundationJob = viewModelScope.launch {
+          '''
+          assert old in s, 'generate anchor not found'
+          s = s.replace(old, new, 1)
+
+          old = '''                val refreshed = ProposalConsolidator(gateway).consolidate(
+                      current = baseline,
+                      messages = before.messages,
+                  )
+          '''
+          new = '''                val refreshed = runCatching {
+                      kotlinx.coroutines.withTimeout(75_000L) {
+                          ProposalConsolidator(gateway).consolidate(
+                              current = baseline,
+                              messages = before.messages,
+                          )
+                      }
+                  }.getOrElse { baseline }
+          '''
+          assert old in s, 'consolidator anchor not found'
+          s = s.replace(old, new, 1)
+
+          old = '''            }.onSuccess { foundation ->
+                  val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
+                  _state.update {
+                      it.copy(
+                          foundation = cleanFoundation,
+                          proposal = cleanFoundation.toProposal(),
+                          foundationStage = 3,
+                          blueprintDirty = false,
+                          messages = it.messages + CreationChatMessage(
+                              "assistant",
+                              "建书蓝图已经按整段会谈的最新决定分三阶段生成完成：核心世界与人物、第一卷详细章纲、伏笔计划都已对齐。",
+                          ),
+                          isBusy = false,
+                          busyLabel = "",
+                      )
+                  }
+              }.onFailure { error ->
+                  _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "建书蓝图生成失败")) }
+              }
+          '''
+          new = '''            }.onSuccess { foundation ->
+                  val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
+                  val completedStage = inferFoundationStage(cleanFoundation).coerceAtLeast(1)
+                  _state.update {
+                      it.copy(
+                          foundation = cleanFoundation,
+                          proposal = cleanFoundation.toProposal(),
+                          foundationStage = completedStage,
+                          blueprintDirty = false,
+                          messages = it.messages + CreationChatMessage(
+                              "assistant",
+                              when (completedStage) {
+                                  3 -> "建书蓝图已完成：核心世界与人物、第一卷章纲和伏笔计划都已写入。"
+                                  2 -> "核心蓝图和第一卷章纲已经完成；伏笔计划可以稍后继续补，现在已经可以正式建书。"
+                                  else -> "核心蓝图已经锁定；章纲或伏笔补全没有完成也不会再卡住正式建书，可以先建书后继续完善。"
+                              },
+                          ),
+                          isBusy = false,
+                          busyLabel = "",
+                      )
+                  }
+              }.onFailure { error ->
+                  if (error !is kotlinx.coroutines.CancellationException) {
+                      _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "建书蓝图生成失败")) }
+                  }
+              }
+              foundationJob = null
+          '''
+          assert old in s, 'success/failure anchor not found'
+          s = s.replace(old, new, 1)
+
+          start = s.index('    fun createCurrentFoundation() {')
+          end = s.index('    fun reset() {', start)
+          replacement = '''    fun createCurrentFoundation() {
+              var snapshot = _state.value
+              val runningFoundation = foundationJob
+              if (snapshot.isBusy) {
+                  if (runningFoundation == null) {
+                      _state.update { it.copy(error = "AI 还在处理当前聊天，请等这一轮回复结束后再正式建书。") }
+                      return
+                  }
+                  runningFoundation.cancel()
+                  foundationJob = null
+                  _state.update { it.copy(isBusy = false, busyLabel = "") }
+                  snapshot = _state.value
+              }
+
+              val foundation = snapshot.foundation?.sanitizeFoundationPlaceholders() ?: return
+              if (snapshot.blueprintDirty) {
+                  _state.update { it.copy(error = "你在聊天里又改了要求，当前蓝图还没同步最新决定。请先同步当前聊天，再正式建书。") }
+                  return
+              }
+              val stage = maxOf(snapshot.foundationStage, inferFoundationStage(foundation))
+              if (stage < 1) {
+                  _state.update { it.copy(error = "核心蓝图还没有形成。至少完成世界规则、核心人物和分卷后才能正式建书。") }
+                  return
+              }
+
+              viewModelScope.launch {
+                  _state.update {
+                      it.copy(
+                          foundation = foundation,
+                          proposal = foundation.toProposal(),
+                          foundationStage = stage,
+                          blueprintDirty = false,
+                          isBusy = true,
+                          busyLabel = if (stage < 3) {
+                              "正在用当前有效核心蓝图建书；未完成的章纲/伏笔可稍后补齐……"
+                          } else {
+                              "正在把蓝图写入小说圣经、三级大纲和长期记忆……"
+                          },
+                          error = null,
+                      )
+                  }
+                  runCatching { foundationApplier.create(foundation) }
+                      .onSuccess { created ->
+                          suppressDraftPersistence = true
+                          _state.update {
+                              it.copy(
+                                  isBusy = false,
+                                  busyLabel = "",
+                                  createdStoryId = created.snapshot.novel.id,
+                                  messages = it.messages + CreationChatMessage(
+                                      "assistant",
+                                      if (stage >= 3) {
+                                          "《${created.snapshot.novel.title}》已经正式建好。角色、世界规则、总纲、卷纲、第一卷章纲和伏笔计划已经进入项目结构与长期记忆。"
+                                      } else {
+                                          "《${created.snapshot.novel.title}》已经正式建好。核心世界、人物和分卷已经写入项目；未完成的详细章纲/伏笔不会阻止开书，可以在项目里继续补齐。"
+                                      },
+                                  ),
+                              )
+                          }
+                          draftStore.clear()
+                      }.onFailure { error ->
+                          _state.update { it.copy(isBusy = false, busyLabel = "", error = error.message ?: "正式建书失败") }
+                      }
+              }
+          }
+
+          '''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/xiguli/langhuan/ui/ResearchNewBookConversationPage.kt')
+          s = p.read_text()
+          old = 'Button(onClick = onCreate, enabled = !busy && !outOfSync, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.CheckCircle, null); Text("正式建书") }'
+          new = 'Button(onClick = onCreate, enabled = !outOfSync, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.CheckCircle, null); Text("正式建书") }'
+          assert old in s, 'formal create button anchor not found'
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          git config user.name "xgl34222220-ops"
+          git config user.email "xgl34222220@gmail.com"
+          git add app/src/main/java/com/xiguli/langhuan/ui/NewBookConversation.kt app/src/main/java/com/xiguli/langhuan/ui/ResearchNewBookConversationPage.kt
+          git commit -m "fix: unblock formal book creation and partial blueprint recovery"
+          git push origin HEAD:main
