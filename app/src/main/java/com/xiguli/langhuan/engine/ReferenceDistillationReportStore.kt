@@ -68,7 +68,7 @@ class ReferenceDistillationReportStore(private val context: Context) {
             items = dossier.stateChanges.mapNotNull { change ->
                 val rawKind = change.subject.trim().uppercase()
                 val kind = when (rawKind) {
-                    "DNA" -> "STYLE" // backward-compatible alias from pre-0.23 reports/prompts
+                    "DNA" -> "STYLE"
                     "STYLE", "STORY", "KEEP", "TRANSFORM", "AVOID" -> rawKind
                     else -> return@mapNotNull null
                 }
@@ -98,7 +98,6 @@ class ReferenceDistillationReportStore(private val context: Context) {
         }.getOrNull()
     }
 
-    /** All complete reports available for explicit new-book template selection. */
     fun listReports(): List<ReferenceDistillationReport> = root.listFiles()
         .orEmpty()
         .filter { it.isFile && it.extension.equals("json", true) }
@@ -124,44 +123,83 @@ class ReferenceDistillationReportStore(private val context: Context) {
         report.items.any { it.kind.equals("STORY", ignoreCase = true) }
 
     /**
-     * Build a compact prompt packet from *only* the reports explicitly selected by the user.
-     * Unselected reports never enter the creation prompt.
+     * Build a compact packet from only explicitly selected reports.
+     * Concrete STORY facts are deliberately placed before style/overview so protagonist names,
+     * relationships, rules and powers cannot be truncated away by the global prompt budget.
      */
-    fun promptContext(selectedTaskIds: List<String>, maxChars: Int = 11_000): String {
+    fun promptContext(selectedTaskIds: List<String>, maxChars: Int = 13_000): String {
         if (selectedTaskIds.isEmpty()) return ""
         val selected = selectedTaskIds.distinct().mapNotNull(::load)
         if (selected.isEmpty()) return ""
-        return buildString {
+        val header = buildString {
             appendLine("【用户显式选择的参考双层 DNA】")
-            appendLine("只允许使用下列已选档案；未选择的蒸馏作品禁止自动混入。")
-            appendLine("STYLE 是写法层：可参考视角、节奏、悬念、信息释放、场景切换等高层技术。")
-            appendLine("STORY 是理解层：用于理解原作的主角定位、人物关系、世界观、规则/能力体系、势力、地点、冲突、剧情阶段与主题；这些内容只能作为结构分析，角色名、专名、具体能力、世界规则和剧情骨架必须重新原创，禁止换名照搬。")
-            appendLine("覆盖等级代表采样可靠度，不等于逐章掌握全部剧情；低覆盖内容层事实必须降权处理，不能擅自补全。")
-            selected.forEachIndexed { index, report ->
-                appendLine()
-                appendLine("--- ${index + 1}. 《${report.title}》 ---")
-                appendLine("覆盖等级：${coverageLabel(report)}；${coverageDescription(report)}")
-                if (report.summary.isNotBlank()) appendLine("Style DNA 摘要：${report.summary.take(900)}")
-                if (report.overview.isNotBlank()) appendLine("Story DNA / 作品结构总览：${report.overview.take(1_500)}")
+            appendLine("只允许读取下列已选档案；未选择的蒸馏作品禁止自动混入。")
+            appendLine("重要：这里同时支持‘原作事实问答’与‘新书原创参考’两种用途。")
+            appendLine("当用户问‘模板/原作主角叫什么、是谁、能力是什么、世界规则是什么、人物关系怎样’等事实问题时，必须优先从 STORY 事实直接回答；可以准确说出报告里保存的原作人物名、专名、能力和规则。")
+            appendLine("只有在用户要求创作自己的新书时，才禁止复用原作专名、具体能力规则和剧情骨架；不要把‘禁止照搬’误解成‘不能告诉用户原作事实’。")
+            appendLine("覆盖等级代表采样可靠度；报告没有保存的事实要明确说‘当前蒸馏报告未确认’，不能编造。")
+        }
+        val remaining = (maxChars - header.length).coerceAtLeast(1_600)
+        val perReportBudget = (remaining / selected.size.coerceAtLeast(1)).coerceIn(2_200, 7_500)
+        val body = selected.mapIndexed { index, report ->
+            buildReferencePacket(index, report, perReportBudget)
+        }.joinToString("\n")
+        return (header + body).take(maxChars)
+    }
 
-                val style = report.items.filter { it.kind == "STYLE" }.take(14)
-                val story = report.items.filter { it.kind == "STORY" }.take(18)
-                val transforms = report.items.filter { it.kind in setOf("KEEP", "TRANSFORM", "AVOID") }.take(12)
-
-                if (style.isNotEmpty()) {
-                    appendLine("【写法层】")
-                    style.forEach { item -> appendLine("STYLE/${item.dimension}: ${item.value.take(360)}") }
+    private fun buildReferencePacket(index: Int, report: ReferenceDistillationReport, maxChars: Int): String {
+        val story = report.items
+            .filter { it.kind == "STORY" }
+            .sortedBy { storyPriority(it.dimension) }
+            .take(24)
+        val style = report.items.filter { it.kind == "STYLE" }.take(10)
+        val transforms = report.items.filter { it.kind in setOf("KEEP", "TRANSFORM", "AVOID") }.take(8)
+        return buildString {
+            appendLine()
+            appendLine("--- ${index + 1}. 《${report.title}》 ---")
+            appendLine("覆盖等级：${coverageLabel(report)}；${coverageDescription(report)}")
+            if (story.isNotEmpty()) {
+                appendLine("【原作事实层 / STORY：问人物、主角、能力、规则时优先读这里】")
+                story.forEach { item ->
+                    append("STORY/${item.dimension}: ${item.value.take(480)}")
+                    if (item.evidence.isNotBlank()) append(" [${item.evidence.take(90)}]")
+                    appendLine()
                 }
-                if (story.isNotEmpty()) {
-                    appendLine("【内容结构层，仅供理解与原创化转换】")
-                    story.forEach { item -> appendLine("STORY/${item.dimension}: ${item.value.take(420)}") }
-                }
-                if (transforms.isNotEmpty()) {
-                    appendLine("【迁移边界】")
-                    transforms.forEach { item -> appendLine("${item.kind}/${item.dimension}: ${item.value.take(360)}") }
-                }
+            } else {
+                appendLine("【原作事实层】当前报告没有结构化 STORY 条目；不能假装知道具体人物姓名或能力。")
+            }
+            if (report.overview.isNotBlank()) {
+                appendLine("【作品结构总览】${report.overview.take(1_200)}")
+            }
+            if (report.summary.isNotBlank()) {
+                appendLine("【Style DNA 摘要】${report.summary.take(650)}")
+            }
+            if (style.isNotEmpty()) {
+                appendLine("【写法层】")
+                style.forEach { item -> appendLine("STYLE/${item.dimension}: ${item.value.take(320)}") }
+            }
+            if (transforms.isNotEmpty()) {
+                appendLine("【原创迁移边界】")
+                transforms.forEach { item -> appendLine("${item.kind}/${item.dimension}: ${item.value.take(300)}") }
             }
         }.take(maxChars)
+    }
+
+    private fun storyPriority(dimension: String): Int = when (dimension.trim().uppercase()) {
+        "PROTAGONIST" -> 0
+        "SUPPORTING" -> 1
+        "RELATIONSHIP" -> 2
+        "POWER" -> 3
+        "WORLD" -> 4
+        "RULE" -> 5
+        "FACTION" -> 6
+        "LOCATION" -> 7
+        "CONFLICT" -> 8
+        "MYSTERY" -> 9
+        "ARC" -> 10
+        "PROGRESSION" -> 11
+        "THEME" -> 12
+        else -> 50
     }
 
     fun loadOrArchiveFallback(taskId: String, title: String): ReferenceDistillationReport? {
