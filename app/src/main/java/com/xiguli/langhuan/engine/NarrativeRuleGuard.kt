@@ -45,7 +45,7 @@ object NarrativeRuleGuard {
                 code = "RULE_DEADLINE_VIOLATION",
                 message = "正文可能违反自己刚建立的硬规则：第${ordinal}次$event 前必须$required",
                 evidence = "截止点之后仍出现“$action”：${context.trim()}",
-                repairInstruction = "二选一修正：要么把规则改成在第${ordinal}次$event时/之后执行；要么让“$action”真正发生在截止点之前，并保持后续结果一致。",
+                repairInstruction = "二选一修正：要么把规则改成在第${ordinal}次${event}时/之后执行；要么让“$action”真正发生在截止点之前，并保持后续结果一致。",
             )
         }
 
