@@ -186,6 +186,12 @@ class UniversalAiGateway(
                     error,
                 )
             }
+            if (prompt.attachments.isNotEmpty()) {
+                throw IllegalStateException(
+                    "附件请求失败：当前模型或中转站可能不支持该图片/PDF输入格式。琅嬛没有自动重发，避免重复消耗。${error.message.orEmpty()}",
+                    error,
+                )
+            }
             val chapter = generate(prompt)
             onDelta(chapter.content)
             chapter
@@ -226,7 +232,34 @@ class UniversalAiGateway(
         put("stream", stream)
         put("messages", buildJsonArray {
             add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
-            add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
+            add(buildJsonObject {
+                put("role", "user")
+                if (prompt.attachments.isEmpty()) {
+                    put("content", prompt.user)
+                } else {
+                    put("content", buildJsonArray {
+                        add(buildJsonObject { put("type", "text"); put("text", prompt.user) })
+                        prompt.attachments.forEach { attachment ->
+                            if (attachment.mimeType.startsWith("image/")) {
+                                add(buildJsonObject {
+                                    put("type", "image_url")
+                                    put("image_url", buildJsonObject {
+                                        put("url", "data:${attachment.mimeType};base64,${attachment.base64Data}")
+                                    })
+                                })
+                            } else {
+                                add(buildJsonObject {
+                                    put("type", "file")
+                                    put("file", buildJsonObject {
+                                        put("filename", attachment.fileName)
+                                        put("file_data", "data:${attachment.mimeType};base64,${attachment.base64Data}")
+                                    })
+                                })
+                            }
+                        }
+                    })
+                }
+            })
         })
         if (config.supportsJsonMode && !azure) {
             put("response_format", buildJsonObject { put("type", "json_object") })
@@ -261,7 +294,28 @@ class UniversalAiGateway(
         put("stream", stream)
         put("system", prompt.system)
         put("messages", buildJsonArray {
-            add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
+            add(buildJsonObject {
+                put("role", "user")
+                if (prompt.attachments.isEmpty()) {
+                    put("content", prompt.user)
+                } else {
+                    put("content", buildJsonArray {
+                        add(buildJsonObject { put("type", "text"); put("text", prompt.user) })
+                        prompt.attachments.forEach { attachment ->
+                            val kind = if (attachment.mimeType.startsWith("image/")) "image" else "document"
+                            add(buildJsonObject {
+                                put("type", kind)
+                                put("source", buildJsonObject {
+                                    put("type", "base64")
+                                    put("media_type", attachment.mimeType)
+                                    put("data", attachment.base64Data)
+                                })
+                                if (kind == "document") put("title", attachment.fileName)
+                            })
+                        }
+                    })
+                }
+            })
         })
     }
 
@@ -301,7 +355,17 @@ class UniversalAiGateway(
         put("contents", buildJsonArray {
             add(buildJsonObject {
                 put("role", "user")
-                put("parts", buildJsonArray { add(buildJsonObject { put("text", prompt.user) }) })
+                put("parts", buildJsonArray {
+                    add(buildJsonObject { put("text", prompt.user) })
+                    prompt.attachments.forEach { attachment ->
+                        add(buildJsonObject {
+                            put("inline_data", buildJsonObject {
+                                put("mime_type", attachment.mimeType)
+                                put("data", attachment.base64Data)
+                            })
+                        })
+                    }
+                })
             })
         })
         put("generationConfig", buildJsonObject {
@@ -332,12 +396,21 @@ class UniversalAiGateway(
     }
 
     private fun ollamaBody(prompt: PromptBundle, stream: Boolean): JsonObject = buildJsonObject {
+        require(prompt.attachments.all { it.mimeType.startsWith("image/") }) {
+            "当前 Ollama 对话只支持图片附件；PDF 请切换支持文档输入的 OpenAI、Claude 或 Gemini 模型。"
+        }
         put("model", config.model)
         put("stream", stream)
         put("format", "json")
         put("messages", buildJsonArray {
             add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
-            add(buildJsonObject { put("role", "user"); put("content", prompt.user) })
+            add(buildJsonObject {
+                put("role", "user")
+                put("content", prompt.user)
+                if (prompt.attachments.isNotEmpty()) {
+                    put("images", buildJsonArray { prompt.attachments.forEach { add(it.base64Data) } })
+                }
+            })
         })
         put("options", buildJsonObject { put("temperature", config.temperature) })
     }

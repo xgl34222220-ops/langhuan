@@ -1,5 +1,7 @@
 package com.xiguli.langhuan.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,7 +29,7 @@ import kotlinx.coroutines.launch
 private const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
 private const val MAX_RESEARCH_EVIDENCE_CHARS = 4_200
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ResearchNewBookConversationPage(
     viewModel: NewBookConversationViewModel,
@@ -48,6 +50,9 @@ fun ResearchNewBookConversationPage(
     var researchMessage by remember { mutableStateOf<String?>(null) }
     var lastSubmitted by remember { mutableStateOf("") }
     var retryFoundation by remember { mutableStateOf(false) }
+    val attachmentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        viewModel.addConversationAttachments(uris)
+    }
 
     LaunchedEffect(state.createdStoryId) {
         state.createdStoryId?.let { id ->
@@ -57,8 +62,10 @@ fun ResearchNewBookConversationPage(
     }
 
     fun submit(raw: String) {
-        val text = raw.trim()
-        if (text.isBlank() || state.isBusy || researching) return
+        val text = raw.trim().ifBlank {
+            if (state.pendingAttachments.isNotEmpty()) defaultAttachmentInstruction(state.pendingAttachments) else ""
+        }
+        if (text.isBlank() || state.isBusy || researching || state.isLoadingAttachments) return
         input = ""
         lastSubmitted = text
         retryFoundation = false
@@ -171,19 +178,56 @@ fun ResearchNewBookConversationPage(
         },
         bottomBar = {
             Surface(tonalElevation = 3.dp) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Bottom) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (state.foundation == null) "比如：融合《A》《B》《C》的优点，但做成原创世界……" else "比如：保留A的信息差，删掉B的系统设定……") },
-                        minLines = 1,
-                        maxLines = 5,
-                        enabled = !state.isBusy && !researching,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(onClick = { submit(input) }, enabled = input.isNotBlank() && !state.isBusy && !researching) {
-                        Icon(if (researching) Icons.Rounded.TravelExplore else Icons.Rounded.Send, "发送")
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.pendingAttachments.isNotEmpty()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            state.pendingAttachments.forEach { attachment ->
+                                InputChip(
+                                    selected = true,
+                                    onClick = { viewModel.removePendingAttachment(attachment.id) },
+                                    label = { Text(attachment.fileName, maxLines = 1) },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description,
+                                            null,
+                                        )
+                                    },
+                                    trailingIcon = { Icon(Icons.Rounded.Close, "移除附件") },
+                                )
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        IconButton(
+                            onClick = {
+                                attachmentLauncher.launch(
+                                    arrayOf(
+                                        "text/*", "application/json", "application/pdf", "application/epub+zip",
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*",
+                                    )
+                                )
+                            },
+                            enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
+                        ) {
+                            Icon(Icons.Rounded.AttachFile, "上传文件")
+                        }
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(if (state.foundation == null) "说要求，或上传小说资料、PDF、图片……" else "继续纠正要求，也可以追加文件……") },
+                            minLines = 1,
+                            maxLines = 5,
+                            enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { submit(input) },
+                            enabled = (input.isNotBlank() || state.pendingAttachments.isNotEmpty()) &&
+                                !state.isBusy && !researching && !state.isLoadingAttachments,
+                        ) {
+                            Icon(if (researching) Icons.Rounded.TravelExplore else Icons.Rounded.Send, "发送")
+                        }
                     }
                 }
             }
@@ -236,11 +280,17 @@ fun ResearchNewBookConversationPage(
                 }
             }
 
-            if (state.isBusy || researching) item {
+            if (state.isBusy || researching || state.isLoadingAttachments) item {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text(if (researching) "正在补全作品研究档案……" else state.busyLabel.ifBlank { "AI 正在处理……" })
+                    Text(
+                        when {
+                            state.isLoadingAttachments -> "正在读取附件……"
+                            researching -> "正在补全作品研究档案……"
+                            else -> state.busyLabel.ifBlank { "AI 正在处理……" }
+                        }
+                    )
                 }
             }
             state.error?.let { error -> item {
@@ -399,6 +449,28 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
             Column(Modifier.padding(14.dp)) {
                 Text(if (user) "你" else "琅嬛 AI", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(5.dp)); Text(display, style = MaterialTheme.typography.bodyLarge)
+                message.attachments.forEach { attachment ->
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
+                    ) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description,
+                                null,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(attachment.fileName, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    if (attachment.extractedText.isNotBlank()) "已读取文本内容" else "已作为原生附件发送",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -8,6 +8,13 @@ import com.xiguli.langhuan.domain.OutlineLevel
 data class PromptBundle(
     val system: String,
     val user: String,
+    val attachments: List<PromptAttachment> = emptyList(),
+)
+
+data class PromptAttachment(
+    val fileName: String,
+    val mimeType: String,
+    val base64Data: String,
 )
 
 class PromptAssembler(

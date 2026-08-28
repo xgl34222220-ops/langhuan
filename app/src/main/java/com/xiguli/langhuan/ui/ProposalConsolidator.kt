@@ -60,6 +60,7 @@ internal class ProposalConsolidator(
                     appendLine("【最近会谈，仅用于核对措辞；若与事实账本冲突，以事实账本为准】")
                     appendLine(decisionTranscript(messages))
                 },
+                attachments = messagesPromptAttachments(messages),
             )
         )
 
@@ -106,6 +107,7 @@ internal class ProposalConsolidator(
                     appendLine("【按时间顺序的会谈】")
                     appendLine(decisionTranscript(messages))
                 },
+                attachments = messagesPromptAttachments(messages),
             )
         )
         return output.content.trim().ifBlank { fallbackLedger(current, messages) }
@@ -116,6 +118,7 @@ internal class ProposalConsolidator(
         appendLine("最近用户决定：")
         messages.filter { it.role == "user" }.forEach { message ->
             appendLine("- ${message.text.substringBefore(RESEARCH_MARKER).trim()}")
+            if (message.attachments.isNotEmpty()) appendLine(attachmentContext(message.attachments))
         }
         appendLine("已作废：凡与更晚用户决定冲突的旧方案。")
         appendLine("仍未确定：会谈中没有被用户明确确认的细节。")
@@ -128,7 +131,8 @@ internal class ProposalConsolidator(
             } else {
                 message.text
             }
-            if (message.role == "user") "用户决定/问题：$plain" else "助手上下文（仅用于解析用户短句，不等于已确认）：$plain"
+            val withAttachments = if (message.attachments.isEmpty()) plain else "$plain\n${attachmentContext(message.attachments)}"
+            if (message.role == "user") "用户决定/问题：$withAttachments" else "助手上下文（仅用于解析用户短句，不等于已确认）：$withAttachments"
         }
     }
 

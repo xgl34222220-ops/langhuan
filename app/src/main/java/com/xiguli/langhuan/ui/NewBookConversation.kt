@@ -1,17 +1,25 @@
 package com.xiguli.langhuan.ui
 
 import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.AtomicFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.PersistentStoryRepository
+import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.data.StoryFoundation
 import com.xiguli.langhuan.data.StoryFoundationApplier
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
+import com.xiguli.langhuan.engine.PromptAttachment
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.util.Base64
+import java.util.UUID
+import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -53,6 +62,16 @@ private fun isReferenceFactQuestion(text: String): Boolean {
 data class CreationChatMessage(
     val role: String,
     val text: String,
+    val attachments: List<CreationChatAttachment> = emptyList(),
+)
+
+@Serializable
+data class CreationChatAttachment(
+    val id: String,
+    val fileName: String,
+    val mimeType: String,
+    val extractedText: String = "",
+    val base64Data: String = "",
 )
 
 @Serializable
@@ -79,6 +98,8 @@ data class NewBookConversationState(
     val foundation: StoryFoundation? = null,
     val foundationStage: Int = 0,
     val blueprintDirty: Boolean = false,
+    val pendingAttachments: List<CreationChatAttachment> = emptyList(),
+    val isLoadingAttachments: Boolean = false,
     val isBusy: Boolean = false,
     val busyLabel: String = "",
     val createdStoryId: String? = null,
@@ -88,12 +109,13 @@ data class NewBookConversationState(
 
 @Serializable
 private data class NewBookConversationDraft(
-    val schemaVersion: Int = 8,
+    val schemaVersion: Int = 9,
     val messages: List<CreationChatMessage>,
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
     val foundationStage: Int = 0,
     val blueprintDirty: Boolean = false,
+    val pendingAttachments: List<CreationChatAttachment> = emptyList(),
     val selectedReferenceTemplateIds: List<String> = emptyList(),
 )
 
@@ -116,6 +138,7 @@ private class NewBookConversationDraftStore(application: Application) {
             foundation = cleanFoundation,
             foundationStage = draft.foundationStage.takeIf { it in 1..3 } ?: inferFoundationStage(cleanFoundation),
             blueprintDirty = draft.blueprintDirty,
+            pendingAttachments = draft.pendingAttachments,
             selectedReferenceTemplateIds = draft.selectedReferenceTemplateIds.distinct(),
         )
     }.getOrElse {
@@ -124,7 +147,9 @@ private class NewBookConversationDraftStore(application: Application) {
     }
 
     fun persist(state: NewBookConversationState) {
-        if (state.messages.size <= 1 && state.proposal == null && state.foundation == null && state.selectedReferenceTemplateIds.isEmpty()) {
+        if (state.messages.size <= 1 && state.proposal == null && state.foundation == null &&
+            state.selectedReferenceTemplateIds.isEmpty() && state.pendingAttachments.isEmpty()
+        ) {
             clear()
             return
         }
@@ -135,6 +160,7 @@ private class NewBookConversationDraftStore(application: Application) {
                 foundation = state.foundation?.sanitizeFoundationPlaceholders(),
                 foundationStage = state.foundationStage.coerceIn(0, 3),
                 blueprintDirty = state.blueprintDirty,
+                pendingAttachments = state.pendingAttachments,
                 selectedReferenceTemplateIds = state.selectedReferenceTemplateIds.distinct(),
             )
         ).toByteArray(Charsets.UTF_8)
@@ -182,13 +208,15 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     fun send(text: String) {
         val clean = text.trim()
         val before = _state.value
-        if (clean.isBlank() || before.isBusy) return
-        val history = before.messages + CreationChatMessage("user", clean)
-        val plainInstruction = clean.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
+        if ((clean.isBlank() && before.pendingAttachments.isEmpty()) || before.isBusy || before.isLoadingAttachments) return
+        val userText = clean.ifBlank { defaultAttachmentInstruction(before.pendingAttachments) }
+        val history = before.messages + CreationChatMessage("user", userText, before.pendingAttachments)
+        val plainInstruction = userText.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
         val referenceQuestion = isReferenceFactQuestion(plainInstruction) && before.selectedReferenceTemplateIds.isNotEmpty()
         _state.update {
             it.copy(
                 messages = history,
+                pendingAttachments = emptyList(),
                 isBusy = true,
                 busyLabel = when {
                     referenceQuestion -> "正在读取所选模板的 Story DNA 事实……"
@@ -253,6 +281,74 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "AI 构思失败")) }
             }
         }
+    }
+
+    fun addConversationAttachments(uris: List<Uri>) {
+        if (uris.isEmpty() || _state.value.isBusy || _state.value.isLoadingAttachments) return
+        viewModelScope.launch {
+            _state.update { it.copy(isLoadingAttachments = true, error = null) }
+            val results = withContext(Dispatchers.IO) { uris.map { runCatching { readCreationAttachment(it) } } }
+            val imported = results.mapNotNull { it.getOrNull() }
+            val failures = results.mapNotNull { it.exceptionOrNull()?.message }.distinct()
+            _state.update {
+                it.copy(
+                    pendingAttachments = (it.pendingAttachments + imported).distinctBy { item ->
+                        item.fileName to (item.extractedText.ifBlank { item.base64Data }.hashCode())
+                    },
+                    isLoadingAttachments = false,
+                    error = failures.takeIf { messages -> messages.isNotEmpty() }?.joinToString("\n"),
+                )
+            }
+        }
+    }
+
+    fun removePendingAttachment(id: String) {
+        if (_state.value.isBusy || _state.value.isLoadingAttachments) return
+        _state.update { it.copy(pendingAttachments = it.pendingAttachments.filterNot { item -> item.id == id }) }
+    }
+
+    private fun readCreationAttachment(uri: Uri): CreationChatAttachment {
+        val app = getApplication<Application>()
+        val resolver = app.contentResolver
+        var displayName = "附件"
+        var declaredSize = -1L
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                displayName = cursor.getString(0).orEmpty().ifBlank { "附件" }
+                declaredSize = cursor.getLong(1)
+            }
+        }
+        require(declaredSize <= MAX_CHAT_ATTACHMENT_BYTES || declaredSize < 0) {
+            "$displayName 超过 12 MB。长篇小说请使用“参考蒸馏”，普通聊天附件需控制在 12 MB 内。"
+        }
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取 $displayName")
+        require(bytes.isNotEmpty()) { "$displayName 是空文件" }
+        require(bytes.size <= MAX_CHAT_ATTACHMENT_BYTES) {
+            "$displayName 超过 12 MB。长篇小说请使用“参考蒸馏”，普通聊天附件需控制在 12 MB 内。"
+        }
+        val lower = displayName.lowercase()
+        val reportedMime = resolver.getType(uri).orEmpty()
+        val mime = canonicalAttachmentMime(lower, reportedMime)
+        val extracted = when {
+            lower.endsWith(".epub") -> StoryExchange.`import`(displayName, bytes).chapters
+                .joinToString("\n\n") { "${it.title}\n${it.content}" }
+            lower.endsWith(".docx") -> extractDocxText(bytes)
+            mime.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".md") ||
+                lower.endsWith(".markdown") || lower.endsWith(".json") || lower.endsWith(".csv") ->
+                bytes.toString(Charsets.UTF_8)
+            mime == "application/pdf" || mime.startsWith("image/") -> ""
+            else -> error("暂不支持 $displayName；可上传 TXT、Markdown、JSON、CSV、EPUB、DOCX、PDF 或图片。")
+        }.trim()
+        require(extracted.isNotBlank() || mime == "application/pdf" || mime.startsWith("image/")) {
+            "$displayName 没有解析到可读内容"
+        }
+        return CreationChatAttachment(
+            id = UUID.randomUUID().toString(),
+            fileName = displayName,
+            mimeType = mime,
+            extractedText = extracted,
+            base64Data = if (extracted.isBlank()) Base64.getEncoder().encodeToString(bytes) else "",
+        )
     }
 
     fun generateFoundation(regenerate: Boolean = false) {
@@ -452,6 +548,9 @@ private class NewBookConversationEngine(
                     8. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=完整连贯的平台简介，篇幅服从故事信息；summary=像正常聊天一样直接回应用户：说明你如何理解这条要求、具体改了什么及必要理由，也可以继续讨论，不要写“内部策划摘要”；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
                     9. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。只要核心设定已经改变，就必须按最新事实重写简介，禁止为了省事复用旧简介。
                     10. 若存在“用户显式选择的参考双层 DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
+                    11. 用户上传的文件是本轮会谈资料。必须先阅读文件内容再回答，并区分“文件明确写明”与“你的推断”；不得假装没收到附件，也不得把附件中的参考作品内容自动当成新书已确认设定。
+                    12. 若附件被识别为用户自己的“作品设定/世界观/大纲”，不能只做摘要：先把文件明确写出的书名、题材、篇幅、故事起点、人物、规则、势力、能力与代价、主线、分卷和伏笔同步进当前方案；再主动检查规则闭环、能力与代价平衡、人物动机、冲突升级、谜底释放顺序、分卷重复和前后矛盾。文件原文属于已确认基线；你补出的内容必须明确称为“优化建议/待确认”，用户认可前不得冒充锁定事实。
+                    13. 对作品设定文件的正常回复至少包含：你识别到了什么、最值得保留的核心、具体风险或空缺、可以直接采用的补强方案。要结合文件里的实际名称和规则说话，禁止只说“设定很完整、可以继续完善”这类空话。
                 """.trimIndent(),
                 user = """
                     ${if (referenceContext.isBlank()) "【参考双层 DNA】本次未选择任何蒸馏模板。" else referenceContext}
@@ -464,6 +563,7 @@ private class NewBookConversationEngine(
                     【最新用户输入】
                     $latest
                 """.trimIndent(),
+                attachments = messagesPromptAttachments(messages),
             )
         ) { }
 
@@ -605,9 +705,98 @@ private fun conversationTranscript(
         } else {
             text
         }
-        if (message.role == "user") "用户：$text" else "琅嬛：$text"
+        val attachmentContext = attachmentContext(message.attachments)
+        val combined = if (attachmentContext.isBlank()) text else "$text\n$attachmentContext"
+        if (message.role == "user") "用户：$combined" else "琅嬛：$combined"
     }.joinToString("\n")
 }
+
+internal fun attachmentContext(attachments: List<CreationChatAttachment>): String = buildString {
+    attachments.forEach { attachment ->
+        appendLine("【用户附件：${attachment.fileName}｜${attachment.mimeType}｜识别用途=${attachmentPurpose(attachment)}】")
+        if (attachment.extractedText.isNotBlank()) appendLine(attachment.extractedText)
+        else appendLine("附件以原生文件形式随请求发送，请直接读取其内容。")
+        appendLine("【附件结束】")
+    }
+}.trim()
+
+internal fun defaultAttachmentInstruction(attachments: List<CreationChatAttachment>): String {
+    val purposes = attachments.map(::attachmentPurpose).distinct()
+    return if ("作品设定" in purposes) {
+        "请自动识别并整理我上传的作品设定：明确写出的内容同步进当前方案；检查规则闭环、人物动机、能力代价、主线推进、谜底释放和分卷升级，给出具体优化完善方案。你新增或改动的设定先标为待确认，不要擅自覆盖原文。"
+    } else {
+        "请先识别我上传的文件属于设定、人物、大纲、正文还是参考资料，再读取其中内容，结合当前会谈给出具体分析和可执行的优化建议。"
+    }
+}
+
+internal fun attachmentPurpose(attachment: CreationChatAttachment): String {
+    val name = attachment.fileName.lowercase()
+    val text = attachment.extractedText
+    return when {
+        listOf("作品设定", "世界观", "设定集", "故事圣经", "小说圣经").any { name.contains(it) } ||
+            listOf("世界规则", "故事梗概", "核心设定", "势力", "分卷大纲").count { text.contains(it) } >= 2 -> "作品设定"
+        listOf("大纲", "章纲", "卷纲").any { name.contains(it) } -> "故事大纲"
+        listOf("人物", "角色", "人设").any { name.contains(it) } -> "人物设定"
+        listOf("正文", "章节", "第1章", "第一章").any { name.contains(it) } -> "小说正文"
+        attachment.mimeType.startsWith("image/") -> "图片资料"
+        attachment.mimeType == "application/pdf" -> "PDF资料"
+        else -> "参考资料"
+    }
+}
+
+internal fun messagesPromptAttachments(messages: List<CreationChatMessage>): List<PromptAttachment> =
+    messages.flatMap { message ->
+        message.attachments.mapNotNull { attachment ->
+            attachment.base64Data.takeIf(String::isNotBlank)?.let {
+                PromptAttachment(attachment.fileName, attachment.mimeType, it)
+            }
+        }
+    }
+
+internal fun extractDocxText(bytes: ByteArray): String {
+    var xml = ""
+    ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+        while (true) {
+            val entry = zip.nextEntry ?: break
+            if (entry.name == "word/document.xml") {
+                xml = zip.readBytes().toString(Charsets.UTF_8)
+                break
+            }
+        }
+    }
+    return xml
+        .replace(Regex("(?i)</w:p>"), "\n")
+        .replace(Regex("(?i)<w:tab[^>]*/>"), "\t")
+        .replace(Regex("<[^>]+>"), "")
+        .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+        .replace("&apos;", "'").replace("&amp;", "&")
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}
+
+private fun mimeFromName(lower: String): String = when {
+    lower.endsWith(".pdf") -> "application/pdf"
+    lower.endsWith(".docx") -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    lower.endsWith(".epub") -> "application/epub+zip"
+    lower.endsWith(".json") -> "application/json"
+    lower.endsWith(".csv") -> "text/csv"
+    lower.endsWith(".md") || lower.endsWith(".markdown") -> "text/markdown"
+    lower.endsWith(".png") -> "image/png"
+    lower.endsWith(".jpg") || lower.endsWith(".jpeg") -> "image/jpeg"
+    lower.endsWith(".webp") -> "image/webp"
+    else -> "text/plain"
+}
+
+private fun canonicalAttachmentMime(lower: String, reported: String): String = when {
+    lower.endsWith(".pdf") || lower.endsWith(".docx") || lower.endsWith(".epub") ||
+        lower.endsWith(".json") || lower.endsWith(".csv") || lower.endsWith(".md") ||
+        lower.endsWith(".markdown") || lower.endsWith(".png") || lower.endsWith(".jpg") ||
+        lower.endsWith(".jpeg") || lower.endsWith(".webp") -> mimeFromName(lower)
+    reported.isNotBlank() -> reported
+    else -> mimeFromName(lower)
+}
+
+private const val MAX_CHAT_ATTACHMENT_BYTES = 12 * 1024 * 1024
 
 private fun sanitizeTitle(value: String): String {
     val clean = value.trim().removePrefix("《").removeSuffix("》")

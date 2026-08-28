@@ -535,7 +535,8 @@ internal class ProgressiveFoundationEngine(
     private fun compactConversation(messages: List<CreationChatMessage>): String = messages
         .joinToString("\n") { message ->
             val raw = if (message.role == "user") message.text.substringBefore(RESEARCH_MARKER).trimEnd() else message.text
-            if (message.role == "user") "用户：$raw" else "琅嬛：$raw"
+            val withAttachments = if (message.attachments.isEmpty()) raw else "$raw\n${attachmentContext(message.attachments)}"
+            if (message.role == "user") "用户：$withAttachments" else "琅嬛：$withAttachments"
         }
 
     private fun compactGenerated(output: GeneratedChapter): String = buildString {
