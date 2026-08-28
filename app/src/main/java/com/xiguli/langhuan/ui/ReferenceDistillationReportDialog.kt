@@ -93,6 +93,7 @@ fun ReferenceDistillationReportDialog(
                     }
                     else -> DistillationReportContent(
                         report = report!!,
+                        store = store,
                         fallbackProvider = fallbackProvider,
                         fallbackModel = fallbackModel,
                     )
@@ -105,6 +106,7 @@ fun ReferenceDistillationReportDialog(
 @Composable
 private fun DistillationReportContent(
     report: ReferenceDistillationReport,
+    store: ReferenceDistillationReportStore,
     fallbackProvider: String,
     fallbackModel: String,
 ) {
@@ -132,6 +134,17 @@ private fun DistillationReportContent(
                         Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
                         Text(" 已进入长期研究档案", fontWeight = FontWeight.Bold)
                     }
+                    Text(
+                        "覆盖等级：${store.coverageLabel(report)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        store.coverageDescription(report),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     if (provider.isNotBlank() || model.isNotBlank()) {
                         Text("AI：${provider.ifBlank { "未知服务" }} · ${model.ifBlank { "未知模型" }}", style = MaterialTheme.typography.bodySmall)
                     }
