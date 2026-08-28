@@ -16,14 +16,6 @@ import kotlin.math.abs
 
 /**
  * Local continuity layer for 100万~200万字 projects.
- *
- * It does not call an AI model. Every committed chapter deterministically updates:
- * - a rolling 20-40 chapter plot arc,
- * - 10-20 chapter medium-term factual memory,
- * - character growth milestones,
- * - foreshadow payoff windows,
- * - periodic long-form health checks.
- *
  * Full prose never enters this state; only summaries and compact facts are kept.
  */
 class LongFormContinuityEngine {
@@ -36,38 +28,37 @@ class LongFormContinuityEngine {
         if (!config.enabled) return snapshot
         val chapterNumber = chapter.chapterNumber.coerceAtLeast(1)
         val summary = generated.summary.trim().ifBlank { chapter.summary.trim() }
-        val withForeshadows = updateForeshadowWindows(snapshot, chapterNumber)
-        val longForm = withForeshadows.longForm
-            .let { state -> state.copy(arcs = updateArcs(withForeshadows, state.arcs, chapter, summary)) }
+        val longForm = snapshot.longForm
+            .let { state -> state.copy(arcs = updateArcs(snapshot, state.arcs, chapter, summary)) }
             .let { state -> state.copy(mediumMemories = updateMediumMemory(state.mediumMemories, chapterNumber, summary, generated.stateChanges, config.mediumWindow)) }
-            .let { state -> state.copy(characterGrowth = updateCharacterGrowth(withForeshadows, state.characterGrowth, chapterNumber, generated.stateChanges)) }
+            .let { state -> state.copy(characterGrowth = updateCharacterGrowth(snapshot, state.characterGrowth, chapterNumber, generated.stateChanges)) }
             .let { state ->
                 val shouldAudit = state.health.lastAuditChapter == 0 ||
                     chapterNumber - state.health.lastAuditChapter >= config.auditInterval.coerceAtLeast(5) ||
                     state.health.level == LongFormHealthLevel.RISK
                 state.copy(
-                    health = if (shouldAudit) audit(withForeshadows.copy(longForm = state), chapterNumber) else state.health,
+                    health = if (shouldAudit) audit(snapshot.copy(longForm = state), chapterNumber) else state.health,
                     lastSettledChapter = maxOf(state.lastSettledChapter, chapterNumber),
                 )
             }
-        return withForeshadows.copy(longForm = longForm)
+        return snapshot.copy(longForm = longForm)
     }
 
-    /** Recalculate deadline/health state after Agent memory actions without adding duplicate summaries. */
+    /** Refresh current-state growth and health after Agent-confirmed memory actions. */
     fun refreshAfterMemoryUpdate(snapshot: StorySnapshot, chapterNumber: Int): StorySnapshot {
         if (!snapshot.longForm.config.enabled) return snapshot
-        val updated = updateForeshadowWindows(snapshot, chapterNumber)
-        val growth = updateCharacterGrowth(updated, updated.longForm.characterGrowth, chapterNumber, emptyList())
+        val growth = updateCharacterGrowth(snapshot, snapshot.longForm.characterGrowth, chapterNumber, emptyList())
         val health = if (
-            updated.longForm.health.lastAuditChapter == 0 ||
-            chapterNumber - updated.longForm.health.lastAuditChapter >= updated.longForm.config.auditInterval.coerceAtLeast(5)
-        ) audit(updated.copy(longForm = updated.longForm.copy(characterGrowth = growth)), chapterNumber)
-        else updated.longForm.health
-        return updated.copy(
-            longForm = updated.longForm.copy(
+            snapshot.longForm.health.lastAuditChapter == 0 ||
+            chapterNumber - snapshot.longForm.health.lastAuditChapter >= snapshot.longForm.config.auditInterval.coerceAtLeast(5) ||
+            snapshot.longForm.health.level == LongFormHealthLevel.RISK
+        ) audit(snapshot.copy(longForm = snapshot.longForm.copy(characterGrowth = growth)), chapterNumber)
+        else snapshot.longForm.health
+        return snapshot.copy(
+            longForm = snapshot.longForm.copy(
                 characterGrowth = growth,
                 health = health,
-                lastSettledChapter = maxOf(updated.longForm.lastSettledChapter, chapterNumber),
+                lastSettledChapter = maxOf(snapshot.longForm.lastSettledChapter, chapterNumber),
             )
         )
     }
@@ -77,14 +68,13 @@ class LongFormContinuityEngine {
         if (!state.config.enabled) return "超长篇导航未启用。"
         val chapter = snapshot.novel.currentChapter.coerceAtLeast(1)
         val currentArc = state.arcs
-            .filter { it.phase !in setOf(PlotArcPhase.RESOLVED) }
-            .minByOrNull { abs(chapter - it.startChapter).takeIf { d -> chapter <= it.plannedEndChapter + state.config.arcSpan } ?: Int.MAX_VALUE }
+            .filter { it.phase != PlotArcPhase.RESOLVED }
+            .minByOrNull { abs(chapter - it.startChapter).takeIf { chapter <= it.plannedEndChapter + state.config.arcSpan } ?: Int.MAX_VALUE }
         val medium = state.mediumMemories.takeLast(4)
-        val growth = state.characterGrowth
-            .sortedByDescending { it.lastTurningChapter }
-            .take(8)
-        val due = snapshot.relevantForeshadowing.filter {
-            it.status == ForeshadowStatus.PAYOFF_DUE || it.status == ForeshadowStatus.OVERDUE
+        val growth = state.characterGrowth.sortedByDescending { it.lastTurningChapter }.take(8)
+        val due = snapshot.relevantForeshadowing.filter { item ->
+            item.status !in setOf(ForeshadowStatus.RESOLVED, ForeshadowStatus.ABANDONED) &&
+                item.expectedChapterStart > 0 && chapter >= item.expectedChapterStart
         }
         return buildString {
             appendLine("【超长篇导航｜只提供压缩事实，不替代锁定圣经】")
@@ -108,7 +98,8 @@ class LongFormContinuityEngine {
             if (due.isNotEmpty()) {
                 appendLine("必须关注的伏笔窗口：")
                 due.take(10).forEach { item ->
-                    appendLine("- ${item.title}｜${item.status}｜计划第${item.expectedChapterStart}-${item.expectedChapterEnd}章回收｜${item.expectedPayoff}")
+                    val urgency = if (item.expectedChapterEnd > 0 && chapter > item.expectedChapterEnd) "已超过计划回收窗口" else "已进入回收窗口"
+                    appendLine("- ${item.title}｜$urgency｜计划第${item.expectedChapterStart}-${item.expectedChapterEnd}章回收｜${item.expectedPayoff}")
                 }
             }
             if (state.health.warnings.isNotEmpty()) {
@@ -116,19 +107,6 @@ class LongFormContinuityEngine {
                 state.health.warnings.take(8).forEach { appendLine("- $it") }
             }
         }.take(8_000)
-    }
-
-    private fun updateForeshadowWindows(snapshot: StorySnapshot, chapter: Int): StorySnapshot {
-        val updated = snapshot.relevantForeshadowing.map { item ->
-            when {
-                item.status in setOf(ForeshadowStatus.RESOLVED, ForeshadowStatus.ABANDONED) -> item
-                item.expectedChapterEnd > 0 && chapter > item.expectedChapterEnd -> item.copy(status = ForeshadowStatus.OVERDUE)
-                item.expectedChapterStart > 0 && chapter >= item.expectedChapterStart && item.status in setOf(ForeshadowStatus.PLANTED, ForeshadowStatus.DEVELOPING) ->
-                    item.copy(status = ForeshadowStatus.PAYOFF_DUE)
-                else -> item
-            }
-        }
-        return if (updated == snapshot.relevantForeshadowing) snapshot else snapshot.copy(relevantForeshadowing = updated)
     }
 
     private fun updateArcs(
@@ -143,7 +121,8 @@ class LongFormContinuityEngine {
         val end = start + span - 1
         val id = "${snapshot.novel.id}:arc:$start"
         val volume = snapshot.activeOutline.lastOrNull { it.level == OutlineLevel.VOLUME }
-            ?: snapshot.outline.filter { it.level == OutlineLevel.VOLUME }.minByOrNull { abs(it.order - ((number - 1) / span + 1)) }
+            ?: snapshot.outline.filter { it.level == OutlineLevel.VOLUME }
+                .minByOrNull { abs(it.order - ((number - 1) / span + 1)) }
         val chapterOutline = snapshot.activeOutline.lastOrNull { it.level == OutlineLevel.CHAPTER }
         val relative = (number - start).toDouble() / span.toDouble()
         val phase = when {
@@ -254,7 +233,10 @@ class LongFormContinuityEngine {
     private fun audit(snapshot: StorySnapshot, chapter: Int): LongFormHealthReport {
         val warnings = mutableListOf<String>()
         val overdue = snapshot.relevantForeshadowing
-            .filter { it.status == ForeshadowStatus.OVERDUE }
+            .filter { item ->
+                item.status !in setOf(ForeshadowStatus.RESOLVED, ForeshadowStatus.ABANDONED) &&
+                    item.expectedChapterEnd > 0 && chapter > item.expectedChapterEnd
+            }
             .map { it.title }
         if (overdue.isNotEmpty()) warnings += "有 ${overdue.size} 条伏笔超过计划回收窗口：${overdue.take(4).joinToString("、")}"
         val activeForeshadows = snapshot.relevantForeshadowing.count {
@@ -262,9 +244,7 @@ class LongFormContinuityEngine {
         }
         if (activeForeshadows > 18) warnings += "活跃伏笔已达 $activeForeshadows 条，建议优先回收旧坑再新增。"
 
-        val stale = snapshot.characters
-            .filter { chapter - it.lastUpdatedChapter >= 45 }
-            .map { it.name }
+        val stale = snapshot.characters.filter { chapter - it.lastUpdatedChapter >= 45 }.map { it.name }
         if (stale.isNotEmpty()) warnings += "${stale.size} 个长期角色超过 45 章没有状态更新：${stale.take(5).joinToString("、")}"
 
         val overdueArcs = snapshot.longForm.arcs.filter {
@@ -276,7 +256,6 @@ class LongFormContinuityEngine {
         if (snapshot.outline.any { it.level == OutlineLevel.CHAPTER } && futureFineOutline < 3) {
             warnings += "未来 5 章只有 $futureFineOutline 条精细章纲，建议保持至少 3-5 章滚动规划。"
         }
-
         if (looksRepetitive(snapshot.recentSummaries.takeLast(8))) {
             warnings += "最近章节摘要高度相似，检查是否重复使用同一种调查/冲突/章末钩子。"
         }
