@@ -707,8 +707,7 @@ private fun conversationPromptMessages(messages: List<CreationChatMessage>): Lis
             text = text.substringBefore(RESEARCH_CONTEXT_MARKER).trimEnd()
         }
         val attachments = attachmentContext(message.attachments)
-        val content = if (attachments.isBlank()) text else "$text
-$attachments"
+        val content = if (attachments.isBlank()) text else "$text\n$attachments"
         content.trim().takeIf { it.isNotBlank() }?.let {
             PromptMessage(
                 role = if (message.role == "assistant") "assistant" else "user",
