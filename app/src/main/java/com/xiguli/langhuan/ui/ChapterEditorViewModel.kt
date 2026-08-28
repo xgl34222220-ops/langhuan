@@ -83,7 +83,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                     it.copy(
                         snapshot = loaded.snapshot,
                         draft = loaded.draft,
-                        chapters = chapters,
+                        chapters = chapters.replaceDraft(loaded.draft),
                         versions = versions,
                         dirty = false,
                         isLoading = false,
@@ -99,16 +99,27 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     fun updateTitle(title: String) {
         val draft = _state.value.draft ?: return
         if (draft.title == title) return
-        _state.update { it.copy(draft = draft.copy(title = title), dirty = true, dependencyReport = null, repairPlan = null) }
+        val updated = draft.copy(title = title)
+        _state.update {
+            it.copy(
+                draft = updated,
+                chapters = it.chapters.replaceDraft(updated),
+                dirty = true,
+                dependencyReport = null,
+                repairPlan = null,
+            )
+        }
         scheduleAutosave()
     }
 
     fun updateContent(content: String) {
         val draft = _state.value.draft ?: return
         if (draft.content == content) return
+        val updated = draft.copy(content = content)
         _state.update {
             it.copy(
-                draft = draft.copy(content = content),
+                draft = updated,
+                chapters = it.chapters.replaceDraft(updated),
                 dirty = true,
                 rewriteProposal = null,
                 comparison = null,
@@ -148,6 +159,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                     it.copy(
                         snapshot = persisted.snapshot,
                         draft = persisted.draft,
+                        chapters = it.chapters.replaceDraft(persisted.draft),
                         versions = versions,
                         dirty = false,
                         isSaving = false,
@@ -181,7 +193,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                     it.copy(
                         snapshot = loaded.snapshot,
                         draft = loaded.draft,
-                        chapters = chapters,
+                        chapters = chapters.replaceDraft(loaded.draft),
                         versions = versions,
                         dirty = false,
                         isSaving = false,
@@ -203,9 +215,10 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
         if (current.isAnalyzingDependencies) return
+        val liveChapters = current.chapters.replaceDraft(draft)
         viewModelScope.launch {
             _state.update { it.copy(isAnalyzingDependencies = true, error = null) }
-            runCatching { ChapterDependencyAnalyzer.analyze(snapshot, current.chapters, draft.chapterNumber) }
+            runCatching { ChapterDependencyAnalyzer.analyze(snapshot, liveChapters, draft.chapterNumber) }
                 .onSuccess { report ->
                     _state.update {
                         it.copy(
@@ -231,6 +244,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
             return
         }
         if (current.isPlanningRepair || current.isRewriting || current.isSaving) return
+        val liveChapters = current.chapters.replaceDraft(draft)
         viewModelScope.launch {
             _state.update { it.copy(isPlanningRepair = true, error = null) }
             runCatching {
@@ -241,7 +255,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 val impacts = report.all.take(30).joinToString("\n") {
                     "- ${it.risk.label}风险｜${it.kind.label}｜${it.title}｜${it.detail}"
                 }
-                val later = current.chapters.filter { it.chapterNumber > draft.chapterNumber }.take(20).joinToString("\n") {
+                val later = liveChapters.filter { it.chapterNumber > draft.chapterNumber }.take(20).joinToString("\n") {
                     "第${it.chapterNumber}章 ${it.title}｜目标=${it.objective}｜摘要=${it.summary.take(240)}"
                 }
                 UniversalAiGateway(config).generate(
@@ -343,10 +357,12 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
             _state.update { it.copy(rewriteProposal = null, error = "正文已发生变化，请重新选择片段后再重写") }
             return
         }
-        val updated = draft.content.substring(0, proposal.start) + proposal.replacement + draft.content.substring(proposal.end)
+        val updatedContent = draft.content.substring(0, proposal.start) + proposal.replacement + draft.content.substring(proposal.end)
+        val updated = draft.copy(content = updatedContent)
         _state.update {
             it.copy(
-                draft = draft.copy(content = updated),
+                draft = updated,
+                chapters = it.chapters.replaceDraft(updated),
                 dirty = true,
                 rewriteProposal = null,
                 dependencyReport = null,
@@ -397,12 +413,13 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 .onSuccess { persisted ->
                     val chapters = store.chapters(persisted.draft.novelId)
                     val versions = store.versions(persisted.draft.novelId, persisted.draft.chapterNumber)
-                    val report = ChapterDependencyAnalyzer.analyze(persisted.snapshot, chapters, persisted.draft.chapterNumber)
+                    val liveChapters = chapters.replaceDraft(persisted.draft)
+                    val report = ChapterDependencyAnalyzer.analyze(persisted.snapshot, liveChapters, persisted.draft.chapterNumber)
                     _state.update {
                         it.copy(
                             snapshot = persisted.snapshot,
                             draft = persisted.draft,
-                            chapters = chapters,
+                            chapters = liveChapters,
                             versions = versions,
                             dirty = false,
                             isSaving = false,
@@ -428,4 +445,14 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun clearNotice() = _state.update { it.copy(message = null, error = null) }
+
+    private fun List<ChapterDraft>.replaceDraft(draft: ChapterDraft): List<ChapterDraft> {
+        val found = any { it.id == draft.id || it.chapterNumber == draft.chapterNumber }
+        return if (found) {
+            map { chapter -> if (chapter.id == draft.id || chapter.chapterNumber == draft.chapterNumber) draft else chapter }
+                .sortedBy { it.chapterNumber }
+        } else {
+            (this + draft).sortedBy { it.chapterNumber }
+        }
+    }
 }
