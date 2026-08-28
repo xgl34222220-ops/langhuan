@@ -47,6 +47,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     val writingViewModel: WritingFlowViewModel = viewModel()
     val editorViewModel: ChapterEditorViewModel = viewModel()
     val quickModelViewModel: ProviderQuickSwitchViewModel = viewModel()
+    val coverGuardViewModel: CoverPersistenceGuardViewModel = viewModel()
     val context = LocalContext.current
     val rootPrefs = remember { context.getSharedPreferences(ROOT_PREFS, 0) }
     val resumeWorkspace = remember {
@@ -61,9 +62,15 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     var showEditor by remember { mutableStateOf(false) }
     var showIntelligence by remember { mutableStateOf(false) }
     var showModelSwitch by remember { mutableStateOf(false) }
+    var showAiSetup by remember { mutableStateOf(false) }
+    var pendingCreationAfterAiSetup by remember { mutableStateOf(false) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
+
+    // 保持该 ViewModel 存活：它会持续监听封面文件与数据库元数据，修复旧 snapshot 覆盖 coverPath 的情况。
+    @Suppress("UNUSED_VARIABLE")
+    val keepCoverGuardAlive = coverGuardViewModel
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -99,8 +106,8 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
 
     LaunchedEffect(libraryState.stories.isEmpty()) {
         if (libraryState.stories.isEmpty()) {
+            // 空书架只停留在书架，不再自动把用户推进“需要 AI、但又无法配置 Key”的死循环。
             showShelf = true
-            showCreation = true
         }
     }
 
@@ -122,7 +129,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
 
-        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showModelSwitch) {
+        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showModelSwitch && !showAiSetup) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -167,15 +174,20 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence) {
+        if (showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 if (libraryState.openedBook == null && libraryState.readingChapter == null) {
                     AiFirstShelf(
                         state = libraryState,
+                        aiReady = state.provider.ready,
                         onOpenBook = libraryViewModel::openBook,
                         onStartCreation = {
                             creationViewModel.reset()
                             showCreation = true
+                        },
+                        onConfigureAi = {
+                            pendingCreationAfterAiSetup = !state.provider.ready
+                            showAiSetup = true
                         },
                         onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
                     )
@@ -194,7 +206,28 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showCreation && !showAgent && !showWritingFlow && !showEditor && !showIntelligence) {
+        if (showAiSetup && !showAgent && !showWritingFlow && !showEditor && !showIntelligence) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                AiProviderSetupPage(
+                    state = state,
+                    vm = viewModel,
+                    onBack = {
+                        pendingCreationAfterAiSetup = false
+                        showAiSetup = false
+                    },
+                    onDone = {
+                        showAiSetup = false
+                        if (pendingCreationAfterAiSetup) {
+                            pendingCreationAfterAiSetup = false
+                            creationViewModel.reset()
+                            showCreation = true
+                        }
+                    },
+                )
+            }
+        }
+
+        if (showCreation && !showAgent && !showWritingFlow && !showEditor && !showIntelligence && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 ResearchNewBookConversationPage(
                     viewModel = creationViewModel,
@@ -210,7 +243,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showWritingFlow && !showAgent && !showEditor && !showIntelligence) {
+        if (showWritingFlow && !showAgent && !showEditor && !showIntelligence && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 WritingFlowPage(
                     novelId = writingStoryId ?: state.snapshot.novel.id,
@@ -220,7 +253,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showEditor && !showAgent && !showWritingFlow && !showIntelligence) {
+        if (showEditor && !showAgent && !showWritingFlow && !showIntelligence && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 ChapterEditorPage(
                     novelId = editorStoryId ?: state.snapshot.novel.id,
@@ -231,13 +264,13 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showIntelligence && !showAgent && !showWritingFlow && !showEditor && !showCreation) {
+        if (showIntelligence && !showAgent && !showWritingFlow && !showEditor && !showCreation && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 StoryIntelligencePage(state = state, onClose = { showIntelligence = false })
             }
         }
 
-        if (showAgent && !showIntelligence && !showEditor) {
+        if (showAgent && !showIntelligence && !showEditor && !showAiSetup) {
             Surface(
                 Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
