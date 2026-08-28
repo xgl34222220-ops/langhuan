@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -31,16 +32,28 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
+private const val ROOT_PREFS = "langhuan_root_state"
+private const val RESUME_WORKSPACE_ONCE = "resume_workspace_once"
+
 @Composable
 fun LanghuanRoot(viewModel: StudioViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val libraryViewModel: LibraryExperienceViewModel = viewModel()
     val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
     val creationViewModel: NewBookConversationViewModel = viewModel()
+    val writingViewModel: WritingFlowViewModel = viewModel()
     val context = LocalContext.current
+    val rootPrefs = remember { context.getSharedPreferences(ROOT_PREFS, 0) }
+    val resumeWorkspace = remember {
+        rootPrefs.getBoolean(RESUME_WORKSPACE_ONCE, false).also { shouldResume ->
+            if (shouldResume) rootPrefs.edit().remove(RESUME_WORKSPACE_ONCE).apply()
+        }
+    }
     var showAgent by remember { mutableStateOf(false) }
-    var showShelf by remember { mutableStateOf(true) }
+    var showShelf by remember { mutableStateOf(!resumeWorkspace) }
     var showCreation by remember { mutableStateOf(false) }
+    var showWritingFlow by remember { mutableStateOf(false) }
+    var writingStoryId by remember { mutableStateOf<String?>(null) }
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -81,10 +94,24 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
         }
     }
 
+    fun reloadWorkspaceAfterFlow() {
+        rootPrefs.edit().putBoolean(RESUME_WORKSPACE_ONCE, true).apply()
+        val activity = context as? Activity
+        if (activity != null) {
+            val intent = activity.intent
+            activity.finish()
+            activity.startActivity(intent)
+            @Suppress("DEPRECATION")
+            activity.overridePendingTransition(0, 0)
+        } else {
+            showWritingFlow = false
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
 
-        if (!showShelf && !showAgent && !showCreation) {
+        if (!showShelf && !showAgent && !showCreation && !showWritingFlow) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -97,6 +124,14 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                     Icon(Icons.Rounded.AutoStories, "阅读书架")
                 }
                 ExtendedFloatingActionButton(
+                    onClick = {
+                        writingStoryId = state.snapshot.novel.id
+                        showWritingFlow = true
+                    },
+                    icon = { Icon(Icons.Rounded.EditNote, null) },
+                    text = { Text("写作流") },
+                )
+                ExtendedFloatingActionButton(
                     onClick = { showAgent = true },
                     icon = { Icon(Icons.Rounded.Psychology, null) },
                     text = { Text("Agent") },
@@ -104,7 +139,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showShelf && !showAgent && !showCreation) {
+        if (showShelf && !showAgent && !showCreation && !showWritingFlow) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 if (libraryState.openedBook == null && libraryState.readingChapter == null) {
                     AiFirstShelf(
@@ -129,16 +164,28 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showCreation && !showAgent) {
+        if (showCreation && !showAgent && !showWritingFlow) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 NewBookConversationPage(
                     viewModel = creationViewModel,
                     onClose = { showCreation = false },
                     onCreated = { id ->
+                        writingStoryId = id
                         showCreation = false
-                        showShelf = true
+                        showShelf = false
+                        showWritingFlow = true
                         libraryViewModel.openBook(id)
                     },
+                )
+            }
+        }
+
+        if (showWritingFlow && !showAgent) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                WritingFlowPage(
+                    novelId = writingStoryId ?: state.snapshot.novel.id,
+                    viewModel = writingViewModel,
+                    onClose = ::reloadWorkspaceAfterFlow,
                 )
             }
         }
