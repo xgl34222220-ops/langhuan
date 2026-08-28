@@ -209,6 +209,64 @@ fun ChapterEditorPage(
                 }
             }
 
+            item {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .34f),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Schedule, null, tint = MaterialTheme.colorScheme.tertiary)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("时间线体检 / 旧稿修复", fontWeight = FontWeight.Bold)
+                                Text("先用本地规则找时间锚点和硬冲突，再让 AI 只修时间桥与场景归属；不会直接覆盖原稿。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        val chronology = state.chronologyReport
+                        if (chronology == null) {
+                            Button(
+                                onClick = viewModel::analyzeChronology,
+                                enabled = !state.isAnalyzingChronology,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                if (state.isAnalyzingChronology) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                else Icon(Icons.Rounded.Troubleshoot, null)
+                                Spacer(Modifier.width(7.dp))
+                                Text(if (state.isAnalyzingChronology) "正在扫描时间锚点" else "扫描本章时间线")
+                            }
+                        } else {
+                            val riskColor = if (chronology.overallRisk.label == "高") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
+                            Text("${chronology.overallRisk.label}风险 · ${chronology.anchors.size} 个时间锚点 · ${chronology.findings.size} 个问题", color = riskColor, fontWeight = FontWeight.Bold)
+                            chronology.findings.take(6).forEach { finding ->
+                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .72f)) {
+                                    Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Text("${finding.risk.label} · ${finding.code} · 第${finding.paragraph}段", fontWeight = FontWeight.SemiBold, color = if (finding.risk.label == "高") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                                        Text(finding.title, fontWeight = FontWeight.SemiBold)
+                                        Text(finding.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("建议：${finding.repair}", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                            if (chronology.findings.isEmpty()) {
+                                Text("本地规则暂未发现硬冲突。仍可让 AI 做语义级复核，重点检查当前场景/历史资料/梦境时间层是否清楚。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = viewModel::analyzeChronology, modifier = Modifier.weight(1f), enabled = !state.isAnalyzingChronology && !state.busy) {
+                                    Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text("重新扫描")
+                                }
+                                Button(onClick = viewModel::generateChronologyRepair, modifier = Modifier.weight(1f), enabled = !state.busy && draft.content.isNotBlank()) {
+                                    if (state.isRepairingChronology) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(if (state.isRepairingChronology) "修复中" else "AI 最小修复")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (selectedText.isNotBlank()) {
                 item {
                     Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
@@ -340,6 +398,41 @@ fun ChapterEditorPage(
 
             item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+
+    state.chronologyProposal?.let { proposal ->
+        var prefix = 0
+        val maxPrefix = minOf(proposal.original.length, proposal.repaired.length)
+        while (prefix < maxPrefix && proposal.original[prefix] == proposal.repaired[prefix]) prefix++
+        var suffix = 0
+        val maxSuffix = minOf(proposal.original.length - prefix, proposal.repaired.length - prefix)
+        while (suffix < maxSuffix && proposal.original[proposal.original.length - 1 - suffix] == proposal.repaired[proposal.repaired.length - 1 - suffix]) suffix++
+        val oldEnd = (proposal.original.length - suffix).coerceAtLeast(prefix)
+        val newEnd = (proposal.repaired.length - suffix).coerceAtLeast(prefix)
+        val oldChanged = proposal.original.substring(prefix, oldEnd)
+        val newChanged = proposal.repaired.substring(prefix, newEnd)
+        AlertDialog(
+            onDismissRequest = viewModel::dismissChronologyRepair,
+            title = { Text("确认时间线修复") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("应用前会自动把当前原稿建立一个永久版本。AI 只被允许修时间桥、场景归属和硬时间矛盾；请仍然核对下面变化。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .4f)) {
+                        SelectionContainer { Text(proposal.diagnosis, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
+                    }
+                    Text("原文变化段 · ${oldChanged.length} 字", fontWeight = FontWeight.Bold)
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        SelectionContainer { Text(oldChanged.ifBlank { "（无变化）" }, Modifier.padding(12.dp)) }
+                    }
+                    Text("修复后变化段 · ${newChanged.length} 字", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .42f)) {
+                        SelectionContainer { Text(newChanged.ifBlank { "（无变化）" }, Modifier.padding(12.dp)) }
+                    }
+                }
+            },
+            confirmButton = { Button(onClick = viewModel::applyChronologyRepair) { Text("备份原稿并应用") } },
+            dismissButton = { TextButton(onClick = viewModel::dismissChronologyRepair) { Text("不要这版") } },
+        )
     }
 
     state.rewriteProposal?.let { proposal ->
