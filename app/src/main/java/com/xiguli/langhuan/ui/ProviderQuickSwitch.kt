@@ -116,7 +116,7 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
         if (modelId.isBlank() || _state.value.isSwitching) return
         val route = modelRoute(provider.baseUrl, modelId)
         if (!route.supported) {
-            _state.update { it.copy(error = "${route.label} 模型需要按模型自动路由，当前 0.18 不会伪装成 Chat Completions 请求。") }
+            _state.update { it.copy(error = "${route.label} 模型需要按模型自动路由，当前版本不会伪装成 Chat Completions 请求。") }
             return
         }
         viewModelScope.launch {
@@ -146,7 +146,7 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
 
 private data class QuickModelRoute(val label: String, val supported: Boolean)
 
-/** OpenCode Go 同一个 /models 会返回多种协议模型，0.18 先明确标出而不是假装都能走 Chat API。 */
+/** 同一个 /models 可能返回多种协议模型；明确标出当前不能安全路由的模型，而不是伪装成 Chat API。 */
 private fun modelRoute(baseUrl: String, modelId: String): QuickModelRoute {
     if (!baseUrl.contains("opencode.ai/zen/go", ignoreCase = true)) {
         return QuickModelRoute("当前服务协议", true)
