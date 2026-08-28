@@ -214,10 +214,10 @@ class ReferenceDistillationWorker(
                     )
                 )
             } else if (completed > 0) {
-                val resumeProgress = 10 + (completed * 62 / batches.size.coerceAtLeast(1))
+                val resumeProgress = if (completed >= batches.size) 84 else 10 + (completed * 62 / batches.size.coerceAtLeast(1))
                 setProgress(
                     progressData(
-                        stage = "distill",
+                        stage = if (completed >= batches.size) "aggregate_prepare" else "distill",
                         progress = resumeProgress,
                         title = manuscript.title,
                         provider = providerLabel,
@@ -228,7 +228,11 @@ class ReferenceDistillationWorker(
                 )
                 setForeground(
                     foreground(
-                        "《${manuscript.title}》从断点继续 · 已完成 $completed/${batches.size} 批",
+                        if (completed >= batches.size) {
+                            "《${manuscript.title}》批次已全部完成 · 从 DNA 聚合断点继续"
+                        } else {
+                            "《${manuscript.title}》从断点继续 · 已完成 $completed/${batches.size} 批"
+                        },
                         resumeProgress,
                     )
                 )
@@ -264,8 +268,9 @@ class ReferenceDistillationWorker(
                 )
                 observations += observation
 
+                val previous = checkpointStore.load(fingerprint)
                 checkpointStore.save(
-                    ReferenceDistillationCheckpoint(
+                    (previous ?: ReferenceDistillationCheckpoint(
                         fingerprint = fingerprint,
                         title = manuscript.title,
                         chapters = manuscript.chapters.size,
@@ -273,17 +278,23 @@ class ReferenceDistillationWorker(
                         providerId = provider.id,
                         provider = providerLabel,
                         model = modelLabel,
-                        completedBatches = index + 1,
+                        completedBatches = 0,
                         totalBatches = batches.size,
-                        observations = observations.toList(),
+                        observations = emptyList(),
                         localMetrics = localMetrics,
+                    )).copy(
+                        completedBatches = index + 1,
+                        observations = observations.toList(),
+                        completedAggregateGroups = 0,
+                        totalAggregateGroups = 0,
+                        aggregateSummaries = emptyList(),
                     )
                 )
             }
 
             setProgress(
                 progressData(
-                    stage = "aggregate",
+                    stage = "aggregate_prepare",
                     progress = 84,
                     title = manuscript.title,
                     provider = providerLabel,
@@ -292,9 +303,34 @@ class ReferenceDistillationWorker(
                     batches = batches.size,
                 )
             )
-            setForeground(foreground("正在聚合《${manuscript.title}》Style DNA + Story DNA", 84))
+            setForeground(foreground("正在准备《${manuscript.title}》分层 DNA 聚合", 84))
 
-            val dossier = aggregate(gateway, manuscript, localMetrics, observations)
+            val dossier = ReferenceDistillationHierarchicalAggregator(checkpointStore).aggregate(
+                gateway = gateway,
+                manuscript = manuscript,
+                metrics = localMetrics,
+                observations = observations,
+                fingerprint = fingerprint,
+                onProgress = { stage, progress, group, groups ->
+                    setProgress(
+                        progressData(
+                            stage = stage,
+                            progress = progress,
+                            title = manuscript.title,
+                            provider = providerLabel,
+                            model = modelLabel,
+                            batch = group,
+                            batches = groups,
+                        )
+                    )
+                    val text = when (stage) {
+                        "aggregate_group" -> "分层聚合《${manuscript.title}》 · $group/$groups"
+                        "aggregate_final" -> "正在生成《${manuscript.title}》最终 Story + Style DNA"
+                        else -> "正在聚合《${manuscript.title}》双层 DNA"
+                    }
+                    setForeground(foreground(text, progress))
+                },
+            )
             val reportId = id.toString()
             reportStore.save(
                 taskId = reportId,
@@ -328,7 +364,7 @@ class ReferenceDistillationWorker(
                                         }.take(3_200),
                                     )
                                 ),
-                                engine = "Local import + adaptive dual-layer AI distillation",
+                                engine = "Local import + bounded hierarchical dual-layer AI distillation",
                             ),
                         )
                     ),
@@ -372,11 +408,15 @@ class ReferenceDistillationWorker(
                 val checkpoint = checkpointStore.load(fingerprint)
                 Result.failure(
                     workDataOf(
-                        "error" to friendlyFailure(rawMessage).take(500),
-                        "title" to initialTitle,
+                        "error" to friendlyFailure(rawMessage, checkpoint).take(500),
+                        "title" to checkpoint?.title.orEmpty().ifBlank { initialTitle },
+                        "provider" to checkpoint?.provider.orEmpty(),
+                        "model" to checkpoint?.model.orEmpty(),
                         "resumable" to ((checkpoint?.completedBatches ?: 0) > 0),
                         "completedBatches" to (checkpoint?.completedBatches ?: 0),
                         "batches" to (checkpoint?.totalBatches ?: 0),
+                        "completedAggregateGroups" to (checkpoint?.completedAggregateGroups ?: 0),
+                        "aggregateGroups" to (checkpoint?.totalAggregateGroups ?: 0),
                         "fingerprint" to fingerprint,
                     )
                 )
@@ -471,45 +511,6 @@ class ReferenceDistillationWorker(
             if (length < 700 && output.content.isNotBlank()) appendLine("BATCH_OVERVIEW: ${output.content.take(700)}")
         }.take(3_500)
     }
-
-    private suspend fun aggregate(
-        gateway: AiGateway,
-        manuscript: ImportedManuscript,
-        metrics: String,
-        observations: List<String>,
-    ): GeneratedChapter = gateway.generate(
-        PromptBundle(
-            system = """
-                你是琅嬛的“作品双层 DNA 聚合器”。把跨全书不同阶段的分批观察聚合成一份用户可查看、后续原创可引用的研究档案。
-
-                必须同时输出：
-                1. Story DNA（content，500-900字）：尽量明确主角是谁、身份/动机/核心困境、重要配角与关系、世界观、硬规则、能力/成长体系、主要势力与地点、核心谜团/冲突、剧情阶段演化、主题。只写分层证据支持的内容；跨批次冲突时标“存在阶段变化/样本不一致”，不能擅自选一个当真。
-                2. Style DNA（summary，220-420字）：视角、叙事距离、句段节奏、对白、信息释放、悬念、章末钩子、人物塑造手法、规则呈现、场景切换、情绪与结构模式。
-                3. stateChanges 18-36项：
-                   - STYLE：field=POV/RHYTHM/DIALOGUE/INFO/SUSPENSE/CHARACTERIZATION/RULE_PRESENTATION/SCENE/EMOTION/STRUCTURE；after=稳定高层技法。
-                   - STORY：field=PROTAGONIST/SUPPORTING/RELATIONSHIP/WORLD/RULE/POWER/FACTION/LOCATION/CONFLICT/MYSTERY/ARC/PROGRESSION/THEME；after=本作品结构化事实或阶段变化。
-                   - KEEP：可迁移的通用高层机制。
-                   - TRANSFORM：值得参考、但新书必须重新设计的机制。
-                   - AVOID：原作专名、人物组合、具体能力规则、独特谜底、剧情骨架、标志性表达等禁止照搬的内容。
-                4. evidence 只能写“前段分层样本/中段分层样本/后段分层样本/跨段共同出现/本地统计”等短标签，不写原句。
-                5. touchedForeshadowingIds=[]。
-
-                这是分析，不是仿写。可以准确描述原作主角和世界设定来帮助用户理解，但后续原创必须转换，不允许换名复刻。
-            """.trimIndent(),
-            user = """
-                作品：${manuscript.title}
-                总章节：${manuscript.chapters.size}
-
-                【全书本地结构统计】
-                $metrics
-
-                【跨全书双层 AI 观察】
-                ${observations.joinToString("\n\n---\n\n").take(32_000)}
-
-                请先交叉比对不同阶段，再生成 Story DNA + Style DNA。对不确定的人物/能力/规则要写明不确定，不要补全。
-            """.trimIndent(),
-        )
-    )
 
     private fun buildSamples(manuscript: ImportedManuscript): List<SampleChunk> {
         val chapters = manuscript.chapters.filter { it.content.isNotBlank() }
@@ -642,15 +643,23 @@ class ReferenceDistillationWorker(
         return listOf("timeout", "timed out", "429", "502", "503", "504", "network", "connection", "socket").any(lower::contains)
     }
 
-    private fun friendlyFailure(message: String): String {
+    private fun friendlyFailure(message: String, checkpoint: ReferenceDistillationCheckpoint?): String {
         val lower = message.lowercase()
+        val aggregateSuffix = if ((checkpoint?.completedBatches ?: 0) >= (checkpoint?.totalBatches ?: Int.MAX_VALUE) && (checkpoint?.totalBatches ?: 0) > 0) {
+            val done = checkpoint?.completedAggregateGroups ?: 0
+            val total = checkpoint?.totalAggregateGroups ?: 0
+            if (total > 0) "前面 AI 批次已全部完成，聚合断点 $done/$total 已保存；继续时不会重跑前面的批次。"
+            else "前面 AI 批次已全部完成；继续时会直接进入分层聚合，不会重跑前面的批次。"
+        } else {
+            "已保留完成批次断点，可从断点继续。"
+        }
         return when {
             "unexpected json" in lower || "json token" in lower || "serialization" in lower ->
-                "AI 已返回结果，但结构化 JSON 格式异常。已保留完成批次断点，可直接从断点继续；不会重跑前面的 AI 批次。"
+                "AI 已返回结果，但结构化 JSON 格式异常。$aggregateSuffix"
             "timeout" in lower || "timed out" in lower || "超时" in message ->
-                "AI 或中转站响应超时。已保留完成批次断点，可从断点继续。"
-            "429" in lower -> "AI 服务触发频率限制（429）。稍后可从断点继续。"
-            "502" in lower || "503" in lower || "504" in lower -> "中转站或上游模型暂时不可用。已保留断点，可稍后继续。"
+                "AI 或中转站响应超时。$aggregateSuffix"
+            "429" in lower -> "AI 服务触发频率限制（429）。$aggregateSuffix"
+            "502" in lower || "503" in lower || "504" in lower -> "中转站或上游模型暂时不可用。$aggregateSuffix"
             else -> message
         }
     }
