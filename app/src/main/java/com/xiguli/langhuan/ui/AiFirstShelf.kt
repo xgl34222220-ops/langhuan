@@ -24,8 +24,10 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,8 +47,10 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AiFirstShelf(
     state: LibraryExperienceState,
+    aiReady: Boolean,
     onOpenBook: (String) -> Unit,
     onStartCreation: () -> Unit,
+    onConfigureAi: () -> Unit,
     onCloseShelf: () -> Unit,
 ) {
     LazyColumn(
@@ -67,15 +71,27 @@ fun AiFirstShelf(
         }
 
         item {
-            Button(
-                onClick = onStartCreation,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                enabled = !state.isBusy,
-                shape = RoundedCornerShape(19.dp),
-            ) {
-                Icon(Icons.Rounded.AutoAwesome, null)
-                Spacer(Modifier.width(8.dp))
-                Text("和 AI 聊出一本新小说")
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Button(
+                    onClick = if (aiReady) onStartCreation else onConfigureAi,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    enabled = !state.isBusy,
+                    shape = RoundedCornerShape(19.dp),
+                ) {
+                    Icon(if (aiReady) Icons.Rounded.AutoAwesome else Icons.Rounded.Key, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (aiReady) "和 AI 聊出一本新小说" else "先配置 AI，再开始聊新小说")
+                }
+                FilledTonalButton(
+                    onClick = onConfigureAi,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    enabled = !state.isBusy,
+                    shape = RoundedCornerShape(17.dp),
+                ) {
+                    Icon(Icons.Rounded.Key, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (aiReady) "AI 服务 / API Key" else "添加 API Key")
+                }
             }
         }
 
@@ -91,7 +107,11 @@ fun AiFirstShelf(
                         Text("从一个想法开始", style = MaterialTheme.typography.headlineSmall)
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "不用先想好书名、类型和简介。告诉 AI 一个题材、一个画面，或者你喜欢的作品气质，聊到满意后再创建。",
+                            if (aiReady) {
+                                "不用先想好书名、类型和简介。告诉 AI 一个题材、一个画面，或者你喜欢的作品气质，聊到满意后再创建。"
+                            } else {
+                                "第一次使用先在上面添加 AI 服务和 API Key。配置完成后，就可以直接从一个题材、画面或角色开始聊天建书。"
+                            },
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
