@@ -23,6 +23,13 @@ object AgentMemoryApplier {
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
+        fun parseDay(value: String): Int = Regex("(?:故事)?第(\\d+)天").find(value)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+        fun inferTime(value: String): String = Regex("凌晨|清晨|早晨|上午|中午|下午|傍晚|黄昏|晚上|夜间|深夜|子夜").find(value)?.value.orEmpty()
+        fun latestMainDay(): Int = timeline
+            .sortedWith(compareBy<TimelineEvent> { it.chapter }.thenBy { it.orderInChapter })
+            .lastOrNull { !it.isFlashback }
+            ?.let { if (it.storyDay > 0) it.storyDay else parseDay(it.storyTime) }
+            ?: 0
 
         review.memoryActions.forEach { action ->
             provenance += FactProvenance(
@@ -85,18 +92,65 @@ object AgentMemoryApplier {
                 }
 
                 AgentActionKind.TIMELINE -> {
-                    val p = packed(action.after, 5)
-                    val summary = p.getOrNull(3).orEmpty().ifBlank { action.subject }
+                    val raw = action.after.split("||").map { it.trim() }
+                    val structured = raw.size >= 8 && raw.getOrNull(0)?.toIntOrNull() != null
+                    val previousMainDay = latestMainDay()
+                    val storyDay: Int
+                    val timeOfDay: String
+                    val elapsed: String
+                    val flashback: Boolean
+                    val location: String
+                    val participants: List<String>
+                    val summary: String
+                    val consequences: List<String>
+                    val storyTime: String
+
+                    if (structured) {
+                        val requestedDay = raw[0].toIntOrNull()?.coerceAtLeast(1) ?: (previousMainDay.takeIf { it > 0 } ?: 1)
+                        flashback = raw[3].equals("FLASHBACK", ignoreCase = true)
+                        if (!flashback && previousMainDay > 0 && requestedDay < previousMainDay) {
+                            return@forEach
+                        }
+                        storyDay = requestedDay
+                        timeOfDay = raw[1].ifBlank { "时段未标注" }
+                        elapsed = raw[2]
+                        location = raw[4]
+                        participants = splitList(raw[5])
+                        summary = raw[6].ifBlank { action.subject }
+                        consequences = splitList(raw[7])
+                        storyTime = "故事第${storyDay}天·$timeOfDay${if (flashback) "（闪回）" else ""}"
+                    } else {
+                        // 兼容 0.15 以前：故事内时间||地点||参与者||事件摘要||后果
+                        val p = packed(action.after, 5)
+                        val oldTime = p.getOrNull(0).orEmpty()
+                        val parsed = parseDay(oldTime)
+                        storyDay = parsed.takeIf { it > 0 } ?: previousMainDay
+                        timeOfDay = inferTime(oldTime)
+                        elapsed = ""
+                        flashback = false
+                        location = p.getOrNull(1).orEmpty()
+                        participants = splitList(p.getOrNull(2).orEmpty())
+                        summary = p.getOrNull(3).orEmpty().ifBlank { action.subject }
+                        consequences = splitList(p.getOrNull(4).orEmpty())
+                        storyTime = oldTime
+                    }
+
+                    val order = (timeline.filter { it.chapter == chapterNumber }.maxOfOrNull { it.orderInChapter } ?: 0) + 1
                     if (summary.isNotBlank() && timeline.none { it.chapter == chapterNumber && it.summary == summary }) {
                         timeline += TimelineEvent(
                             id = UUID.randomUUID().toString(),
                             novelId = snapshot.novel.id,
                             chapter = chapterNumber,
-                            storyTime = p.getOrNull(0).orEmpty(),
-                            location = p.getOrNull(1).orEmpty(),
-                            participants = splitList(p.getOrNull(2).orEmpty()),
+                            storyTime = storyTime,
+                            location = location,
+                            participants = participants,
                             summary = summary,
-                            consequences = splitList(p.getOrNull(4).orEmpty()),
+                            consequences = consequences,
+                            storyDay = storyDay,
+                            timeOfDay = timeOfDay,
+                            orderInChapter = order,
+                            elapsedFromPrevious = elapsed,
+                            isFlashback = flashback,
                         )
                     }
                 }
@@ -163,7 +217,9 @@ object AgentMemoryApplier {
 
         return snapshot.copy(
             characters = characters,
-            recentTimeline = timeline.sortedBy { it.chapter }.takeLast(120),
+            recentTimeline = timeline
+                .sortedWith(compareBy<TimelineEvent> { it.chapter }.thenBy { it.orderInChapter })
+                .takeLast(160),
             relevantForeshadowing = foreshadowing,
             factHistory = provenance
                 .distinctBy { listOf(it.chapter, it.kind, it.subject, it.before, it.after, it.evidence) }
