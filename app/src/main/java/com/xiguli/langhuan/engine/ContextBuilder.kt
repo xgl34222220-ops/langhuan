@@ -65,6 +65,7 @@ class GenerationContextBuilder(
         val chapterOutline = snapshot.activeOutline.lastOrNull { it.level == OutlineLevel.CHAPTER }
         val contract = ChapterContractGuard.resolve(request)
         val contractText = ChapterContractGuard.renderContract(contract)
+        val revealBudget = AutonomousExecutionEngine.revealBudget(snapshot, chapterNumber)
         val sceneItems = chapter.scenePlan.sortedBy { it.order }.map { scene ->
             val clock = if (scene.storyDay > 0 || scene.timeOfDay.isNotBlank()) {
                 "故事第${scene.storyDay.takeIf { it > 0 } ?: 0}天·${scene.timeOfDay.ifBlank { "待锁定" }}；距上一场=${scene.elapsedFromPrevious.ifBlank { "连续" }}；${if (scene.isFlashback) "闪回" else "主时间线"}"
@@ -79,6 +80,12 @@ class GenerationContextBuilder(
                 add("本章转折/落点：${node.turningPoint}")
             }
             add("章节合同：\n$contractText")
+            add(
+                "本章信息揭露预算：完整揭露最多${revealBudget.maxFullReveals}条，部分/暗示最多${revealBudget.maxPartialReveals}条；" +
+                    "可完整boundaryId=${revealBudget.allowedFullBoundaryIds.joinToString("、")}；" +
+                    "只可部分boundaryId=${revealBudget.allowedPartialBoundaryIds.joinToString("、")}；" +
+                    "禁止揭底boundaryId=${revealBudget.forbiddenBoundaryIds.joinToString("、")}。不得因为预算存在而主动解释秘密。"
+            )
             if (sceneItems.isNotEmpty()) add("场景计划：\n${sceneItems.joinToString("\n") { "- $it" }}")
             if (request.extraInstruction.isNotBlank()) add("用户本轮补充要求：${request.extraInstruction}")
         }

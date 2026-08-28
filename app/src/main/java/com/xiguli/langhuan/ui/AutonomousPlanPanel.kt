@@ -42,6 +42,9 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
     val future = plan.chapters.filter { it.chapterNumber > current }.take(10)
     val highRisk = plan.driftSignals.count { it.severity == DriftSeverity.HIGH }
     val watchRisk = plan.driftSignals.count { it.severity == DriftSeverity.WATCH }
+    val activeDebts = snapshot.longForm.narrativeDebts.filter { it.status.name != "RESOLVED" }
+    val overdueDebts = activeDebts.count { it.status.name == "OVERDUE" }
+    val lastExecution = snapshot.longForm.executionHistory.lastOrNull()
     val shape = RoundedCornerShape(26.dp)
 
     Column(
@@ -85,6 +88,36 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
             color = LocalMiuixTokens.current.textSecondary,
         )
 
+        lastExecution?.let { execution ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = if (execution.status.name == "DEVIATED") MaterialTheme.colorScheme.errorContainer.copy(alpha = .45f) else MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("最近计划执行 · 第${execution.chapterNumber}章 · ${execution.completionScore}分", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    Text("状态：${execution.status.name}｜实际：${execution.actualSummary}", style = MaterialTheme.typography.bodySmall)
+                    if (execution.affectedFutureChapters.isNotEmpty()) Text("受影响后续：${execution.affectedFutureChapters.joinToString("、") { "第${it}章" }}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                    if (execution.repairHint.isNotBlank()) Text("最小修复：${execution.repairHint}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                }
+            }
+        }
+
+        if (activeDebts.isNotEmpty()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = if (overdueDebts > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = .42f) else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .34f),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("剧情债务 · ${activeDebts.size} 项${if (overdueDebts > 0) " · $overdueDebts 项逾期" else ""}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    activeDebts.sortedByDescending { it.priority }.take(6).forEach { debt ->
+                        Text("• [${debt.status.name}/${debt.kind.name}] ${debt.title}｜截止 ${debt.dueStartChapter}-${debt.dueEndChapter}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+
         Button(
             onClick = { vm.refreshAutonomousPlan(6) },
             enabled = state.provider.ready && !state.isAutonomousPlanning && !state.isSaving,
@@ -124,6 +157,12 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                         if (beat.characterFocus.isNotEmpty()) Text("人物：${beat.characterFocus.joinToString("、")}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
                         if (beat.foreshadowingTargets.isNotEmpty()) Text("伏笔：${beat.foreshadowingTargets.joinToString("、")}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
                         if (beat.guardrail.isNotBlank()) Text("护栏：${beat.guardrail}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                        val budget = beat.revealBudget
+                        Text(
+                            "揭露预算：完整≤${budget.maxFullReveals} · 部分/暗示≤${budget.maxPartialReveals}${if (budget.forbiddenBoundaryIds.isEmpty()) "" else " · ${budget.forbiddenBoundaryIds.size}条禁止揭底"}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LocalMiuixTokens.current.textSecondary,
+                        )
                     }
                 }
             }

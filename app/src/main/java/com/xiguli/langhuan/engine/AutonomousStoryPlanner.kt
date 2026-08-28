@@ -61,6 +61,7 @@ class AutonomousStoryPlanner(
         val boundaries = snapshot.knowledgeLedger.take(20).joinToString("\n") {
             "- ${it.title}｜读者=${it.readerState}｜最早完整揭露=第${it.earliestFullRevealChapter}章｜策略=${it.revealPolicy}｜knownBy=${it.knownBy.joinToString("、")}｜unknownTo=${it.unknownTo.joinToString("、")}"
         }
+        val executionContext = AutonomousExecutionEngine.planningContext(snapshot, startChapter)
         val prompt = PromptBundle(
             system = """
                 你是“琅嬛”的长篇自治总编。你不写正文，也无权修改已确认 Canon。你的任务是维护未来 3-10 章滚动计划，让小说持续朝当前总纲/卷纲推进，并提前发现偏航。
@@ -122,7 +123,9 @@ class AutonomousStoryPlanner(
                 【长篇健康提醒】
                 ${snapshot.longForm.health.warnings.joinToString("\n") { "- $it" }.ifBlank { "- 当前没有本地健康警报。" }}
 
-                请维护未来${horizon}章连续计划。任何与 Canon 冲突的灵感都必须舍弃，而不是解释成“新真相”。
+                $executionContext
+
+                请维护未来${horizon}章连续计划。优先偿还已经到期/逾期的剧情债，但不得为了还债破坏 Canon。任何与 Canon 冲突的灵感都必须舍弃，而不是解释成“新真相”。
             """.trimIndent(),
         )
 
@@ -209,16 +212,19 @@ class AutonomousStoryPlanner(
         )
     }
 
-    fun apply(snapshot: StorySnapshot, plan: AutonomousStoryPlan): StorySnapshot =
-        snapshot.copy(longForm = snapshot.longForm.copy(autonomousPlan = plan))
+    fun apply(snapshot: StorySnapshot, plan: AutonomousStoryPlan): StorySnapshot {
+        val enriched = AutonomousExecutionEngine().enrichRevealBudgets(snapshot, plan)
+        return snapshot.copy(longForm = snapshot.longForm.copy(autonomousPlan = enriched))
+    }
 
     companion object {
         fun shouldRefresh(snapshot: StorySnapshot, currentChapter: Int): Boolean {
             val plan = snapshot.longForm.autonomousPlan
             if (plan.baseChapter <= 0 || plan.chapters.isEmpty()) return true
             val remaining = plan.chapters.count { it.chapterNumber > currentChapter }
-            return remaining < 3 || currentChapter - plan.baseChapter >= 2 ||
-                plan.driftSignals.any { it.severity == DriftSeverity.HIGH }
+            return remaining < 3 ||
+                plan.driftSignals.any { it.severity == DriftSeverity.HIGH } ||
+                (plan.canonDigest.isNotBlank() && plan.canonDigest != canonDigest(snapshot))
         }
 
         /** Planning-only guidance. It is intentionally not injected into the prose Context Builder. */
@@ -235,6 +241,7 @@ class AutonomousStoryPlanner(
                     if (beat.foreshadowingTargets.isNotEmpty()) appendLine("  伏笔节奏=${beat.foreshadowingTargets.joinToString("、")}")
                     if (beat.guardrail.isNotBlank()) appendLine("  护栏=${beat.guardrail}")
                 }
+                appendLine(AutonomousExecutionEngine.planningContext(snapshot, future.firstOrNull()?.chapterNumber ?: current + 1))
                 if (plan.correctionStrategy.isNotBlank()) appendLine("最小纠偏：${plan.correctionStrategy.take(900)}")
                 val high = plan.driftSignals.filter { it.severity == DriftSeverity.HIGH }.take(4)
                 if (high.isNotEmpty()) {

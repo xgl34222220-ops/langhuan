@@ -32,6 +32,7 @@ import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.domain.TimelineEvent
 import com.xiguli.langhuan.engine.AgentMemoryApplier
 import com.xiguli.langhuan.engine.AutonomousStoryPlanner
+import com.xiguli.langhuan.engine.AutonomousExecutionEngine
 import com.xiguli.langhuan.engine.AgentReview
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.AiProviderConfig
@@ -895,28 +896,67 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     refreshWorkspace()
                     val gateway = configuredGateway()
                     if (gateway != null) {
+                        var working = persisted
+                        val executionEngine = AutonomousExecutionEngine(gateway)
+                        val execution = runCatching {
+                            executionEngine.assess(working.snapshot, working.draft, result.chapter)
+                        }.getOrNull()
+                        if (execution != null) {
+                            runCatching {
+                                val settled = executionEngine.settle(working.snapshot, working.draft, result.chapter, execution)
+                                projects.saveStructure(settled, working.draft)
+                            }.onSuccess { settled ->
+                                working = settled
+                                _state.update { state ->
+                                    state.copy(
+                                        snapshot = settled.snapshot,
+                                        draft = settled.draft,
+                                        message = "正文已保存；计划执行审计 ${execution.completionScore} 分",
+                                    )
+                                }
+                            }.onFailure {
+                                _state.update { state -> state.copy(message = "正文已保存；计划执行审计未能落库，后续可自动补算") }
+                            }
+                        }
+
                         _state.update { it.copy(isAgentReviewing = true) }
-                        runCatching { NovelAgentEngine(gateway).reviewChapter(persisted.snapshot, persisted.draft) }
+                        runCatching { NovelAgentEngine(gateway).reviewChapter(working.snapshot, working.draft) }
                             .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "正文已保存，Agent 复盘完成") } }
                             .onFailure { _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") } }
-                        if (AutonomousStoryPlanner.shouldRefresh(persisted.snapshot, persisted.draft.chapterNumber)) {
-                            _state.update { it.copy(isAutonomousPlanning = true, message = "正文已保存；正在补足未来滚动计划") }
+
+                        val selective = execution?.let(AutonomousExecutionEngine::shouldSelectiveReplan) == true
+                        val fullRefresh = AutonomousStoryPlanner.shouldRefresh(working.snapshot, working.draft.chapterNumber)
+                        if (selective || fullRefresh) {
+                            _state.update {
+                                it.copy(
+                                    isAutonomousPlanning = true,
+                                    message = if (selective) "正文已保存；正在只重算受影响的后续章节" else "正文已保存；正在补足未来滚动计划",
+                                )
+                            }
                             runCatching {
                                 val planner = AutonomousStoryPlanner(gateway)
-                                val plan = planner.plan(persisted.snapshot, persisted.draft, 6)
-                                projects.saveStructure(planner.apply(persisted.snapshot, plan), persisted.draft)
+                                val candidate = planner.plan(working.snapshot, working.draft, 6)
+                                val nextPlan = if (selective && !fullRefresh) {
+                                    executionEngine.mergeSelectivePlan(
+                                        working.snapshot,
+                                        candidate,
+                                        execution?.affectedFutureChapters.orEmpty(),
+                                    )
+                                } else candidate
+                                projects.saveStructure(planner.apply(working.snapshot, nextPlan), working.draft)
                             }.onSuccess { planned ->
+                                working = planned
                                 _state.update {
                                     it.copy(
                                         snapshot = planned.snapshot,
                                         draft = planned.draft,
                                         isAutonomousPlanning = false,
-                                        message = "正文已保存；Agent 复盘完成，未来滚动计划已同步",
+                                        message = if (selective && !fullRefresh) "计划-实际偏差已吸收，只重算了受影响章节" else "未来滚动计划已同步",
                                     )
                                 }
                                 refreshWorkspace()
                             }.onFailure {
-                                _state.update { it.copy(isAutonomousPlanning = false, message = "正文已保存；自治计划自动刷新失败，可在 Agent 页手动重试") }
+                                _state.update { it.copy(isAutonomousPlanning = false, message = "正文已保存；自治计划重算失败，可在 Agent 页手动重试") }
                             }
                         }
                     }
