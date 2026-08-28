@@ -12,7 +12,9 @@ import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.OutlineNode
 import com.xiguli.langhuan.domain.ScenePlan
 import java.util.UUID
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class FoundationBibleItem(
     val category: BibleCategory,
     val name: String,
@@ -21,6 +23,7 @@ data class FoundationBibleItem(
     val locked: Boolean = true,
 )
 
+@Serializable
 data class FoundationCharacter(
     val name: String,
     val personality: List<String>,
@@ -33,6 +36,7 @@ data class FoundationCharacter(
     val relationships: Map<String, String> = emptyMap(),
 )
 
+@Serializable
 data class FoundationChapter(
     val order: Int,
     val title: String,
@@ -41,6 +45,7 @@ data class FoundationChapter(
     val turningPoint: String,
 )
 
+@Serializable
 data class FoundationVolume(
     val order: Int,
     val title: String,
@@ -50,6 +55,7 @@ data class FoundationVolume(
     val chapters: List<FoundationChapter> = emptyList(),
 )
 
+@Serializable
 data class FoundationForeshadow(
     val title: String,
     val detail: String,
@@ -58,6 +64,7 @@ data class FoundationForeshadow(
     val expectedChapterEnd: Int,
 )
 
+@Serializable
 data class StoryFoundation(
     val title: String,
     val genre: String,
