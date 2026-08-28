@@ -1,8 +1,10 @@
 package com.xiguli.langhuan.engine
 
+import com.xiguli.langhuan.domain.ConsistencyIssue
 import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.GenerationResult
+import com.xiguli.langhuan.domain.IssueSeverity
 import com.xiguli.langhuan.domain.StateChange
 import kotlinx.coroutines.delay
 
@@ -24,6 +26,7 @@ class GenerationPipeline(
     private val aiGateway: AiGateway,
     private val promptAssembler: PromptAssembler = PromptAssembler(),
     private val consistencyGate: ConsistencyGate = ConsistencyGate(),
+    private val adversarialEditor: AdversarialChapterEditor = AdversarialChapterEditor(),
 ) {
     suspend fun generate(
         request: GenerationRequest,
@@ -37,31 +40,56 @@ class GenerationPipeline(
         require(prose.isNotBlank()) { "AI 没有返回可用正文" }
         onDelta(prose)
 
-        // 2) A separate editor checks narrative quality and future-chapter leakage.
-        val review = runCatching {
-            aiGateway.generate(promptAssembler.buildQualityReview(request, prose))
+        // 2) One adversarial review call contains four independent editor seats.
+        val firstReview = runCatching {
+            aiGateway.generate(adversarialEditor.buildReview(request, prose, round = 1))
         }.getOrNull()
-        val deterministicProblems = obviousProseProblems(prose)
-        val aiRequestsRewrite = review?.title?.trim()?.equals("REWRITE", ignoreCase = true) == true
-        if (aiRequestsRewrite || deterministicProblems.isNotEmpty()) {
-            val instructions = buildString {
-                review?.content?.trim()?.takeIf { it.isNotBlank() && !it.equals("通过", true) }?.let {
-                    appendLine(it)
-                }
-                deterministicProblems.forEach { appendLine("- $it") }
-            }.trim().ifBlank {
-                "从头重写本章：严格只完成本章目标，用人物与场景推进，不写调查报告，不提前泄露后续章纲。"
-            }
-            val rewritten = cleanVisibleProse(
-                aiGateway.generateText(promptAssembler.buildRewrite(request, prose, instructions, retrievedContext))
-            )
-            if (rewritten.isNotBlank()) {
+        val firstDeterministic = obviousProseProblems(prose)
+        val firstRejected = adversarialEditor.requestsRewrite(firstReview) || firstDeterministic.isNotEmpty()
+        var editorBlockingIssue: ConsistencyIssue? = null
+
+        if (firstRejected) {
+            val instructions = adversarialEditor.instructions(firstReview, firstDeterministic)
+            val rewritten = runCatching {
+                cleanVisibleProse(
+                    aiGateway.generateText(
+                        promptAssembler.buildRewrite(request, prose, instructions, retrievedContext)
+                    )
+                )
+            }.getOrNull().orEmpty()
+
+            if (rewritten.isBlank()) {
+                editorBlockingIssue = ConsistencyIssue(
+                    severity = IssueSeverity.BLOCKING,
+                    code = "EDITOR_REWRITE_EMPTY",
+                    message = "主编已退回第一稿，但 AI 没有返回可用的第二稿",
+                    evidence = instructions.take(800),
+                    repairInstruction = "保留当前草稿但禁止正式保存；重新生成或切换模型后再次执行章节生成。",
+                )
+            } else {
                 prose = rewritten
                 onDelta(prose)
+
+                // 3) The rewritten draft must face a fresh second review. No infinite retry loop.
+                val secondReview = runCatching {
+                    aiGateway.generate(adversarialEditor.buildReview(request, prose, round = 2))
+                }.getOrNull()
+                val secondDeterministic = obviousProseProblems(prose)
+                val secondRejected = adversarialEditor.requestsRewrite(secondReview) || secondDeterministic.isNotEmpty()
+                if (secondRejected) {
+                    val secondInstructions = adversarialEditor.instructions(secondReview, secondDeterministic)
+                    editorBlockingIssue = ConsistencyIssue(
+                        severity = IssueSeverity.BLOCKING,
+                        code = "EDITOR_REVIEW_FAILED",
+                        message = "第二稿仍未通过四视角主编复审，已阻止进入正式版本和长期记忆",
+                        evidence = secondReview?.summary.orEmpty().ifBlank { secondInstructions.take(800) },
+                        repairInstruction = secondInstructions,
+                    )
+                }
             }
         }
 
-        // 3) Only after prose is frozen do we extract summary/state/foreshadowing for the database.
+        // 4) Only after prose is frozen do we extract summary/state/foreshadowing for the database.
         val metadata = runCatching {
             aiGateway.generate(promptAssembler.buildMetadata(request, prose))
         }.getOrElse {
@@ -79,9 +107,14 @@ class GenerationPipeline(
             touchedForeshadowingIds = metadata.touchedForeshadowingIds,
         )
 
+        val issues = buildList {
+            addAll(consistencyGate.inspect(request, chapter))
+            editorBlockingIssue?.let(::add)
+        }.distinctBy { listOf(it.code, it.message, it.evidence) }
+
         return GenerationResult(
             chapter = chapter,
-            issues = consistencyGate.inspect(request, chapter),
+            issues = issues,
         )
     }
 
