@@ -106,10 +106,12 @@ class WebResearchEngine {
         )
 
         fun addCandidates(raw: String) {
+            // 有书名号时由上面的精确提取负责；不要把“《A》《B》”整段再误识别成一个假目标。
+            if ('《' in raw || '》' in raw) return
             raw.trim()
-                .trim('《', '》', '“', '”', '"')
+                .trim('“', '”', '"')
                 .split(Regex("[、,，/+]|和|与"))
-                .map { it.trim().trim('《', '》', '“', '”', '"') }
+                .map { it.trim().trim('“', '”', '"') }
                 .filter { candidate -> candidate.length in 2..40 && candidate !in ignored }
                 .forEach(result::add)
         }
@@ -128,7 +130,7 @@ class WebResearchEngine {
 
         // 不强制用户打书名号：融合迷雾之上、怪谈玩家、十日终焉的设定。
         val fusionAfter = Regex(
-            "(?:融合|结合|混合|参考|借鉴)\\s*([^。！？!?\\n]{2,140}?)(?:的(?:设定|世界观|优点|特点|风格|机制|叙事)|来写|$)"
+            "(?:融合|结合|混合|参考|借鉴)\\s*([^。！？!?\\n]{2,140}?)(?:的(?:部分)?(?:设定|世界观|优点|特点|风格|机制|叙事)|来写|$)"
         )
         fusionAfter.findAll(text).forEach { match -> addCandidates(match.groupValues.getOrNull(1).orEmpty()) }
 
