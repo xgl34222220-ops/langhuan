@@ -32,6 +32,7 @@ import kotlinx.serialization.json.Json
 
 private const val CHAT_SENTINEL = "__CHAT__"
 private const val NEW_BOOK_DRAFT_FILE = "new_book_conversation_draft.json"
+private const val RESEARCH_CONTEXT_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
 
 @Serializable
 data class CreationChatMessage(
@@ -68,7 +69,7 @@ data class NewBookConversationState(
 
 @Serializable
 private data class NewBookConversationDraft(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val messages: List<CreationChatMessage>,
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
@@ -88,7 +89,7 @@ private class NewBookConversationDraftStore(application: Application) {
             val draft = json.decodeFromString<NewBookConversationDraft>(bytes.toString(Charsets.UTF_8))
             if (draft.messages.isEmpty()) return@runCatching null
             NewBookConversationState(
-                messages = draft.messages,
+                messages = draft.messages.map(::compactStoredMessage),
                 proposal = draft.proposal,
                 foundation = draft.foundation,
                 isBusy = false,
@@ -109,7 +110,7 @@ private class NewBookConversationDraftStore(application: Application) {
         }
         val payload = json.encodeToString(
             NewBookConversationDraft(
-                messages = state.messages,
+                messages = state.messages.map(::compactStoredMessage),
                 proposal = state.proposal,
                 foundation = state.foundation,
             )
@@ -127,6 +128,11 @@ private class NewBookConversationDraftStore(application: Application) {
     fun clear() {
         runCatching { atomicFile.delete() }
     }
+
+    private fun compactStoredMessage(message: CreationChatMessage): CreationChatMessage =
+        if (message.role == "user" && message.text.contains(RESEARCH_CONTEXT_MARKER)) {
+            message.copy(text = message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trimEnd())
+        } else message
 }
 
 private fun NewBookConversationState.hasPersistentDraft(): Boolean =
@@ -181,7 +187,6 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 return@launch
             }
 
-            // “重写简介 / 换书名”不应该重做世界观、角色、大纲和伏笔。
             if (BookIdentityRefiner.isIdentityOnlyInstruction(clean)) {
                 val currentProposal = before.foundation?.toProposal() ?: before.proposal
                 if (currentProposal != null) {
@@ -373,7 +378,7 @@ private class NewBookConversationEngine(
 
                     对话规则：
                     1. 先理解用户真正想要的阅读体验，再决定是否追问。一次最多追问 1-2 个最关键问题，不要像问卷。
-                    2. 用户可能问“你知道某本小说吗”“你知道某位作者吗”。实时检索资料如果已经出现在上下文里，优先以资料核对事实；不确定就明确说不确定，不得假装知道。
+                    2. 用户可能问“你知道某本小说吗”“你知道某位作者吗”。琅嬛的实时检索和长期研究档案如果已经出现在当前上下文里，用它们核对公开事实；用户明确提供/纠正的作者-作品关系属于项目事实，网页暂未核验只能标待核验，不能反复否定用户已经说明的关系。本轮搜索失败也不能清空历史档案或你原本有把握的高层知识。
                     3. 用户要求参考某作品/作者时，只能提炼高层创作特征，再创作全新的角色、世界规则、核心谜团和情节。不要复刻标志性句式，不要换名照搬人物、设定或剧情骨架。
                     4. 当信息还不足以形成靠谱方案时，输出 GeneratedChapter JSON：title 必须为 __CHAT__；content=你这一轮自然、简洁的回复或追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
                     5. 当信息已经足够时，输出可进入建书蓝图阶段的方案：
@@ -507,7 +512,6 @@ private object BookIdentityRefiner {
             if (attempt == 0 && quality.acceptable) return candidate
         }
 
-        // AI 连续两次仍不守格式时，本地只做安全压缩，不让超长剧透简介继续进入方案卡。
         return proposal.copy(
             title = localTitleFallback(candidate.title, candidate.premise),
             premise = localSynopsisFallback(candidate.premise),
@@ -812,8 +816,22 @@ private fun StoryFoundation.toPromptSummary(): String = buildString {
     appendLine("伏笔：${foreshadowing.joinToString("；") { "${it.title}:${it.detail}->${it.expectedPayoff}" }}")
 }
 
-private fun transcript(messages: List<CreationChatMessage>): String = messages.takeLast(18).joinToString("\n") { message ->
-    if (message.role == "user") "用户：${message.text}" else "琅嬛：${message.text}"
+/**
+ * Raw web evidence is useful only on the turn that produced it. Older turns keep the user's wording
+ * but drop hidden result dumps; durable research evidence is supplied separately by the archive.
+ * This prevents a long research chat from re-sending tens of thousands of stale web characters.
+ */
+private fun transcript(messages: List<CreationChatMessage>): String {
+    val recent = messages.takeLast(18)
+    val lastUser = recent.indexOfLast { it.role == "user" }
+    return recent.mapIndexed { index, message ->
+        val text = if (message.role == "user" && index != lastUser) {
+            message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trimEnd()
+        } else {
+            message.text
+        }
+        if (message.role == "user") "用户：$text" else "琅嬛：$text"
+    }.joinToString("\n")
 }
 
 private fun splitList(text: String): List<String> = text
