@@ -27,81 +27,80 @@ jobs:
           page = Path('app/src/main/java/com/xiguli/langhuan/ui/ResearchNewBookConversationPage.kt')
           s = page.read_text()
 
-          anchor = '''    val context = LocalContext.current.applicationContext
-              val archiveStore = remember(context) { CreationResearchArchiveStore(context) }
-          '''
-          replacement = '''    val context = LocalContext.current.applicationContext
-              val researchPrefs = remember(context) { context.getSharedPreferences("creation_research", 0) }
-              var webResearchEnabled by remember { mutableStateOf(researchPrefs.getBoolean("web_research_enabled", false)) }
-              val archiveStore = remember(context) { CreationResearchArchiveStore(context) }
-          '''
-          assert anchor in s, 'context anchor missing'
-          s = s.replace(anchor, replacement, 1)
+          context_marker = '    val context = LocalContext.current.applicationContext\n'
+          assert context_marker in s, 'context marker missing'
+          if 'webResearchEnabled' not in s:
+              s = s.replace(
+                  context_marker,
+                  context_marker +
+                  '    val researchPrefs = remember(context) { context.getSharedPreferences("creation_research", 0) }\n' +
+                  '    var webResearchEnabled by remember { mutableStateOf(researchPrefs.getBoolean("web_research_enabled", false)) }\n',
+                  1,
+              )
 
-          old = '        if (!research.shouldResearch(text)) {'
-          new = '        if (!webResearchEnabled || !research.shouldResearch(text)) {'
-          assert old in s, 'research gate anchor missing'
-          s = s.replace(old, new, 1)
+          s = s.replace(
+              '        if (!research.shouldResearch(text)) {',
+              '        if (!webResearchEnabled || !research.shouldResearch(text)) {',
+              1,
+          )
 
-          anchor = '''                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                      if (state.pendingAttachments.isNotEmpty()) {
-          '''
-          replacement = '''                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          verticalAlignment = Alignment.CenterVertically,
-                          horizontalArrangement = Arrangement.SpaceBetween,
-                      ) {
-                          Column(Modifier.weight(1f)) {
-                              Text("联网搜索", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                              Text(
-                                  if (webResearchEnabled) "已开启 · 只有明确说“搜/查/联网”才会访问网页" else "已关闭 · 所有消息只使用 AI、附件和已有研究记忆",
-                                  style = MaterialTheme.typography.labelSmall,
-                                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                              )
-                          }
-                          Switch(
-                              checked = webResearchEnabled,
-                              onCheckedChange = { checked ->
-                                  webResearchEnabled = checked
-                                  researchPrefs.edit().putBoolean("web_research_enabled", checked).apply()
-                                  if (!checked) {
-                                      lastSources = emptyList()
-                                      lastTargets = emptyList()
-                                      researchMessage = null
-                                  }
-                              },
-                              enabled = !researching,
-                          )
-                      }
-                      if (state.pendingAttachments.isNotEmpty()) {
-          '''
-          assert anchor in s, 'bottom bar anchor missing'
-          s = s.replace(anchor, replacement, 1)
+          column_marker = '                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {\n'
+          assert column_marker in s, 'bottom column marker missing'
+          if 'Text("联网搜索"' not in s:
+              switch_ui = '''                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("联网搜索", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (webResearchEnabled) "已开启 · 只有明确说‘搜/查/联网’才会访问网页" else "已关闭 · 所有消息只使用 AI、附件和已有研究记忆",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = webResearchEnabled,
+                            onCheckedChange = { checked ->
+                                webResearchEnabled = checked
+                                researchPrefs.edit().putBoolean("web_research_enabled", checked).apply()
+                                if (!checked) {
+                                    lastSources = emptyList()
+                                    lastTargets = emptyList()
+                                    researchMessage = null
+                                }
+                            },
+                            enabled = !researching,
+                        )
+                    }
+'''
+              s = s.replace(column_marker, column_marker + switch_ui, 1)
+
           page.write_text(s)
 
           engine = Path('app/src/main/java/com/xiguli/langhuan/engine/WebResearchEngine.kt')
           s = engine.read_text()
-          pattern = re.compile(r'''    fun shouldResearch\(text: String\): Boolean \{.*?\n    \}\n\n    /\*\* Extract an explicit author''', re.S)
-          replacement = '''    fun shouldResearch(text: String): Boolean {
-              val value = text.trim().lowercase()
-              if (value.isBlank()) return false
+          start = s.index('    fun shouldResearch(text: String): Boolean {')
+          end = s.index('    /** Extract an explicit author', start)
+          strict = '''    fun shouldResearch(text: String): Boolean {
+        val value = text.trim().lowercase()
+        if (value.isBlank()) return false
 
-              // 联网是显式能力，不再根据“小说 / 作品 / 资料 / 参考 / 融合”等普通创作词猜测。
-              // 即使页面联网开关已经打开，也必须出现明确的网页检索动作词才会真正联网。
-              val explicitWebActions = listOf(
-                  "联网搜", "联网查", "联网搜索", "联网查询", "联网看看",
-                  "搜一下", "搜索一下", "搜索", "搜搜", "继续搜", "再搜",
-                  "查一下", "查查", "查询一下", "查网页", "查资料", "网页搜索", "网页查询",
-                  "上网查", "网上查", "网上搜索", "检索一下", "公开资料搜索",
-              )
-              return explicitWebActions.any(value::contains)
-          }
+        // 联网是显式能力。普通“小说 / 作品 / 资料 / 参考 / 融合”等创作词不再触发搜索。
+        // 即使用户已经打开联网总开关，也必须明确要求“搜 / 查 / 联网”才访问网页。
+        val explicitWebActions = listOf(
+            "联网搜", "联网查", "联网搜索", "联网查询", "联网看看",
+            "搜一下", "搜索一下", "搜索", "搜搜", "继续搜", "再搜",
+            "查一下", "查查", "查询一下", "查网页", "查资料", "网页搜索", "网页查询",
+            "上网查", "网上查", "网上搜索", "检索一下", "公开资料搜索",
+        )
+        return explicitWebActions.any(value::contains)
+    }
 
-          /** Extract an explicit author'''
-          s2, count = pattern.subn(replacement, s, count=1)
-          assert count == 1, 'shouldResearch function anchor missing'
-          engine.write_text(s2)
+'''
+          s = s[:start] + strict + s[end:]
+          engine.write_text(s)
 
           gradle = Path('app/build.gradle.kts')
           g = gradle.read_text()
