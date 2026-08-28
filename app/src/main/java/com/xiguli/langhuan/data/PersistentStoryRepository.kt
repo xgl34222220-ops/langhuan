@@ -15,9 +15,11 @@ import com.xiguli.langhuan.domain.StateChange
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
+import com.xiguli.langhuan.engine.GenerationContextBuilder
 import com.xiguli.langhuan.engine.HybridMemoryRetriever
 import com.xiguli.langhuan.engine.LongFormContinuityEngine
 import com.xiguli.langhuan.engine.MemoryCandidate
+import com.xiguli.langhuan.engine.RetrievedContextItem
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -175,24 +177,45 @@ class PersistentStoryRepository(context: Context) {
         )
     }
 
+    suspend fun retrieveRelevantContext(
+        novelId: String,
+        query: String,
+        currentChapter: Int,
+        limit: Int = 10,
+    ): List<RetrievedContextItem> {
+        val candidates = memoryDao.recent(novelId, 1_600)
+            .asSequence()
+            .filterNot { it.text.contains(GenerationContextBuilder.CREATION_FACT_LEDGER) }
+            .map {
+                MemoryCandidate(
+                    text = it.text,
+                    sourceType = it.sourceType,
+                    sourceId = it.sourceId,
+                    chapterNumber = it.chapterNumber,
+                    updatedAt = it.updatedAt,
+                )
+            }
+            .toList()
+        return memoryRetriever.rank(query, candidates, currentChapter, limit).map { hit ->
+            RetrievedContextItem(
+                sourceType = hit.candidate.sourceType,
+                sourceId = hit.candidate.sourceId,
+                chapterNumber = hit.candidate.chapterNumber,
+                text = hit.candidate.text,
+                score = hit.score,
+                reasons = hit.reasons,
+            )
+        }
+    }
+
+    /** 兼容旧调用；新正文生成应使用 retrieveRelevantContext 获取可解释召回。 */
     suspend fun retrieveRelevantMemories(
         novelId: String,
         query: String,
         currentChapter: Int,
         limit: Int = 8,
-    ): List<String> {
-        val candidates = memoryDao.recent(novelId, 1_600).map {
-            MemoryCandidate(
-                text = it.text,
-                sourceType = it.sourceType,
-                sourceId = it.sourceId,
-                chapterNumber = it.chapterNumber,
-                updatedAt = it.updatedAt,
-            )
-        }
-        return memoryRetriever.rank(query, candidates, currentChapter, limit)
-            .map { hit -> "[${hit.candidate.sourceType}] ${hit.candidate.text}" }
-    }
+    ): List<String> = retrieveRelevantContext(novelId, query, currentChapter, limit)
+        .map { hit -> "[${hit.sourceType}] ${hit.text}" }
 
     fun observeProviders(): Flow<List<StoredAiProvider>> = providerDao.observeAll().map { list ->
         list.map { it.toStored() }
@@ -301,9 +324,11 @@ class PersistentStoryRepository(context: Context) {
         val now = System.currentTimeMillis()
         val novelId = snapshot.novel.id
         val chunks = buildList {
-            snapshot.bible.forEach { item ->
-                add(MemoryChunkEntity("bible:${item.id}", novelId, "BIBLE", item.id, null, "${item.name}：${item.content}", now))
-            }
+            snapshot.bible
+                .filterNot { it.name == GenerationContextBuilder.CREATION_FACT_LEDGER }
+                .forEach { item ->
+                    add(MemoryChunkEntity("bible:${item.id}", novelId, "BIBLE", item.id, null, "${item.name}：${item.content}", now))
+                }
             snapshot.characters.forEach { item ->
                 add(
                     MemoryChunkEntity(
@@ -317,7 +342,14 @@ class PersistentStoryRepository(context: Context) {
                 add(MemoryChunkEntity("timeline:${item.id}", novelId, "TIMELINE", item.id, item.chapter, "第${item.chapter}章 ${item.storyTime} ${item.location}：${item.summary} 后果：${item.consequences.joinToString("、")}", now))
             }
             snapshot.relevantForeshadowing.forEach { item ->
-                add(MemoryChunkEntity("foreshadow:${item.id}", novelId, "FORESHADOW", item.id, item.plantedChapter, "伏笔「${item.title}」：${item.detail}；预计回收：${item.expectedPayoff}；状态：${item.status.name}", now))
+                // expectedPayoff 是作者层真相，不能作为普通 RAG 文本暴露给正文作者。
+                add(
+                    MemoryChunkEntity(
+                        "foreshadow:${item.id}", novelId, "FORESHADOW", item.id, item.plantedChapter,
+                        "伏笔「${item.title}」：${item.detail}；回收窗口：第${item.expectedChapterStart}-${item.expectedChapterEnd}章；状态：${item.status.name}",
+                        now,
+                    )
+                )
             }
             if (snapshot.longTermSummary.isNotBlank()) {
                 add(MemoryChunkEntity("long-summary:$novelId", novelId, "LONG_SUMMARY", "long-summary", null, snapshot.longTermSummary, now))
@@ -326,6 +358,7 @@ class PersistentStoryRepository(context: Context) {
                 add(MemoryChunkEntity("summary:${novelId}:$index", novelId, "SUMMARY", "summary-$index", null, text, now))
             }
             snapshot.longForm.arcs.forEach { arc ->
+                // 这里只索引当前弧状态；预期收束/未来底牌不进入正文 RAG。
                 add(
                     MemoryChunkEntity(
                         id = "arc:${arc.id}",
@@ -333,7 +366,7 @@ class PersistentStoryRepository(context: Context) {
                         sourceType = "ARC",
                         sourceId = arc.id,
                         chapterNumber = arc.lastUpdatedChapter.takeIf { it > 0 },
-                        text = "剧情弧「${arc.title}」第${arc.startChapter}-${arc.plannedEndChapter}章，阶段=${arc.phase}。目标：${arc.objective}。冲突：${arc.centralConflict}。预期收束：${arc.expectedPayoff}。里程碑：${arc.milestones.joinToString("；")}",
+                        text = "剧情弧「${arc.title}」第${arc.startChapter}-${arc.plannedEndChapter}章，阶段=${arc.phase}。当前目标：${arc.objective}。当前核心冲突：${arc.centralConflict}。",
                         updatedAt = now,
                     )
                 )
@@ -359,7 +392,7 @@ class PersistentStoryRepository(context: Context) {
                         sourceType = "GROWTH",
                         sourceId = growth.characterId,
                         chapterNumber = growth.lastTurningChapter.takeIf { it > 0 },
-                        text = "${growth.name}成长阶段=${growth.stage}。当前人格基线=${growth.currentBelief}。内部冲突=${growth.internalConflict}。成长方向=${growth.growthDirection}。里程碑=${growth.milestones.joinToString("；")}",
+                        text = "${growth.name}当前成长阶段=${growth.stage}。当前人格基线=${growth.currentBelief}。当前内部冲突=${growth.internalConflict}。已确认里程碑=${growth.milestones.joinToString("；")}。",
                         updatedAt = now,
                     )
                 )

@@ -12,9 +12,7 @@ interface AiGateway {
     /** Plain text path for normal conversation and novel prose. */
     suspend fun generateText(prompt: PromptBundle): String = generate(prompt).content
 
-    /**
-     * Structured streaming remains available for legacy structured generation paths.
-     */
+    /** Structured streaming remains available for legacy structured generation paths. */
     suspend fun generateStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): GeneratedChapter {
         val chapter = generate(prompt)
         onDelta(chapter.content)
@@ -29,11 +27,12 @@ class GenerationPipeline(
 ) {
     suspend fun generate(
         request: GenerationRequest,
+        retrievedContext: List<RetrievedContextItem> = emptyList(),
         onDelta: (String) -> Unit = {},
     ): GenerationResult {
-        // 1) Author writes only prose. No JSON/schema/state bookkeeping competes for attention.
+        // 1) Author writes only prose. Context Builder 2.0 keeps RAG in D layer.
         var prose = cleanVisibleProse(
-            aiGateway.generateText(promptAssembler.buildProse(request))
+            aiGateway.generateText(promptAssembler.buildProse(request, retrievedContext))
         )
         require(prose.isNotBlank()) { "AI 没有返回可用正文" }
         onDelta(prose)
@@ -54,7 +53,7 @@ class GenerationPipeline(
                 "从头重写本章：严格只完成本章目标，用人物与场景推进，不写调查报告，不提前泄露后续章纲。"
             }
             val rewritten = cleanVisibleProse(
-                aiGateway.generateText(promptAssembler.buildRewrite(request, prose, instructions))
+                aiGateway.generateText(promptAssembler.buildRewrite(request, prose, instructions, retrievedContext))
             )
             if (rewritten.isNotBlank()) {
                 prose = rewritten

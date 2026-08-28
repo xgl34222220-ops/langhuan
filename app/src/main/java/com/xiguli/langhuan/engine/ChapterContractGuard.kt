@@ -11,12 +11,7 @@ import com.xiguli.langhuan.domain.KnowledgeRevealPolicy
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.StorySnapshot
 
-/**
- * 把“章纲”升级成可执行的章节合同，并统一处理信息边界。
- *
- * 旧章节没有 contract 时不会失效：这里会从当前章纲、人物状态和知识账本推导一个
- * conservative effective contract，避免要求用户重建旧项目。
- */
+/** 把章纲升级成可执行章节合同，并统一处理人物/读者信息边界。 */
 object ChapterContractGuard {
     fun resolve(request: GenerationRequest): ChapterContract = resolve(request.snapshot, request.chapter)
 
@@ -38,35 +33,27 @@ object ChapterContractGuard {
             snapshot.characters.associate { character ->
                 character.name to buildString {
                     append("地点=${character.location}；身体=${character.physicalState}；情绪=${character.emotionalState}；目标=${character.goal}")
-                    if (character.knownSecrets.isNotEmpty()) {
-                        append("；已知=${character.knownSecrets.joinToString("、")}")
-                    }
+                    if (character.knownSecrets.isNotEmpty()) append("；已知=${character.knownSecrets.joinToString("、")}")
                 }
             }
         }
 
         return ChapterContract(
-            purpose = raw.purpose.ifBlank {
-                outlineContract.purpose.ifBlank { chapter.objective.ifBlank { outline?.objective.orEmpty() } }
-            },
+            purpose = raw.purpose.ifBlank { outlineContract.purpose.ifBlank { chapter.objective.ifBlank { outline?.objective.orEmpty() } } },
             mustHappen = (outlineContract.mustHappen + raw.mustHappen + outline?.mustInclude.orEmpty()).cleanDistinct(),
             mustNotHappen = (outlineContract.mustNotHappen + raw.mustNotHappen + outline?.forbidden.orEmpty()).cleanDistinct(),
             characterStateIn = stateIn,
-            characterStateOut = (outlineContract.characterStateOut + raw.characterStateOut)
-                .filterValues(String::isNotBlank),
+            characterStateOut = (outlineContract.characterStateOut + raw.characterStateOut).filterValues(String::isNotBlank),
             reveals = (outlineContract.reveals + raw.reveals + allowedReveals).cleanDistinct(),
             secretsPreserved = (outlineContract.secretsPreserved + raw.secretsPreserved + hidden).cleanDistinct(),
             foreshadowing = (outlineContract.foreshadowing + raw.foreshadowing).cleanDistinct(),
-            hookOut = raw.hookOut.ifBlank {
-                outlineContract.hookOut.ifBlank { outline?.turningPoint.orEmpty() }
-            },
+            hookOut = raw.hookOut.ifBlank { outlineContract.hookOut.ifBlank { outline?.turningPoint.orEmpty() } },
             continuityRisks = (outlineContract.continuityRisks + raw.continuityRisks + defaultRisks(snapshot)).cleanDistinct(),
             locked = raw.locked && outlineContract.locked,
         )
     }
 
-    fun renderContract(snapshot: StorySnapshot, chapter: ChapterDraft): String =
-        renderContract(resolve(snapshot, chapter))
+    fun renderContract(snapshot: StorySnapshot, chapter: ChapterDraft): String = renderContract(resolve(snapshot, chapter))
 
     fun renderContract(contract: ChapterContract): String = buildString {
         appendLine("本章目的：${contract.purpose.ifBlank { "只完成当前章纲目标" }}")
@@ -98,8 +85,13 @@ object ChapterContractGuard {
             .sortedWith(compareBy<KnowledgeBoundary> { it.revealPolicy.ordinal }.thenBy { it.earliestFullRevealChapter })
             .take(48)
             .joinToString("\n") { item ->
+                val inferredKnown = snapshot.characters.filter { character ->
+                    character.knownSecrets.any { item.matches(it) }
+                }.map { it.name }
+                val knownBy = (item.knownBy + inferredKnown).distinct()
+                val unknownTo = item.unknownTo.filterNot { unknown -> knownBy.any { it.equals(unknown, ignoreCase = true) } }
                 val earliest = item.earliestFullRevealChapter.takeIf { it > 0 }?.let { "第${it}章后" } ?: "未指定"
-                "- [${item.id}] ${item.title}｜已知者=${item.knownBy.ifEmpty { listOf("未登记") }.joinToString("、")}｜明确未知者=${item.unknownTo.ifEmpty { listOf("未登记") }.joinToString("、")}｜读者=${item.readerState}｜揭露策略=${item.revealPolicy}｜最早完整揭露=$earliest${item.note.takeIf(String::isNotBlank)?.let { "｜$it" }.orEmpty()}"
+                "- [${item.id}] ${item.title}｜已知者=${knownBy.ifEmpty { listOf("未登记") }.joinToString("、")}｜明确未知者=${unknownTo.ifEmpty { listOf("未登记") }.joinToString("、")}｜读者=${item.readerState}｜揭露策略=${item.revealPolicy}｜最早完整揭露=$earliest${item.note.takeIf(String::isNotBlank)?.let { "｜$it" }.orEmpty()}"
             }
     }
 
@@ -112,43 +104,27 @@ object ChapterContractGuard {
         contract.mustNotHappen.forEach { forbidden ->
             val token = forbiddenToken(forbidden)
             if (token.length >= 2 && text.contains(token, ignoreCase = true)) {
-                issues += blocking(
-                    code = "CHAPTER_CONTRACT_FORBIDDEN",
-                    message = "正文触发章节合同的禁止项：$forbidden",
-                    evidence = token,
-                    repair = "删除或改写该内容；本章合同优先于文风、RAG 与临时发挥。",
-                )
+                issues += blocking("CHAPTER_CONTRACT_FORBIDDEN", "正文触发章节合同的禁止项：$forbidden", token, "删除或改写该内容；本章合同优先于文风、RAG 与临时发挥。")
             }
         }
 
         contract.mustHappen.forEach { required ->
             val token = requiredToken(required)
             if (token.length >= 2 && !text.contains(token, ignoreCase = true)) {
-                issues += ConsistencyIssue(
-                    severity = IssueSeverity.WARNING,
-                    code = "CHAPTER_CONTRACT_MISSING",
-                    message = "章节合同要求的关键内容可能没有落实：$required",
-                    repairInstruction = "复核章纲语义；若确实缺失，在不提前抢戏的前提下补足。",
-                )
+                issues += ConsistencyIssue(IssueSeverity.WARNING, "CHAPTER_CONTRACT_MISSING", "章节合同要求的关键内容可能没有落实：$required", repairInstruction = "复核章纲语义；若确实缺失，在不提前抢戏的前提下补足。")
             }
         }
 
         request.snapshot.knowledgeLedger
             .filter { it.mustRemainProtected(chapterNumber) }
             .forEach { boundary ->
-                val leakedTerm = boundary.fullRevealTerms().firstOrNull { term ->
-                    term.length >= 2 && text.contains(term, ignoreCase = true)
-                }
+                val leakedTerm = boundary.fullRevealTerms().firstOrNull { term -> term.length >= 2 && text.contains(term, ignoreCase = true) }
                 if (leakedTerm != null) {
                     issues += blocking(
-                        code = "KNOWLEDGE_REVEAL_LEAK",
-                        message = "本章提前泄露了仍受保护的信息：${boundary.title}",
-                        evidence = leakedTerm,
-                        repair = if (boundary.revealPolicy == KnowledgeRevealPolicy.HINT_ONLY) {
-                            "只能保留模糊、可多解的暗示，删除能直接确认答案的表达。"
-                        } else {
-                            "删除完整答案，只保留当前章节获准出现的信息。"
-                        },
+                        "KNOWLEDGE_REVEAL_LEAK",
+                        "本章提前泄露了仍受保护的信息：${boundary.title}",
+                        leakedTerm,
+                        if (boundary.revealPolicy == KnowledgeRevealPolicy.HINT_ONLY) "只能保留模糊、可多解的暗示，删除能直接确认答案的表达。" else "删除完整答案，只保留当前章节获准出现的信息。",
                     )
                 }
             }
@@ -156,20 +132,21 @@ object ChapterContractGuard {
         output.stateChanges
             .filter { it.field.equals("knownSecrets", true) || it.field.equals("knowledge", true) || it.field == "已知秘密" }
             .forEach { change ->
+                val character = request.snapshot.characters.firstOrNull { it.name.equals(change.subject, ignoreCase = true) }
                 request.snapshot.knowledgeLedger
                     .filter { boundary -> boundary.unknownTo.any { it.equals(change.subject, ignoreCase = true) } }
                     .filter { it.mustRemainProtected(chapterNumber) }
+                    .filter { boundary -> character?.knownSecrets?.none { boundary.matches(it) } != false }
                     .filter { boundary -> boundary.matches(change.after) }
                     .forEach { boundary ->
                         issues += blocking(
-                            code = "CHARACTER_KNOWLEDGE_OVERREACH",
-                            message = "${change.subject}获得了其当前明确不应知道的信息：${boundary.title}",
-                            evidence = change.evidence.ifBlank { change.after },
-                            repair = "重写获取信息的段落，或先在章节合同/信息边界中明确授权该人物获知。",
+                            "CHARACTER_KNOWLEDGE_OVERREACH",
+                            "${change.subject}获得了其当前明确不应知道的信息：${boundary.title}",
+                            change.evidence.ifBlank { change.after },
+                            "重写获取信息的段落，或先在章节合同/信息边界中明确授权该人物获知。",
                         )
                     }
             }
-
         return issues.distinctBy { listOf(it.code, it.message, it.evidence) }
     }
 
@@ -181,18 +158,14 @@ object ChapterContractGuard {
     }
 
     private fun KnowledgeBoundary.mustRemainProtected(chapterNumber: Int): Boolean =
-        revealPolicy in setOf(KnowledgeRevealPolicy.HIDDEN, KnowledgeRevealPolicy.HINT_ONLY) ||
-            (earliestFullRevealChapter > 0 && chapterNumber < earliestFullRevealChapter)
+        revealPolicy in setOf(KnowledgeRevealPolicy.HIDDEN, KnowledgeRevealPolicy.HINT_ONLY) || (earliestFullRevealChapter > 0 && chapterNumber < earliestFullRevealChapter)
 
     private fun KnowledgeBoundary.fullRevealTerms(): List<String> =
-        (triggerTerms + truth.takeIf { it.length in 4..80 }.orEmpty())
-            .filter { it.isNotBlank() }
-            .distinct()
+        (triggerTerms + truth.takeIf { it.length in 4..80 }.orEmpty()).filter { it.isNotBlank() }.distinct()
 
     private fun KnowledgeBoundary.matches(value: String): Boolean {
         if (value.isBlank()) return false
-        return value.contains(title, ignoreCase = true) ||
-            fullRevealTerms().any { value.contains(it, ignoreCase = true) || it.contains(value, ignoreCase = true) }
+        return value.contains(title, ignoreCase = true) || fullRevealTerms().any { value.contains(it, ignoreCase = true) || it.contains(value, ignoreCase = true) }
     }
 
     private fun forbiddenToken(value: String): String = value.trim()
@@ -205,6 +178,5 @@ object ChapterContractGuard {
 
     private fun List<String>.cleanDistinct(): List<String> = map(String::trim).filter(String::isNotBlank).distinct()
 
-    private fun blocking(code: String, message: String, evidence: String, repair: String) =
-        ConsistencyIssue(IssueSeverity.BLOCKING, code, message, evidence, repair)
+    private fun blocking(code: String, message: String, evidence: String, repair: String) = ConsistencyIssue(IssueSeverity.BLOCKING, code, message, evidence, repair)
 }
