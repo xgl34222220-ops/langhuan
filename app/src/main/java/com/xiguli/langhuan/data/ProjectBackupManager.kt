@@ -41,6 +41,8 @@ class ProjectBackupManager(context: Context) {
             )
         }
 
+        val characterIdMap = old.characters.associate { it.id to UUID.randomUUID().toString() }
+        val foreshadowIdMap = old.relevantForeshadowing.associate { it.id to UUID.randomUUID().toString() }
         val chapterNumber = old.novel.currentChapter.coerceAtLeast(1)
         val remappedSnapshot = old.copy(
             novel = old.novel.copy(
@@ -51,9 +53,26 @@ class ProjectBackupManager(context: Context) {
             activeOutline = activeChain(newOutline, chapterNumber),
             outline = newOutline,
             bible = old.bible.map { it.copy(id = UUID.randomUUID().toString(), novelId = newNovelId) },
-            characters = old.characters.map { it.copy(id = UUID.randomUUID().toString(), novelId = newNovelId) },
+            characters = old.characters.map { character ->
+                character.copy(id = characterIdMap.getValue(character.id), novelId = newNovelId)
+            },
             recentTimeline = old.recentTimeline.map { it.copy(id = UUID.randomUUID().toString(), novelId = newNovelId) },
-            relevantForeshadowing = old.relevantForeshadowing.map { it.copy(id = UUID.randomUUID().toString(), novelId = newNovelId) },
+            relevantForeshadowing = old.relevantForeshadowing.map { item ->
+                item.copy(id = foreshadowIdMap.getValue(item.id), novelId = newNovelId)
+            },
+            factHistory = old.factHistory.map { fact ->
+                fact.copy(id = UUID.randomUUID().toString(), novelId = newNovelId)
+            },
+            longForm = old.longForm.copy(
+                arcs = old.longForm.arcs.map { arc ->
+                    arc.copy(id = "$newNovelId:arc:${arc.startChapter}")
+                },
+                characterGrowth = old.longForm.characterGrowth.mapNotNull { growth ->
+                    val mapped = characterIdMap[growth.characterId]
+                        ?: old.characters.firstOrNull { it.name == growth.name }?.id?.let(characterIdMap::get)
+                    mapped?.let { growth.copy(characterId = it) }
+                },
+            ),
         )
 
         val restoredDrafts = backup.chapters.sortedBy { it.chapterNumber }.map { draft ->
