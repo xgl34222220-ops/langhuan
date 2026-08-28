@@ -70,6 +70,7 @@ internal class ProgressiveFoundationEngine(
                     },
                 )
             )
+            validateCoreOutput(coreOutput)
             foundation = parseCore(coreOutput, proposal, current)
             onCheckpoint(1, foundation)
         } else {
@@ -78,7 +79,7 @@ internal class ProgressiveFoundationEngine(
 
         var working = requireNotNull(foundation)
         val existingChapterCount = working.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
-        if (safeResume < 2 || existingChapterCount < 6) {
+        if (safeResume < 2 || existingChapterCount < 8) {
             onStage("2/3 · 正在展开第一卷 10–12 章因果链……")
             val chapterOutput = request(
                 PromptBundle(
@@ -99,9 +100,17 @@ internal class ProgressiveFoundationEngine(
                     },
                 )
             )
+            val chapterRecords = chapterOutput.stateChanges.count {
+                it.subject.startsWith("CHAPTER:1:", ignoreCase = true)
+            }
+            require(chapterRecords >= 8) {
+                "AI 只返回了 $chapterRecords 条有效第一卷章纲，未达到最低 8 条。核心蓝图断点已保留；重试只会重新生成第 2 阶段。"
+            }
             working = mergeChapters(working, chapterOutput)
             val chapterCount = working.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
-            require(chapterCount >= 6) { "AI 返回的第一卷章纲不足，已保留核心蓝图断点；可直接重试第 2 阶段。" }
+            require(chapterCount >= 8) {
+                "第一卷章纲解析后不足 8 条，核心蓝图断点已保留；可直接重试第 2 阶段。"
+            }
             onCheckpoint(2, working)
         } else {
             onStage("2/3 · 已恢复第一卷章纲断点，跳过重复生成")
@@ -124,7 +133,16 @@ internal class ProgressiveFoundationEngine(
                 },
             )
         )
+        val foreshadowRecords = foreshadowOutput.stateChanges.count {
+            it.subject.equals("FORESHADOW", ignoreCase = true) && it.field.isNotBlank()
+        }
+        require(foreshadowRecords >= 3) {
+            "AI 只返回了 $foreshadowRecords 条有效伏笔，未达到最低 3 条。前两阶段断点已保留；重试只会重新生成伏笔阶段。"
+        }
         working = mergeForeshadowing(working, foreshadowOutput)
+        require(working.foreshadowing.size >= 3) {
+            "伏笔解析结果不足 3 条，前两阶段断点已保留；不会把半成品蓝图标记为完成。"
+        }
         onCheckpoint(3, working)
 
         return working
@@ -132,6 +150,17 @@ internal class ProgressiveFoundationEngine(
 
     private suspend fun request(prompt: PromptBundle): GeneratedChapter =
         gateway.generateStreaming(prompt) { /* structured generation: progress is represented by stages */ }
+
+    private fun validateCoreOutput(output: GeneratedChapter) {
+        val changes = output.stateChanges
+        val bible = changes.count { it.subject.startsWith("BIBLE:", ignoreCase = true) && it.field.isNotBlank() }
+        val characters = changes.count { it.subject.equals("CHAR", ignoreCase = true) && it.field.isNotBlank() }
+        val volumes = changes.count { it.subject.startsWith("VOLUME:", ignoreCase = true) && it.field.isNotBlank() }
+        val hasMaster = changes.any { it.subject.equals("MASTER", ignoreCase = true) }
+        require(bible >= 4 && characters >= 2 && volumes >= 1 && hasMaster) {
+            "核心蓝图不完整：有效圣经 $bible 条、角色 $characters 个、分卷 $volumes 个、总纲=${if (hasMaster) "有" else "缺失"}。未保存这个半成品，请重试第 1 阶段。"
+        }
+    }
 
     private fun parseCore(
         output: GeneratedChapter,
