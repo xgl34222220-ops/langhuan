@@ -25,36 +25,38 @@ jobs:
 
           path = Path("app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt")
           text = path.read_text(encoding="utf-8")
-          old = '''            val memories = repository.retrieveRelevantMemories(current.snapshot.novel.id, ragQuery, current.draft.chapterNumber, 8)
-            val snapshotForPrompt = current.snapshot.copy(recentSummaries = (current.snapshot.recentSummaries + memories).distinct().takeLast(18))
-            val gateway = configuredGateway() ?: DemoAiGateway()
-            runCatching {
-                GenerationPipeline(gateway).generate(GenerationRequest(snapshotForPrompt, current.draft, 2_500)) { preview ->
-                    _state.update { state -> state.copy(streamPreview = preview) }
-                }
-            }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
-          '''
-          new = '''            val retrievedContext = repository.retrieveRelevantContext(
-                current.snapshot.novel.id,
-                ragQuery,
-                current.draft.chapterNumber,
-                10,
-            )
-            val gateway = configuredGateway() ?: DemoAiGateway()
-            runCatching {
-                GenerationPipeline(gateway).generate(
-                    request = GenerationRequest(current.snapshot, current.draft, 2_500),
-                    retrievedContext = retrievedContext,
-                ) { preview ->
-                    _state.update { state -> state.copy(streamPreview = preview) }
-                }
-            }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
-          '''
-          if old not in text:
-              raise SystemExit("legacy RAG injection block not found")
-          text = text.replace(old, new, 1)
+          start_marker = "            val memories = repository.retrieveRelevantMemories(current.snapshot.novel.id, ragQuery, current.draft.chapterNumber, 8)\n"
+          end_marker = "            }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }\n"
+          start = text.find(start_marker)
+          end_start = text.find(end_marker, start)
+          if start < 0 or end_start < 0:
+              raise SystemExit("legacy RAG injection range not found")
+          end = end_start + len(end_marker)
+          new = "\n".join([
+              "            val retrievedContext = repository.retrieveRelevantContext(",
+              "                current.snapshot.novel.id,",
+              "                ragQuery,",
+              "                current.draft.chapterNumber,",
+              "                10,",
+              "            )",
+              "            val gateway = configuredGateway() ?: DemoAiGateway()",
+              "            runCatching {",
+              "                GenerationPipeline(gateway).generate(",
+              "                    request = GenerationRequest(current.snapshot, current.draft, 2_500),",
+              "                    retrievedContext = retrievedContext,",
+              "                ) { preview ->",
+              "                    _state.update { state -> state.copy(streamPreview = preview) }",
+              "                }",
+              "            }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }",
+              "",
+          ])
+          text = text[:start] + new + text[end:]
           if "snapshotForPrompt" in text:
               raise SystemExit("legacy snapshotForPrompt path still present")
+          if "retrieveRelevantMemories(current.snapshot.novel.id, ragQuery" in text:
+              raise SystemExit("legacy memory retrieval call still present")
+          if "retrievedContext = retrievedContext" not in text:
+              raise SystemExit("new Context Builder route missing")
           path.write_text(text, encoding="utf-8")
           PY
 
