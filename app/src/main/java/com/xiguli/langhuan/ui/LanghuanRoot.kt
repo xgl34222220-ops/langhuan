@@ -69,7 +69,6 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
 
-    // 保持该 ViewModel 存活：它会持续监听封面文件与数据库元数据，修复旧 snapshot 覆盖 coverPath 的情况。
     @Suppress("UNUSED_VARIABLE")
     val keepCoverGuardAlive = coverGuardViewModel
 
@@ -82,6 +81,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) viewModel.importDocument(uri)
+    }
+    val referenceDistillLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.enqueueReferenceDistillation(uri)
     }
 
     LaunchedEffect(libraryState.workspaceStoryId) {
@@ -106,10 +110,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     }
 
     LaunchedEffect(libraryState.stories.isEmpty()) {
-        if (libraryState.stories.isEmpty()) {
-            // 空书架只停留在书架，不再自动把用户推进“需要 AI、但又无法配置 Key”的死循环。
-            showShelf = true
-        }
+        if (libraryState.stories.isEmpty()) showShelf = true
     }
 
     fun reloadWorkspaceAfterOverlay() {
@@ -182,13 +183,15 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                         state = libraryState,
                         aiReady = state.provider.ready,
                         onOpenBook = libraryViewModel::openBook,
-                        onStartCreation = {
-                            // 重新进入时继续上次未完成的会谈；真正清空由会谈页“重新开始”负责。
-                            showCreation = true
-                        },
+                        onStartCreation = { showCreation = true },
                         onConfigureAi = {
                             pendingCreationAfterAiSetup = !state.provider.ready
                             showAiSetup = true
+                        },
+                        onDistillReference = {
+                            referenceDistillLauncher.launch(
+                                arrayOf("text/plain", "text/markdown", "application/epub+zip", "application/octet-stream")
+                            )
                         },
                         onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
                     )
@@ -238,7 +241,6 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                         showShelf = false
                         showWritingFlow = true
                         libraryViewModel.openBook(id)
-                        // 正式建书完成后，这次会谈才算结束；下一本书从新会话开始。
                         creationViewModel.reset()
                     },
                 )
