@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -86,12 +88,19 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
             val key = repository.apiKey(provider.id).orEmpty()
             runCatching { detector.detect(provider.baseUrl, key) }
                 .onSuccess { discovery ->
-                    val ordered = discovery.models.sortedWith(compareByDescending<DiscoveredModel> { it.id == provider.model }.thenBy { it.displayName.lowercase() })
+                    val ordered = discovery.models.sortedWith(
+                        compareByDescending<DiscoveredModel> { it.id == provider.model }
+                            .thenBy { it.displayName.lowercase() }
+                    )
                     _state.update {
                         it.copy(
                             isLoadingModels = false,
                             models = ordered,
-                            message = if (ordered.isEmpty()) "接口可识别，但没有开放模型列表；请在 AI 服务编辑页手动填写模型名。" else "已读取 ${ordered.size} 个模型",
+                            message = if (ordered.isEmpty()) {
+                                "接口可识别，但没有开放模型列表；请在 AI 服务编辑页手动填写模型名。"
+                            } else {
+                                "已读取 ${ordered.size} 个模型"
+                            },
                         )
                     }
                 }
@@ -134,6 +143,7 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
 fun ProviderQuickSwitchSheet(
     viewModel: ProviderQuickSwitchViewModel,
     preferredProviderId: String?,
+    onProviderActivated: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
@@ -141,64 +151,116 @@ fun ProviderQuickSwitchSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("快速切换模型", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("一个 AI 服务可以直接读取并切换它提供的模型，不需要复制成多个服务。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "一个 AI 服务可以直接读取并切换它提供的模型，不需要复制成多个服务。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             if (state.providers.isEmpty()) {
                 Text("还没有保存 AI 服务，请先到设置中添加。")
-                return@Column
-            }
-
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.providers.forEach { provider ->
-                    FilterChip(
-                        selected = provider.id == state.selectedProviderId,
-                        onClick = { viewModel.selectProvider(provider.id) },
-                        label = { Text(provider.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingIcon = if (provider.isDefault) ({ Icon(Icons.Rounded.CloudDone, null, Modifier.size(18.dp)) }) else null,
-                    )
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.providers.forEach { provider ->
+                        FilterChip(
+                            selected = provider.id == state.selectedProviderId,
+                            onClick = {
+                                onProviderActivated(provider.id)
+                                viewModel.selectProvider(provider.id)
+                            },
+                            label = { Text(provider.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = if (provider.isDefault) {
+                                { Icon(Icons.Rounded.CloudDone, null, Modifier.size(18.dp)) }
+                            } else null,
+                        )
+                    }
                 }
-            }
 
-            state.selectedProvider?.let { provider ->
-                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f)) {
-                    Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(provider.name, fontWeight = FontWeight.Bold)
-                            Text("当前：${provider.model} · ${provider.protocol.label}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(onClick = viewModel::refreshModels, enabled = !state.isLoadingModels) {
-                            if (state.isLoadingModels) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Rounded.Refresh, "重新读取模型")
+                state.selectedProvider?.let { provider ->
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(provider.name, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "当前：${provider.model} · ${provider.protocol.label}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            IconButton(onClick = viewModel::refreshModels, enabled = !state.isLoadingModels) {
+                                if (state.isLoadingModels) {
+                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Rounded.Refresh, "重新读取模型")
+                                }
+                            }
                         }
                     }
                 }
-            }
 
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
+                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                state.message?.let {
+                    Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
 
-            if (state.isLoadingModels) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            } else if (state.models.isNotEmpty()) {
-                Column(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    state.models.take(60).forEach { model ->
-                        val selected = model.id == state.selectedProvider?.model
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().clickable(enabled = !state.isSwitching) { viewModel.switchModel(model.id) },
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f),
-                        ) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary)
-                                Column(Modifier.padding(start = 9.dp).weight(1f)) {
-                                    Text(model.displayName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    if (model.id != model.displayName) Text(model.id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (state.isLoadingModels) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else if (state.models.isNotEmpty()) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        items(state.models.take(60), key = { it.id }) { model ->
+                            val selected = model.id == state.selectedProvider?.model
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !state.isSwitching) {
+                                        state.selectedProviderId?.let(onProviderActivated)
+                                        viewModel.switchModel(model.id)
+                                    },
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f)
+                                },
+                            ) {
+                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary)
+                                    Column(Modifier.padding(start = 9.dp).weight(1f)) {
+                                        Text(
+                                            model.displayName,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        if (model.id != model.displayName) {
+                                            Text(
+                                                model.id,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                    if (selected) {
+                                        Text("当前", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    }
                                 }
-                                if (selected) Text("当前", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
