@@ -49,6 +49,7 @@ data class AgentReview(
 
 class NovelAgentEngine(
     private val gateway: AiGateway,
+    private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
 ) {
     suspend fun reviewChapter(snapshot: StorySnapshot, chapter: ChapterDraft): AgentReview {
         require(chapter.content.isNotBlank()) { "当前章节还没有正文，无法做 Agent 复盘" }
@@ -70,13 +71,13 @@ class NovelAgentEngine(
 
     private fun systemPrompt(fullBook: Boolean): String = """
         你是“琅嬛”长篇小说创作 Agent，负责结构化复盘、事实抽取和一致性巡检。${if (fullBook) "本次是全书巡检。" else "本次只复盘刚完成的当前章节。"}
-        你不是续写模型，不要输出小说正文。只依据提供的正文与已知设定做判断，禁止把猜测当事实。
+        你不是续写模型，不要输出小说正文。只依据提供的正文、场景时间锁与已知设定做判断，禁止把猜测当事实。
         输出必须严格符合 GeneratedChapter JSON：title、content、summary、stateChanges、touchedForeshadowingIds，不要 Markdown，不要额外解释。
 
         字段约定：
         - title：本次复盘标题。
-        - content：150-500 字高信息密度结论，说明主线推进、主要风险与最值得处理的问题。
-        - summary：使用“节奏=... || 角色弧光=... || 主线推进=... || 一致性=...”格式。
+        - content：150-500 字高信息密度结论，说明主线推进、时间连续性、主要风险与最值得处理的问题。
+        - summary：使用“节奏=... || 角色弧光=... || 主线推进=... || 时间线=... || 一致性=...”格式。
         - stateChanges：结构化动作/诊断。field 只能使用下列枚举之一：
           CHARACTER_NEW、CHARACTER_LOCATION、CHARACTER_EMOTION、CHARACTER_GOAL、RELATION、TIMELINE、FORESHADOW_NEW、FORESHADOW_UPDATE、CONSISTENCY、OUTLINE_GAP、PACING、ARC、NEXT_OPTION。
         - touchedForeshadowingIds：只放已存在伏笔中本章明确触及的 id。
@@ -85,12 +86,17 @@ class NovelAgentEngine(
         1. CHARACTER_NEW：subject=人物名；after=地点||情绪||当前目标||性格标签（顿号分隔）。只有正文明确出现且对后续有持续意义的人物才记录。
         2. CHARACTER_LOCATION / CHARACTER_EMOTION / CHARACTER_GOAL：subject=已有角色名；before=原状态；after=正文结束时的新状态；evidence=依据。
         3. RELATION：subject=关系发起人物；after=目标人物||关系说明。
-        4. TIMELINE：subject=事件短标题；after=故事内时间||地点||参与者（顿号）||事件摘要||后果（顿号）。
+        4. TIMELINE：subject=事件短标题；after 必须严格为“故事日序号||时段||距上一事件经过多久||NORMAL或FLASHBACK||地点||参与者（顿号）||事件摘要||后果（顿号）”。
+           - 故事日序号只写整数，例如 3，不要写“第三天”。
+           - NORMAL 事件的故事日不得比已有主时间线更早；没有明确跳时场景时不得凭空增加多天。
+           - FLASHBACK 只记录真正切入过去叙事的事件，且不会推进当前主时间钟。
+           - 每个有实质剧情推进的章节至少给 1 条、最多 4 条 TIMELINE，按正文发生顺序排列。
         5. FORESHADOW_NEW：subject=伏笔标题；after=细节||预期回收||建议回收起始章||建议回收结束章。只有明显需要未来兑现的信息才建立伏笔。
         6. FORESHADOW_UPDATE：subject=已有伏笔 id；after=PLANTED/DEVELOPING/RESOLVED/ABANDONED||本次变化说明。
         7. CONSISTENCY / OUTLINE_GAP / PACING / ARC：subject=问题标题；before=现状；after=建议；evidence=依据。这些只做诊断，不写入事实记忆。
         8. NEXT_OPTION：subject=下一章候选标题；after=唯一目标||主要冲突||章末转折。章节复盘时给 3 个差异明显但都服从总纲的候选；全书巡检时可以不给。
 
+        时间线事实优先服从 App 给出的【时间轴锁】与【场景时间计划】。正文若出现与时间锁冲突的句子，要作为 CONSISTENCY 诊断指出，不能反过来用错误正文覆盖时间锁。
         事实抽取宁缺毋滥。若没有可靠的新事实，不要为了凑数量生成动作。
     """.trimIndent()
 
@@ -100,7 +106,17 @@ class NovelAgentEngine(
         val characters = snapshot.characters.joinToString("\n") {
             "${it.name}｜地点=${it.location}｜身体=${it.physicalState}｜情绪=${it.emotionalState}｜目标=${it.goal}｜关系=${it.relationshipNotes.entries.joinToString("；") { e -> "${e.key}=${e.value}" }}"
         }
-        val timeline = snapshot.recentTimeline.takeLast(30).joinToString("\n") { "第${it.chapter}章 ${it.storyTime} ${it.location}：${it.summary}" }
+        val timeline = snapshot.recentTimeline
+            .sortedWith(compareBy({ it.chapter }, { it.orderInChapter }))
+            .takeLast(40)
+            .joinToString("\n") {
+                val clock = if (it.storyDay > 0) "故事第${it.storyDay}天·${it.timeOfDay.ifBlank { it.storyTime }}｜距上次=${it.elapsedFromPrevious.ifBlank { "未记录" }}" else it.storyTime
+                "第${it.chapter}章#${it.orderInChapter} $clock ${if (it.isFlashback) "[FLASHBACK]" else "[NORMAL]"} ${it.location}：${it.summary}"
+            }
+        val scenes = chapter.scenePlan.sortedBy { it.order }.joinToString("\n") {
+            "场景${it.order}｜故事第${it.storyDay.takeIf { day -> day > 0 } ?: 0}天·${it.timeOfDay.ifBlank { "未锁定" }}｜距上一场=${it.elapsedFromPrevious.ifBlank { "未标注" }}｜${if (it.isFlashback) "FLASHBACK" else "NORMAL"}｜${it.location}｜${it.outcome}"
+        }
+        val chronology = chronologyGuard.promptText(snapshot, chapter.scenePlan)
         val foreshadows = snapshot.relevantForeshadowing.joinToString("\n") { "id=${it.id}｜${it.title}｜${it.status}｜${it.detail}｜预计${it.expectedChapterStart}-${it.expectedChapterEnd}章回收" }
         return """
             小说：${snapshot.novel.title}
@@ -116,8 +132,14 @@ class NovelAgentEngine(
             【人物当前状态】
             $characters
 
+            【时间轴锁】
+            $chronology
+
             【已有时间线】
-            $timeline
+            ${timeline.ifBlank { "暂无；本章从故事第1天开始建立结构化主时间线。" }}
+
+            【本章场景时间计划】
+            ${scenes.ifBlank { "旧章节没有结构化场景时间；只能保守连续承接，禁止自行跨天。" }}
 
             【已有伏笔】
             $foreshadows
@@ -129,7 +151,8 @@ class NovelAgentEngine(
             正文：
             ${chapter.content.take(18_000)}
 
-            请完成章节复盘、结构化事实抽取、一致性/节奏/角色弧光诊断，并给出 3 个下一章候选方向。
+            请完成章节复盘、结构化事实抽取、时间连续性/设定/节奏/角色弧光诊断，并给出 3 个下一章候选方向。
+            TIMELINE 的故事日和时段必须优先从场景时间计划读取，不能仅凭正文中的“后来、第二天、几个月后”等措辞自行改钟。
         """.trimIndent()
     }
 
@@ -141,12 +164,22 @@ class NovelAgentEngine(
         val characters = snapshot.characters.joinToString("\n") {
             "${it.name}｜地点=${it.location}｜情绪=${it.emotionalState}｜目标=${it.goal}｜关系=${it.relationshipNotes.entries.joinToString("；") { e -> "${e.key}=${e.value}" }}"
         }
+        val timeline = snapshot.recentTimeline
+            .sortedWith(compareBy({ it.chapter }, { it.orderInChapter }))
+            .takeLast(160)
+            .joinToString("\n") {
+                val day = if (it.storyDay > 0) "故事第${it.storyDay}天·${it.timeOfDay}" else it.storyTime.ifBlank { "旧时间未结构化" }
+                "第${it.chapter}章#${it.orderInChapter}｜$day｜${if (it.isFlashback) "FLASHBACK" else "NORMAL"}｜${it.location}｜${it.summary}"
+            }
         val chapterDigest = chapters.sortedBy { it.chapterNumber }.takeLast(60).joinToString("\n\n") { chapter ->
             val bodyEvidence = if (chapter.summary.isNotBlank()) chapter.summary else {
                 val text = chapter.content.trim()
                 if (text.length <= 1_400) text else text.take(850) + " …… " + text.takeLast(450)
             }
-            "第${chapter.chapterNumber}章 ${chapter.title}｜目标=${chapter.objective}\n$bodyEvidence"
+            val sceneClock = chapter.scenePlan.sortedBy { it.order }.joinToString("；") {
+                "S${it.order}=第${it.storyDay}天·${it.timeOfDay}${if (it.isFlashback) "(闪回)" else ""}"
+            }
+            "第${chapter.chapterNumber}章 ${chapter.title}｜目标=${chapter.objective}｜时间计划=$sceneClock\n$bodyEvidence"
         }
         return """
             小说：${snapshot.novel.title}
@@ -163,10 +196,13 @@ class NovelAgentEngine(
             【人物当前状态】
             $characters
 
+            【结构化时间线】
+            ${timeline.ifBlank { "尚无结构化时间线。" }}
+
             【章节摘要/正文证据，最多最近 60 章】
             $chapterDigest
 
-            请从全书尺度巡检：设定矛盾、人物弧光断裂、目标重复、节奏拖沓/跳跃、伏笔过期未回收、章纲与总纲脱节、连续章节缺乏状态变化等问题。
+            请从全书尺度巡检：时间倒退、未经计划跨天/跨月/跨年、同一人物同一时间出现在冲突地点、闪回污染主时间钟、设定矛盾、人物弧光断裂、目标重复、节奏拖沓/跳跃、伏笔过期未回收、章纲与总纲脱节、连续章节缺乏状态变化等问题。
             全书巡检时以 CONSISTENCY、OUTLINE_GAP、PACING、ARC 为主；只有证据非常明确时才提出事实记忆动作。
         """.trimIndent()
     }
