@@ -1,0 +1,62 @@
+name: Refactor Agent Memory
+
+on:
+  push:
+    paths:
+      - ".github/workflows/refactor-agent-memory.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Unify Studio Agent memory path
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt")
+          text = path.read_text(encoding="utf-8")
+
+          old_import = "import com.xiguli.langhuan.engine.AgentActionKind\n"
+          new_import = "import com.xiguli.langhuan.engine.AgentMemoryApplier\n"
+          if old_import not in text:
+              raise SystemExit("AgentActionKind import marker not found")
+          text = text.replace(old_import, new_import, 1)
+
+          old_call = "val updated = applyAgentActions(current.snapshot, current.draft.chapterNumber, review)"
+          new_call = "val updated = AgentMemoryApplier.apply(current.snapshot, current.draft.chapterNumber, review)"
+          if old_call not in text:
+              raise SystemExit("legacy applyAgentActions call not found")
+          text = text.replace(old_call, new_call, 1)
+
+          start_marker = "    private fun applyAgentActions(snapshot: StorySnapshot, chapterNumber: Int, review: AgentReview): StorySnapshot {\n"
+          end_marker = "    private fun busy(state: StudioUiState): Boolean =\n"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit("legacy applyAgentActions block markers not found")
+          text = text[:start] + text[end:]
+
+          if "applyAgentActions(" in text or "AgentActionKind" in text:
+              raise SystemExit("legacy Agent memory path still present")
+          if "AgentMemoryApplier.apply(" not in text:
+              raise SystemExit("central AgentMemoryApplier path missing")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt
+          git commit -m "refactor: unify agent memory application"
+          git push origin HEAD:main
