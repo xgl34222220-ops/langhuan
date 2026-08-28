@@ -71,6 +71,8 @@ private data class ReferenceDistillationTaskUi(
     val batch: Int,
     val batches: Int,
     val title: String,
+    val provider: String,
+    val model: String,
     val error: String,
     val chapters: Int,
     val samples: Int,
@@ -158,8 +160,8 @@ fun AiFirstShelf(
             items(distillationTasks, key = { it.id }) { task ->
                 ReferenceDistillationTaskCard(
                     task = task,
-                    aiProviderLabel = aiProviderLabel,
-                    aiModel = aiModel,
+                    fallbackProvider = aiProviderLabel,
+                    fallbackModel = aiModel,
                 )
             }
         }
@@ -197,8 +199,8 @@ fun AiFirstShelf(
 @Composable
 private fun ReferenceDistillationTaskCard(
     task: ReferenceDistillationTaskUi,
-    aiProviderLabel: String,
-    aiModel: String,
+    fallbackProvider: String,
+    fallbackModel: String,
 ) {
     val progress = task.progress.coerceIn(0, 100)
     val stageLabel = when {
@@ -209,6 +211,7 @@ private fun ReferenceDistillationTaskCard(
         task.state == WorkInfo.State.ENQUEUED -> "等待后台调度 / 网络连接"
         task.state == WorkInfo.State.BLOCKED -> "等待前置条件"
         task.stage == "parse" -> "正在读取并解析小说"
+        task.stage == "prepare" -> "小说已解析 · 正在准备 AI 蒸馏"
         task.stage == "distill" && task.batches > 0 -> "AI 正在分批蒸馏 Style DNA · ${task.batch}/${task.batches}"
         task.stage == "aggregate" -> "AI 正在聚合整部作品的 Style DNA"
         task.stage == "done" -> "正在完成长期研究档案入库"
@@ -220,6 +223,8 @@ private fun ReferenceDistillationTaskCard(
         else -> Icons.Rounded.HourglassTop
     }
     val title = task.title.ifBlank { "参考小说" }
+    val provider = task.provider.ifBlank { fallbackProvider }.ifBlank { "等待选择 AI" }
+    val model = task.model.ifBlank { fallbackModel }.ifBlank { "等待模型" }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -252,9 +257,7 @@ private fun ReferenceDistillationTaskCard(
                 )
             }
 
-            if (task.active) {
-                val provider = aiProviderLabel.ifBlank { "当前默认 AI" }
-                val model = aiModel.ifBlank { "当前模型" }
+            if (task.active || task.state == WorkInfo.State.SUCCEEDED) {
                 Text(
                     "AI：$provider · $model",
                     style = MaterialTheme.typography.labelMedium,
@@ -262,8 +265,10 @@ private fun ReferenceDistillationTaskCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (task.active) {
                 Text(
-                    "这是实际 AI 分析任务，不是本地假进度。退出琅嬛后由 WorkManager + 前台通知继续执行；再次进入会重新读取真实任务状态。",
+                    "这是实际 AI 分析任务，不是本地假进度。任务锁定启动时选中的 AI；之后即使切换模型，这张卡仍显示本任务真正使用的服务与模型。退出琅嬛后由 WorkManager + 前台通知继续执行，再次进入会重新读取真实任务状态。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -315,6 +320,8 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                         batch = progressData.getInt("batch", 0),
                         batches = progressData.getInt("batches", 0),
                         title = progressData.getString("title").orEmpty().ifBlank { output.getString("title").orEmpty() },
+                        provider = progressData.getString("provider").orEmpty().ifBlank { output.getString("provider").orEmpty() },
+                        model = progressData.getString("model").orEmpty().ifBlank { output.getString("model").orEmpty() },
                         error = output.getString("error").orEmpty(),
                         chapters = output.getInt("chapters", 0),
                         samples = output.getInt("samples", 0),
