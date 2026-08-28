@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
@@ -31,6 +32,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +53,7 @@ fun AiFirstShelf(
     onOpenBook: (String) -> Unit,
     onStartCreation: () -> Unit,
     onConfigureAi: () -> Unit,
+    onDistillReference: () -> Unit,
     onCloseShelf: () -> Unit,
 ) {
     LazyColumn(
@@ -92,6 +95,21 @@ fun AiFirstShelf(
                     Spacer(Modifier.width(8.dp))
                     Text(if (aiReady) "AI 服务 / API Key" else "添加 API Key")
                 }
+                OutlinedButton(
+                    onClick = if (aiReady) onDistillReference else onConfigureAi,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    enabled = !state.isBusy,
+                    shape = RoundedCornerShape(17.dp),
+                ) {
+                    Icon(Icons.Rounded.AutoFixHigh, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (aiReady) "导入参考小说 · 后台蒸馏" else "配置 AI 后导入参考小说")
+                }
+                Text(
+                    "支持 TXT / Markdown / EPUB。只提炼视角、节奏、信息释放、悬念、人物塑造、规则呈现等高层 Style DNA，不把原文导入书架。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
