@@ -264,15 +264,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 ) {
                     Icon(Icons.Rounded.Key, "管理 Key / AI 服务")
                 }
-                ExtendedFloatingActionButton(
+                SmallFloatingActionButton(
                     onClick = { showModelSwitch = true },
-                    icon = { Icon(Icons.Rounded.Tune, null) },
-                    text = {
-                        val provider = state.provider.activeProviderLabel.ifBlank { "AI" }
-                        val model = state.provider.generationModel.ifBlank { "未选模型" }
-                        Text("${provider.take(10)} · ${model.take(14)}")
-                    },
-                )
+                ) {
+                    Icon(Icons.Rounded.Tune, "切换 AI 服务 / 模型")
+                }
             }
         }
 
