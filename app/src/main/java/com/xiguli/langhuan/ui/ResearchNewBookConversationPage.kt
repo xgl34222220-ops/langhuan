@@ -60,9 +60,9 @@ fun ResearchNewBookConversationPage(
         val detected = research.referenceTargets(text)
         lastTargets = detected
         researchMessage = if (detected.size > 1) {
-            "正在分别检索 ${detected.size} 个参考对象，避免资料混在一起……"
+            "正在分别检索 ${detected.size} 个参考对象，并深读高相关页面……"
         } else {
-            "正在联网检索公开资料……"
+            "正在联网检索并深读高相关页面……"
         }
 
         scope.launch {
@@ -75,12 +75,13 @@ fun ResearchNewBookConversationPage(
 
             val hidden = buildResearchPrompt(text, bundle)
             if (sources.isEmpty()) {
-                researchMessage = "本次实时检索没有拿到足够可靠的公开结果；琅嬛会明确说“这次没搜到”，不会再说自己不能联网。"
+                researchMessage = "本次网页核验没有拿到可靠资料；AI 仍会先使用自己有把握的既有知识回答，并明确哪些内容未被网页核验。"
             } else {
+                val deep = bundle?.deepReadCount ?: 0
                 researchMessage = if (targets.size > 1) {
-                    "已为 ${targets.size} 个参考对象找到 ${sources.size} 条公开结果，正在拆解参考基因并融合。"
+                    "已为 ${targets.size} 个参考对象找到 ${sources.size} 条结果，深读 $deep 个页面；正在合并模型知识与网页证据。"
                 } else {
-                    "已检索到 ${sources.size} 条公开结果，正在交给 AI 核对并继续构思。"
+                    "已找到 ${sources.size} 条结果并深读 $deep 个页面；正在整理主角、能力、主题、剧情与世界规则。"
                 }
             }
             viewModel.send(hidden)
@@ -154,7 +155,7 @@ fun ResearchNewBookConversationPage(
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text(if (researching) "正在联网研究参考作品……" else state.busyLabel.ifBlank { "AI 正在处理……" })
+                    Text(if (researching) "正在联网检索并深读作品资料……" else state.busyLabel.ifBlank { "AI 正在处理……" })
                 }
             }
             state.error?.let { error -> item {
@@ -171,24 +172,32 @@ private fun buildResearchPrompt(text: String, bundle: CreationResearchBundle?): 
     append(text)
     append(RESEARCH_MARKER)
     appendLine()
-    appendLine("这是 App 在本轮会谈中刚刚执行的实时公开网页检索上下文，不是模型训练记忆。")
-    appendLine("重要：你绝对不要再回答“我不能联网/不能直接搜索/请用户自己提供链接”。联网动作已经由琅嬛 App 执行。")
+    appendLine("这是琅嬛 App 本轮执行的公开网页核验与页面深读上下文。它是补充证据，不是你的全部知识来源。")
+    appendLine("重要：你拥有自己的训练知识。对于你本来就有把握的作品/作者高层事实，可以直接使用；网页检索用于核验、补充、纠错和更新，绝不能因为网页没搜到就把自己的既有知识清空。")
+    appendLine("绝对不要回答‘我不能联网/不能直接搜索/请用户自己提供链接’。联网动作已经由 App 完成。")
+    appendLine("回答时区分置信度：被当前网页直接支持的可称‘网页已核验’；来自你既有知识但本轮网页没证实的，应表述为‘按我的既有知识/记忆’，并避免编造具体章节、原句和数字。")
 
     if (bundle == null || !bundle.hasSources) {
-        appendLine("本次搜索服务没有返回足够可靠的公开结果。你必须准确表述为“我刚才这次实时检索没有找到足够可靠的公开资料”，而不是声称没有联网能力。")
-        appendLine("若用户给的是作者名或小众网文名，可以基于用户已经明确说出的目标继续构思，但不要假装知道该作品的具体事实。可以建议换书名/作者笔名/平台关键词继续检索。")
+        appendLine("本次网页核验没有返回足够可靠的结果。这只代表‘网页核验失败’，不代表你不知道。")
+        appendLine("请先检查自己的既有知识：如果对作品/作者有把握，直接说明你知道的主角、人物性格、能力/机制、世界规则、主题和主线内容，并标明未被本轮网页核验；只有你自己也没把握时，才说具体事实不确定。")
     } else {
-        appendLine("下面按参考对象分组列出搜索标题、摘要和来源。涉及作者、作品名、简介等事实时优先以这些实时资料为依据；来源冲突就明确说不确定。")
+        appendLine("下面按参考对象列出搜索摘要与深读页面摘取的信息。不要只复述标题；结合这些证据和你的既有知识，补齐作品档案。来源冲突时明确指出。")
         appendLine(bundle.context)
     }
 
     appendLine()
+    appendLine("【作品档案要求】")
+    appendLine("只要用户在问某部作品/作者，或要求参考/融合，就先在回答里尽量整理每个参考作品的高层档案，而不是只说‘能借鉴某种感觉’。至少覆盖：")
+    appendLine("1. 作者/作品关系；2. 主角是谁；3. 主角主要性格；4. 主角能力、金手指或核心行动优势；5. 世界观与核心规则；6. 小说主题；7. 主线具体讲什么；8. 核心冲突；9. 叙事与节奏特点；10. 可以借鉴的高层创作机制。")
+    appendLine("如果某字段确实不知道，就单独标‘未核实’，不要因为一个字段不确定就把整部作品都说成不知道。")
+    appendLine("如果用户问的是作者，先列出你有把握的代表作，再分别给出作品档案；网页结果出现书名时优先用于核验作品归属。")
+
+    appendLine()
     appendLine("【多作品融合工作法】")
-    appendLine("如果用户提到一部或多部小说作为参考，先在内部为每个参考对象抽取“参考基因”：")
-    appendLine("1. 世界/规则机制；2. 核心谜团或冲突类型；3. 信息释放与反转方式；4. 人物关系张力；5. 节奏与升级方式；6. 叙事视角/距离；7. 氛围与情绪体验；8. 用户明确想保留或排除的部分。")
-    appendLine("然后做融合：KEEP=保留高层机制，TRANSFORM=换成原创实现，AVOID=容易变成照搬的标志性人物/专名/独特剧情骨架。")
-    appendLine("最终方案必须重新设计角色、专名、世界规则、核心谜团、因果链和结局方向。不要复制原作句子，也不要只给原作角色换名字。")
-    appendLine("用户如果已经明确说“融合这几本”，不要因为信息很多就退回问卷；先给一版你理解的融合方向，再最多追问1个真正影响路线的问题。")
+    appendLine("为每个参考对象抽取参考基因：世界/规则机制、核心谜团或冲突类型、信息释放与反转、人物关系张力、节奏升级、叙事视角/距离、氛围体验。")
+    appendLine("融合时分成 KEEP=保留高层机制，TRANSFORM=原创化改造，AVOID=容易构成照搬的标志性人物/专名/独特剧情骨架。")
+    appendLine("最终必须重新设计角色、专名、世界规则、核心谜团、因果链和结局方向；不要复制原作句子，也不要只给原作角色换名字。")
+    appendLine("用户已经明确要融合时，不要退回问卷；先给一版有内容的融合方向，再最多追问1个真正影响路线的问题。")
 }
 
 @Composable private fun ResearchStarterChip(text: String, onClick: (String) -> Unit) {
@@ -222,10 +231,10 @@ private fun buildResearchPrompt(text: String, bundle: CreationResearchBundle?): 
                 Text("参考对象：${targets.joinToString(" · ")}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
             }
             sources.take(6).forEach { source ->
-                Text("• ${source.title}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                Text("• ${source.title}${if (source.detail.isNotBlank()) " · 已深读" else ""}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 if (source.snippet.isNotBlank()) Text(source.snippet, style = MaterialTheme.typography.labelSmall, maxLines = 3)
             }
-            if (sources.isNotEmpty()) Text("资料只用于事实核对和高层创作研究；融合时会重新设计原创人物、规则和主线。", style = MaterialTheme.typography.labelSmall)
+            if (sources.isNotEmpty()) Text("网页资料负责核验；模型既有知识负责补齐高层作品档案。融合时仍会重做原创人物、规则和主线。", style = MaterialTheme.typography.labelSmall)
         }
     }
 }
