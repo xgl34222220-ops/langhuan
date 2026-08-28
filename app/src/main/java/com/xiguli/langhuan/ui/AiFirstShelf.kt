@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -77,9 +79,15 @@ private data class ReferenceDistillationTaskUi(
     val chapters: Int,
     val samples: Int,
     val runAttemptCount: Int,
+    val sourcePath: String,
+    val sourceName: String,
+    val resumable: Boolean,
+    val completedBatches: Int,
 ) {
     val active: Boolean
         get() = state == WorkInfo.State.RUNNING || state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED
+    val sourceAvailable: Boolean
+        get() = sourcePath.isNotBlank() && File(sourcePath).exists()
 }
 
 @Composable
@@ -94,6 +102,7 @@ fun AiFirstShelf(
     onDistillReference: () -> Unit,
     onCloseShelf: () -> Unit,
 ) {
+    val context = LocalContext.current.applicationContext
     val distillationTasks = rememberReferenceDistillationTasks()
     var reportTask by remember { mutableStateOf<ReferenceDistillationTaskUi?>(null) }
 
@@ -157,7 +166,7 @@ fun AiFirstShelf(
                     Text(if (aiReady) "导入参考小说 · AI 后台蒸馏" else "配置 AI 后导入参考小说")
                 }
                 Text(
-                    "支持 TXT / Markdown / EPUB。全部章节都会参与本地结构统计；AI 会按篇幅自动增加分层样本，覆盖开篇、前中段、中段、中后段和结尾，再聚合成可查看的 Style DNA 报告并写入长期研究档案。",
+                    "支持 TXT / Markdown / EPUB。全部章节都会参与本地结构统计；AI 会按篇幅自动增加分层样本。每批成功结果都会保存断点，网络失败后可从下一批继续，不必重新花额度跑完前面批次。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -174,6 +183,17 @@ fun AiFirstShelf(
                     fallbackProvider = aiProviderLabel,
                     fallbackModel = aiModel,
                     onOpenReport = { reportTask = task },
+                    onCancel = { ReferenceDistillationJobs.cancel(context, task.id) },
+                    onRetry = {
+                        val source = File(task.sourcePath)
+                        if (source.exists()) {
+                            ReferenceDistillationJobs.retry(
+                                context,
+                                source,
+                                task.sourceName.ifBlank { source.name },
+                            )
+                        }
+                    },
                 )
             }
         }
@@ -214,10 +234,13 @@ private fun ReferenceDistillationTaskCard(
     fallbackProvider: String,
     fallbackModel: String,
     onOpenReport: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     val progress = task.progress.coerceIn(0, 100)
     val stageLabel = when {
         task.state == WorkInfo.State.SUCCEEDED -> "蒸馏完成 · 已写入长期研究档案"
+        task.state == WorkInfo.State.FAILED && task.resumable -> "蒸馏中断 · 已保存 ${task.completedBatches}/${task.batches} 批断点"
         task.state == WorkInfo.State.FAILED -> "蒸馏失败"
         task.state == WorkInfo.State.CANCELLED -> "任务已取消"
         task.state == WorkInfo.State.ENQUEUED && task.runAttemptCount > 0 -> "等待自动重试 · 第 ${task.runAttemptCount + 1} 次尝试"
@@ -226,7 +249,7 @@ private fun ReferenceDistillationTaskCard(
         task.stage == "parse" -> "正在读取并解析小说"
         task.stage == "prepare" -> "小说已解析 · 正在准备 AI 分层蒸馏"
         task.stage == "distill" && task.batches > 0 -> "AI 正在分层蒸馏 Style DNA · ${task.batch}/${task.batches}"
-        task.stage == "aggregate" -> "AI 正在聚合整部作品的 Style DNA"
+        task.stage == "aggregate" -> "AI 分批蒸馏完成 · 正在聚合整部 Style DNA"
         task.stage == "done" -> "正在完成长期研究档案入库"
         else -> "AI 蒸馏任务正在运行"
     }
@@ -270,7 +293,7 @@ private fun ReferenceDistillationTaskCard(
                 )
             }
 
-            if (task.active || task.state == WorkInfo.State.SUCCEEDED) {
+            if (task.active || task.state == WorkInfo.State.SUCCEEDED || task.resumable) {
                 Text(
                     "AI：$provider · $model",
                     style = MaterialTheme.typography.labelMedium,
@@ -281,10 +304,15 @@ private fun ReferenceDistillationTaskCard(
             }
             if (task.active) {
                 Text(
-                    "这是实际 AI 分析任务，不是本地假进度。全部章节先做本地结构统计，AI 再按书长进行跨全书分层阅读；任务锁定启动时选中的服务与模型，退出琅嬛后仍由 WorkManager 继续执行。",
+                    "这是实际 AI 分析任务。每个已完成批次会原子保存为断点；自动重试继续锁定任务启动时的服务商/模型，不会因为你中途切模型而偷偷换引擎。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.Close, null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("取消后台蒸馏")
+                }
             }
 
             if (task.state == WorkInfo.State.SUCCEEDED) {
@@ -300,12 +328,27 @@ private fun ReferenceDistillationTaskCard(
                     Text("查看蒸馏报告 / Style DNA")
                 }
             }
-            if (task.state == WorkInfo.State.FAILED && task.error.isNotBlank()) {
-                Text(
-                    task.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+            if (task.state == WorkInfo.State.FAILED) {
+                if (task.error.isNotBlank()) {
+                    Text(
+                        task.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (task.sourceAvailable) {
+                    FilledTonalButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Rounded.Refresh, null)
+                        Spacer(Modifier.width(7.dp))
+                        Text(if (task.resumable) "从断点继续蒸馏" else "重试蒸馏")
+                    }
+                } else {
+                    Text(
+                        "原导入文件副本已经不可用，请重新选择参考小说。已有完整报告不会受影响。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -328,6 +371,7 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                 .map { info ->
                     val progressData = info.progress
                     val output = info.outputData
+                    val input = info.inputData
                     ReferenceDistillationTaskUi(
                         id = info.id.toString(),
                         state = info.state,
@@ -337,7 +381,8 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                         },
                         stage = progressData.getString("stage").orEmpty(),
                         batch = progressData.getInt("batch", 0),
-                        batches = progressData.getInt("batches", 0),
+                        batches = progressData.getInt("batches", 0).takeIf { it > 0 }
+                            ?: output.getInt("batches", 0),
                         title = progressData.getString("title").orEmpty().ifBlank { output.getString("title").orEmpty() },
                         provider = progressData.getString("provider").orEmpty().ifBlank { output.getString("provider").orEmpty() },
                         model = progressData.getString("model").orEmpty().ifBlank { output.getString("model").orEmpty() },
@@ -345,9 +390,16 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                         chapters = output.getInt("chapters", 0),
                         samples = output.getInt("samples", 0),
                         runAttemptCount = info.runAttemptCount,
+                        sourcePath = input.getString(ReferenceDistillationJobs.KEY_PATH).orEmpty(),
+                        sourceName = input.getString(ReferenceDistillationJobs.KEY_NAME).orEmpty(),
+                        resumable = output.getBoolean("resumable", false),
+                        completedBatches = output.getInt("completedBatches", 0),
                     )
                 }
-                .sortedByDescending { it.active }
+                .sortedWith(
+                    compareByDescending<ReferenceDistillationTaskUi> { it.active }
+                        .thenByDescending { it.state == WorkInfo.State.FAILED && it.resumable }
+                )
                 .take(3)
             delay(if (tasks.any { it.active }) 1_000L else 4_000L)
         }
