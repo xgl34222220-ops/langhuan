@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.engine
 
 import com.xiguli.langhuan.domain.CharacterState
+import com.xiguli.langhuan.domain.FactProvenance
 import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.Foreshadowing
 import com.xiguli.langhuan.domain.StorySnapshot
@@ -12,6 +13,8 @@ object AgentMemoryApplier {
         val characters = snapshot.characters.toMutableList()
         val timeline = snapshot.recentTimeline.toMutableList()
         val foreshadowing = snapshot.relevantForeshadowing.toMutableList()
+        val provenance = snapshot.factHistory.toMutableList()
+        val now = System.currentTimeMillis()
 
         fun characterIndex(name: String): Int = characters.indexOfFirst { it.name.equals(name.trim(), ignoreCase = true) }
         fun packed(value: String, limit: Int): List<String> = value.split("||", limit = limit).map { it.trim() }
@@ -22,6 +25,18 @@ object AgentMemoryApplier {
             .distinct()
 
         review.memoryActions.forEach { action ->
+            provenance += FactProvenance(
+                id = UUID.randomUUID().toString(),
+                novelId = snapshot.novel.id,
+                chapter = chapterNumber,
+                kind = action.kind.name,
+                subject = action.subject.trim(),
+                before = action.before.trim(),
+                after = action.after.trim(),
+                evidence = action.evidence.trim(),
+                recordedAt = now,
+            )
+
             when (action.kind) {
                 AgentActionKind.CHARACTER_NEW -> {
                     if (action.subject.isNotBlank() && characterIndex(action.subject) < 0) {
@@ -118,11 +133,7 @@ object AgentMemoryApplier {
                         val note = p.getOrNull(1).orEmpty()
                         foreshadowing[index] = current.copy(
                             status = status,
-                            detail = if (note.isBlank() || current.detail.contains(note)) {
-                                current.detail
-                            } else {
-                                "${current.detail}；第${chapterNumber}章：$note"
-                            },
+                            detail = if (note.isBlank() || current.detail.contains(note)) current.detail else "${current.detail}；第${chapterNumber}章：$note",
                         )
                     }
                 }
@@ -134,7 +145,19 @@ object AgentMemoryApplier {
         review.touchedForeshadowingIds.forEach { id ->
             val index = foreshadowing.indexOfFirst { it.id == id }
             if (index >= 0 && foreshadowing[index].status == ForeshadowStatus.PLANTED) {
-                foreshadowing[index] = foreshadowing[index].copy(status = ForeshadowStatus.DEVELOPING)
+                val current = foreshadowing[index]
+                foreshadowing[index] = current.copy(status = ForeshadowStatus.DEVELOPING)
+                provenance += FactProvenance(
+                    id = UUID.randomUUID().toString(),
+                    novelId = snapshot.novel.id,
+                    chapter = chapterNumber,
+                    kind = "FORESHADOW_TOUCH",
+                    subject = current.title,
+                    before = current.status.name,
+                    after = ForeshadowStatus.DEVELOPING.name,
+                    evidence = "Agent touchedForeshadowingIds=${current.id}",
+                    recordedAt = now,
+                )
             }
         }
 
@@ -142,6 +165,9 @@ object AgentMemoryApplier {
             characters = characters,
             recentTimeline = timeline.sortedBy { it.chapter }.takeLast(120),
             relevantForeshadowing = foreshadowing,
+            factHistory = provenance
+                .distinctBy { listOf(it.chapter, it.kind, it.subject, it.before, it.after, it.evidence) }
+                .takeLast(1_200),
         )
     }
 }
