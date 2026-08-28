@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
+import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -103,6 +104,7 @@ fun AiFirstShelf(
     onCloseShelf: () -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
+    val sourceStore = remember(context) { ReferenceDistillationSourceStore(context) }
     val distillationTasks = rememberReferenceDistillationTasks()
     var reportTask by remember { mutableStateOf<ReferenceDistillationTaskUi?>(null) }
 
@@ -187,11 +189,12 @@ fun AiFirstShelf(
                     onRetry = {
                         val source = File(task.sourcePath)
                         if (source.exists()) {
-                            ReferenceDistillationJobs.retry(
+                            val nextId = ReferenceDistillationJobs.retry(
                                 context,
                                 source,
                                 task.sourceName.ifBlank { source.name },
                             )
+                            sourceStore.save(nextId, source, task.sourceName.ifBlank { source.name })
                         }
                     },
                 )
@@ -358,9 +361,10 @@ private fun ReferenceDistillationTaskCard(
 private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTaskUi> {
     val context = LocalContext.current.applicationContext
     val workManager = remember(context) { WorkManager.getInstance(context) }
+    val sourceStore = remember(context) { ReferenceDistillationSourceStore(context) }
     var tasks by remember { mutableStateOf<List<ReferenceDistillationTaskUi>>(emptyList()) }
 
-    LaunchedEffect(workManager) {
+    LaunchedEffect(workManager, sourceStore) {
         while (isActive) {
             val infos = withContext(Dispatchers.IO) {
                 runCatching { workManager.getWorkInfosByTag(ReferenceDistillationJobs.TAG).get() }
@@ -371,7 +375,7 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                 .map { info ->
                     val progressData = info.progress
                     val output = info.outputData
-                    val input = info.inputData
+                    val source = sourceStore.load(info.id.toString())
                     ReferenceDistillationTaskUi(
                         id = info.id.toString(),
                         state = info.state,
@@ -390,8 +394,8 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                         chapters = output.getInt("chapters", 0),
                         samples = output.getInt("samples", 0),
                         runAttemptCount = info.runAttemptCount,
-                        sourcePath = input.getString(ReferenceDistillationJobs.KEY_PATH).orEmpty(),
-                        sourceName = input.getString(ReferenceDistillationJobs.KEY_NAME).orEmpty(),
+                        sourcePath = source?.path.orEmpty(),
+                        sourceName = source?.displayName.orEmpty(),
                         resumable = output.getBoolean("resumable", false),
                         completedBatches = output.getInt("completedBatches", 0),
                     )
