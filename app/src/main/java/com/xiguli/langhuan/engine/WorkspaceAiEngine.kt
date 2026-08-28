@@ -14,8 +14,10 @@ data class ChapterPlanSuggestion(
 
 class WorkspaceAiEngine(
     private val gateway: AiGateway,
+    private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
 ) {
     suspend fun planNextChapter(snapshot: StorySnapshot, current: ChapterDraft): ChapterPlanSuggestion {
+        val frame = chronologyGuard.frame(snapshot)
         val recent = snapshot.recentSummaries.takeLast(6).joinToString("\n")
         val characters = snapshot.characters.joinToString("\n") {
             "${it.name}｜地点=${it.location}｜目标=${it.goal}｜情绪=${it.emotionalState}"
@@ -26,17 +28,30 @@ class WorkspaceAiEngine(
         val outline = snapshot.activeOutline.joinToString("\n") {
             "${it.level}:${it.title}｜目标=${it.objective}｜冲突=${it.conflict}｜转折=${it.turningPoint}"
         }
+        val timeline = snapshot.recentTimeline
+            .sortedWith(compareBy({ it.chapter }, { it.orderInChapter }))
+            .takeLast(20)
+            .joinToString("\n") {
+                val clock = if (it.storyDay > 0) "故事第${it.storyDay}天·${it.timeOfDay}" else it.storyTime
+                "第${it.chapter}章 $clock ${if (it.isFlashback) "[FLASHBACK]" else "[NORMAL]"} ${it.location}：${it.summary}"
+            }
         val prompt = PromptBundle(
             system = """
-                你是长篇小说的章节策划引擎。你必须沿用现有总纲、卷纲、人物状态、伏笔和最近剧情，规划紧接当前章节的下一章，不得擅自换主线。
+                你是长篇小说的章节策划引擎。你必须沿用现有总纲、卷纲、人物状态、伏笔、主时间钟和最近剧情，规划紧接当前章节的下一章，不得擅自换主线。
                 输出必须符合 GeneratedChapter JSON：title、content、summary、stateChanges、touchedForeshadowingIds。
                 这里字段有专门含义：
                 - title = 下一章标题。
                 - content = 下一章唯一主目标，必须具体可验证。
                 - summary = “主要冲突 || 章末转折”，必须用两个竖线分隔。
-                - stateChanges = 场景计划。每项 subject=视角人物，field=地点，before=场景目的，after=场景冲突，evidence=场景结果。
+                - stateChanges = 场景计划。每项 subject=视角人物，field=地点，before=场景目的，after=场景冲突，evidence 必须为“故事日序号||时段||距上一场经过多久||NORMAL或FLASHBACK||场景结果”。
                 - touchedForeshadowingIds = 建议本章触及的伏笔 id。
                 至少规划 2 个、最多 6 个场景。不要返回小说正文。
+
+                时间规则：
+                1. 第一场默认承接 App 给出的最新主时间钟，不得为了“新章开场”自动跳到第二天。
+                2. 没有总纲/卷纲明确要求时，下一章最多自然推进到相邻故事日，禁止几周、几个月、几年后的突跳。
+                3. NORMAL 场景故事日不可倒退；每次移动、等待、睡眠和交通必须填写合理耗时。
+                4. 不要默认使用 FLASHBACK。只有大纲明确需要过去叙事时才允许。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
@@ -45,6 +60,7 @@ class WorkspaceAiEngine(
                 当前章节：第${current.chapterNumber}章 ${current.title}
                 当前章节目标：${current.objective}
                 当前章节摘要：${current.summary.ifBlank { "尚未形成摘要" }}
+                最新主时间钟：${frame.anchorLabel}
 
                 【当前大纲链】
                 $outline
@@ -52,30 +68,69 @@ class WorkspaceAiEngine(
                 【人物状态】
                 $characters
 
+                【结构化时间线】
+                ${timeline.ifBlank { "暂无；按故事第1天连续建立。" }}
+
                 【活跃伏笔】
                 $activeForeshadowing
 
                 【最近剧情】
                 $recent
 
-                请规划第${current.chapterNumber + 1}章。
+                请规划第${current.chapterNumber + 1}章，并先把每一个场景的故事日、时段和耗时锁死。
             """.trimIndent(),
         )
         val output = gateway.generate(prompt)
         val summaryParts = output.summary.split("||", limit = 2).map { it.trim() }
+        var lastMainDay = frame.anchorDay
         val scenes = output.stateChanges.take(6).mapIndexed { index, item ->
+            val parts = item.evidence.split("||", limit = 5).map { it.trim() }
+            val encoded = parts.size >= 5
+            val requestedDay = if (encoded) parts.getOrNull(0)?.toIntOrNull() ?: lastMainDay else lastMainDay
+            val flashback = encoded && parts.getOrNull(3).equals("FLASHBACK", ignoreCase = true) && frame.allowsFlashback
+            val day = when {
+                flashback -> requestedDay.coerceAtLeast(1)
+                requestedDay < lastMainDay -> lastMainDay
+                !frame.allowsLongSkip && requestedDay > frame.anchorDay + 1 -> frame.anchorDay + 1
+                else -> requestedDay.coerceAtLeast(lastMainDay)
+            }
+            if (!flashback) lastMainDay = day
             ScenePlan(
                 order = index + 1,
                 viewpoint = item.subject.ifBlank { "主角" },
                 location = item.field.ifBlank { "待定地点" },
                 purpose = item.before.ifBlank { "推动本章目标" },
                 conflict = item.after.ifBlank { "目标受到阻碍" },
-                outcome = item.evidence.ifBlank { "形成新的信息或选择" },
+                outcome = if (encoded) parts.getOrNull(4).orEmpty().ifBlank { "形成新的信息或选择" } else item.evidence.ifBlank { "形成新的信息或选择" },
+                storyDay = day,
+                timeOfDay = if (encoded) parts.getOrNull(1).orEmpty().ifBlank { if (index == 0) frame.anchorTimeOfDay else "稍后" } else if (index == 0) frame.anchorTimeOfDay else "稍后",
+                elapsedFromPrevious = if (encoded) parts.getOrNull(2).orEmpty().ifBlank { if (index == 0) "紧接上一章" else "约10-30分钟" } else if (index == 0) "紧接上一章" else "约10-30分钟",
+                isFlashback = flashback,
             )
         }.ifEmpty {
             listOf(
-                ScenePlan(1, "主角", "承接上一章的场景", "承接上一章结果", "新问题立即出现", "主角被迫做出下一步选择"),
-                ScenePlan(2, "主角", "核心场景", "推进本章唯一目标", "关键阻碍升级", "章末形成新的代价或转折"),
+                ScenePlan(
+                    order = 1,
+                    viewpoint = "主角",
+                    location = snapshot.characters.firstOrNull()?.location ?: "承接上一章的场景",
+                    purpose = "承接上一章结果",
+                    conflict = "新问题立即出现",
+                    outcome = "主角被迫做出下一步选择",
+                    storyDay = frame.anchorDay,
+                    timeOfDay = frame.anchorTimeOfDay,
+                    elapsedFromPrevious = "紧接上一章",
+                ),
+                ScenePlan(
+                    order = 2,
+                    viewpoint = "主角",
+                    location = "核心场景",
+                    purpose = "推进本章唯一目标",
+                    conflict = "关键阻碍升级",
+                    outcome = "章末形成新的代价或转折",
+                    storyDay = frame.anchorDay,
+                    timeOfDay = "稍后",
+                    elapsedFromPrevious = "约10-30分钟",
+                ),
             )
         }
         return ChapterPlanSuggestion(
@@ -96,17 +151,22 @@ class WorkspaceAiEngine(
         require(selectedText.isNotBlank()) { "请先选择需要重写的正文" }
         val contextBefore = chapter.content.substringBefore(selectedText, "").takeLast(1_200)
         val contextAfter = chapter.content.substringAfter(selectedText, "").take(1_200)
+        val chronology = chronologyGuard.promptText(snapshot, chapter.scenePlan)
         val prompt = PromptBundle(
             system = """
-                你是长篇小说局部改写引擎。只重写用户选中的片段，不改变片段前后的既定事实、人物状态和剧情方向。
+                你是长篇小说局部改写引擎。只重写用户选中的片段，不改变片段前后的既定事实、人物状态、剧情方向和时间位置。
                 输出必须符合 GeneratedChapter JSON。title 固定为 rewrite；content 只放替换后的正文，不要包含原文、解释、Markdown 或引号；summary 简述改写策略；stateChanges 和 touchedForeshadowingIds 均返回空数组。
                 改写后的长度原则上保持原片段的 60%-160%，除非用户明确要求扩写或缩写。
+                禁止在局部改写中擅自新增“第二天、几天后、几个月后、几年后”等时间跳跃；禁止把普通回忆改成完整闪回，也不得改变故事第N天。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
                 本章：第${chapter.chapterNumber}章 ${chapter.title}
                 本章目标：${chapter.objective}
                 用户要求：${instruction.ifBlank { "润色表达，增强画面感与节奏，不改变事实。" }}
+
+                【时间轴锁】
+                $chronology
 
                 【片段之前】
                 $contextBefore
