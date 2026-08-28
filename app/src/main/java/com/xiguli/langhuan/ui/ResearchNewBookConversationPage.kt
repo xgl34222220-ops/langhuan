@@ -10,17 +10,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.StoryFoundation
+import com.xiguli.langhuan.engine.CreationResearchArchive
+import com.xiguli.langhuan.engine.CreationResearchArchiveStore
 import com.xiguli.langhuan.engine.CreationResearchBundle
+import com.xiguli.langhuan.engine.ReferenceResearchGroup
+import com.xiguli.langhuan.engine.ResearchFallbackEngine
 import com.xiguli.langhuan.engine.WebResearchEngine
 import com.xiguli.langhuan.engine.WebResearchSource
 import kotlinx.coroutines.launch
 
 private const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
-private const val MAX_RESEARCH_EVIDENCE_CHARS = 6_500
+private const val MAX_RESEARCH_EVIDENCE_CHARS = 4_200
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,7 +36,11 @@ fun ResearchNewBookConversationPage(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val research = remember { WebResearchEngine() }
+    val context = LocalContext.current.applicationContext
+    val archiveStore = remember(context) { CreationResearchArchiveStore(context) }
+    var archiveState by remember { mutableStateOf(archiveStore.load()) }
+    val research = remember { WebResearchEngine().also { archiveStore.seed(it, archiveState) } }
+    val fallbackResearch = remember { ResearchFallbackEngine() }
     var input by remember { mutableStateOf("") }
     var researching by remember { mutableStateOf(false) }
     var lastSources by remember { mutableStateOf<List<WebResearchSource>>(emptyList()) }
@@ -55,7 +64,8 @@ fun ResearchNewBookConversationPage(
             lastSources = emptyList()
             lastTargets = emptyList()
             researchMessage = null
-            viewModel.send(text)
+            val archived = archiveStore.contextFor(emptyList(), archiveState, maxChars = 3_600)
+            viewModel.send(buildResearchCarryPrompt(text, archived))
             return
         }
 
@@ -63,28 +73,59 @@ fun ResearchNewBookConversationPage(
         val detected = research.referenceTargets(text)
         lastTargets = detected
         researchMessage = if (detected.size > 1) {
-            "正在粗读 ${detected.size} 个参考对象：先核对作品归属、简介和公开评价，再提炼高层创作机制……"
+            "正在研究 ${detected.size} 个参考对象：先复用长期档案，再补作者、作品、主角、能力、主题和剧情线索……"
         } else {
-            "正在联网粗读：先核对作品/作者，再整理大致题材、体验和可借鉴机制……"
+            "正在研究参考对象：先查本机长期档案，再补缺失的公开资料……"
         }
 
         scope.launch {
-            val bundle = runCatching { research.researchForCreation(text) }.getOrNull()
+            val primary = runCatching { research.researchForCreation(text) }.getOrNull()
+            var bundle = primary
+
+            // Primary RSS/DDG can occasionally return nothing even for known Chinese web fiction.
+            // Use normal Bing HTML as a second path, but keep the primary author's group label so the
+            // archive still knows this is an author dossier rather than misclassifying it as a work.
+            if (bundle?.hasSources != true) {
+                val fallbackTargets = primary?.groups?.map { it.target }.orEmpty().ifEmpty { detected }
+                val fallback = runCatching {
+                    fallbackResearch.supplement(text, fallbackTargets)
+                }.getOrNull()
+                if (fallback?.hasSources == true) {
+                    bundle = if (primary != null && primary.groups.size == fallback.groups.size) {
+                        CreationResearchBundle(
+                            originalText = text,
+                            groups = primary.groups.zip(fallback.groups).map { (oldGroup, newGroup) ->
+                                ReferenceResearchGroup(oldGroup.target, newGroup.result)
+                            },
+                        )
+                    } else {
+                        fallback
+                    }
+                }
+            }
+
             val sources = bundle?.sources.orEmpty()
             val targets = bundle?.groups?.map { it.target }.orEmpty().ifEmpty { detected }
+            archiveState = archiveStore.merge(bundle, detected)
+            archiveStore.seed(research, archiveState)
             lastSources = sources
             lastTargets = targets
             researching = false
 
-            val hidden = buildResearchPrompt(text, bundle)
+            val archived = archiveStore.contextFor(targets, archiveState)
+            val hidden = buildResearchPrompt(text, bundle, archived)
             if (sources.isEmpty()) {
-                researchMessage = "网页这轮没拿到足够线索，但不会因此停下；AI 会用已有知识做大致高层分析，并把拿不准的细节单独标出来。"
+                researchMessage = if (archived.isBlank()) {
+                    "这轮两个公开搜索入口都没有拿到新证据；这只代表网页补搜失败。AI 仍会使用自身已有知识和你明确提供的作者/作品关系继续分析。"
+                } else {
+                    "本轮没有新增可靠网页，但长期研究档案仍在；不会再把一次搜索失败误判成‘这个作者/作品完全不知道’。"
+                }
             } else {
                 val deep = bundle?.deepReadCount ?: 0
                 researchMessage = if (targets.size > 1) {
-                    "已拿到 ${sources.size} 条公开线索、深读 $deep 个页面；这次按“粗读”整理共同气质和可融合机制，不要求逐章剧情证据。"
+                    "新增 ${sources.size} 条公开线索、深读 $deep 个页面；已并入 ${archiveState.entries.size} 个长期研究档案。"
                 } else {
-                    "已拿到 ${sources.size} 条公开线索、深读 $deep 个页面；正在做高层粗读，不会因为缺少章节级资料就说整本不了解。"
+                    "新增 ${sources.size} 条公开线索、深读 $deep 个页面；主角、能力、主题、剧情与规则会从累计档案继续交叉核对。"
                 }
             }
             viewModel.send(hidden)
@@ -99,9 +140,10 @@ fun ResearchNewBookConversationPage(
                         Text("和 AI 聊出一本小说", fontWeight = FontWeight.SemiBold)
                         Text(
                             when {
-                                researching -> "正在联网粗读参考作品"
+                                researching -> "正在补全长期研究档案"
                                 state.foundation != null -> "蓝图阶段：继续聊天修改，满意后正式建书"
                                 state.proposal != null -> "方案已成形，下一步搭世界、人物和三级大纲"
+                                archiveState.entries.isNotEmpty() -> "已记住 ${archiveState.entries.size} 个作者 / 作品研究档案"
                                 else -> "可查作品/作者，也可融合多本小说的高层设定方法"
                             },
                             style = MaterialTheme.typography.labelSmall,
@@ -109,7 +151,19 @@ fun ResearchNewBookConversationPage(
                     }
                 },
                 navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "返回") } },
-                actions = { IconButton(onClick = viewModel::reset, enabled = !state.isBusy && !researching) { Icon(Icons.Rounded.Refresh, "重新开始") } },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            viewModel.reset()
+                            research.resetContext()
+                            archiveState = archiveStore.clearSessionContext()
+                            lastSources = emptyList()
+                            lastTargets = emptyList()
+                            researchMessage = null
+                        },
+                        enabled = !state.isBusy && !researching,
+                    ) { Icon(Icons.Rounded.Refresh, "重新开始") }
+                },
             )
         },
         bottomBar = {
@@ -145,6 +199,7 @@ fun ResearchNewBookConversationPage(
                     ResearchStarterChip("融合《迷雾之上》《十日终焉》《诡舍》的部分优点，但角色、规则和主线全部原创", ::submit)
                 }
             }
+            if (archiveState.entries.isNotEmpty()) item { ResearchArchiveMemoryCard(archiveState) }
             items(state.messages) { message -> ResearchChatBubble(message) }
             researchMessage?.let { message -> item { ResearchStatusCard(message, lastTargets, lastSources) } }
 
@@ -158,7 +213,7 @@ fun ResearchNewBookConversationPage(
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text(if (researching) "正在联网粗读作品资料……" else state.busyLabel.ifBlank { "AI 正在处理……" })
+                    Text(if (researching) "正在补全作品研究档案……" else state.busyLabel.ifBlank { "AI 正在处理……" })
                 }
             }
             state.error?.let { error -> item {
@@ -180,32 +235,56 @@ fun ResearchNewBookConversationPage(
     }
 }
 
-private fun buildResearchPrompt(text: String, bundle: CreationResearchBundle?): String = buildString {
+private fun buildResearchCarryPrompt(text: String, archivedContext: String): String {
+    if (archivedContext.isBlank()) return text
+    return buildString {
+        append(text)
+        append(RESEARCH_MARKER)
+        appendLine()
+        appendLine("本轮没有必要重复联网。下面是琅嬛此前已经保存的长期研究档案；请把它当作本次会谈的研究记忆继续使用。")
+        appendLine("如果用户说‘他/这本/前面那几本/这种写法’，优先按档案中的当前作者和作品承接，不要重新猜代词指向。")
+        appendLine("用户在会话中明确提供或纠正的作者-作品关系属于用户提供的项目事实。网页未核验只能标‘待网页核验’，不能把它当作无效信息反复否定。")
+        appendLine("回答主角、能力、主题、世界规则、剧情或风格时，先用档案已有证据 + 你本来可靠的知识；只有具体事实确实没有支撑时才单独说该细节未核实。")
+        appendLine(archivedContext)
+    }
+}
+
+private fun buildResearchPrompt(
+    text: String,
+    bundle: CreationResearchBundle?,
+    archivedContext: String,
+): String = buildString {
     append(text)
     append(RESEARCH_MARKER)
     appendLine()
-    appendLine("这是琅嬛 App 本轮执行的公开网页粗读上下文，只用于帮助你理解参考对象的大致方向，不是要求做学术级或逐章级考证。")
-    appendLine("本轮目标优先级：先把作者/作品范围看个大致，再提炼可用于原创小说的高层机制。不要因为搜不到完整剧情、章节或人物细节，就把整部作品判定为‘不了解’。")
-    appendLine("网页主要负责核对：作者与书名归属、公开简介、平台标签、作品列表、读者评价和可见的高层描述。具体章节并不是本任务的必要条件。")
-    appendLine("你拥有自己的训练知识。对于你本来就有把握的作者/作品高层事实，可以与网页线索合并使用；网页没覆盖到的部分不要自动清空。")
+    appendLine("这是琅嬛 App 的创作研究上下文。联网结果只是‘新增证据’，不是一次性答案；此前查过的作者/作品保存在长期研究档案里。")
+    appendLine("本轮目标优先级：先确定用户真正指的是哪个作者/作品，再核对作者归属、代表作、主角、能力、主题、剧情、世界规则和公开评价，最后提炼可借鉴机制。")
+    appendLine("用户在当前或历史会话中明确说‘这些书是某作者写的’、纠正作者或作品归属时，把它作为用户提供的项目事实继续推理。若网页暂时找不到，只标‘用户提供，待网页核验’，绝对不能反复说‘没有作者绑定硬证据所以无法分析’。")
+    appendLine("本轮没有新网页证据时，只能说‘本轮没有新增证据’，不能清空长期档案，也不能把模型原本知道的内容清空。")
+    appendLine("网页主要负责核对公开事实；具体章节不是每轮都必须拿到。你拥有自己的训练知识，对本来就有把握的高层事实可以和档案合并，但不得捏造具体章节、原句、数字或不确定人物。")
     appendLine("绝对不要回答‘我不能联网/不能直接搜索/请用户自己提供链接’。联网动作已经由 App 完成。")
-    appendLine("置信度表达：网页直接支持的写‘公开资料可确认’；由公开线索+既有知识归纳的写‘大致判断/高层印象’；只有具体细节真的拿不准时才单独标‘细节未核实’。")
+    appendLine("同一参考对象已经有长期档案时，新旧证据冲突要指出冲突并降低对应事实置信度，而不是整部作品重新归零。")
+    appendLine("置信度表达：网页/长期档案直接支持的写‘公开资料可确认’；用户明确提供的关系写‘用户提供，待/已核验’；多线索 + 既有知识归纳写‘大致判断/高层印象’；只有具体细节真的拿不准才单独标‘细节未核实’。")
+
+    if (archivedContext.isNotBlank()) {
+        appendLine()
+        appendLine(archivedContext)
+    }
 
     if (bundle == null || !bundle.hasSources) {
-        appendLine("本次网页没有返回足够线索。这只代表网页粗读失败，不代表你必须停止分析。")
-        appendLine("如果你对该作者/作品已有较稳定的高层认识，就继续给出题材、核心体验、规则/冲突类型、叙事节奏和可借鉴机制；不要编具体章节、原句、数字或你并不确定的人名。")
+        appendLine("本次网页没有新增足够线索。这只代表本轮补搜失败，不代表长期档案失效，更不代表你必须停止分析。")
+        appendLine("如果档案、用户明确提供的信息或你已有知识对该作者/作品已有稳定认识，就继续给出题材、主角、核心体验、能力/限制、规则、主题、剧情走向、叙事节奏和可借鉴机制；真正缺的字段单独标未核实。")
     } else {
-        appendLine("下面是已经压缩过的公开线索。重点看作品归属、简介、标签、评价和共同气质，不要求从网页还原完整剧情。")
+        appendLine("【本轮新增公开证据】")
         appendLine(compactResearchEvidence(bundle))
     }
 
     appendLine()
-    appendLine("【默认：作者/多作品粗读模式】")
-    appendLine("当用户说‘看看这个作者其他小说/看个大致/有什么能融合’时，不要强迫每本作品都做完整剧情档案。先做作品组合粗读：")
-    appendLine("1. 作品名与作者归属；2. 大致题材/类型；3. 主要阅读体验与氛围；4. 能看出的核心冲突或规则思路；5. 叙事/节奏特点；6. 最值得借鉴的高层机制；7. 置信度。")
-    appendLine("作品列表确认了，但某一本缺少详细剧情资料时，仍然可以从公开简介、标签、评价和你已有知识给‘粗略印象’，明确它不是逐章核验即可。")
-    appendLine("只有用户明确说‘详细分析某一本/具体讲什么/主角能力是什么’时，才升级为深挖模式，尽量补主角、能力、世界规则、主题、主线和具体冲突。")
-    appendLine("不要反复强调‘没有可靠具体剧情所以不装懂’。用户当前要的是可用于创作决策的大致高层认识，不是考据报告。")
+    appendLine("【作品档案回答顺序】")
+    appendLine("用户问某一本作品时，优先按：作者与书名归属 → 大致故事起点 → 主角与核心目标 → 主角关键能力/限制 → 世界或规则机制 → 主要冲突/剧情走向 → 主题 → 叙事/节奏/氛围 → 可借鉴的高层机制 → 置信度。")
+    appendLine("用户只说‘看看这个作者其他小说/看个大致/有什么能融合’时，可以对多本作品做粗读，不要求逐章考据；但不能只列书名，至少说明每本已知的题材、阅读体验和能借鉴什么。")
+    appendLine("用户追问‘主角能力/性格/主题/具体讲什么’时，视为深挖需求：先查长期档案和本轮证据，再回答具体项，不能退回泛泛的‘规则清晰、氛围不错’。")
+    appendLine("不要反复强调‘没有可靠具体剧情所以不装懂’。真正缺的只标缺的字段，其余已经能判断的字段照常回答。")
 
     appendLine()
     appendLine("【多作品融合工作法】")
@@ -219,10 +298,10 @@ private fun compactResearchEvidence(bundle: CreationResearchBundle): String {
     val out = buildString {
         bundle.groups.forEach { group ->
             appendLine("【${group.target}】")
-            group.result.sources.take(5).forEachIndexed { index, source ->
+            group.result.sources.take(6).forEachIndexed { index, source ->
                 appendLine("- ${source.title}")
-                if (source.snippet.isNotBlank()) appendLine("  摘要：${source.snippet.take(260)}")
-                if (index < 2 && source.detail.isNotBlank()) appendLine("  页面线索：${source.detail.take(420)}")
+                if (source.snippet.isNotBlank()) appendLine("  摘要：${source.snippet.take(280)}")
+                if (index < 3 && source.detail.isNotBlank()) appendLine("  页面线索：${source.detail.take(460)}")
             }
         }
     }
@@ -234,12 +313,36 @@ private fun friendlyResearchError(raw: String): String {
     val lower = value.lowercase()
     return when {
         "timeout" in lower || "timed out" in lower || "sockettimeoutexception" in lower ->
-            "AI 服务请求超时：模型或中转站在规定时间内没有返回结果。联网资料现在已经做了压缩，后续不会再把整批网页内容越堆越大；可以直接点“重试上一句”。"
+            "AI 服务请求超时：模型或中转站在规定时间内没有返回结果。当前会谈和长期研究档案都不会丢，可以直接点“重试上一句”。"
         "429" in lower || "rate limit" in lower || "too many requests" in lower ->
             "AI 服务当前限流（429）。稍后重试即可，当前会谈内容不会丢失。"
         "502" in lower || "503" in lower || "504" in lower ->
             "AI 中转站暂时不可用或上游响应过慢（${value.take(120)}）。可以直接重试上一句。"
         else -> value.ifBlank { "AI 请求失败，请重试上一句。" }
+    }
+}
+
+@Composable
+private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Memory, null)
+                Spacer(Modifier.width(6.dp))
+                Text("长期研究记忆", fontWeight = FontWeight.SemiBold)
+            }
+            archive.lastAuthorTarget?.let { Text("当前作者：$it", style = MaterialTheme.typography.bodySmall) }
+            if (archive.lastWorkTargets.isNotEmpty()) {
+                Text("当前作品：${archive.lastWorkTargets.take(5).joinToString("、")}", style = MaterialTheme.typography.bodySmall)
+            }
+            Text(
+                "已归档 ${archive.entries.size} 个作者/作品；退出 App 后仍保留。本轮搜索失败不会再把以前的资料清零。",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
     }
 }
 
@@ -277,7 +380,7 @@ private fun friendlyResearchError(raw: String): String {
                 Text("• ${source.title}${if (source.detail.isNotBlank()) " · 已深读" else ""}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 if (source.snippet.isNotBlank()) Text(source.snippet, style = MaterialTheme.typography.labelSmall, maxLines = 3)
             }
-            if (sources.isNotEmpty()) Text("这里是公开资料粗读，不要求逐章考据；模型会结合已有知识提炼高层机制，拿不准的细节单独标注。", style = MaterialTheme.typography.labelSmall)
+            if (sources.isNotEmpty()) Text("公开资料会并入本地长期档案；模型会结合已有知识继续补全，拿不准的具体细节单独标注。", style = MaterialTheme.typography.labelSmall)
         }
     }
 }
