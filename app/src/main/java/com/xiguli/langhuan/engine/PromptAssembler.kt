@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.engine
 
 import com.xiguli.langhuan.domain.BibleCategory
+import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.OutlineLevel
 
@@ -15,6 +16,7 @@ class PromptAssembler(
 ) {
     fun build(request: GenerationRequest): PromptBundle {
         val snapshot = request.snapshot
+        val currentChapter = request.chapter.chapterNumber.coerceAtLeast(1)
         val styleRules = snapshot.bible
             .filter { it.category == BibleCategory.STYLE }
             .joinToString("\n") { "- ${it.name}: ${it.content}${if (it.locked) "（必须遵守）" else "（偏好）"}" }
@@ -54,8 +56,14 @@ class PromptAssembler(
                 "- 第${it.chapter}章/$structured/${it.location}: ${it.summary}; 后果=${it.consequences.joinToString("、")}"
             }
 
-        val foreshadowing = snapshot.relevantForeshadowing.joinToString("\n") {
-            "- id=${it.id}; ${it.title}; 状态=${it.status}; 计划窗口=${it.expectedChapterStart}-${it.expectedChapterEnd}; 细节=${it.detail}; 预期回收=${it.expectedPayoff}"
+        val foreshadowing = snapshot.relevantForeshadowing.joinToString("\n") { item ->
+            val urgency = when {
+                item.status in setOf(ForeshadowStatus.RESOLVED, ForeshadowStatus.ABANDONED) -> ""
+                item.expectedChapterEnd > 0 && currentChapter > item.expectedChapterEnd -> "；回收提醒=已超过计划窗口"
+                item.expectedChapterStart > 0 && currentChapter >= item.expectedChapterStart -> "；回收提醒=已进入计划窗口"
+                else -> ""
+            }
+            "- id=${item.id}; ${item.title}; 状态=${item.status}; 计划窗口=${item.expectedChapterStart}-${item.expectedChapterEnd}$urgency; 细节=${item.detail}; 预期回收=${item.expectedPayoff}"
         }
 
         val scenes = request.chapter.scenePlan.sortedBy { it.order }.joinToString("\n") {
@@ -79,7 +87,7 @@ class PromptAssembler(
                 2. 本章必须完成章纲目标，并服务于卷纲和总纲主题。
                 3. 不得让角色拥有其尚未知晓的信息，不得瞬移，不得无因改变性格、关系或能力。
                 4. 新增重要人物、规则、能力、地点或道具时，必须在 stateChanges 中明确声明。
-                5. 不得提前回收未到时机的伏笔；PAYOFF_DUE 表示进入合理回收窗口，OVERDUE 表示应该优先处理但仍需自然回收，禁止机械硬塞。
+                5. 不得提前回收未到时机的伏笔；进入计划回收窗口后可自然触及或回收，超过计划窗口的旧伏笔应优先寻找自然处理机会，但禁止为了清提醒而机械硬塞。
                 6. 若用户临时要求与锁定设定冲突，以锁定设定为准。
                 7. 长期摘要、RAG 检索片段只作为历史证据；若与锁定圣经冲突，以锁定圣经为最高优先级。
                 8. 【文风模板】决定叙述语气、句式、节奏、视角距离和修辞偏好；它可以改变“怎么写”，但不能改变“发生什么”。
