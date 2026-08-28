@@ -1,51 +1,7 @@
 package com.xiguli.langhuan.ui
 
 import android.app.Application
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Send
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.FoundationBibleItem
 import com.xiguli.langhuan.data.FoundationChapter
@@ -123,7 +79,13 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             it.copy(
                 messages = history,
                 isBusy = true,
-                busyLabel = if (before.foundation == null) "AI 正在继续构思……" else "AI 正在按你的要求重构建书蓝图……",
+                busyLabel = if (BookIdentityRefiner.isIdentityOnlyInstruction(clean)) {
+                    "AI 正在只重写书名 / 平台简介……"
+                } else if (before.foundation == null) {
+                    "AI 正在继续构思……"
+                } else {
+                    "AI 正在按你的要求重构建书蓝图……"
+                },
                 error = null,
             )
         }
@@ -134,6 +96,42 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 _state.update { it.copy(isBusy = false, busyLabel = "", error = "请先在设置里添加并启用一个 AI 服务") }
                 return@launch
             }
+
+            // “重写简介 / 换书名”不应该重做世界观、角色、大纲和伏笔。
+            if (BookIdentityRefiner.isIdentityOnlyInstruction(clean)) {
+                val currentProposal = before.foundation?.toProposal() ?: before.proposal
+                if (currentProposal != null) {
+                    runCatching {
+                        BookIdentityRefiner.refine(
+                            gateway = gateway,
+                            proposal = currentProposal,
+                            transcript = transcript(history),
+                            forceRewrite = true,
+                            userInstruction = clean,
+                        )
+                    }.onSuccess { refined ->
+                        _state.update {
+                            it.copy(
+                                proposal = refined,
+                                foundation = before.foundation?.copy(
+                                    title = refined.title,
+                                    premise = refined.premise,
+                                ),
+                                messages = it.messages + CreationChatMessage(
+                                    "assistant",
+                                    "我只重写了书名 / 对外简介，没有动世界规则、角色、主线、大纲和伏笔。简介已经重新通过长度、剧透和设定堆砌检查。",
+                                ),
+                                isBusy = false,
+                                busyLabel = "",
+                            )
+                        }
+                    }.onFailure { e ->
+                        _state.update { it.copy(isBusy = false, busyLabel = "", error = e.message ?: "书名 / 简介重写失败") }
+                    }
+                    return@launch
+                }
+            }
+
             if (before.foundation != null) {
                 val fallback = before.foundation.toProposal()
                 runCatching {
@@ -279,9 +277,7 @@ private class NewBookConversationEngine(
     private val gateway: AiGateway,
 ) {
     suspend fun reply(messages: List<CreationChatMessage>): ConversationTurn {
-        val transcript = messages.takeLast(18).joinToString("\n") { message ->
-            if (message.role == "user") "用户：${message.text}" else "琅嬛：${message.text}"
-        }
+        val transcript = transcript(messages)
         val output = gateway.generate(
             PromptBundle(
                 system = """
@@ -289,16 +285,17 @@ private class NewBookConversationEngine(
 
                     对话规则：
                     1. 先理解用户真正想要的阅读体验，再决定是否追问。一次最多追问 1-2 个最关键问题，不要像问卷。
-                    2. 用户可能问“你知道某本小说吗”“你知道某位作者吗”。如果你确实掌握，就简短说明你理解的公开、高层特征；如果不确定，必须明确说不确定并让用户补充，不得假装知道。
-                    3. 用户要求“按某作品/作者风格”时，只能提炼高层次创作特征，例如氛围、节奏、叙事距离、谜题结构、信息释放方式、情绪强度，再创作全新的角色、世界规则、核心谜团和情节。不要复刻标志性句式，不要换名照搬人物、设定或剧情骨架。
+                    2. 用户可能问“你知道某本小说吗”“你知道某位作者吗”。实时检索资料如果已经出现在上下文里，优先以资料核对事实；不确定就明确说不确定，不得假装知道。
+                    3. 用户要求参考某作品/作者时，只能提炼高层创作特征，再创作全新的角色、世界规则、核心谜团和情节。不要复刻标志性句式，不要换名照搬人物、设定或剧情骨架。
                     4. 当信息还不足以形成靠谱方案时，输出 GeneratedChapter JSON：title 必须为 __CHAT__；content=你这一轮自然、简洁的回复或追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    5. 当信息已经足够时，输出一套可直接进入“建书蓝图”阶段的方案：
-                       - title = 建议书名，不要套模板；
-                       - content = 150-260 字作品简介，像真正小说平台简介；
-                       - summary = 80-180 字解释核心卖点、差异化和叙事气质；
+                    5. 当信息已经足够时，输出可进入建书蓝图阶段的方案：
+                       - title = 正式小说名，优先 2-8 个汉字，最长 12 个可见字符。它必须像书名，不得写成“我为……”“为了……”“当我……”这类广告标题或一句完整剧情说明；不要逗号、句号、冒号。
+                       - content = “平台简介”，只写 120-190 个中文字符左右，2-4 个短段/句群。只允许：故事起点 + 主角眼前目标 + 最核心异常/规则 + 立即面临的代价/悬念。
+                       - 平台简介禁止：完整讲完主线；罗列多个副本/场景名；解释主题；解释创作思路；泄露中后期反转、幕后黑手、终局答案；出现“最终、直到他发现、原来、真正被选中的其实”等剧透式总结。
+                       - summary = 80-180 字内部策划摘要，核心卖点、差异化、叙事气质放这里，不要塞进 content。
                        - stateChanges 只返回 1 项，其中 subject=小说类型，field=主题命题，before=目标总字数（只写数字），after=一句话核心钩子，evidence=封面视觉简报；
                        - touchedForeshadowingIds=[]。
-                    6. 只要用户继续说“名字换一个”“更诡异一点”“不要系统”“简介短一点”等，就继续迭代，并重新给出最新完整方案。
+                    6. 用户要求“重写简介/换书名”时，不要顺便改人物、规则、主线和结局，只重写对外身份信息。
                 """.trimIndent(),
                 user = """
                     下面是本次新书创作会谈。请根据全部上下文继续对话，不要丢失用户前面已经确认的要求。
@@ -316,7 +313,7 @@ private class NewBookConversationEngine(
 
         val meta = output.stateChanges.first()
         val target = meta.before.filter(Char::isDigit).toIntOrNull()?.coerceIn(10_000, 5_000_000) ?: 500_000
-        val proposal = NewBookProposal(
+        val rawProposal = NewBookProposal(
             title = output.title.trim().ifBlank { "未命名小说" },
             genre = meta.subject.trim().ifBlank { "未分类" },
             premise = output.content.trim().ifBlank { "围绕一个不可回避的核心冲突展开。" },
@@ -326,14 +323,172 @@ private class NewBookConversationEngine(
             coverBrief = meta.evidence.trim(),
             rationale = output.summary.trim(),
         )
+        val proposal = BookIdentityRefiner.refine(
+            gateway = gateway,
+            proposal = rawProposal,
+            transcript = transcript,
+            forceRewrite = false,
+            userInstruction = "",
+        )
         return ConversationTurn(
             reply = buildString {
                 append("我已经把方向收束成一套可以落地的方案。")
                 if (proposal.rationale.isNotBlank()) append("\n").append(proposal.rationale)
-                append("\n不满意就继续说你想改哪里；满意的话，下一步我会把它扩成世界观、人物、总纲、卷纲和前期章纲。")
+                append("\n书名和平台简介已通过质量门；不满意可以只重写它们，不会牵连世界观和大纲。")
             },
             proposal = proposal,
         )
+    }
+}
+
+private data class IdentityQuality(
+    val acceptable: Boolean,
+    val issues: List<String>,
+)
+
+private object BookIdentityRefiner {
+    fun isIdentityOnlyInstruction(text: String): Boolean {
+        val value = text.trim()
+        val identityWords = listOf("书名", "名字", "标题", "简介", "介绍", "文案")
+        if (identityWords.none(value::contains)) return false
+        val structuralWords = listOf("世界观", "设定", "角色", "人物", "主线", "剧情", "大纲", "卷纲", "章纲", "规则", "结局", "主题", "类型", "伏笔")
+        return structuralWords.none(value::contains)
+    }
+
+    suspend fun refine(
+        gateway: AiGateway,
+        proposal: NewBookProposal,
+        transcript: String,
+        forceRewrite: Boolean,
+        userInstruction: String,
+    ): NewBookProposal {
+        var candidate = proposal.copy(
+            title = proposal.title.trim(),
+            premise = proposal.premise.trim(),
+        )
+        var quality = inspect(candidate.title, candidate.premise)
+        if (!forceRewrite && quality.acceptable) return candidate
+
+        repeat(2) { attempt ->
+            val output = runCatching {
+                gateway.generate(
+                    PromptBundle(
+                        system = """
+                            你是中文网络小说的“书名 + 平台简介”责任编辑。你只能修改书名和平台简介，绝对不能修改故事事实、人物、世界规则、主线、结局方向、类型、主题和核心钩子。
+
+                            必须输出 GeneratedChapter JSON：
+                            - title：正式小说名，2-8个汉字为佳，最长12个可见字符；必须像书名，不是广告标题，不是一整句剧情，不用逗号/句号/冒号。
+                            - content：平台简介，120-190个中文字符左右，2-4个紧凑句群。结构只允许：故事起点 → 主角目标 → 核心异常/规则 → 当下代价或悬念。
+                            - summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+
+                            禁止事项：
+                            1. 不得罗列三个以上副本名、怪物名、地点名或规则案例。
+                            2. 不得把总纲、世界观说明、主题命题、故事承诺写进简介。
+                            3. 不得提前说出中后期真相、幕后操控者、终局反转、谁才是真正目标等答案。
+                            4. 不用“最终、直到他发现、原来、其实、真正被选中的……”做剧透式收尾。
+                            5. 不得新增当前方案里没有的关键设定。
+                            6. 语言要像用户在小说平台点进详情页看到的简介：短、清楚、有钩子，不写成剧情梗概。
+                        """.trimIndent(),
+                        user = """
+                            当前类型：${proposal.genre}
+                            当前主题（仅供理解，不要写进简介）：${proposal.theme}
+                            当前核心钩子（仅供理解）：${proposal.coreHook}
+                            当前书名：${candidate.title}
+                            当前简介：${candidate.premise}
+                            用户本轮要求：${userInstruction.ifBlank { "让书名和简介更像正式小说平台成品" }}
+                            当前质量问题：${quality.issues.joinToString("；").ifBlank { "用户主动要求重写" }}
+
+                            会谈事实参考：
+                            ${transcript.takeLast(5000)}
+
+                            只重写 title 和 content，不解释。
+                        """.trimIndent(),
+                    )
+                )
+            }.getOrNull()
+
+            if (output != null) {
+                candidate = proposal.copy(
+                    title = output.title.trim().ifBlank { candidate.title },
+                    premise = output.content.trim().ifBlank { candidate.premise },
+                )
+                quality = inspect(candidate.title, candidate.premise)
+                if (quality.acceptable) return candidate
+            }
+
+            if (attempt == 0 && quality.acceptable) return candidate
+        }
+
+        // AI 连续两次仍不守格式时，本地只做安全压缩，不让超长剧透简介继续进入方案卡。
+        return proposal.copy(
+            title = localTitleFallback(candidate.title, candidate.premise),
+            premise = localSynopsisFallback(candidate.premise),
+        )
+    }
+
+    private fun inspect(title: String, premise: String): IdentityQuality {
+        val issues = mutableListOf<String>()
+        val titleVisible = title.filterNot(Char::isWhitespace)
+        val synopsisVisible = premise.filterNot(Char::isWhitespace)
+        if (titleVisible.length !in 2..12) issues += "书名应为2-12个可见字符"
+        if (Regex("[，,。！？!?：:；;]").containsMatchIn(title)) issues += "书名像一句宣传文案，含句子标点"
+        if (Regex("^(我为|为了|只为|当我|如果|开局|穿越后|重生后)").containsMatchIn(titleVisible)) issues += "书名使用营销句式"
+
+        if (synopsisVisible.length !in 100..220) issues += "平台简介应控制在约100-220个可见字符"
+        if (premise.count { it == '、' } >= 4) issues += "简介在罗列设定/副本名"
+        if (listOf("核心钩子", "主题命题", "故事承诺", "世界观设定", "创作思路").any(premise::contains)) {
+            issues += "简介混入内部策划字段"
+        }
+        val spoilerPatterns = listOf(
+            Regex("直到.{0,20}(?:发现|明白|知道)"),
+            Regex("最终.{0,20}(?:发现|揭开|明白|知道)"),
+            Regex("真正被选中的"),
+            Regex("原来.{0,30}(?:才是|一直是|就是)"),
+            Regex("其实.{0,30}(?:才是|一直是|就是)"),
+        )
+        if (spoilerPatterns.any { it.containsMatchIn(premise) }) issues += "简介提前泄露中后期答案/反转"
+        return IdentityQuality(issues.isEmpty(), issues)
+    }
+
+    private fun localTitleFallback(title: String, premise: String): String {
+        val clean = title
+            .replace(Regex("[《》“”\"'，,。！？!?：:；;、\\s]"), "")
+            .replace(Regex("^(我为|为了|只为|当我|如果|开局|穿越后|重生后)"), "")
+        if (clean.length in 2..10) return clean
+        return when {
+            "梦" in premise && ("失踪" in premise || "寻找" in premise || "找" in premise) -> "梦域寻踪"
+            "梦" in premise -> "梦域"
+            "时间" in premise -> "失序时刻"
+            "深渊" in premise -> "深渊回声"
+            "怪谈" in premise || "诡" in premise -> "异闻录"
+            else -> clean.take(8).ifBlank { "无归之境" }
+        }
+    }
+
+    private fun localSynopsisFallback(text: String): String {
+        val normalized = text.replace(Regex("\\s+"), "").trim()
+        if (normalized.isBlank()) return "一个普通人的生活因一次无法解释的异常被彻底打破。为了找回最重要的人，他不得不主动进入危险未知之中，而每一次选择都会让真相更近，也让退路更少。"
+
+        val spoiler = Regex("(?:直到.{0,20}(?:发现|明白|知道)|最终.{0,20}(?:发现|揭开|明白|知道)|真正被选中的|原来|其实)")
+        val sentences = normalized.split(Regex("(?<=[。！？!?])"))
+        val kept = mutableListOf<String>()
+        var length = 0
+        for (sentence in sentences) {
+            val s = sentence.trim()
+            if (s.isBlank()) continue
+            if (spoiler.containsMatchIn(s) && length >= 80) break
+            if (s.count { it == '、' } >= 3 && length >= 80) break
+            if (length + s.length > 200) break
+            kept += s
+            length += s.length
+            if (length >= 150) break
+        }
+        val joined = kept.joinToString("")
+        return when {
+            joined.length in 100..220 -> joined
+            normalized.length <= 200 -> normalized
+            else -> normalized.take(190).trimEnd('，', '、', '：', ':') + "……"
+        }
     }
 }
 
@@ -346,9 +501,7 @@ private class NewBookFoundationEngine(
         current: StoryFoundation?,
         instruction: String,
     ): StoryFoundation {
-        val transcript = messages.takeLast(18).joinToString("\n") { message ->
-            if (message.role == "user") "用户：${message.text}" else "琅嬛：${message.text}"
-        }
+        val transcript = transcript(messages)
         val currentText = current?.toPromptSummary()?.let { "\n当前蓝图：\n$it\n" }.orEmpty()
         val output = gateway.generate(
             PromptBundle(
@@ -356,9 +509,9 @@ private class NewBookFoundationEngine(
                     你是“琅嬛”的长篇小说总架构师。把已经确认的新书方向扩展为可直接进入长期创作的原创蓝图。不要写正文，不要堆空泛设定，所有规则都必须服务于人物选择和后续剧情。
 
                     必须输出 GeneratedChapter JSON，按下面规则编码蓝图：
-                    - title：最终书名。
-                    - content：最终作品简介，150-260字。
-                    - summary：80-180字“故事承诺”，说明读者长期会获得什么体验、主线如何逐步升级。
+                    - title：最终正式书名，2-8个汉字为佳，最长12个可见字符；不要营销长句。
+                    - content：最终“平台简介”，120-190个中文字符左右。只写故事起点、主角目标、核心异常/规则和当下悬念；禁止写完整剧情梗概、罗列副本、解释主题、泄露中后期反转和终局答案。
+                    - summary：80-180字“故事承诺”，说明读者长期会获得什么体验、主线如何逐步升级。内部策划信息放这里，不要塞进 content。
                     - touchedForeshadowingIds=[]。
                     - stateChanges 用作结构化蓝图记录，字段必须严格遵守以下编码：
 
@@ -382,12 +535,12 @@ private class NewBookFoundationEngine(
                     已确认方案：
                     书名：${proposal.title}
                     类型：${proposal.genre}
-                    简介：${proposal.premise}
+                    平台简介：${proposal.premise}
                     主题：${proposal.theme}
                     目标字数：${proposal.targetWords}
                     核心钩子：${proposal.coreHook}
                     封面方向：${proposal.coverBrief}
-                    方案理由：${proposal.rationale}
+                    内部策划摘要：${proposal.rationale}
 
                     用户会谈：
                     $transcript
@@ -398,7 +551,15 @@ private class NewBookFoundationEngine(
                 """.trimIndent(),
             )
         )
-        return parseFoundation(output, proposal)
+        val raw = parseFoundation(output, proposal)
+        val refined = BookIdentityRefiner.refine(
+            gateway = gateway,
+            proposal = raw.toProposal(),
+            transcript = transcript,
+            forceRewrite = false,
+            userInstruction = "",
+        )
+        return raw.copy(title = refined.title, premise = refined.premise)
     }
 
     private fun parseFoundation(output: GeneratedChapter, fallback: NewBookProposal): StoryFoundation {
@@ -546,7 +707,7 @@ private fun StoryFoundation.toProposal() = NewBookProposal(
 private fun StoryFoundation.toPromptSummary(): String = buildString {
     appendLine("书名：$title")
     appendLine("类型：$genre")
-    appendLine("简介：$premise")
+    appendLine("平台简介：$premise")
     appendLine("主题：$theme")
     appendLine("核心钩子：$coreHook")
     appendLine("故事承诺：$storyPromise")
@@ -563,6 +724,10 @@ private fun StoryFoundation.toPromptSummary(): String = buildString {
     appendLine("伏笔：${foreshadowing.joinToString("；") { "${it.title}:${it.detail}->${it.expectedPayoff}" }}")
 }
 
+private fun transcript(messages: List<CreationChatMessage>): String = messages.takeLast(18).joinToString("\n") { message ->
+    if (message.role == "user") "用户：${message.text}" else "琅嬛：${message.text}"
+}
+
 private fun splitList(text: String): List<String> = text
     .split(Regex("[、,，;；]"))
     .map { it.trim() }
@@ -576,315 +741,3 @@ private fun parseRelationships(text: String): Map<String, String> = text
     }
     .filter { it.first.isNotBlank() && it.second.isNotBlank() }
     .toMap()
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun NewBookConversationPage(
-    viewModel: NewBookConversationViewModel,
-    onClose: () -> Unit,
-    onCreated: (String) -> Unit,
-) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    var input by remember { mutableStateOf("") }
-
-    LaunchedEffect(state.createdStoryId) {
-        state.createdStoryId?.let { id ->
-            viewModel.consumeCreatedStory()
-            onCreated(id)
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("和 AI 聊出一本小说", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            when {
-                                state.foundation != null -> "蓝图阶段：继续聊天修改，满意后正式建书"
-                                state.proposal != null -> "方案已成形，下一步搭世界、人物和三级大纲"
-                                else -> "先聊想法，满意后再定方案"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "返回") }
-                },
-                actions = {
-                    IconButton(onClick = viewModel::reset, enabled = !state.isBusy) {
-                        Icon(Icons.Rounded.Refresh, "重新开始")
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            Surface(tonalElevation = 3.dp) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = {
-                            Text(
-                                if (state.foundation == null) "比如：我想写一本中式悬疑……"
-                                else "比如：第二卷太拖，主角再克制一点，前五章节奏加快……"
-                            )
-                        },
-                        minLines = 1,
-                        maxLines = 5,
-                        enabled = !state.isBusy,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = {
-                            val text = input
-                            input = ""
-                            viewModel.send(text)
-                        },
-                        enabled = input.isNotBlank() && !state.isBusy,
-                    ) {
-                        Icon(Icons.Rounded.Send, "发送")
-                    }
-                }
-            }
-        },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item { Spacer(Modifier.height(4.dp)) }
-
-            if (state.messages.size <= 1) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("你可以直接这样说", style = MaterialTheme.typography.labelLarge)
-                        StarterChip("我想写一本中式悬疑，主角是普通人") { viewModel.send(it) }
-                        StarterChip("你知道《迷雾之上》吗？我喜欢那种逐层揭谜的压迫感") { viewModel.send(it) }
-                        StarterChip("我喜欢冷峻、克制、诡谲的悬疑感，帮我原创一个完全不同的故事") { viewModel.send(it) }
-                    }
-                }
-            }
-
-            items(state.messages) { message -> ChatBubble(message) }
-
-            if (state.foundation == null) {
-                state.proposal?.let { proposal ->
-                    item {
-                        ProposalCard(
-                            proposal = proposal,
-                            busy = state.isBusy,
-                            onNext = { viewModel.generateFoundation(false) },
-                        )
-                    }
-                }
-            } else {
-                item {
-                    FoundationCard(
-                        foundation = state.foundation,
-                        busy = state.isBusy,
-                        onRegenerate = { viewModel.generateFoundation(true) },
-                        onCreate = viewModel::createCurrentFoundation,
-                    )
-                }
-            }
-
-            if (state.isBusy) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.width(20.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text(state.busyLabel.ifBlank { "AI 正在处理……" })
-                    }
-                }
-            }
-
-            state.error?.let { error ->
-                item {
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                        Text(error, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer)
-                    }
-                }
-            }
-
-            item { Spacer(Modifier.height(16.dp)) }
-        }
-    }
-}
-
-@Composable
-private fun StarterChip(text: String, onClick: (String) -> Unit) {
-    AssistChip(
-        onClick = { onClick(text) },
-        label = { Text(text) },
-        leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null) },
-    )
-}
-
-@Composable
-private fun ChatBubble(message: CreationChatMessage) {
-    val user = message.role == "user"
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (user) Arrangement.End else Arrangement.Start,
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(0.88f),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (user) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        ) {
-            Column(Modifier.padding(14.dp)) {
-                Text(if (user) "你" else "琅嬛 AI", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(5.dp))
-                Text(message.text, style = MaterialTheme.typography.bodyLarge)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProposalCard(
-    proposal: NewBookProposal,
-    busy: Boolean,
-    onNext: () -> Unit,
-) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AutoAwesome, null)
-                Spacer(Modifier.width(8.dp))
-                Text("新书方案", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            }
-            Text(proposal.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("${proposal.genre} · 目标 ${proposal.targetWords / 10_000} 万字", style = MaterialTheme.typography.labelLarge)
-            Text("简介", fontWeight = FontWeight.SemiBold)
-            Text(proposal.premise)
-            Text("核心钩子", fontWeight = FontWeight.SemiBold)
-            Text(proposal.coreHook)
-            Text("主题", fontWeight = FontWeight.SemiBold)
-            Text(proposal.theme)
-            if (proposal.coverBrief.isNotBlank()) {
-                Text("封面方向", fontWeight = FontWeight.SemiBold)
-                Text(proposal.coverBrief, style = MaterialTheme.typography.bodyMedium)
-            }
-            Text("这里还只是方向，不会立刻建一个空工程。下一步先让 AI 把世界、人物和大纲搭完整。", style = MaterialTheme.typography.bodySmall)
-            Button(
-                onClick = onNext,
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Rounded.AutoAwesome, null)
-                Spacer(Modifier.width(8.dp))
-                Text("下一步：生成建书蓝图")
-            }
-        }
-    }
-}
-
-@Composable
-private fun FoundationCard(
-    foundation: StoryFoundation,
-    busy: Boolean,
-    onRegenerate: () -> Unit,
-    onCreate: () -> Unit,
-) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AutoAwesome, null)
-                Spacer(Modifier.width(8.dp))
-                Text("建书蓝图", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            }
-            Text(foundation.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("${foundation.genre} · ${foundation.targetWords / 10_000} 万字", style = MaterialTheme.typography.labelLarge)
-
-            BlueprintSection("故事承诺", foundation.storyPromise)
-            BlueprintSection("叙事风格基线", foundation.styleGuide)
-            BlueprintSection("总纲", "${foundation.masterObjective}\n核心冲突：${foundation.masterConflict}\n关键转折：${foundation.masterTurningPoint}")
-
-            Text("小说圣经 · ${foundation.bible.size} 条", fontWeight = FontWeight.Bold)
-            foundation.bible.take(18).forEach { item ->
-                Text("${item.category.name} · ${item.name}\n${item.content}", style = MaterialTheme.typography.bodyMedium)
-            }
-
-            Text("核心角色 · ${foundation.characters.size} 人", fontWeight = FontWeight.Bold)
-            foundation.characters.forEachIndexed { index, character ->
-                Text(
-                    "${if (index == 0) "主角 · " else ""}${character.name}｜${character.personality.joinToString("、")}\n目标：${character.goal}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-
-            Text("分卷与前期路线 · ${foundation.volumes.size} 卷", fontWeight = FontWeight.Bold)
-            foundation.volumes.forEach { volume ->
-                Text("第${volume.order}卷 · ${volume.title}", fontWeight = FontWeight.SemiBold)
-                Text("目标：${volume.objective}\n冲突：${volume.conflict}\n转折：${volume.turningPoint}", style = MaterialTheme.typography.bodyMedium)
-                if (volume.chapters.isNotEmpty()) {
-                    volume.chapters.forEach { chapter ->
-                        Text(
-                            "${chapter.order}. ${chapter.title} — ${chapter.objective}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-
-            if (foundation.foreshadowing.isNotEmpty()) {
-                Text("伏笔计划 · ${foundation.foreshadowing.size} 条", fontWeight = FontWeight.Bold)
-                foundation.foreshadowing.forEach { item ->
-                    Text(
-                        "${item.title}｜${item.expectedChapterStart}-${item.expectedChapterEnd}章\n${item.detail} → ${item.expectedPayoff}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-
-            Text("这一步仍未写入书架。继续在下面聊天，就会修改这套蓝图；确认后才一次性写入小说圣经、角色状态、三级大纲和 RAG 长期记忆。", style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onRegenerate,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Rounded.Refresh, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("整套重做")
-                }
-                Button(
-                    onClick = onCreate,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("正式建书")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BlueprintSection(title: String, content: String) {
-    if (content.isBlank()) return
-    Text(title, fontWeight = FontWeight.Bold)
-    Text(content, style = MaterialTheme.typography.bodyMedium)
-}
