@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Key
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.xiguli.langhuan.engine.ReferenceDistillationCheckpointStore
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
 import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
 import java.io.File
@@ -84,6 +86,7 @@ private data class ReferenceDistillationTaskUi(
     val sourceName: String,
     val resumable: Boolean,
     val completedBatches: Int,
+    val fingerprint: String,
 ) {
     val active: Boolean
         get() = state == WorkInfo.State.RUNNING || state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED
@@ -105,6 +108,7 @@ fun AiFirstShelf(
 ) {
     val context = LocalContext.current.applicationContext
     val sourceStore = remember(context) { ReferenceDistillationSourceStore(context) }
+    val checkpointStore = remember(context) { ReferenceDistillationCheckpointStore(context) }
     val distillationTasks = rememberReferenceDistillationTasks()
     var reportTask by remember { mutableStateOf<ReferenceDistillationTaskUi?>(null) }
 
@@ -224,7 +228,14 @@ fun AiFirstShelf(
                                 task.sourceName.ifBlank { source.name },
                             )
                             sourceStore.save(nextId, source, task.sourceName.ifBlank { source.name })
+                            sourceStore.dismiss(task.id)
+                            sourceStore.remove(task.id)
                         }
+                    },
+                    onDelete = {
+                        ReferenceDistillationJobs.cancel(context, task.id)
+                        if (task.fingerprint.isNotBlank()) checkpointStore.clear(task.fingerprint)
+                        sourceStore.deleteFailedTaskSource(task.id)
                     },
                 )
             }
@@ -293,6 +304,7 @@ private fun ReferenceDistillationTaskCard(
     onOpenReport: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val progress = task.progress.coerceIn(0, 100)
     val stageLabel = when {
@@ -426,6 +438,11 @@ private fun ReferenceDistillationTaskCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
+                    Icon(Icons.Rounded.DeleteOutline, null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("删除失败记录")
+                }
             }
         }
     }
@@ -445,7 +462,9 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                     .getOrDefault(emptyList())
             }
             tasks = infos
-                .filter { it.state != WorkInfo.State.CANCELLED }
+                .filter { info ->
+                    info.state != WorkInfo.State.CANCELLED && !sourceStore.isDismissed(info.id.toString())
+                }
                 .map { info ->
                     val progressData = info.progress
                     val output = info.outputData
@@ -472,6 +491,7 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                         sourceName = source?.displayName.orEmpty(),
                         resumable = output.getBoolean("resumable", false),
                         completedBatches = output.getInt("completedBatches", 0),
+                        fingerprint = output.getString("fingerprint").orEmpty(),
                     )
                 }
                 .sortedWith(
