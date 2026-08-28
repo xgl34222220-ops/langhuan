@@ -31,6 +31,24 @@ private val GENRE_PLACEHOLDERS = setOf("小说类型", "类型", "题材", "genr
 private val THEME_PLACEHOLDERS = setOf("主题命题", "主题", "核心主题", "theme")
 private const val DEFAULT_THEME = "人在真相、执念与代价之间如何选择"
 
+private fun isQuestionLike(text: String): Boolean {
+    val value = text.trim()
+    if (value.isBlank()) return false
+    if ('?' in value || '？' in value) return true
+    return listOf("什么", "谁", "怎么", "怎样", "为何", "为什么", "多少", "叫啥", "叫什么", "是不是", "有没有", "知道吗", "知道不", "哪一个", "哪个")
+        .any { value.contains(it, ignoreCase = true) }
+}
+
+private fun isReferenceFactQuestion(text: String): Boolean {
+    val value = text.trim()
+    if (!isQuestionLike(value)) return false
+    val referenceCue = listOf("模板", "参考", "原作", "蒸馏", "这本", "那本", "这部", "那部", "Story DNA", "DNA")
+        .any { value.contains(it, ignoreCase = true) }
+    val factCue = listOf("主角", "配角", "人物", "名字", "姓名", "能力", "世界观", "世界", "规则", "设定", "关系", "势力", "地点", "冲突", "谜团", "主题", "剧情", "结局")
+        .any { value.contains(it, ignoreCase = true) }
+    return referenceCue && factCue
+}
+
 @Serializable
 data class CreationChatMessage(
     val role: String,
@@ -162,11 +180,13 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         if (clean.isBlank() || before.isBusy) return
         val history = before.messages + CreationChatMessage("user", clean)
         val plainInstruction = clean.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
+        val referenceQuestion = isReferenceFactQuestion(plainInstruction) && before.selectedReferenceTemplateIds.isNotEmpty()
         _state.update {
             it.copy(
                 messages = history,
                 isBusy = true,
                 busyLabel = when {
+                    referenceQuestion -> "正在读取所选模板的 Story DNA 事实……"
                     IdentityRefiner.isIdentityOnlyInstruction(plainInstruction) -> "AI 正在按最新会谈重写书名 / 平台简介……"
                     before.foundation != null -> "AI 正在按最新决定重构建书蓝图……"
                     before.proposal != null -> "AI 正在把你的新决定同步进方案……"
@@ -180,6 +200,30 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             val gateway = activeGateway()
             if (gateway == null) {
                 _state.update { it.copy(isBusy = false, busyLabel = "", error = "请先在设置里添加并启用一个 AI 服务") }
+                return@launch
+            }
+
+            if (referenceQuestion) {
+                runCatching {
+                    NewBookConversationEngine(gateway).reply(
+                        messages = history,
+                        currentProposal = before.proposal?.sanitizePlaceholders(),
+                        referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
+                    )
+                }.onSuccess { turn ->
+                    _state.update {
+                        it.copy(
+                            messages = it.messages + CreationChatMessage("assistant", turn.reply),
+                            proposal = before.proposal,
+                            foundation = before.foundation,
+                            foundationStage = before.foundationStage,
+                            isBusy = false,
+                            busyLabel = "",
+                        )
+                    }
+                }.onFailure { error ->
+                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "模板事实读取失败")) }
+                }
                 return@launch
             }
 
@@ -454,39 +498,46 @@ private class NewBookConversationEngine(
         referenceContext: String = "",
     ): ConversationTurn {
         val transcript = conversationTranscript(messages, keepLatestResearch = true)
+        val latest = messages.lastOrNull { it.role == "user" }?.text
+            ?.substringBefore(RESEARCH_CONTEXT_MARKER)
+            ?.trim()
+            .orEmpty()
         val output = gateway.generateStreaming(
             PromptBundle(
                 system = """
                     你是“琅嬛”的新书策划搭档。通过自然对话把模糊想法发展成原创长篇小说方案，不要先让用户填表。
 
                     规则：
-                    1. 先理解用户想要的阅读体验，一次最多追问1-2个关键问题。
+                    1. 先理解用户想要的阅读体验，一次最多追问1-2个关键问题；已经明确回答过的问题禁止重复追问。
                     2. 当前轮若带有琅嬛联网资料/长期研究档案，用它核对公开事实；用户明确纠正的作者-作品关系属于项目事实，网页暂未核验只能标待核验，不能反复否定。
-                    3. 参考作品/作者只能提炼高层创作特征，必须重新设计原创角色、规则、谜团和剧情；不得复制标志性句式、专名和剧情骨架。
+                    3. 参考模板有两种用途，必须区分：
+                       - 原作事实问答：用户问模板/原作主角姓名、人物、能力、世界观、规则、势力、地点、剧情结构等时，可以并且应该直接说出所选 STORY DNA 已保存的原作事实、人物名和专名；报告没保存的事实就明确说“当前蒸馏报告未确认”。
+                       - 新书创作：只能迁移高层机制，必须重新设计原创角色、规则、谜团和剧情；不得复用原作专名、具体能力规则、标志性句式和剧情骨架。
+                       “禁止照搬”只约束新书创作，绝不能用来拒绝回答用户对模板本身的事实问题。
                     4. 会谈是唯一事实源。越新的用户明确决定优先级越高；用户说“B吧/就这个/改成/不要/换掉/天生不怕吧”这类短句也属于有效决定，必须结合前文理解并覆盖旧方案。
                     5. 如果已经存在“当前方案”，用户这一轮又修改了主角能力、身份、目标、世界规则、核心冲突、题材、阅读体验、书名或简介，你必须返回一套完整更新后的方案，不能只聊天后继续保留旧 proposal。
-                    6. 只有确实仍缺关键选择、或者用户只是提问而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=自然回复或追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    7. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
-                    8. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。只要核心设定已经改变，就必须按最新事实重写简介，禁止为了省事复用旧简介。
-                    9. 若存在“用户显式选择的参考 Style DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
+                    6. 用户这一轮如果是提问（尤其是模板/原作事实提问），只回答问题，不重写方案、不追问已回答事项、不输出新 proposal。此时输出 GeneratedChapter JSON：title="__CHAT__"；content=直接答案；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    7. 只有确实仍缺关键选择、或者用户只是普通聊天而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=自然回复或必要追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    8. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
+                    9. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。只要核心设定已经改变，就必须按最新事实重写简介，禁止为了省事复用旧简介。
+                    10. 若存在“用户显式选择的参考双层 DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
                 """.trimIndent(),
                 user = """
-                    ${if (referenceContext.isBlank()) "【参考 Style DNA】本次未选择任何蒸馏模板。" else referenceContext}
+                    ${if (referenceContext.isBlank()) "【参考双层 DNA】本次未选择任何蒸馏模板。" else referenceContext}
 
                     ${currentProposal?.let(::proposalContext) ?: "【当前方案】尚未形成完整方案。"}
 
                     【本次新书创作会谈：后出现的用户决定覆盖前面的旧方案】
                     $transcript
+
+                    【最新用户输入】
+                    $latest
                 """.trimIndent(),
             )
         ) { }
 
         if (output.title.trim() == CHAT_SENTINEL || output.stateChanges.isEmpty()) {
             val reply = output.content.trim().ifBlank { "再告诉我一点你最在意的感觉，我继续帮你收紧方向。" }
-            val latest = messages.lastOrNull { it.role == "user" }?.text
-                ?.substringBefore(RESEARCH_CONTEXT_MARKER)
-                ?.trim()
-                .orEmpty()
             if (currentProposal != null && looksLikeCreativeDecision(latest)) {
                 val reconciled = runCatching {
                     ProposalConsolidator(gateway).consolidate(currentProposal, messages)
@@ -536,7 +587,7 @@ private class NewBookConversationEngine(
     }
 
     private fun looksLikeCreativeDecision(text: String): Boolean {
-        if (text.isBlank()) return false
+        if (text.isBlank() || isQuestionLike(text)) return false
         val markers = listOf(
             "改成", "换成", "不要", "删掉", "就这个", "就选", "选A", "选B", "选C", "a吧", "b吧", "c吧",
             "主角", "能力", "身份", "性格", "目标", "世界", "规则", "设定", "剧情", "冲突", "主题", "类型",
@@ -549,8 +600,13 @@ private class NewBookConversationEngine(
 private object IdentityRefiner {
     fun isIdentityOnlyInstruction(text: String): Boolean {
         val value = text.trim()
-        if (listOf("书名", "名字", "标题", "简介", "介绍", "文案").none(value::contains)) return false
-        return listOf("世界观", "设定", "角色", "人物", "主线", "剧情", "大纲", "卷纲", "章纲", "规则", "结局", "主题", "类型", "伏笔")
+        if (value.isBlank() || isQuestionLike(value)) return false
+        val targetsIdentity = listOf("书名", "标题", "简介", "介绍", "文案").any(value::contains)
+        if (!targetsIdentity) return false
+        val asksForChange = listOf("改", "换", "重写", "重新写", "优化", "润色", "起一个", "取一个", "帮我写", "再写", "换个")
+            .any(value::contains)
+        if (!asksForChange) return false
+        return listOf("世界观", "设定", "角色", "人物", "主角", "配角", "模板", "原作", "参考", "蒸馏", "能力", "关系", "势力", "主线", "剧情", "大纲", "卷纲", "章纲", "规则", "结局", "主题", "类型", "伏笔")
             .none(value::contains)
     }
 
@@ -622,11 +678,6 @@ private fun sanitizeMetaValue(value: String, placeholders: Set<String>, fallback
     return if (clean.isBlank() || placeholders.any { clean.equals(it, ignoreCase = true) }) fallback else clean
 }
 
-/**
- * Normal chat may use the newest hidden research packet once. Foundation generation does not call
- * this function: ProgressiveFoundationEngine strips all raw research evidence and works from the
- * already confirmed proposal + compact user facts instead.
- */
 private fun conversationTranscript(
     messages: List<CreationChatMessage>,
     keepLatestResearch: Boolean,
