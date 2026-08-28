@@ -73,6 +73,17 @@ data class LongFormHealthReport(
     val openArcCount: Int = 0,
 )
 
+/** Per-chapter information release allowance. IDs only: the truth itself never enters rolling plans. */
+@Serializable
+data class RevealBudget(
+    val chapterNumber: Int = 0,
+    val maxFullReveals: Int = 0,
+    val maxPartialReveals: Int = 1,
+    val allowedFullBoundaryIds: List<String> = emptyList(),
+    val allowedPartialBoundaryIds: List<String> = emptyList(),
+    val forbiddenBoundaryIds: List<String> = emptyList(),
+)
+
 /** One chapter in the forward-looking rolling plan. This is a proposal, never Canon. */
 @Serializable
 data class PlannedChapterBeat(
@@ -86,6 +97,8 @@ data class PlannedChapterBeat(
     val guardrail: String = "",
     /** True means title/objective/conflict/turningPoint came from a locked formal outline. */
     val fixedByOutline: Boolean = false,
+    /** Limits how much hidden information this chapter may release. */
+    val revealBudget: RevealBudget = RevealBudget(),
 )
 
 /** A gradual, observable character change to pursue inside the current rolling horizon. */
@@ -143,6 +156,51 @@ data class AutonomousStoryPlan(
 )
 
 @Serializable
+enum class PlanExecutionStatus { ALIGNED, PARTIAL, DEVIATED, UNPLANNED }
+
+/** What actually happened compared with the rolling plan at commit time. */
+@Serializable
+data class ChapterExecutionRecord(
+    val chapterNumber: Int,
+    val plannedObjective: String = "",
+    val actualSummary: String = "",
+    val status: PlanExecutionStatus = PlanExecutionStatus.UNPLANNED,
+    val completionScore: Int = 0,
+    val deviations: List<String> = emptyList(),
+    val affectedFutureChapters: List<Int> = emptyList(),
+    val repairHint: String = "",
+    val recordedAt: Long = 0L,
+)
+
+@Serializable
+enum class NarrativeDebtKind {
+    FORESHADOW,
+    CHARACTER_ARC,
+    PLOT_PROMISE,
+    RELATIONSHIP,
+    KNOWLEDGE_REVEAL,
+}
+
+@Serializable
+enum class NarrativeDebtStatus { OPEN, DUE, OVERDUE, RESOLVED }
+
+/** A promise the story owes the reader. It is tracking state, not Canon. */
+@Serializable
+data class NarrativeDebt(
+    val id: String,
+    val kind: NarrativeDebtKind,
+    val title: String,
+    val openedChapter: Int,
+    val dueStartChapter: Int = 0,
+    val dueEndChapter: Int = 0,
+    val lastTouchedChapter: Int = 0,
+    val priority: Int = 50,
+    val status: NarrativeDebtStatus = NarrativeDebtStatus.OPEN,
+    val evidence: String = "",
+    val resolutionCriteria: String = "",
+)
+
+@Serializable
 data class LongFormState(
     val config: LongFormConfig = LongFormConfig(),
     val arcs: List<RollingPlotArc> = emptyList(),
@@ -151,5 +209,9 @@ data class LongFormState(
     val health: LongFormHealthReport = LongFormHealthReport(),
     /** Forward-looking proposal state; default keeps all old projects backward-compatible. */
     val autonomousPlan: AutonomousStoryPlan = AutonomousStoryPlan(),
+    /** Plan-vs-actual history. Full prose is never stored here. */
+    val executionHistory: List<ChapterExecutionRecord> = emptyList(),
+    /** Outstanding narrative promises. These may trigger planning pressure but never rewrite Canon. */
+    val narrativeDebts: List<NarrativeDebt> = emptyList(),
     val lastSettledChapter: Int = 0,
 )
