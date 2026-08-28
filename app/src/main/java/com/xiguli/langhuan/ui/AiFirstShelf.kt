@@ -86,12 +86,18 @@ private data class ReferenceDistillationTaskUi(
     val sourceName: String,
     val resumable: Boolean,
     val completedBatches: Int,
+    val completedAggregateGroups: Int,
+    val aggregateGroups: Int,
     val fingerprint: String,
 ) {
     val active: Boolean
         get() = state == WorkInfo.State.RUNNING || state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED
     val sourceAvailable: Boolean
         get() = sourcePath.isNotBlank() && File(sourcePath).exists()
+    val batchPhaseFinished: Boolean
+        get() = batches > 0 && completedBatches >= batches
+    val aggregationResumable: Boolean
+        get() = batchPhaseFinished && aggregateGroups > 0
 }
 
 @Composable
@@ -189,10 +195,10 @@ fun AiFirstShelf(
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ShelfPill("TXT / EPUB / MD")
                         ShelfPill("Style + Story DNA")
-                        ShelfPill("断点续跑")
+                        ShelfPill("双层断点")
                     }
                     Text(
-                        "整本小说先做全书结构扫描，AI 再按书长深度分层阅读；长篇不再固定只抽 30 章。",
+                        "整本小说先做全书结构扫描，AI 按书长深度分层阅读；最终 DNA 再分组聚合，长篇不会把全部批次一次塞给模型。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -309,6 +315,8 @@ private fun ReferenceDistillationTaskCard(
     val progress = task.progress.coerceIn(0, 100)
     val stageLabel = when {
         task.state == WorkInfo.State.SUCCEEDED -> "双层 DNA 完成 · 已入长期研究档案"
+        task.state == WorkInfo.State.FAILED && task.aggregationResumable ->
+            "任务中断 · AI 批次 ${task.completedBatches}/${task.batches} 已完成 · DNA 聚合 ${task.completedAggregateGroups}/${task.aggregateGroups}"
         task.state == WorkInfo.State.FAILED && task.resumable -> "任务中断 · 已保存 ${task.completedBatches}/${task.batches} 批断点"
         task.state == WorkInfo.State.FAILED -> "蒸馏失败"
         task.state == WorkInfo.State.CANCELLED -> "任务已取消"
@@ -318,7 +326,9 @@ private fun ReferenceDistillationTaskCard(
         task.stage == "parse" -> "正在扫描全书结构"
         task.stage == "prepare" -> "已解析 · 准备双层 DNA"
         task.stage == "distill" && task.batches > 0 -> "AI 深度分层阅读 · ${task.batch}/${task.batches} 批"
-        task.stage == "aggregate" -> "正在聚合 Style + Story DNA"
+        task.stage == "aggregate_prepare" -> "AI 批次完成 · 准备分层聚合"
+        task.stage == "aggregate_group" && task.batches > 0 -> "DNA 分层聚合 · ${task.batch}/${task.batches} 组"
+        task.stage == "aggregate_final" -> "正在生成最终 Story + Style DNA"
         task.stage == "done" -> "正在保存研究档案"
         else -> "AI 后台蒸馏正在运行"
     }
@@ -392,7 +402,7 @@ private fun ReferenceDistillationTaskCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ShelfPill("AI 真分析")
                     ShelfPill("锁定模型")
-                    ShelfPill("批次断点")
+                    ShelfPill(if (task.stage.startsWith("aggregate")) "聚合断点" else "批次断点")
                 }
                 OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
                     Icon(Icons.Rounded.Close, null)
@@ -421,7 +431,7 @@ private fun ReferenceDistillationTaskCard(
                         task.error,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
-                        maxLines = 4,
+                        maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -429,7 +439,13 @@ private fun ReferenceDistillationTaskCard(
                     FilledTonalButton(onClick = onRetry, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
                         Icon(Icons.Rounded.Refresh, null)
                         Spacer(Modifier.width(7.dp))
-                        Text(if (task.resumable) "从断点继续" else "重新尝试")
+                        Text(
+                            when {
+                                task.aggregationResumable -> "从聚合断点继续"
+                                task.resumable -> "从批次断点继续"
+                                else -> "重新尝试"
+                            }
+                        )
                     }
                 } else {
                     Text(
@@ -491,6 +507,8 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
                         sourceName = source?.displayName.orEmpty(),
                         resumable = output.getBoolean("resumable", false),
                         completedBatches = output.getInt("completedBatches", 0),
+                        completedAggregateGroups = output.getInt("completedAggregateGroups", 0),
+                        aggregateGroups = output.getInt("aggregateGroups", 0),
                         fingerprint = output.getString("fingerprint").orEmpty(),
                     )
                 }
