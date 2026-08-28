@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 37
-        versionName = "0.23.0-alpha01"
+        versionCode = 38
+        versionName = "0.23.1-alpha01"
     }
 
     buildFeatures { compose = true }
