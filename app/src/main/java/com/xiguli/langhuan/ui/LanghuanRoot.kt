@@ -182,6 +182,8 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                     AiFirstShelf(
                         state = libraryState,
                         aiReady = state.provider.ready,
+                        aiProviderLabel = state.provider.activeProviderLabel,
+                        aiModel = state.provider.generationModel,
                         onOpenBook = libraryViewModel::openBook,
                         onStartCreation = { showCreation = true },
                         onConfigureAi = {
