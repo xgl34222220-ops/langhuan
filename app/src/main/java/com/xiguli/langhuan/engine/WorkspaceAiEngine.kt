@@ -15,16 +15,17 @@ data class ChapterPlanSuggestion(
 class WorkspaceAiEngine(
     private val gateway: AiGateway,
     private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
+    private val longFormEngine: LongFormContinuityEngine = LongFormContinuityEngine(),
 ) {
     suspend fun planNextChapter(snapshot: StorySnapshot, current: ChapterDraft): ChapterPlanSuggestion {
         val frame = chronologyGuard.frame(snapshot)
-        val recent = snapshot.recentSummaries.takeLast(6).joinToString("\n")
+        val recent = snapshot.recentSummaries.takeLast(snapshot.longForm.config.hotChapterWindow.coerceIn(5, 10)).joinToString("\n")
         val characters = snapshot.characters.joinToString("\n") {
             "${it.name}｜地点=${it.location}｜目标=${it.goal}｜情绪=${it.emotionalState}"
         }
         val activeForeshadowing = snapshot.relevantForeshadowing
             .filter { it.status.name != "RESOLVED" && it.status.name != "ABANDONED" }
-            .joinToString("\n") { "${it.title}：${it.detail}，预计${it.expectedChapterStart}-${it.expectedChapterEnd}章回收" }
+            .joinToString("\n") { "${it.title}：${it.detail}，状态=${it.status}，计划${it.expectedChapterStart}-${it.expectedChapterEnd}章回收" }
         val outline = snapshot.activeOutline.joinToString("\n") {
             "${it.level}:${it.title}｜目标=${it.objective}｜冲突=${it.conflict}｜转折=${it.turningPoint}"
         }
@@ -35,9 +36,10 @@ class WorkspaceAiEngine(
                 val clock = if (it.storyDay > 0) "故事第${it.storyDay}天·${it.timeOfDay}" else it.storyTime
                 "第${it.chapter}章 $clock ${if (it.isFlashback) "[FLASHBACK]" else "[NORMAL]"} ${it.location}：${it.summary}"
             }
+        val longFormNavigation = longFormEngine.promptText(snapshot)
         val prompt = PromptBundle(
             system = """
-                你是长篇小说的章节策划引擎。你必须沿用现有总纲、卷纲、人物状态、伏笔、主时间钟和最近剧情，规划紧接当前章节的下一章，不得擅自换主线。
+                你是长篇小说的章节策划引擎。你必须沿用现有总纲、卷纲、人物状态、滚动剧情弧、伏笔、主时间钟和最近剧情，规划紧接当前章节的下一章，不得擅自换主线。
                 输出必须符合 GeneratedChapter JSON：title、content、summary、stateChanges、touchedForeshadowingIds。
                 这里字段有专门含义：
                 - title = 下一章标题。
@@ -46,6 +48,12 @@ class WorkspaceAiEngine(
                 - stateChanges = 场景计划。每项 subject=视角人物，field=地点，before=场景目的，after=场景冲突，evidence 必须为“故事日序号||时段||距上一场经过多久||NORMAL或FLASHBACK||场景结果”。
                 - touchedForeshadowingIds = 建议本章触及的伏笔 id。
                 至少规划 2 个、最多 6 个场景。不要返回小说正文。
+
+                超长篇规则：
+                1. 下一章优先推进当前 20-40 章滚动剧情弧，不要因为灵感突然新增同等级主线。
+                2. 若存在 PAYOFF_DUE / OVERDUE 伏笔，优先寻找自然触及或回收机会；禁止机械硬塞。
+                3. 角色成长必须承接已记录的阶段与最近转折，不能突然恢复到几十章前的心理状态。
+                4. 长篇体检提醒是风险提示，不是强制剧情；先解决重复、拖延和旧坑，再考虑继续扩张复杂度。
 
                 时间规则：
                 1. 第一场默认承接 App 给出的最新主时间钟，不得为了“新章开场”自动跳到第二天。
@@ -65,6 +73,9 @@ class WorkspaceAiEngine(
                 【当前大纲链】
                 $outline
 
+                【超长篇滚动导航】
+                $longFormNavigation
+
                 【人物状态】
                 $characters
 
@@ -74,7 +85,7 @@ class WorkspaceAiEngine(
                 【活跃伏笔】
                 $activeForeshadowing
 
-                【最近剧情】
+                【热记忆 / 最近剧情】
                 $recent
 
                 请规划第${current.chapterNumber + 1}章，并先把每一个场景的故事日、时段和耗时锁死。
