@@ -51,6 +51,8 @@ object ReferenceDistillationJobs {
         val fingerprint = stableFingerprint(sourceFile)
         val uniqueName = "reference-distill-$fingerprint"
         val workManager = WorkManager.getInstance(context)
+        val sourceStore = ReferenceDistillationSourceStore(context.applicationContext)
+
         if (!force) {
             val active = runCatching { workManager.getWorkInfosForUniqueWork(uniqueName).get() }
                 .getOrDefault(emptyList())
@@ -59,7 +61,10 @@ object ReferenceDistillationJobs {
                         info.state == WorkInfo.State.RUNNING ||
                         info.state == WorkInfo.State.BLOCKED
                 }
-            if (active != null) return active.id.toString()
+            if (active != null) {
+                sourceStore.save(active.id.toString(), sourceFile, displayName)
+                return active.id.toString()
+            }
         }
 
         val request = OneTimeWorkRequestBuilder<ReferenceDistillationWorker>()
@@ -78,11 +83,13 @@ object ReferenceDistillationJobs {
             .addTag(TAG)
             .addTag("reference:$fingerprint")
             .build()
+
         workManager.enqueueUniqueWork(
             uniqueName,
             ExistingWorkPolicy.REPLACE,
             request,
         )
+        sourceStore.save(request.id.toString(), sourceFile, displayName)
         return request.id.toString()
     }
 
@@ -105,6 +112,7 @@ class ReferenceDistillationWorker(
     private val archive = CreationResearchArchiveStore(appContext)
     private val reportStore = ReferenceDistillationReportStore(appContext)
     private val checkpointStore = ReferenceDistillationCheckpointStore(appContext)
+    private val sourceStore = ReferenceDistillationSourceStore(appContext)
 
     override suspend fun doWork(): Result {
         val path = ReferenceDistillationJobs.path(inputData)
@@ -112,9 +120,15 @@ class ReferenceDistillationWorker(
         val source = File(path)
         val fingerprint = ReferenceDistillationJobs.fingerprint(inputData).ifBlank { fallbackFingerprint(source) }
         val initialTitle = fileName.substringBeforeLast('.').ifBlank { "参考小说" }
+
         if (!source.exists() || source.length() == 0L) {
             checkpointStore.clear(fingerprint)
-            return Result.failure(workDataOf("error" to "参考小说文件不存在或为空", "title" to initialTitle))
+            return Result.failure(
+                workDataOf(
+                    "error" to "参考小说文件不存在或为空",
+                    "title" to initialTitle,
+                )
+            )
         }
 
         setForeground(foreground("正在读取《$initialTitle》", 2))
@@ -155,16 +169,17 @@ class ReferenceDistillationWorker(
                     model = modelLabel,
                 )
             )
-            setForeground(foreground("《${manuscript.title}》已解析，准备 AI 分层蒸馏", 6))
+            setForeground(foreground("《${manuscript.title}》已解析，准备双层 DNA 蒸馏", 6))
 
             val samples = buildSamples(manuscript)
             val localMetrics = localMetrics(manuscript, samples.size)
             val batchSize = when {
-                samples.size <= 12 -> 2
-                samples.size <= 24 -> 3
+                samples.size <= 16 -> 2
+                samples.size <= 36 -> 3
                 else -> 4
             }
             val batches = samples.chunked(batchSize)
+
             val checkpoint = savedCheckpoint?.takeIf { saved ->
                 saved.fingerprint == fingerprint &&
                     saved.title == manuscript.title &&
@@ -199,7 +214,7 @@ class ReferenceDistillationWorker(
                     )
                 )
             } else if (completed > 0) {
-                val resumeProgress = 10 + (completed * 60 / batches.size.coerceAtLeast(1))
+                val resumeProgress = 10 + (completed * 62 / batches.size.coerceAtLeast(1))
                 setProgress(
                     progressData(
                         stage = "distill",
@@ -221,7 +236,7 @@ class ReferenceDistillationWorker(
 
             for (index in completed until batches.size) {
                 val batch = batches[index]
-                val progress = 10 + ((index + 1) * 60 / batches.size.coerceAtLeast(1))
+                val progress = 10 + ((index + 1) * 62 / batches.size.coerceAtLeast(1))
                 setProgress(
                     progressData(
                         stage = "distill",
@@ -235,12 +250,20 @@ class ReferenceDistillationWorker(
                 )
                 setForeground(
                     foreground(
-                        "正在分层蒸馏《${manuscript.title}》 · ${index + 1}/${batches.size}（共${samples.size}章样本）",
+                        "双层蒸馏《${manuscript.title}》 · ${index + 1}/${batches.size}（${samples.size}章深度样本）",
                         progress,
                     )
                 )
-                val observation = distillBatch(gateway, manuscript.title, batch, index + 1, batches.size)
+
+                val observation = distillBatch(
+                    gateway = gateway,
+                    title = manuscript.title,
+                    batch = batch,
+                    index = index + 1,
+                    total = batches.size,
+                )
                 observations += observation
+
                 checkpointStore.save(
                     ReferenceDistillationCheckpoint(
                         fingerprint = fingerprint,
@@ -261,7 +284,7 @@ class ReferenceDistillationWorker(
             setProgress(
                 progressData(
                     stage = "aggregate",
-                    progress = 82,
+                    progress = 84,
                     title = manuscript.title,
                     provider = providerLabel,
                     model = modelLabel,
@@ -269,7 +292,8 @@ class ReferenceDistillationWorker(
                     batches = batches.size,
                 )
             )
-            setForeground(foreground("正在聚合《${manuscript.title}》整书 Style DNA", 82))
+            setForeground(foreground("正在聚合《${manuscript.title}》Style DNA + Story DNA", 84))
+
             val dossier = aggregate(gateway, manuscript, localMetrics, observations)
             val reportId = id.toString()
             reportStore.save(
@@ -282,28 +306,29 @@ class ReferenceDistillationWorker(
                 localMetrics = localMetrics,
                 dossier = dossier,
             )
+
             archive.merge(
                 bundle = CreationResearchBundle(
-                    originalText = "本地导入参考小说蒸馏：${manuscript.title}",
+                    originalText = "本地导入参考小说双层蒸馏：${manuscript.title}",
                     groups = listOf(
                         ReferenceResearchGroup(
                             target = manuscript.title,
                             result = WebResearchResult(
-                                query = "本地导入分层蒸馏 · ${manuscript.chapters.size} 章 · AI覆盖${samples.size}章 · 不保存原文",
+                                query = "本地双层蒸馏 · ${manuscript.chapters.size}章全书统计 · AI深度分层${samples.size}章 · Style+Story DNA",
                                 sources = listOf(
                                     WebResearchSource(
-                                        title = "[本地蒸馏] ${manuscript.title} · Style DNA",
+                                        title = "[本地蒸馏] ${manuscript.title} · Style + Story DNA",
                                         url = "local://distillation/$reportId",
-                                        snippet = dossier.content.take(650),
+                                        snippet = dossier.content.take(1_000),
                                         detail = buildString {
                                             appendLine(dossier.summary)
-                                            dossier.stateChanges.take(18).forEach { change ->
+                                            dossier.stateChanges.take(30).forEach { change ->
                                                 appendLine("${change.subject}/${change.field}: ${change.after.ifBlank { change.before }}")
                                             }
-                                        }.take(1600),
+                                        }.take(3_200),
                                     )
                                 ),
-                                engine = "Local import + adaptive AI distillation",
+                                engine = "Local import + adaptive dual-layer AI distillation",
                             ),
                         )
                     ),
@@ -322,9 +347,11 @@ class ReferenceDistillationWorker(
                     batches = batches.size,
                 )
             )
-            setForeground(foreground("《${manuscript.title}》蒸馏完成，已加入长期研究档案", 100))
+            setForeground(foreground("《${manuscript.title}》双层 DNA 蒸馏完成", 100))
             checkpointStore.clear(fingerprint)
+            sourceStore.remove(id.toString())
             runCatching { source.delete() }
+
             Result.success(
                 workDataOf(
                     "title" to manuscript.title,
@@ -334,17 +361,18 @@ class ReferenceDistillationWorker(
                     "model" to modelLabel,
                     "reportId" to reportId,
                     "fingerprint" to fingerprint,
+                    "storyDna" to true,
                 )
             )
         }.getOrElse { error ->
-            val message = error.message ?: "参考小说蒸馏失败"
-            if (runAttemptCount < 2 && isRetryable(message)) {
+            val rawMessage = error.message ?: "参考小说蒸馏失败"
+            if (runAttemptCount < 2 && isRetryable(rawMessage)) {
                 Result.retry()
             } else {
                 val checkpoint = checkpointStore.load(fingerprint)
                 Result.failure(
                     workDataOf(
-                        "error" to message.take(500),
+                        "error" to friendlyFailure(rawMessage).take(500),
                         "title" to initialTitle,
                         "resumable" to ((checkpoint?.completedBatches ?: 0) > 0),
                         "completedBatches" to (checkpoint?.completedBatches ?: 0),
@@ -374,6 +402,12 @@ class ReferenceDistillationWorker(
         "batches" to batches,
     )
 
+    /**
+     * One pass extracts two different layers:
+     * STYLE = how the book is written; STORY = what structural content the sampled chapters establish.
+     * STORY may contain source-specific names for analysis, but later creation prompts explicitly treat
+     * those details as understanding-only and require original replacements.
+     */
     private suspend fun distillBatch(
         gateway: AiGateway,
         title: String,
@@ -387,21 +421,30 @@ class ReferenceDistillationWorker(
         val output = gateway.generate(
             PromptBundle(
                 system = """
-                    你是琅嬛的“参考小说特征蒸馏器”。用户合法导入了一部自己可访问的小说，用于提炼高层写作规律。
-                    你的任务是抽象分析，不是续写、仿写或复制原文。
+                    你是琅嬛的“参考小说双层蒸馏器”。用户导入了自己可访问的小说，用于创作研究。
+                    同一批材料必须同时抽取两层信息，但不要复述长段原文。
 
-                    只分析这些高层维度：
-                    - 叙事视角与叙事距离
-                    - 句子/段落节奏、对白与动作的配比倾向
-                    - 信息释放、悬念制造、章末钩子
-                    - 人物性格如何通过行动/对白呈现
-                    - 世界规则/能力/设定如何被展示，而不是具体规则内容
-                    - 场景进入/退出、时间跳转、冲突升级方式
-                    - 情绪温度、恐怖/悬疑/爽感来自何处
-                    - 可迁移的结构模式，以及不能照搬的标志性表达/专名/剧情骨架
+                    A. STYLE（怎么写）只分析：
+                    POV / RHYTHM / DIALOGUE / INFO / SUSPENSE / CHARACTERIZATION / RULE_PRESENTATION /
+                    SCENE / EMOTION / STRUCTURE。
 
-                    禁止：复述长段原文；输出连续原文；记忆或要求保留原作句子；建议换名照搬人物或剧情。
-                    输出 GeneratedChapter JSON：title="DISTILL_BATCH"；content=250-500字高层观察；summary=80-180字本批最稳定规律；stateChanges可用 subject="DNA"、field=维度、after=抽象规律、evidence=极短证据描述（不要引用原句）；touchedForeshadowingIds=[]。
+                    B. STORY（写了什么结构）只在本批证据足够时分析：
+                    PROTAGONIST / SUPPORTING / RELATIONSHIP / WORLD / RULE / POWER / FACTION / LOCATION /
+                    CONFLICT / MYSTERY / ARC / PROGRESSION / THEME。
+                    STORY 可以写本作品真实人物名、身份、已明确能力或规则，目的是帮助用户理解原作；
+                    但证据不足时必须省略或明确“本批无法确认”，禁止靠常识补剧情。
+
+                    输出 GeneratedChapter JSON：
+                    - title="DISTILL_BATCH"；
+                    - content=150-320字本批整体观察；
+                    - summary=80-180字最稳定写法规律；
+                    - stateChanges=8-18项，subject 只能是 STYLE 或 STORY；
+                      STYLE: field=上述写法维度，after=高层规律；
+                      STORY: field=上述内容结构维度，after=简洁事实/结构判断；
+                      evidence 只能写“第X章附近/前段样本/中段样本/后段样本”等短证据标签，不抄原句；
+                    - touchedForeshadowingIds=[]。
+
+                    禁止输出连续原文、标志性长句、逐章复述；禁止为了凑字段编造人物、能力或世界规则。
                 """.trimIndent(),
                 user = """
                     参考作品：$title
@@ -409,18 +452,24 @@ class ReferenceDistillationWorker(
 
                     $sampleText
 
-                    只做抽象特征蒸馏，不评价作品优劣，不输出原文摘抄。
+                    先判断本批真正支持哪些 STORY 事实，再抽 STYLE。宁可少写不确定项，也不要脑补。
                 """.trimIndent(),
             )
         )
+
         return buildString {
-            if (output.summary.isNotBlank()) appendLine("稳定规律：${output.summary.take(420)}")
-            output.stateChanges.take(10).forEach { change ->
-                val value = change.after.ifBlank { change.before }.take(180)
-                if (value.isNotBlank()) appendLine("${change.field}: $value")
+            if (output.summary.isNotBlank()) appendLine("STYLE_SUMMARY: ${output.summary.take(420)}")
+            output.stateChanges.take(18).forEach { change ->
+                val kind = change.subject.trim().uppercase()
+                if (kind !in setOf("STYLE", "DNA", "STORY")) return@forEach
+                val normalized = if (kind == "DNA") "STYLE" else kind
+                val value = change.after.ifBlank { change.before }.trim().take(320)
+                if (value.isNotBlank()) {
+                    appendLine("$normalized/${change.field.trim().ifBlank { "UNKNOWN" }}: $value${change.evidence.trim().takeIf(String::isNotBlank)?.let { " [${it.take(80)}]" }.orEmpty()}")
+                }
             }
-            if (length < 500 && output.content.isNotBlank()) appendLine(output.content.take(700))
-        }.take(2_000)
+            if (length < 700 && output.content.isNotBlank()) appendLine("BATCH_OVERVIEW: ${output.content.take(700)}")
+        }.take(3_500)
     }
 
     private suspend fun aggregate(
@@ -431,32 +480,33 @@ class ReferenceDistillationWorker(
     ): GeneratedChapter = gateway.generate(
         PromptBundle(
             system = """
-                你是琅嬛的“作品 Style DNA 聚合器”。把覆盖全书不同阶段的多批观察合并成一份稳定、可复用的参考作品档案。
-                不得复制原作文本，不得输出标志性原句，不得要求模仿具体作者的独特句式。目标是让后续原创小说借鉴高层技术，而不是复刻作品。
+                你是琅嬛的“作品双层 DNA 聚合器”。把跨全书不同阶段的分批观察聚合成一份用户可查看、后续原创可引用的研究档案。
 
-                输出 GeneratedChapter JSON：
-                - title=作品名；
-                - content=350-650字“作品高层档案”，包括大致阅读体验、叙事组织、信息释放、人物塑造、规则呈现、节奏/悬念；
-                - summary=180-350字“Style DNA 摘要”；
-                - stateChanges 8-18项，subject 只能用 DNA / KEEP / TRANSFORM / AVOID：
-                  * DNA：field=POV/RHYTHM/DIALOGUE/INFO/SUSPENSE/CHARACTER/RULE/SCENE/EMOTION/STRUCTURE 等维度，after=抽象规律；
-                  * KEEP：可直接借鉴的高层机制；
-                  * TRANSFORM：可借鉴但必须原创化改造的机制；
-                  * AVOID：标志性角色、专名、独特剧情骨架、原句等不得照搬的内容；
-                - evidence 只写“前段分层样本/中段分层样本/后段分层样本/本地统计”等短标签，不写原句；
-                - touchedForeshadowingIds=[]。
+                必须同时输出：
+                1. Story DNA（content，500-900字）：尽量明确主角是谁、身份/动机/核心困境、重要配角与关系、世界观、硬规则、能力/成长体系、主要势力与地点、核心谜团/冲突、剧情阶段演化、主题。只写分层证据支持的内容；跨批次冲突时标“存在阶段变化/样本不一致”，不能擅自选一个当真。
+                2. Style DNA（summary，220-420字）：视角、叙事距离、句段节奏、对白、信息释放、悬念、章末钩子、人物塑造手法、规则呈现、场景切换、情绪与结构模式。
+                3. stateChanges 18-36项：
+                   - STYLE：field=POV/RHYTHM/DIALOGUE/INFO/SUSPENSE/CHARACTERIZATION/RULE_PRESENTATION/SCENE/EMOTION/STRUCTURE；after=稳定高层技法。
+                   - STORY：field=PROTAGONIST/SUPPORTING/RELATIONSHIP/WORLD/RULE/POWER/FACTION/LOCATION/CONFLICT/MYSTERY/ARC/PROGRESSION/THEME；after=本作品结构化事实或阶段变化。
+                   - KEEP：可迁移的通用高层机制。
+                   - TRANSFORM：值得参考、但新书必须重新设计的机制。
+                   - AVOID：原作专名、人物组合、具体能力规则、独特谜底、剧情骨架、标志性表达等禁止照搬的内容。
+                4. evidence 只能写“前段分层样本/中段分层样本/后段分层样本/跨段共同出现/本地统计”等短标签，不写原句。
+                5. touchedForeshadowingIds=[]。
+
+                这是分析，不是仿写。可以准确描述原作主角和世界设定来帮助用户理解，但后续原创必须转换，不允许换名复刻。
             """.trimIndent(),
             user = """
                 作品：${manuscript.title}
-                章节数：${manuscript.chapters.size}
+                总章节：${manuscript.chapters.size}
 
                 【全书本地结构统计】
                 $metrics
 
-                【跨全书分层 AI 蒸馏观察】
-                ${observations.joinToString("\n\n---\n\n").take(20_000)}
+                【跨全书双层 AI 观察】
+                ${observations.joinToString("\n\n---\n\n").take(32_000)}
 
-                请综合前中后不同阶段的稳定共同规律和明显变化，不还原原文，不做逐章剧情复述。
+                请先交叉比对不同阶段，再生成 Story DNA + Style DNA。对不确定的人物/能力/规则要写明不确定，不要补全。
             """.trimIndent(),
         )
     )
@@ -466,12 +516,16 @@ class ReferenceDistillationWorker(
         if (chapters.isEmpty()) return emptyList()
         val desired = desiredSampleCount(chapters.size).coerceAtMost(chapters.size)
         val indices = linkedSetOf<Int>()
+
         fun add(index: Int) {
             if (index in chapters.indices) indices += index
         }
 
+        // Always inspect the exact beginning/end plus evenly distributed interior stages.
         add(0)
         add(1)
+        add(2)
+        add(chapters.lastIndex - 2)
         add(chapters.lastIndex - 1)
         add(chapters.lastIndex)
 
@@ -502,23 +556,26 @@ class ReferenceDistillationWorker(
         }
     }
 
+    /** Adaptive deep sampling. All chapters still participate in local statistics. */
     private fun desiredSampleCount(chapterCount: Int): Int = when {
-        chapterCount <= 12 -> chapterCount
-        chapterCount <= 60 -> 12
-        chapterCount <= 150 -> 18
-        chapterCount <= 300 -> 24
-        chapterCount <= 600 -> 30
-        chapterCount <= 1_000 -> 36
-        else -> 42
+        chapterCount <= 20 -> chapterCount
+        chapterCount <= 80 -> 24
+        chapterCount <= 200 -> 36
+        chapterCount <= 400 -> 48
+        chapterCount <= 700 -> 56
+        chapterCount <= 1_000 -> 64
+        chapterCount <= 1_500 -> 72
+        else -> 80
     }
 
     private fun sampleCharsFor(chapterCount: Int): Int = when {
-        chapterCount > 1_000 -> 2_000
-        chapterCount > 600 -> 2_300
-        chapterCount > 300 -> 2_700
-        chapterCount > 150 -> 3_100
-        chapterCount > 60 -> 3_600
-        else -> 4_800
+        chapterCount > 1_500 -> 1_700
+        chapterCount > 1_000 -> 1_900
+        chapterCount > 700 -> 2_100
+        chapterCount > 400 -> 2_300
+        chapterCount > 200 -> 2_600
+        chapterCount > 80 -> 3_000
+        else -> 4_200
     }
 
     private fun compactChapterSample(chapter: ImportedChapter, maxChars: Int): String {
@@ -528,11 +585,11 @@ class ReferenceDistillationWorker(
         val middleStart = (text.length / 2 - piece / 2).coerceAtLeast(piece)
         return buildString {
             appendLine(text.take(piece))
-            appendLine("\n[…中段省略，仅做结构分层采样…]\n")
+            appendLine("\n[…本章中段省略，保留中段采样…]\n")
             appendLine(text.substring(middleStart, (middleStart + piece).coerceAtMost(text.length)))
-            appendLine("\n[…后段采样…]\n")
+            appendLine("\n[…本章后段采样…]\n")
             append(text.takeLast(piece))
-        }.take(maxChars + 100)
+        }.take(maxChars + 120)
     }
 
     private fun localMetrics(manuscript: ImportedManuscript, sampledChapters: Int): String {
@@ -549,12 +606,10 @@ class ReferenceDistillationWorker(
         val chapterAverage = lengths.average().takeIf { !it.isNaN() } ?: 0.0
         val shortParagraphRatio = if (allParagraphs.isEmpty()) 0 else allParagraphs.count { it.length <= 45 } * 100 / allParagraphs.size
         return buildString {
-            appendLine("总章节：${chapters.size}；总文本约：${lengths.sum()} 字符")
-            appendLine("全书平均章节长度：${chapterAverage.toInt()} 字符")
-            appendLine("全书平均段落长度：${paragraphAverage.toInt()} 字符")
-            appendLine("全书含对白标记的段落约占：$dialogueRatio%")
-            appendLine("全书45字符以内短段约占：$shortParagraphRatio%")
-            appendLine("AI分层阅读章节：$sampledChapters/${chapters.size}；样本按开篇、前中段、中段、中后段、结尾均匀覆盖。")
+            appendLine("全书结构扫描：${chapters.size}/${manuscript.chapters.size} 个有效章节（不是只处理 $sampledChapters 章）")
+            appendLine("总文本约：${lengths.sum()} 字符；平均章节：${chapterAverage.toInt()} 字符")
+            appendLine("平均段落：${paragraphAverage.toInt()} 字符；含对白标记段落约：$dialogueRatio%；45字符以内短段约：$shortParagraphRatio%")
+            appendLine("AI 深度分层阅读：$sampledChapters/${chapters.size} 章；覆盖开篇、前中段、中段、中后段、后段与结尾，用于 Style DNA + Story DNA。")
         }
     }
 
@@ -569,7 +624,7 @@ class ReferenceDistillationWorker(
         }
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("琅嬛 · 参考小说蒸馏")
+            .setContentTitle("琅嬛 · 参考小说双层蒸馏")
             .setContentText(text)
             .setOnlyAlertOnce(true)
             .setOngoing(progress < 100)
@@ -585,6 +640,19 @@ class ReferenceDistillationWorker(
     private fun isRetryable(message: String): Boolean {
         val lower = message.lowercase()
         return listOf("timeout", "timed out", "429", "502", "503", "504", "network", "connection", "socket").any(lower::contains)
+    }
+
+    private fun friendlyFailure(message: String): String {
+        val lower = message.lowercase()
+        return when {
+            "unexpected json" in lower || "json token" in lower || "serialization" in lower ->
+                "AI 已返回结果，但结构化 JSON 格式异常。已保留完成批次断点，可直接从断点继续；不会重跑前面的 AI 批次。"
+            "timeout" in lower || "timed out" in lower || "超时" in message ->
+                "AI 或中转站响应超时。已保留完成批次断点，可从断点继续。"
+            "429" in lower -> "AI 服务触发频率限制（429）。稍后可从断点继续。"
+            "502" in lower || "503" in lower || "504" in lower -> "中转站或上游模型暂时不可用。已保留断点，可稍后继续。"
+            else -> message
+        }
     }
 
     private fun fallbackFingerprint(source: File): String = MessageDigest.getInstance("SHA-256")
