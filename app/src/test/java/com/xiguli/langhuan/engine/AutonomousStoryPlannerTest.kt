@@ -35,11 +35,12 @@ class AutonomousStoryPlannerTest {
         val planner = AutonomousStoryPlanner(FakeGateway())
         val plan = planner.plan(snapshot, draft(), 3)
         val updated = planner.apply(snapshot, plan)
+        val expectedPlan = AutonomousExecutionEngine().enrichRevealBudgets(snapshot, plan)
 
         assertEquals(snapshot.bible, updated.bible)
         assertEquals(snapshot.outline, updated.outline)
         assertEquals(snapshot.knowledgeLedger, updated.knowledgeLedger)
-        assertEquals(plan, updated.longForm.autonomousPlan)
+        assertEquals(expectedPlan, updated.longForm.autonomousPlan)
     }
 
     @Test
