@@ -17,9 +17,8 @@ import kotlinx.coroutines.withTimeout
 /**
  * 分阶段建书引擎。
  *
- * 重要原则：用户上传并被识别为“作品设定”的文件不是参考素材，而是硬约束。
- * AI 可以补缺口、整理表达，但不能把明确的卷数、命名人物、规则、势力、剧情节点
- * 或终局方向重新发明成另一套方案。
+ * 用户上传并被识别为“作品设定”的文件是硬约束，不是参考素材。
+ * AI 可以补缺口和整理表达，但不能删卷、并卷、把类别当人物，或偷换明确规则和终局。
  */
 internal class ProgressiveFoundationEngine(
     private val gateway: AiGateway,
@@ -141,7 +140,6 @@ internal class ProgressiveFoundationEngine(
                 chapterCount = firstVolumeChapterCount(working)
             }
 
-            // 章纲属于可补充层。核心蓝图已经有效时，单个模型/中转站超时不能把整本书永久锁死。
             if (chapterCount >= 5) onCheckpoint(2, working)
         } else {
             onStage("2/3 · 已恢复第一卷章纲断点")
@@ -176,6 +174,8 @@ internal class ProgressiveFoundationEngine(
         withTimeout(STAGE_TIMEOUT_MS) { gateway.generate(prompt) }
     } catch (_: TimeoutCancellationException) {
         null
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
     } catch (_: Throwable) {
         null
     }
@@ -344,7 +344,6 @@ internal class ProgressiveFoundationEngine(
             locks.lockedVolumes.map { locked ->
                 val ai = aiVolumes.firstOrNull { it.order == locked.order }
                 locked.copy(
-                    // 用户原卷纲是硬约束。AI 只能补充冲突措辞，不能替换原卷目标或卷末节点。
                     conflict = ai?.conflict?.takeIf(String::isNotBlank) ?: locked.conflict,
                     chapters = base.volumes.firstOrNull { it.order == locked.order }?.chapters.orEmpty(),
                 )
@@ -733,12 +732,12 @@ internal class ProgressiveFoundationEngine(
                 val starts = lines.indices.filter { index ->
                     Regex("^###\\s+(?:第?[一二三四五六七八九十\\d]+卷|卷[一二三四五六七八九十\\d]+)").containsMatchIn(lines[index].trim())
                 }
-                return starts.mapNotNullIndexed { idx, start ->
+                return starts.mapIndexedNotNull { idx, start ->
                     val heading = lines[start].removePrefix("###").trim()
                     val orderMatch = Regex("(?:第?([一二三四五六七八九十\\d]+)卷|卷([一二三四五六七八九十\\d]+))").find(heading)
-                        ?: return@mapNotNullIndexed null
-                    val rawOrder = orderMatch.groupValues.drop(1).firstOrNull { it.isNotBlank() } ?: return@mapNotNullIndexed null
-                    val order = chineseOrderStatic(rawOrder) ?: return@mapNotNullIndexed null
+                        ?: return@mapIndexedNotNull null
+                    val rawOrder = orderMatch.groupValues.drop(1).firstOrNull { it.isNotBlank() } ?: return@mapIndexedNotNull null
+                    val order = chineseOrderStatic(rawOrder) ?: return@mapIndexedNotNull null
                     val end = starts.getOrNull(idx + 1) ?: lines.size
                     val body = lines.subList(start + 1, end).joinToString("\n").trim()
                     val name = heading
