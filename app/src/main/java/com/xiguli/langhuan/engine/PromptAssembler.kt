@@ -11,6 +11,7 @@ data class PromptBundle(
 
 class PromptAssembler(
     private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
+    private val longFormEngine: LongFormContinuityEngine = LongFormContinuityEngine(),
 ) {
     fun build(request: GenerationRequest): PromptBundle {
         val snapshot = request.snapshot
@@ -54,7 +55,7 @@ class PromptAssembler(
             }
 
         val foreshadowing = snapshot.relevantForeshadowing.joinToString("\n") {
-            "- id=${it.id}; ${it.title}; 状态=${it.status}; 细节=${it.detail}; 预期回收=${it.expectedPayoff}"
+            "- id=${it.id}; ${it.title}; 状态=${it.status}; 计划窗口=${it.expectedChapterStart}-${it.expectedChapterEnd}; 细节=${it.detail}; 预期回收=${it.expectedPayoff}"
         }
 
         val scenes = request.chapter.scenePlan.sortedBy { it.order }.joinToString("\n") {
@@ -67,6 +68,7 @@ class PromptAssembler(
         val recentMemory = snapshot.recentSummaries.joinToString("\n") { "- $it" }
         val longTerm = snapshot.longTermSummary.ifBlank { "暂无；以锁定设定与最近事件为准。" }
         val chronology = chronologyGuard.promptText(snapshot, request.chapter.scenePlan)
+        val longFormNavigation = longFormEngine.promptText(snapshot)
 
         return PromptBundle(
             system = """
@@ -77,7 +79,7 @@ class PromptAssembler(
                 2. 本章必须完成章纲目标，并服务于卷纲和总纲主题。
                 3. 不得让角色拥有其尚未知晓的信息，不得瞬移，不得无因改变性格、关系或能力。
                 4. 新增重要人物、规则、能力、地点或道具时，必须在 stateChanges 中明确声明。
-                5. 不得提前回收未到时机的伏笔；不得遗忘本章要求触及的伏笔。
+                5. 不得提前回收未到时机的伏笔；PAYOFF_DUE 表示进入合理回收窗口，OVERDUE 表示应该优先处理但仍需自然回收，禁止机械硬塞。
                 6. 若用户临时要求与锁定设定冲突，以锁定设定为准。
                 7. 长期摘要、RAG 检索片段只作为历史证据；若与锁定圣经冲突，以锁定圣经为最高优先级。
                 8. 【文风模板】决定叙述语气、句式、节奏、视角距离和修辞偏好；它可以改变“怎么写”，但不能改变“发生什么”。
@@ -86,7 +88,9 @@ class PromptAssembler(
                 11. 【时间轴锁】与锁定设定同级。没有场景计划或章纲授权，禁止擅自跨天、跨月、跨年、切闪回或改变事件先后顺序。
                 12. 场景之间必须体现合理耗时。人物换地点、睡眠、等待、调查和交通不能出现“空间到了但时间没走”的瞬移。
                 13. 任何过去叙事都要区分“人物短暂回忆”与“真正闪回场景”；只有后者才能改变叙事时间层。
-                14. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
+                14. 【超长篇导航】是滚动规划与压缩记忆，不高于锁定圣经；但本章应优先推进当前剧情弧，避免在旧弧未收束时无理由再开一条同等级主线。
+                15. 角色成长必须由选择、代价和章级事件推动。不得因为“已经写了很多章”就自动性格突变，也不得让成长曲线长期完全静止。
+                16. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
@@ -101,6 +105,9 @@ class PromptAssembler(
 
                 【当前大纲链】
                 $outline
+
+                【超长篇导航】
+                $longFormNavigation
 
                 【时间轴锁】
                 $chronology
