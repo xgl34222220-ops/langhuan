@@ -94,16 +94,7 @@ data class TimelineEvent(
 )
 
 @Serializable
-enum class ForeshadowStatus {
-    PLANTED,
-    DEVELOPING,
-    /** 已进入计划回收窗口，但正文尚未确认回收。 */
-    PAYOFF_DUE,
-    /** 已超过计划最晚回收章节，长篇体检会持续提醒。 */
-    OVERDUE,
-    RESOLVED,
-    ABANDONED,
-}
+enum class ForeshadowStatus { PLANTED, DEVELOPING, RESOLVED, ABANDONED }
 
 @Serializable
 data class Foreshadowing(
