@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.ChapterEditorStore
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.StoredChapterVersion
+import com.xiguli.langhuan.domain.AuthorLearningSource
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.engine.AuthorPreferenceEngine
 import com.xiguli.langhuan.engine.ChapterDependencyAnalyzer
 import com.xiguli.langhuan.engine.ChapterDependencyReport
 import com.xiguli.langhuan.engine.ChronologyGuard
@@ -80,6 +82,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     private val _state = MutableStateFlow(ChapterEditorUiState())
     val state: StateFlow<ChapterEditorUiState> = _state.asStateFlow()
     private var autosaveJob: Job? = null
+    private var lastPersistedContent: String = ""
+    private var pendingLearningSource: AuthorLearningSource = AuthorLearningSource.MANUAL_EDIT
+    private var pendingLearningInstruction: String = ""
 
     fun load(novelId: String, chapterNumber: Int? = null) {
         if (novelId.isBlank()) return
@@ -103,6 +108,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                         lastSavedAt = System.currentTimeMillis(),
                     )
                 }
+                lastPersistedContent = loaded.draft.content
+                pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
+                pendingLearningInstruction = ""
             }.onFailure { error ->
                 _state.update { it.copy(isLoading = false, error = error.message ?: "加载正文失败") }
             }
@@ -167,8 +175,20 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
         if (current.isSaving) return false
         if (!current.dirty && !createVersion) return true
         _state.update { it.copy(isSaving = true, error = null) }
+        val baseline = lastPersistedContent
+        val learningSource = pendingLearningSource
+        val learningInstruction = pendingLearningInstruction
         return runCatching {
-            if (createVersion) store.checkpoint(snapshot, draft) else store.autosave(snapshot, draft)
+            val persisted = if (createVersion) store.checkpoint(snapshot, draft) else store.autosave(snapshot, draft)
+            val profiledSnapshot = AuthorPreferenceEngine.observeEdit(
+                snapshot = persisted.snapshot,
+                chapterNumber = persisted.draft.chapterNumber,
+                before = baseline,
+                after = persisted.draft.content,
+                source = learningSource,
+                instruction = learningInstruction,
+            )
+            if (profiledSnapshot != persisted.snapshot) store.autosave(profiledSnapshot, persisted.draft) else persisted
         }.fold(
             onSuccess = { persisted ->
                 val versions = if (createVersion) store.versions(persisted.draft.novelId, persisted.draft.chapterNumber) else _state.value.versions
@@ -184,6 +204,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                         message = if (announce) "已创建版本 v${persisted.draft.version}" else it.message,
                     )
                 }
+                lastPersistedContent = persisted.draft.content
+                pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
+                pendingLearningInstruction = ""
                 true
             },
             onFailure = { error ->
@@ -223,6 +246,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                         lastSavedAt = System.currentTimeMillis(),
                     )
                 }
+                lastPersistedContent = loaded.draft.content
+                pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
+                pendingLearningInstruction = ""
             }.onFailure { error ->
                 _state.update { it.copy(isSaving = false, error = error.message ?: "切换章节失败") }
             }
@@ -345,6 +371,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 val persisted = store.autosave(checkpoint.snapshot, repairedDraft)
                 Triple(persisted, store.versions(draft.novelId, draft.chapterNumber), ChronologyRepairAnalyzer.analyze(persisted.snapshot, repairedDraft.content))
             }.onSuccess { (persisted, versions, report) ->
+                lastPersistedContent = persisted.draft.content
+                pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
+                pendingLearningInstruction = ""
                 _state.update {
                     it.copy(
                         snapshot = persisted.snapshot,
@@ -471,6 +500,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 val after = draft.content.substring(safeEnd).take(900)
                 val request = instruction.trim().ifBlank { "在不改变事实和剧情含义的前提下润色，使表达更自然、更有画面感。" }
                 val chronology = current.snapshot?.let { ChronologyGuard().promptText(it, draft.scenePlan) }.orEmpty()
+                val learnedStyle = current.snapshot?.let { AuthorPreferenceEngine.promptText(it) }.orEmpty()
                 val output = gateway.generate(
                     PromptBundle(
                         system = """
@@ -486,6 +516,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
 
                             【时间轴锁】
                             $chronology
+
+                            【已学习作者偏好｜只控制表达】
+                            ${learnedStyle.ifBlank { "暂无稳定学习规则。" }}
 
                             选区前文：
                             $before
@@ -523,6 +556,8 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
         }
         val updatedContent = draft.content.substring(0, proposal.start) + proposal.replacement + draft.content.substring(proposal.end)
         val updated = draft.copy(content = updatedContent)
+        pendingLearningSource = AuthorLearningSource.AI_REWRITE_ACCEPTED
+        pendingLearningInstruction = proposal.instruction
         _state.update {
             it.copy(
                 draft = updated,
@@ -540,6 +575,89 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun dismissRewrite() = _state.update { it.copy(rewriteProposal = null) }
+
+    fun rejectRewriteAndLearn() {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        val proposal = current.rewriteProposal ?: return
+        if (current.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            runCatching {
+                val profiled = AuthorPreferenceEngine.observeEdit(
+                    snapshot = snapshot,
+                    chapterNumber = draft.chapterNumber,
+                    before = proposal.replacement,
+                    after = proposal.original,
+                    source = AuthorLearningSource.AI_REWRITE_REJECTED,
+                )
+                store.autosave(profiled, draft)
+            }.onSuccess { persisted ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        chapters = it.chapters.replaceDraft(persisted.draft),
+                        isSaving = false,
+                        rewriteProposal = null,
+                        message = "已记住这次明确拒绝；只有重复出现的倾向才会升级为稳定偏好",
+                    )
+                }
+                lastPersistedContent = persisted.draft.content
+            }.onFailure { error ->
+                _state.update { it.copy(isSaving = false, error = error.message ?: "记录偏好失败") }
+            }
+        }
+    }
+
+    fun setAuthorLearningEnabled(enabled: Boolean) {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        if (current.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            runCatching { store.autosave(AuthorPreferenceEngine.setEnabled(snapshot, enabled), draft) }
+                .onSuccess { persisted ->
+                    _state.update {
+                        it.copy(
+                            snapshot = persisted.snapshot,
+                            draft = persisted.draft,
+                            chapters = it.chapters.replaceDraft(persisted.draft),
+                            isSaving = false,
+                            message = if (enabled) "作者编辑画像学习已开启" else "作者编辑画像学习已关闭；已有规则保留但不会注入写作",
+                        )
+                    }
+                    lastPersistedContent = persisted.draft.content
+                }
+                .onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "更新画像设置失败") } }
+        }
+    }
+
+    fun clearAuthorProfile() {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        if (current.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            runCatching { store.autosave(AuthorPreferenceEngine.clear(snapshot), draft) }
+                .onSuccess { persisted ->
+                    _state.update {
+                        it.copy(
+                            snapshot = persisted.snapshot,
+                            draft = persisted.draft,
+                            chapters = it.chapters.replaceDraft(persisted.draft),
+                            isSaving = false,
+                            message = "作者编辑画像已重置",
+                        )
+                    }
+                    lastPersistedContent = persisted.draft.content
+                }
+                .onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "重置画像失败") } }
+        }
+    }
 
     fun compare(version: StoredChapterVersion) {
         val current = _state.value.draft?.content ?: return
@@ -577,6 +695,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
             _state.update { it.copy(isSaving = true, error = null, comparison = null) }
             runCatching { store.restore(snapshot, draft, version) }
                 .onSuccess { persisted ->
+                    lastPersistedContent = persisted.draft.content
+                    pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
+                    pendingLearningInstruction = ""
                     val chapters = store.chapters(persisted.draft.novelId)
                     val versions = store.versions(persisted.draft.novelId, persisted.draft.chapterNumber)
                     val liveChapters = chapters.replaceDraft(persisted.draft)

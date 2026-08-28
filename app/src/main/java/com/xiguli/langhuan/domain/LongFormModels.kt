@@ -201,6 +201,61 @@ data class NarrativeDebt(
 )
 
 @Serializable
+enum class AuthorLearningSource {
+    MANUAL_EDIT,
+    AI_REWRITE_ACCEPTED,
+    AI_REWRITE_REJECTED,
+}
+
+@Serializable
+enum class AuthorPreferenceKind {
+    PROSE,
+    DIALOGUE,
+    PACING,
+    EXPLANATION,
+    DESCRIPTION,
+    RHYTHM,
+    OTHER,
+}
+
+/** A compact edit event. Only the changed excerpts are kept; full chapter history stays in versions. */
+@Serializable
+data class AuthorEditSignal(
+    val id: String,
+    val chapterNumber: Int,
+    val source: AuthorLearningSource,
+    val beforeExcerpt: String = "",
+    val afterExcerpt: String = "",
+    val instruction: String = "",
+    val deltaChars: Int = 0,
+    val tags: List<String> = emptyList(),
+    val createdAt: Long = 0L,
+)
+
+/** Stable writing preference distilled from repeated edits or an explicitly accepted instruction. */
+@Serializable
+data class AuthorPreferenceRule(
+    val id: String,
+    val kind: AuthorPreferenceKind = AuthorPreferenceKind.OTHER,
+    val instruction: String,
+    val confidence: Int = 50,
+    val evidenceCount: Int = 1,
+    val lastChapter: Int = 0,
+    val active: Boolean = true,
+)
+
+@Serializable
+data class AuthorPreferenceProfile(
+    val enabled: Boolean = true,
+    val rules: List<AuthorPreferenceRule> = emptyList(),
+    val recentSignals: List<AuthorEditSignal> = emptyList(),
+    val manualEditBatches: Int = 0,
+    val acceptedAiRewrites: Int = 0,
+    val rejectedAiRewrites: Int = 0,
+    val updatedAt: Long = 0L,
+)
+
+@Serializable
 data class LongFormState(
     val config: LongFormConfig = LongFormConfig(),
     val arcs: List<RollingPlotArc> = emptyList(),
@@ -213,5 +268,7 @@ data class LongFormState(
     val executionHistory: List<ChapterExecutionRecord> = emptyList(),
     /** Outstanding narrative promises. These may trigger planning pressure but never rewrite Canon. */
     val narrativeDebts: List<NarrativeDebt> = emptyList(),
+    /** Learns stable prose preferences from accepted/rejected rewrites and meaningful manual edit batches. */
+    val authorProfile: AuthorPreferenceProfile = AuthorPreferenceProfile(),
     val lastSettledChapter: Int = 0,
 )

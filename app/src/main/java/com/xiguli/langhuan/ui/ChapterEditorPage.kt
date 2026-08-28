@@ -38,6 +38,7 @@ fun ChapterEditorPage(
     var rewriteInstruction by remember { mutableStateOf("") }
     var showVersions by remember { mutableStateOf(false) }
     var restoreTarget by remember { mutableStateOf<StoredChapterVersion?>(null) }
+    var confirmResetAuthorProfile by remember { mutableStateOf(false) }
 
     LaunchedEffect(novelId, initialChapter) { viewModel.load(novelId, initialChapter) }
     LaunchedEffect(state.message, state.error) {
@@ -205,6 +206,57 @@ fun ChapterEditorPage(
                             placeholder = { Text("可以手写、粘贴，也可以选中一段交给 AI 局部重写。") },
                             shape = RoundedCornerShape(18.dp),
                         )
+                    }
+                }
+            }
+
+            item {
+                val profile = state.snapshot?.longForm?.authorProfile
+                val learnedRules = profile?.rules.orEmpty()
+                    .filter { it.active && it.confidence >= 60 }
+                    .sortedByDescending { it.confidence }
+                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Tune, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("作者编辑画像", fontWeight = FontWeight.Bold)
+                                Text(
+                                    "从稳定保存后的实际改稿学习；单次小改不会直接变成长期规则。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = profile?.enabled ?: true,
+                                onCheckedChange = viewModel::setAuthorLearningEnabled,
+                                enabled = !state.busy,
+                            )
+                        }
+                        Text(
+                            "稳定规则 ${learnedRules.size} 条 · 手动改稿 ${profile?.manualEditBatches ?: 0} 批 · 采用 AI 改写 ${profile?.acceptedAiRewrites ?: 0} 次 · 明确拒绝 ${profile?.rejectedAiRewrites ?: 0} 次",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        learnedRules.take(4).forEach { rule ->
+                            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .28f)) {
+                                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(rule.instruction, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("置信 ${rule.confidence} · ${rule.evidenceCount} 次证据", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        if (learnedRules.isEmpty()) {
+                            Text("还没有达到稳定阈值的偏好。继续正常改稿即可，不需要专门训练。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if ((profile?.rules?.isNotEmpty() == true) || (profile?.recentSignals?.isNotEmpty() == true)) {
+                            TextButton(onClick = { confirmResetAuthorProfile = true }, enabled = !state.busy) {
+                                Icon(Icons.Rounded.RestartAlt, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text("重置画像")
+                            }
+                        }
                     }
                 }
             }
@@ -441,7 +493,7 @@ fun ChapterEditorPage(
             title = { Text("确认局部重写") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("AI 只会替换刚才选中的部分。应用后仍会先进入自动保存，不会自动写入长期事实记忆。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("AI 只会替换刚才选中的部分。应用后会把这次明确采用的修改要求计入作者编辑画像，但不会写入剧情事实记忆。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("原文", fontWeight = FontWeight.Bold)
                     SelectionContainer { Text(proposal.original) }
                     HorizontalDivider()
@@ -450,7 +502,27 @@ fun ChapterEditorPage(
                 }
             },
             confirmButton = { Button(onClick = viewModel::applyRewrite) { Text("应用替换") } },
-            dismissButton = { TextButton(onClick = viewModel::dismissRewrite) { Text("不要这版") } },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = viewModel::dismissRewrite) { Text("暂不采用") }
+                    TextButton(onClick = viewModel::rejectRewriteAndLearn) { Text("不喜欢，记住") }
+                }
+            },
+        )
+    }
+
+    if (confirmResetAuthorProfile) {
+        AlertDialog(
+            onDismissRequest = { confirmResetAuthorProfile = false },
+            title = { Text("重置作者编辑画像？") },
+            text = { Text("会清空从改稿中学习到的偏好规则和编辑信号，但不会修改正文、设定、大纲或历史版本。") },
+            confirmButton = {
+                Button(onClick = {
+                    confirmResetAuthorProfile = false
+                    viewModel.clearAuthorProfile()
+                }) { Text("确认重置") }
+            },
+            dismissButton = { TextButton(onClick = { confirmResetAuthorProfile = false }) { Text("取消") } },
         )
     }
 

@@ -148,13 +148,18 @@ class GenerationContextBuilder(
         trace += ContextTraceEntry(ContextLayer.B_STATE, "人物/时间线/伏笔状态", "当前章节直接依赖的动态状态")
         val state = fitItems(stateItems, 9_000)
 
-        val styleItems = snapshot.bible
+        val declaredStyle = snapshot.bible
             .filter { it.category == BibleCategory.STYLE }
             .filterNot { it.name == CREATION_FACT_LEDGER }
             .map { "${it.name}：${it.content}${if (it.locked) "（必须遵守）" else "（偏好）"}" }
-            .ifEmpty { listOf("保持自然、具体、有场景感的中文小说叙事；不要写成设定说明或案件报告。") }
-        trace += ContextTraceEntry(ContextLayer.C_STYLE, "作品文风", "控制叙事声音，不得覆盖 S/A 层事实")
-        val style = fitItems(styleItems, 4_000)
+        val learnedStyle = AuthorPreferenceEngine.promptText(snapshot)
+        val styleItems = buildList {
+            if (declaredStyle.isEmpty()) add("保持自然、具体、有场景感的中文小说叙事；不要写成设定说明或案件报告。")
+            else addAll(declaredStyle)
+            if (learnedStyle.isNotBlank()) add(learnedStyle)
+        }
+        trace += ContextTraceEntry(ContextLayer.C_STYLE, "作品文风/作者编辑画像", "只控制叙事声音；学习偏好不得覆盖 S/A 层事实")
+        val style = fitItems(styleItems, 4_800)
 
         val recent = snapshot.recentSummaries.takeLast(10).map { "近期剧情：$it" }
         val safeRetrieved = retrieved
