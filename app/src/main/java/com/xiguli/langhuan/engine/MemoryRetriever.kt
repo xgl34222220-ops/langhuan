@@ -45,21 +45,24 @@ class HybridMemoryRetriever(
                 }
                 val sourceBoost = when (candidate.sourceType) {
                     "BIBLE" -> 1.0
-                    "CHARACTER" -> 0.92
-                    "FORESHADOW" -> 0.88
-                    "TIMELINE" -> 0.82
-                    "LONG_SUMMARY" -> 0.78
-                    "SUMMARY" -> 0.74
+                    "CHARACTER" -> 0.94
+                    "GROWTH" -> 0.93
+                    "ARC" -> 0.91
+                    "FORESHADOW" -> 0.90
+                    "MEDIUM" -> 0.86
+                    "TIMELINE" -> 0.84
+                    "LONG_SUMMARY" -> 0.79
+                    "SUMMARY" -> 0.75
                     "CHAPTER" -> 0.68
                     else -> 0.55
                 }
                 val chapterBoost = candidate.chapterNumber?.let {
-                    1.0 / (1.0 + kotlin.math.abs(currentChapter - it) / 8.0)
+                    1.0 / (1.0 + kotlin.math.abs(currentChapter - it) / 10.0)
                 } ?: 0.45
                 val ageDays = ((now - candidate.updatedAt).coerceAtLeast(0L) / 86_400_000.0)
-                val freshness = 1.0 / (1.0 + ageDays / 45.0)
-                val score = vectorScore * 0.60 + exactScore * 0.22 +
-                    sourceBoost * 0.09 + chapterBoost * 0.06 + freshness * 0.03
+                val freshness = 1.0 / (1.0 + ageDays / 60.0)
+                val score = vectorScore * 0.59 + exactScore * 0.22 +
+                    sourceBoost * 0.10 + chapterBoost * 0.06 + freshness * 0.03
                 RetrievedMemory(candidate, score)
             }
             .filter { it.score >= 0.12 }
