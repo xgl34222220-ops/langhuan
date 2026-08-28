@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Psychology
@@ -43,6 +44,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
     val creationViewModel: NewBookConversationViewModel = viewModel()
     val writingViewModel: WritingFlowViewModel = viewModel()
+    val editorViewModel: ChapterEditorViewModel = viewModel()
     val context = LocalContext.current
     val rootPrefs = remember { context.getSharedPreferences(ROOT_PREFS, 0) }
     val resumeWorkspace = remember {
@@ -54,8 +56,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     var showShelf by remember { mutableStateOf(!resumeWorkspace) }
     var showCreation by remember { mutableStateOf(false) }
     var showWritingFlow by remember { mutableStateOf(false) }
+    var showEditor by remember { mutableStateOf(false) }
     var showIntelligence by remember { mutableStateOf(false) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
+    var editorStoryId by remember { mutableStateOf<String?>(null) }
+    var editorChapter by remember { mutableStateOf<Int?>(null) }
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -96,7 +101,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
         }
     }
 
-    fun reloadWorkspaceAfterFlow() {
+    fun reloadWorkspaceAfterOverlay() {
         rootPrefs.edit().putBoolean(RESUME_WORKSPACE_ONCE, true).apply()
         val activity = context as? Activity
         if (activity != null) {
@@ -107,13 +112,14 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             activity.overridePendingTransition(0, 0)
         } else {
             showWritingFlow = false
+            showEditor = false
         }
     }
 
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
 
-        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showIntelligence) {
+        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -130,6 +136,15 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 }
                 ExtendedFloatingActionButton(
                     onClick = {
+                        editorStoryId = state.snapshot.novel.id
+                        editorChapter = state.snapshot.novel.currentChapter
+                        showEditor = true
+                    },
+                    icon = { Icon(Icons.Rounded.Description, null) },
+                    text = { Text("编辑正文") },
+                )
+                ExtendedFloatingActionButton(
+                    onClick = {
                         writingStoryId = state.snapshot.novel.id
                         showWritingFlow = true
                     },
@@ -144,7 +159,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showShelf && !showAgent && !showCreation && !showWritingFlow && !showIntelligence) {
+        if (showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 if (libraryState.openedBook == null && libraryState.readingChapter == null) {
                     AiFirstShelf(
@@ -171,7 +186,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showCreation && !showAgent && !showWritingFlow && !showIntelligence) {
+        if (showCreation && !showAgent && !showWritingFlow && !showEditor && !showIntelligence) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 ResearchNewBookConversationPage(
                     viewModel = creationViewModel,
@@ -187,23 +202,34 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showWritingFlow && !showAgent && !showIntelligence) {
+        if (showWritingFlow && !showAgent && !showEditor && !showIntelligence) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 WritingFlowPage(
                     novelId = writingStoryId ?: state.snapshot.novel.id,
                     viewModel = writingViewModel,
-                    onClose = ::reloadWorkspaceAfterFlow,
+                    onClose = ::reloadWorkspaceAfterOverlay,
                 )
             }
         }
 
-        if (showIntelligence && !showAgent && !showWritingFlow && !showCreation) {
+        if (showEditor && !showAgent && !showWritingFlow && !showIntelligence) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                ChapterEditorPage(
+                    novelId = editorStoryId ?: state.snapshot.novel.id,
+                    initialChapter = editorChapter ?: state.snapshot.novel.currentChapter,
+                    viewModel = editorViewModel,
+                    onClose = ::reloadWorkspaceAfterOverlay,
+                )
+            }
+        }
+
+        if (showIntelligence && !showAgent && !showWritingFlow && !showEditor && !showCreation) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 StoryIntelligencePage(state = state, onClose = { showIntelligence = false })
             }
         }
 
-        if (showAgent && !showIntelligence) {
+        if (showAgent && !showIntelligence && !showEditor) {
             Surface(
                 Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
