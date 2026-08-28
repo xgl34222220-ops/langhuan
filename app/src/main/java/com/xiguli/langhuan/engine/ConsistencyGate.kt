@@ -25,6 +25,7 @@ class ConsistencyGate(
         issues += chronologyGuard.inspect(request, output)
         issues += NarrativeRuleGuard.inspect(text)
         issues += ChapterContractGuard.inspect(request, output)
+        issues += RevealBudgetGuard.inspect(request, text)
 
         // 生成后的正文再跑一次确定性时间体检。这里只把“明确钟点自相矛盾”这类无歧义问题升级为阻断，
         // 避免 04:03 / 03:21 却声称“一模一样”这种文本进入版本库和长期记忆。
