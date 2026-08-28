@@ -81,6 +81,16 @@ data class TimelineEvent(
     val participants: List<String>,
     val summary: String,
     val consequences: List<String> = emptyList(),
+    /** 可排序的故事日序号。0 代表 0.16 以前的旧数据尚未结构化。 */
+    val storyDay: Int = 0,
+    /** 清晨/上午/中午/下午/傍晚/夜间/深夜等故事内时段。 */
+    val timeOfDay: String = "",
+    /** 同一章节内的事件顺序，从 1 开始。 */
+    val orderInChapter: Int = 0,
+    /** 距上一条主时间线事件经过多久，例如“约20分钟”。 */
+    val elapsedFromPrevious: String = "",
+    /** 闪回事件不会推进当前主时间钟。 */
+    val isFlashback: Boolean = false,
 )
 
 @Serializable
@@ -137,6 +147,14 @@ data class ScenePlan(
     val purpose: String,
     val conflict: String,
     val outcome: String,
+    /** 该场景发生在故事第几天。0 表示旧计划未锁定。 */
+    val storyDay: Int = 0,
+    /** 场景发生时段。 */
+    val timeOfDay: String = "",
+    /** 与上一场之间经过多久。 */
+    val elapsedFromPrevious: String = "",
+    /** 是否为明确的回忆/闪回场景。 */
+    val isFlashback: Boolean = false,
 )
 
 @Serializable
