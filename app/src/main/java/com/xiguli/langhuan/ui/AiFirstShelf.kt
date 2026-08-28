@@ -157,7 +157,7 @@ fun AiFirstShelf(
                     Text(if (aiReady) "导入参考小说 · AI 后台蒸馏" else "配置 AI 后导入参考小说")
                 }
                 Text(
-                    "支持 TXT / Markdown / EPUB。先做本地结构统计，再由当前 AI 分批提炼视角、节奏、信息释放、悬念、人物塑造、规则呈现等高层 Style DNA，最后再由 AI 聚合成长期研究档案；不会把原文导入书架。",
+                    "支持 TXT / Markdown / EPUB。全部章节都会参与本地结构统计；AI 会按篇幅自动增加分层样本，覆盖开篇、前中段、中段、中后段和结尾，再聚合成可查看的 Style DNA 报告并写入长期研究档案。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -224,8 +224,8 @@ private fun ReferenceDistillationTaskCard(
         task.state == WorkInfo.State.ENQUEUED -> "等待后台调度 / 网络连接"
         task.state == WorkInfo.State.BLOCKED -> "等待前置条件"
         task.stage == "parse" -> "正在读取并解析小说"
-        task.stage == "prepare" -> "小说已解析 · 正在准备 AI 蒸馏"
-        task.stage == "distill" && task.batches > 0 -> "AI 正在分批蒸馏 Style DNA · ${task.batch}/${task.batches}"
+        task.stage == "prepare" -> "小说已解析 · 正在准备 AI 分层蒸馏"
+        task.stage == "distill" && task.batches > 0 -> "AI 正在分层蒸馏 Style DNA · ${task.batch}/${task.batches}"
         task.stage == "aggregate" -> "AI 正在聚合整部作品的 Style DNA"
         task.stage == "done" -> "正在完成长期研究档案入库"
         else -> "AI 蒸馏任务正在运行"
@@ -281,15 +281,16 @@ private fun ReferenceDistillationTaskCard(
             }
             if (task.active) {
                 Text(
-                    "这是实际 AI 分析任务，不是本地假进度。任务锁定启动时选中的 AI；之后即使切换模型，这张卡仍显示本任务真正使用的服务与模型。退出琅嬛后由 WorkManager + 前台通知继续执行，再次进入会重新读取真实任务状态。",
+                    "这是实际 AI 分析任务，不是本地假进度。全部章节先做本地结构统计，AI 再按书长进行跨全书分层阅读；任务锁定启动时选中的服务与模型，退出琅嬛后仍由 WorkManager 继续执行。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
             if (task.state == WorkInfo.State.SUCCEEDED) {
+                val coverage = if (task.chapters > 0) (task.samples * 100 / task.chapters).coerceAtMost(100) else 0
                 Text(
-                    "已分析 ${task.chapters.coerceAtLeast(0)} 章 · 抽取 ${task.samples.coerceAtLeast(0)} 个代表样本",
+                    "全书结构统计 ${task.chapters.coerceAtLeast(0)} 章 · AI 分层阅读 ${task.samples.coerceAtLeast(0)} 章${if (task.chapters > 0) "（约 $coverage% 章节覆盖）" else ""}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
