@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -182,7 +183,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                         aiReady = state.provider.ready,
                         onOpenBook = libraryViewModel::openBook,
                         onStartCreation = {
-                            creationViewModel.reset()
+                            // 重新进入时继续上次未完成的会谈；真正清空由会谈页“重新开始”负责。
                             showCreation = true
                         },
                         onConfigureAi = {
@@ -219,7 +220,6 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                         showAiSetup = false
                         if (pendingCreationAfterAiSetup) {
                             pendingCreationAfterAiSetup = false
-                            creationViewModel.reset()
                             showCreation = true
                         }
                     },
@@ -238,6 +238,35 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                         showShelf = false
                         showWritingFlow = true
                         libraryViewModel.openBook(id)
+                        // 正式建书完成后，这次会谈才算结束；下一本书从新会话开始。
+                        creationViewModel.reset()
+                    },
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 16.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.End,
+            ) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        pendingCreationAfterAiSetup = false
+                        showAiSetup = true
+                    }
+                ) {
+                    Icon(Icons.Rounded.Key, "管理 Key / AI 服务")
+                }
+                ExtendedFloatingActionButton(
+                    onClick = { showModelSwitch = true },
+                    icon = { Icon(Icons.Rounded.Tune, null) },
+                    text = {
+                        val provider = state.provider.activeProviderLabel.ifBlank { "AI" }
+                        val model = state.provider.generationModel.ifBlank { "未选模型" }
+                        Text("${provider.take(10)} · ${model.take(14)}")
                     },
                 )
             }
