@@ -69,7 +69,13 @@ class LongFormContinuityEngine {
         val chapter = snapshot.novel.currentChapter.coerceAtLeast(1)
         val currentArc = state.arcs
             .filter { it.phase != PlotArcPhase.RESOLVED }
-            .minByOrNull { abs(chapter - it.startChapter).takeIf { chapter <= it.plannedEndChapter + state.config.arcSpan } ?: Int.MAX_VALUE }
+            .minByOrNull { arc ->
+                if (chapter <= arc.plannedEndChapter + state.config.arcSpan) {
+                    abs(chapter - arc.startChapter)
+                } else {
+                    Int.MAX_VALUE
+                }
+            }
         val medium = state.mediumMemories.takeLast(4)
         val growth = state.characterGrowth.sortedByDescending { it.lastTurningChapter }.take(8)
         val due = snapshot.relevantForeshadowing.filter { item ->
