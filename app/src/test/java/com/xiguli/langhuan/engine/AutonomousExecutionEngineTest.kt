@@ -50,6 +50,25 @@ class AutonomousExecutionEngineTest {
     }
 
     @Test
+    fun `reveal budget denies boundaries outside bounded allow lists`() {
+        val ledger = (1..7).map { index ->
+            KnowledgeBoundary(
+                id = "full-$index",
+                title = "秘密$index",
+                readerState = ReaderKnowledgeState.UNKNOWN,
+                revealPolicy = KnowledgeRevealPolicy.FULL,
+                earliestFullRevealChapter = 1,
+            )
+        }
+        val budget = AutonomousExecutionEngine.revealBudget(snapshot().copy(knowledgeLedger = ledger), 12)
+
+        assertEquals(4, budget.allowedFullBoundaryIds.size)
+        assertTrue("full-5" in budget.forbiddenBoundaryIds)
+        assertTrue("full-7" in budget.forbiddenBoundaryIds)
+        assertEquals(1, budget.maxFullReveals)
+    }
+
+    @Test
     fun `partial execution marks only nearby future chapters for replanning`() = runBlocking {
         val gateway = object : AiGateway {
             override suspend fun generate(prompt: PromptBundle): GeneratedChapter = GeneratedChapter(
