@@ -2,7 +2,6 @@ package com.xiguli.langhuan.engine
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.Service
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -71,10 +70,13 @@ class ReferenceDistillationWorker(
         val path = ReferenceDistillationJobs.path(inputData)
         val fileName = ReferenceDistillationJobs.name(inputData).ifBlank { File(path).name }
         val source = File(path)
-        if (!source.exists() || source.length() == 0L) return Result.failure(workDataOf("error" to "参考小说文件不存在或为空"))
+        val initialTitle = fileName.substringBeforeLast('.').ifBlank { "参考小说" }
+        if (!source.exists() || source.length() == 0L) {
+            return Result.failure(workDataOf("error" to "参考小说文件不存在或为空", "title" to initialTitle))
+        }
 
-        setForeground(foreground("正在读取《${fileName.substringBeforeLast('.')}》", 2))
-        setProgress(workDataOf("stage" to "parse", "progress" to 2))
+        setForeground(foreground("正在读取《$initialTitle》", 2))
+        setProgress(progressData(stage = "parse", progress = 2, title = initialTitle))
 
         return runCatching {
             val manuscript = StoryExchange.import(fileName, source.readBytes())
@@ -86,6 +88,19 @@ class ReferenceDistillationWorker(
             val config = repository.providerConfig(provider.id)
                 ?: error("当前 AI 服务配置无法读取")
             val gateway: AiGateway = UniversalAiGateway(config)
+            val providerLabel = provider.name.ifBlank { provider.protocol.label }
+            val modelLabel = provider.model.ifBlank { config.model }
+
+            setProgress(
+                progressData(
+                    stage = "prepare",
+                    progress = 6,
+                    title = manuscript.title,
+                    provider = providerLabel,
+                    model = modelLabel,
+                )
+            )
+            setForeground(foreground("《${manuscript.title}》已解析，准备 AI 蒸馏", 6))
 
             val samples = buildSamples(manuscript)
             val localMetrics = localMetrics(manuscript)
@@ -94,13 +109,31 @@ class ReferenceDistillationWorker(
 
             batches.forEachIndexed { index, batch ->
                 val progress = 10 + ((index + 1) * 55 / batches.size.coerceAtLeast(1))
-                setProgress(workDataOf("stage" to "distill", "progress" to progress, "batch" to index + 1, "batches" to batches.size))
+                setProgress(
+                    progressData(
+                        stage = "distill",
+                        progress = progress,
+                        title = manuscript.title,
+                        provider = providerLabel,
+                        model = modelLabel,
+                        batch = index + 1,
+                        batches = batches.size,
+                    )
+                )
                 setForeground(foreground("正在蒸馏《${manuscript.title}》 · ${index + 1}/${batches.size}", progress))
                 val observation = distillBatch(gateway, manuscript.title, batch, index + 1, batches.size)
                 observations += observation
             }
 
-            setProgress(workDataOf("stage" to "aggregate", "progress" to 78))
+            setProgress(
+                progressData(
+                    stage = "aggregate",
+                    progress = 78,
+                    title = manuscript.title,
+                    provider = providerLabel,
+                    model = modelLabel,
+                )
+            )
             setForeground(foreground("正在聚合《${manuscript.title}》风格 DNA", 78))
             val dossier = aggregate(gateway, manuscript, localMetrics, observations)
             archive.merge(
@@ -132,7 +165,15 @@ class ReferenceDistillationWorker(
                 detectedTargets = listOf(manuscript.title),
             )
 
-            setProgress(workDataOf("stage" to "done", "progress" to 100, "title" to manuscript.title))
+            setProgress(
+                progressData(
+                    stage = "done",
+                    progress = 100,
+                    title = manuscript.title,
+                    provider = providerLabel,
+                    model = modelLabel,
+                )
+            )
             setForeground(foreground("《${manuscript.title}》蒸馏完成，已加入长期研究档案", 100))
             runCatching { source.delete() }
             Result.success(
@@ -140,6 +181,8 @@ class ReferenceDistillationWorker(
                     "title" to manuscript.title,
                     "chapters" to manuscript.chapters.size,
                     "samples" to samples.size,
+                    "provider" to providerLabel,
+                    "model" to modelLabel,
                 )
             )
         }.getOrElse { error ->
@@ -147,10 +190,28 @@ class ReferenceDistillationWorker(
             if (runAttemptCount < 2 && isRetryable(message)) {
                 Result.retry()
             } else {
-                Result.failure(workDataOf("error" to message.take(500)))
+                Result.failure(workDataOf("error" to message.take(500), "title" to initialTitle))
             }
         }
     }
+
+    private fun progressData(
+        stage: String,
+        progress: Int,
+        title: String,
+        provider: String = "",
+        model: String = "",
+        batch: Int = 0,
+        batches: Int = 0,
+    ): Data = workDataOf(
+        "stage" to stage,
+        "progress" to progress.coerceIn(0, 100),
+        "title" to title,
+        "provider" to provider,
+        "model" to model,
+        "batch" to batch,
+        "batches" to batches,
+    )
 
     private suspend fun distillBatch(
         gateway: AiGateway,
