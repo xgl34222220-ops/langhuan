@@ -9,7 +9,9 @@ data class PromptBundle(
     val user: String,
 )
 
-class PromptAssembler {
+class PromptAssembler(
+    private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
+) {
     fun build(request: GenerationRequest): PromptBundle {
         val snapshot = request.snapshot
         val styleRules = snapshot.bible
@@ -31,12 +33,8 @@ class PromptAssembler {
                 }
                 buildString {
                     append("- [$level] ${node.title}｜目标:${node.objective}｜冲突:${node.conflict}｜转折:${node.turningPoint}")
-                    if (node.mustInclude.isNotEmpty()) {
-                        append("｜必须包含:${node.mustInclude.joinToString("、")}")
-                    }
-                    if (node.forbidden.isNotEmpty()) {
-                        append("｜本层禁止:${node.forbidden.joinToString("、")}")
-                    }
+                    if (node.mustInclude.isNotEmpty()) append("｜必须包含:${node.mustInclude.joinToString("、")}")
+                    if (node.forbidden.isNotEmpty()) append("｜本层禁止:${node.forbidden.joinToString("、")}")
                 }
             }
 
@@ -45,21 +43,30 @@ class PromptAssembler {
                 "目标=${it.goal}; 性格=${it.personality.joinToString("、")}; 关系=${it.relationshipNotes.entries.joinToString("；") { e -> "${e.key}=${e.value}" }}; 已知秘密=${it.knownSecrets.joinToString("、")}"
         }
 
-        val timeline = snapshot.recentTimeline.joinToString("\n") {
-            "- 第${it.chapter}章/${it.storyTime}/${it.location}: ${it.summary}; 后果=${it.consequences.joinToString("、")}"
-        }
+        val timeline = snapshot.recentTimeline
+            .sortedWith(compareBy({ it.chapter }, { it.orderInChapter }))
+            .takeLast(40)
+            .joinToString("\n") {
+                val structured = if (it.storyDay > 0) {
+                    "故事第${it.storyDay}天·${it.timeOfDay.ifBlank { it.storyTime }}｜距上次=${it.elapsedFromPrevious.ifBlank { "未记录" }}${if (it.isFlashback) "｜闪回" else ""}"
+                } else it.storyTime.ifBlank { "旧时间记录未结构化" }
+                "- 第${it.chapter}章/$structured/${it.location}: ${it.summary}; 后果=${it.consequences.joinToString("、")}"
+            }
 
         val foreshadowing = snapshot.relevantForeshadowing.joinToString("\n") {
             "- id=${it.id}; ${it.title}; 状态=${it.status}; 细节=${it.detail}; 预期回收=${it.expectedPayoff}"
         }
 
         val scenes = request.chapter.scenePlan.sortedBy { it.order }.joinToString("\n") {
-            "- 场景${it.order}: 视角=${it.viewpoint}; 地点=${it.location}; 目的=${it.purpose}; " +
-                "冲突=${it.conflict}; 结果=${it.outcome}"
+            val clock = if (it.storyDay > 0 || it.timeOfDay.isNotBlank()) {
+                "故事第${it.storyDay.takeIf { day -> day > 0 } ?: 0}天·${it.timeOfDay.ifBlank { "待锁定" }}; 距上一场=${it.elapsedFromPrevious.ifBlank { "连续" }}; ${if (it.isFlashback) "闪回" else "主时间线"}; "
+            } else "时间沿用时间轴锁; "
+            "- 场景${it.order}: $clock 视角=${it.viewpoint}; 地点=${it.location}; 目的=${it.purpose}; 冲突=${it.conflict}; 结果=${it.outcome}"
         }
 
         val recentMemory = snapshot.recentSummaries.joinToString("\n") { "- $it" }
         val longTerm = snapshot.longTermSummary.ifBlank { "暂无；以锁定设定与最近事件为准。" }
+        val chronology = chronologyGuard.promptText(snapshot, request.chapter.scenePlan)
 
         return PromptBundle(
             system = """
@@ -76,7 +83,10 @@ class PromptAssembler {
                 8. 【文风模板】决定叙述语气、句式、节奏、视角距离和修辞偏好；它可以改变“怎么写”，但不能改变“发生什么”。
                 9. 大纲中的“必须包含”属于硬性验收条件；“本层禁止”与 FORBIDDEN 圣经同级，不得以任何方式绕过或变相出现。
                 10. 每个场景必须产生信息、代价、关系变化、目标进展或新的选择之一；禁止连续大段原地解释和无状态变化的过场。
-                11. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
+                11. 【时间轴锁】与锁定设定同级。没有场景计划或章纲授权，禁止擅自跨天、跨月、跨年、切闪回或改变事件先后顺序。
+                12. 场景之间必须体现合理耗时。人物换地点、睡眠、等待、调查和交通不能出现“空间到了但时间没走”的瞬移。
+                13. 任何过去叙事都要区分“人物短暂回忆”与“真正闪回场景”；只有后者才能改变叙事时间层。
+                14. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
@@ -91,6 +101,9 @@ class PromptAssembler {
 
                 【当前大纲链】
                 $outline
+
+                【时间轴锁】
+                $chronology
 
                 【长期故事摘要】
                 $longTerm
@@ -116,7 +129,7 @@ class PromptAssembler {
                 补充要求：${request.extraInstruction.ifBlank { "无" }}
 
                 返回字段：title、content、summary、stateChanges、touchedForeshadowingIds。
-                summary 必须是 120-260 字的高信息密度事实摘要，包含关键事件、人物状态变化、地点、获得/失去的信息和未解决问题，供后续长期记忆使用。
+                summary 必须是 120-260 字的高信息密度事实摘要，包含关键事件、人物状态变化、地点、获得/失去的信息、未解决问题，并在末尾明确写“本章结束时=故事第N天·时段”。
                 stateChanges 每项包含 subject、field、before、after、evidence。人物关系变化请使用 field=relationship，after 写“目标人物=关系变化”；新出现但值得长期追踪的重要人物可使用 field=newCharacter，after 写“地点||情绪||目标||性格标签”。
             """.trimIndent(),
         )
