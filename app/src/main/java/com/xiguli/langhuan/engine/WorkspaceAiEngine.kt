@@ -23,9 +23,17 @@ class WorkspaceAiEngine(
         val characters = snapshot.characters.joinToString("\n") {
             "${it.name}｜地点=${it.location}｜目标=${it.goal}｜情绪=${it.emotionalState}"
         }
+        val nextChapter = current.chapterNumber + 1
         val activeForeshadowing = snapshot.relevantForeshadowing
             .filter { it.status.name != "RESOLVED" && it.status.name != "ABANDONED" }
-            .joinToString("\n") { "${it.title}：${it.detail}，状态=${it.status}，计划${it.expectedChapterStart}-${it.expectedChapterEnd}章回收" }
+            .joinToString("\n") { item ->
+                val urgency = when {
+                    item.expectedChapterEnd > 0 && nextChapter > item.expectedChapterEnd -> "，已超过计划回收窗口"
+                    item.expectedChapterStart > 0 && nextChapter >= item.expectedChapterStart -> "，已进入计划回收窗口"
+                    else -> ""
+                }
+                "${item.title}：${item.detail}，状态=${item.status}，计划${item.expectedChapterStart}-${item.expectedChapterEnd}章回收$urgency"
+            }
         val outline = snapshot.activeOutline.joinToString("\n") {
             "${it.level}:${it.title}｜目标=${it.objective}｜冲突=${it.conflict}｜转折=${it.turningPoint}"
         }
@@ -51,7 +59,7 @@ class WorkspaceAiEngine(
 
                 超长篇规则：
                 1. 下一章优先推进当前 20-40 章滚动剧情弧，不要因为灵感突然新增同等级主线。
-                2. 若存在 PAYOFF_DUE / OVERDUE 伏笔，优先寻找自然触及或回收机会；禁止机械硬塞。
+                2. 若有伏笔已经进入计划回收窗口或超过最晚回收窗口，优先寻找自然触及或回收机会；禁止机械硬塞。
                 3. 角色成长必须承接已记录的阶段与最近转折，不能突然恢复到几十章前的心理状态。
                 4. 长篇体检提醒是风险提示，不是强制剧情；先解决重复、拖延和旧坑，再考虑继续扩张复杂度。
 
