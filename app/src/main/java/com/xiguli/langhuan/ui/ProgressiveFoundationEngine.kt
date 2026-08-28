@@ -12,12 +12,9 @@ import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 
 /**
- * Builds a new-book foundation in several bounded requests instead of asking one model call to emit
- * dozens of bible/character/volume/chapter/foreshadow records at once.
- *
- * The old one-shot request regularly hit the shared 180s HTTP read timeout on reasoning models and
- * relay services. This engine keeps every response smaller and prefers streaming so a long-thinking
- * model can start returning data without being mistaken for a dead request.
+ * Builds a new-book foundation in bounded requests instead of asking one model call to emit dozens
+ * of records at once. Each completed stage can be checkpointed by the caller so a timeout in a later
+ * stage does not force the user to pay for and regenerate earlier successful stages.
  */
 internal class ProgressiveFoundationEngine(
     private val gateway: AiGateway,
@@ -28,69 +25,87 @@ internal class ProgressiveFoundationEngine(
         current: StoryFoundation?,
         instruction: String,
         referenceContext: String = "",
+        resumeStage: Int = 0,
         onStage: (String) -> Unit = {},
+        onCheckpoint: (Int, StoryFoundation) -> Unit = { _, _ -> },
     ): StoryFoundation {
         val conversation = compactConversation(messages)
         val currentSummary = current?.let(::compactFoundation).orEmpty()
+        val safeResume = resumeStage.coerceIn(0, 2)
+        var foundation = current
 
-        onStage("1/3 · 正在搭建世界规则、核心角色和分卷主线……")
-        val coreOutput = request(
-            PromptBundle(
-                system = CORE_SYSTEM,
-                user = buildString {
-                    appendLine("【已确认方案】")
-                    appendLine("书名：${proposal.title}")
-                    appendLine("类型：${proposal.genre}")
-                    appendLine("平台简介：${proposal.premise}")
-                    appendLine("主题：${proposal.theme}")
-                    appendLine("目标字数：${proposal.targetWords}")
-                    appendLine("核心钩子：${proposal.coreHook}")
-                    appendLine("封面方向：${proposal.coverBrief}")
-                    appendLine("内部策划：${proposal.rationale}")
-                    if (referenceContext.isNotBlank()) {
+        if (safeResume < 1 || foundation == null) {
+            onStage("1/3 · 正在搭建世界规则、核心角色和分卷主线……")
+            val coreOutput = request(
+                PromptBundle(
+                    system = CORE_SYSTEM,
+                    user = buildString {
+                        appendLine("【已确认方案】")
+                        appendLine("书名：${proposal.title}")
+                        appendLine("类型：${proposal.genre}")
+                        appendLine("平台简介：${proposal.premise}")
+                        appendLine("主题：${proposal.theme}")
+                        appendLine("目标字数：${proposal.targetWords}")
+                        appendLine("核心钩子：${proposal.coreHook}")
+                        appendLine("封面方向：${proposal.coverBrief}")
+                        appendLine("内部策划：${proposal.rationale}")
+                        if (referenceContext.isNotBlank()) {
+                            appendLine()
+                            appendLine(referenceContext.take(7_000))
+                            appendLine("上面的 Style DNA 是用户本次显式选中的唯一参考集合。未选择的蒸馏作品禁止自动混入。")
+                        }
                         appendLine()
-                        appendLine(referenceContext.take(7_000))
-                        appendLine("上面的 Style DNA 是用户本次显式选中的唯一参考集合。未选择的蒸馏作品禁止自动混入。")
-                    }
-                    appendLine()
-                    appendLine("【用户确认过的会谈事实】")
-                    appendLine(conversation)
-                    if (currentSummary.isNotBlank()) {
+                        appendLine("【用户确认过的会谈事实】")
+                        appendLine(conversation)
+                        if (currentSummary.isNotBlank()) {
+                            appendLine()
+                            appendLine("【当前已有蓝图】")
+                            appendLine(currentSummary)
+                        }
                         appendLine()
-                        appendLine("【当前已有蓝图】")
-                        appendLine(currentSummary)
-                    }
-                    appendLine()
-                    appendLine("【本轮要求】")
-                    appendLine(instruction)
-                    appendLine()
-                    appendLine("只完成核心架构，不生成详细章纲和伏笔。")
-                },
+                        appendLine("【本轮要求】")
+                        appendLine(instruction)
+                        appendLine()
+                        appendLine("只完成核心架构，不生成详细章纲和伏笔。")
+                    },
+                )
             )
-        )
-        var foundation = parseCore(coreOutput, proposal, current)
+            foundation = parseCore(coreOutput, proposal, current)
+            onCheckpoint(1, foundation)
+        } else {
+            onStage("1/3 · 已恢复核心蓝图断点，跳过重复生成")
+        }
 
-        onStage("2/3 · 正在展开第一卷 10–12 章因果链……")
-        val chapterOutput = request(
-            PromptBundle(
-                system = CHAPTER_SYSTEM,
-                user = buildString {
-                    appendLine("【核心蓝图】")
-                    appendLine(compactFoundation(foundation))
-                    if (referenceContext.isNotBlank()) {
+        var working = requireNotNull(foundation)
+        val existingChapterCount = working.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
+        if (safeResume < 2 || existingChapterCount < 6) {
+            onStage("2/3 · 正在展开第一卷 10–12 章因果链……")
+            val chapterOutput = request(
+                PromptBundle(
+                    system = CHAPTER_SYSTEM,
+                    user = buildString {
+                        appendLine("【核心蓝图】")
+                        appendLine(compactFoundation(working))
+                        if (referenceContext.isNotBlank()) {
+                            appendLine()
+                            appendLine("【已选 Style DNA 的节奏/信息释放约束】")
+                            appendLine(referenceContext.take(2_800))
+                        }
                         appendLine()
-                        appendLine("【已选 Style DNA 的节奏/信息释放约束】")
-                        appendLine(referenceContext.take(2_800))
-                    }
-                    appendLine()
-                    appendLine("【本轮要求】")
-                    appendLine(instruction)
-                    appendLine()
-                    appendLine("只输出第一卷详细章纲，必须形成连续因果链。")
-                },
+                        appendLine("【本轮要求】")
+                        appendLine(instruction)
+                        appendLine()
+                        appendLine("只输出第一卷详细章纲，必须形成连续因果链。")
+                    },
+                )
             )
-        )
-        foundation = mergeChapters(foundation, chapterOutput)
+            working = mergeChapters(working, chapterOutput)
+            val chapterCount = working.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
+            require(chapterCount >= 6) { "AI 返回的第一卷章纲不足，已保留核心蓝图断点；可直接重试第 2 阶段。" }
+            onCheckpoint(2, working)
+        } else {
+            onStage("2/3 · 已恢复第一卷章纲断点，跳过重复生成")
+        }
 
         onStage("3/3 · 正在布置伏笔并做蓝图收口……")
         val foreshadowOutput = request(
@@ -98,7 +113,7 @@ internal class ProgressiveFoundationEngine(
                 system = FORESHADOW_SYSTEM,
                 user = buildString {
                     appendLine("【核心蓝图 + 第一卷章纲】")
-                    appendLine(compactFoundation(foundation, includeChapters = true))
+                    appendLine(compactFoundation(working, includeChapters = true))
                     if (referenceContext.isNotBlank()) {
                         appendLine()
                         appendLine("【已选 Style DNA】")
@@ -109,9 +124,10 @@ internal class ProgressiveFoundationEngine(
                 },
             )
         )
-        foundation = mergeForeshadowing(foundation, foreshadowOutput)
+        working = mergeForeshadowing(working, foreshadowOutput)
+        onCheckpoint(3, working)
 
-        return foundation
+        return working
     }
 
     private suspend fun request(prompt: PromptBundle): GeneratedChapter =
