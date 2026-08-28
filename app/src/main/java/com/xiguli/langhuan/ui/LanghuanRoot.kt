@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +46,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     val creationViewModel: NewBookConversationViewModel = viewModel()
     val writingViewModel: WritingFlowViewModel = viewModel()
     val editorViewModel: ChapterEditorViewModel = viewModel()
+    val quickModelViewModel: ProviderQuickSwitchViewModel = viewModel()
     val context = LocalContext.current
     val rootPrefs = remember { context.getSharedPreferences(ROOT_PREFS, 0) }
     val resumeWorkspace = remember {
@@ -58,6 +60,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     var showWritingFlow by remember { mutableStateOf(false) }
     var showEditor by remember { mutableStateOf(false) }
     var showIntelligence by remember { mutableStateOf(false) }
+    var showModelSwitch by remember { mutableStateOf(false) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
@@ -119,7 +122,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
 
-        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence) {
+        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showModelSwitch) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -134,6 +137,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 SmallFloatingActionButton(onClick = { showIntelligence = true }) {
                     Icon(Icons.Rounded.Insights, "长篇监控")
                 }
+                ExtendedFloatingActionButton(
+                    onClick = { showModelSwitch = true },
+                    icon = { Icon(Icons.Rounded.Tune, null) },
+                    text = { Text("模型") },
+                )
                 ExtendedFloatingActionButton(
                     onClick = {
                         editorStoryId = state.snapshot.novel.id
@@ -247,5 +255,13 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 )
             }
         }
+    }
+
+    if (showModelSwitch) {
+        ProviderQuickSwitchSheet(
+            viewModel = quickModelViewModel,
+            preferredProviderId = state.provider.activeProviderId,
+            onDismiss = { showModelSwitch = false },
+        )
     }
 }
