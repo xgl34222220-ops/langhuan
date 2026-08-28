@@ -157,11 +157,13 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                         onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
                     )
                 } else {
-                    ReaderFirstLibrary(
+                    ReaderFirstLibraryV2(
                         viewModel = libraryViewModel,
-                        onEnterWorkspace = { id ->
+                        onEnterWriting = { id ->
                             viewModel.selectStory(id)
+                            writingStoryId = id
                             showShelf = false
+                            showWritingFlow = true
                         },
                         onCloseShelf = { if (libraryState.stories.isNotEmpty()) showShelf = false },
                     )
