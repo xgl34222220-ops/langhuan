@@ -115,7 +115,6 @@ internal class ProgressiveFoundationEngine(
                 require(chapterCount >= 4) {
                     "2/3 第1–5章只解析到 $chapterCount 条有效章纲。核心蓝图已保留，可直接重试本阶段。"
                 }
-                // Keep stage=1 so retry knows the chapter stage is unfinished, but persist the useful half.
                 onCheckpoint(1, working)
             }
 
@@ -171,8 +170,6 @@ internal class ProgressiveFoundationEngine(
     }
 
     private suspend fun request(stage: String, prompt: PromptBundle): GeneratedChapter = try {
-        // Structured JSON is deliberately non-streaming. Several OpenAI-compatible relays expose a
-        // flaky/partial SSE implementation even though normal chat-completions JSON works reliably.
         gateway.generate(prompt)
     } catch (error: Throwable) {
         throw IllegalStateException("$stage 失败：${error.message ?: "AI 没有返回可解析结果"}", error)
@@ -413,7 +410,7 @@ internal class ProgressiveFoundationEngine(
         val normalized = value.replace('-', '_')
         return normalized in setOf("FORESHADOW", "FORESHADOWING", "伏笔", "伏笔计划") ||
             normalized.startsWith("FORESHADOW:") || normalized.startsWith("FORESHADOW_") ||
-            normalized.startsWith("FORESHADOWING:") || normalized.startsWith("FORESHADOWING_\")
+            normalized.startsWith("FORESHADOWING:") || normalized.startsWith("FORESHADOWING_")
     }
 
     private fun volumeOrder(value: String): Int? {
