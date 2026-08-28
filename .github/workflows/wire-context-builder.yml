@@ -1,0 +1,66 @@
+name: Wire Context Builder
+
+on:
+  push:
+    paths:
+      - ".github/workflows/wire-context-builder.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Route RAG through Context Builder D layer
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt")
+          text = path.read_text(encoding="utf-8")
+          old = '''            val memories = repository.retrieveRelevantMemories(current.snapshot.novel.id, ragQuery, current.draft.chapterNumber, 8)
+            val snapshotForPrompt = current.snapshot.copy(recentSummaries = (current.snapshot.recentSummaries + memories).distinct().takeLast(18))
+            val gateway = configuredGateway() ?: DemoAiGateway()
+            runCatching {
+                GenerationPipeline(gateway).generate(GenerationRequest(snapshotForPrompt, current.draft, 2_500)) { preview ->
+                    _state.update { state -> state.copy(streamPreview = preview) }
+                }
+            }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
+'''
+          new = '''            val retrievedContext = repository.retrieveRelevantContext(
+                current.snapshot.novel.id,
+                ragQuery,
+                current.draft.chapterNumber,
+                10,
+            )
+            val gateway = configuredGateway() ?: DemoAiGateway()
+            runCatching {
+                GenerationPipeline(gateway).generate(
+                    request = GenerationRequest(current.snapshot, current.draft, 2_500),
+                    retrievedContext = retrievedContext,
+                ) { preview ->
+                    _state.update { state -> state.copy(streamPreview = preview) }
+                }
+            }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
+'''
+          if old not in text:
+              raise SystemExit("legacy RAG injection block not found")
+          text = text.replace(old, new, 1)
+          if "snapshotForPrompt" in text:
+              raise SystemExit("legacy snapshotForPrompt path still present")
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt
+          git commit -m "fix: route RAG through context builder"
+          git push origin HEAD:main
