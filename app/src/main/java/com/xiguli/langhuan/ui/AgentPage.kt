@@ -94,6 +94,8 @@ internal fun AgentPage(
             }
         }
 
+        item { LongFormAgentPanel(state.snapshot) }
+
         item {
             AgentCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
