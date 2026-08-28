@@ -33,7 +33,7 @@ jobs:
                     _state.update { state -> state.copy(streamPreview = preview) }
                 }
             }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
-'''
+          '''
           new = '''            val retrievedContext = repository.retrieveRelevantContext(
                 current.snapshot.novel.id,
                 ragQuery,
@@ -49,7 +49,7 @@ jobs:
                     _state.update { state -> state.copy(streamPreview = preview) }
                 }
             }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
-'''
+          '''
           if old not in text:
               raise SystemExit("legacy RAG injection block not found")
           text = text.replace(old, new, 1)
