@@ -83,6 +83,7 @@ data class StoryFoundation(
     val characters: List<FoundationCharacter>,
     val volumes: List<FoundationVolume>,
     val foreshadowing: List<FoundationForeshadow>,
+    val creationBrief: String = "",
 )
 
 class StoryFoundationApplier(context: Context) {
@@ -199,6 +200,16 @@ class StoryFoundationApplier(context: Context) {
                 category = BibleCategory.STYLE,
                 name = "叙事风格基线",
                 content = foundation.styleGuide,
+                locked = true,
+            )
+        }
+        if (foundation.creationBrief.isNotBlank() && foundationBible.none { it.name == "建书会谈确认事实" }) {
+            foundationBible += BibleEntry(
+                id = "bible-${UUID.randomUUID()}",
+                novelId = novelId,
+                category = BibleCategory.STYLE,
+                name = "建书会谈确认事实",
+                content = foundation.creationBrief,
                 locked = true,
             )
         }

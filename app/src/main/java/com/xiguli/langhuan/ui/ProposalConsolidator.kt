@@ -32,12 +32,12 @@ internal class ProposalConsolidator(
 
                     必须输出完整 GeneratedChapter JSON：
                     - title=2-12字正式书名；
-                    - content=100-220字“当前最新”的平台简介；
-                    - summary=80-180字内部策划摘要；
+                    - content=完整、连贯的“当前最新”平台简介，篇幅服从故事表达，不机械截断；
+                    - summary=足以指导后续蓝图的内部策划摘要；
                     - stateChanges 只返回1项：subject=实际小说类型；field=一句实际主题命题；before=目标总字数纯数字；after=一句话核心钩子；evidence=封面视觉简报；
                     - touchedForeshadowingIds=[]。
 
-                    平台简介必须是一个连贯故事，不是设定清单：第1句写主角身份与触发事件，第2句写眼前目标，第3句写阻碍他的核心规则/异常，第4句用具体代价或危险收住。120-200字，不加“简介/核心钩子/主题”等小标题，不写参考、融合、借鉴过程，不泄露中后期答案。不要解释你做了什么，只返回结构化结果。
+                    平台简介必须是一个连贯故事，不是设定清单：交代主角身份与触发事件、眼前目标、阻碍他的核心规则/异常，并用具体代价或危险收住。不要为了字数删掉必要因果，不加“简介/核心钩子/主题”等小标题，不写参考、融合、借鉴过程，不泄露中后期答案。不要解释你做了什么，只返回结构化结果。
                 """.trimIndent(),
                 user = buildString {
                     appendLine("【当前缓存方案：可能已经过期】")
@@ -48,7 +48,11 @@ internal class ProposalConsolidator(
                     appendLine("目标字数：${current.targetWords}")
                     appendLine("核心钩子：${current.coreHook}")
                     appendLine("封面：${current.coverBrief}")
-                    appendLine("内部策划：${current.rationale.take(500)}")
+                    appendLine("内部策划：${current.rationale}")
+                    if (current.decisionLedger.isNotBlank()) {
+                        appendLine("已有确认事实账本：")
+                        appendLine(current.decisionLedger)
+                    }
                     appendLine()
                     appendLine("【确认事实账本：这是本轮生成唯一允许采用的创作事实】")
                     appendLine(ledger)
@@ -73,6 +77,7 @@ internal class ProposalConsolidator(
             coreHook = meta?.after.orEmpty().trim().ifBlank { current.coreHook },
             coverBrief = meta?.evidence.orEmpty().trim().ifBlank { current.coverBrief },
             rationale = output.summary.trim().ifBlank { current.rationale },
+            decisionLedger = ledger,
         )
         return SynopsisQualityEditor(gateway).ensure(proposal, ledger)
     }
@@ -87,41 +92,44 @@ internal class ProposalConsolidator(
                     你是新书会谈事实整理员，不写小说方案、不发挥创意，只整理用户已经确认的决定。
                     时间越新的用户消息优先级越高。“B吧/就这个/换成/不要/他/他们/这两本”等短句必须结合紧邻上下文解析；被用户否定、纠正或替换的旧内容放入“已作废”，绝不能继续算确认事实。
                     助手曾经提出的选项只有在用户明确选择后才成立；研究资料只能说明参考作品，不自动成为新书设定。
-                    输出 GeneratedChapter JSON：title="DECISION_LEDGER"；content=不超过1000字的事实账本，按“确认事实 / 已作废 / 仍未确定”三段书写；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    确认事实至少覆盖能确认的：题材体验、主角身份/能力/目标、故事起点、世界规则、核心冲突、参考作品只借鉴什么、明确禁止什么。没有确认就写未确定，禁止补空白。
+                    输出 GeneratedChapter JSON：title="DECISION_LEDGER"；content=完整事实账本，按“确认事实 / 已作废 / 仍未确定”三段书写；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    确认事实必须逐条保留能确认的：题材体验、主角身份/能力/目标、人物关系、故事起点、世界规则、核心冲突、参考作品分别只借鉴什么、用户选中的方案、用户明确禁止什么。信息多就写长一些，绝不能为了压缩篇幅合并掉关键差异。没有确认就写未确定，禁止补空白。
                 """.trimIndent(),
                 user = buildString {
                     appendLine("【当前缓存，仅作为最早基线】")
                     appendLine("${current.title}｜${current.genre}｜${current.premise}｜${current.theme}｜${current.coreHook}")
+                    if (current.decisionLedger.isNotBlank()) {
+                        appendLine("已有确认事实账本：")
+                        appendLine(current.decisionLedger)
+                    }
                     appendLine()
                     appendLine("【按时间顺序的会谈】")
                     appendLine(decisionTranscript(messages))
                 },
             )
         )
-        return output.content.trim().take(1_200).ifBlank { fallbackLedger(current, messages) }
+        return output.content.trim().ifBlank { fallbackLedger(current, messages) }
     }
 
     private fun fallbackLedger(current: NewBookProposal, messages: List<CreationChatMessage>): String = buildString {
         appendLine("确认事实：当前有效方案为《${current.title}》；类型=${current.genre}；主题=${current.theme}；核心钩子=${current.coreHook}。")
         appendLine("最近用户决定：")
-        messages.filter { it.role == "user" }.takeLast(10).forEach { message ->
-            appendLine("- ${message.text.substringBefore(RESEARCH_MARKER).trim().take(500)}")
+        messages.filter { it.role == "user" }.forEach { message ->
+            appendLine("- ${message.text.substringBefore(RESEARCH_MARKER).trim()}")
         }
         appendLine("已作废：凡与更晚用户决定冲突的旧方案。")
         appendLine("仍未确定：会谈中没有被用户明确确认的细节。")
-    }.take(1_500)
+    }
 
     private fun decisionTranscript(messages: List<CreationChatMessage>): String {
-        val recent = messages.takeLast(32)
-        return recent.joinToString("\n") { message ->
+        return messages.joinToString("\n") { message ->
             val plain = if (message.role == "user") {
-                message.text.substringBefore(RESEARCH_MARKER).trimEnd().take(1_000)
+                message.text.substringBefore(RESEARCH_MARKER).trimEnd()
             } else {
-                message.text.take(420)
+                message.text
             }
             if (message.role == "user") "用户决定/问题：$plain" else "助手上下文（仅用于解析用户短句，不等于已确认）：$plain"
-        }.takeLast(12_000)
+        }
     }
 
     private fun normalizeTitle(value: String): String = value.trim()
@@ -133,7 +141,6 @@ internal class ProposalConsolidator(
 
     private fun normalizeSynopsis(value: String): String = value.trim()
         .replace(Regex("\\n{3,}"), "\n\n")
-        .take(220)
 
     private fun isGenrePlaceholder(value: String): Boolean =
         value.isBlank() || value.equals("小说类型", true) || value.equals("类型", true) ||
@@ -153,14 +160,13 @@ internal object SynopsisQuality {
         .replace(Regex("^(?:#+\\s*)?(?:平台)?(?:故事)?简介[:：]?\\s*"), "")
         .replace(Regex("(?m)^\\s*(?:[-*•]|\\d+[.、])\\s*"), "")
         .replace(Regex("\\n{2,}"), "\n")
-        .take(220)
 
     fun needsRewrite(value: String): Boolean {
         val text = normalize(value)
         val compact = text.filterNot(Char::isWhitespace)
-        if (compact.length !in 90..220) return true
+        if (compact.length < 90) return true
         if (Regex("(?:简介|核心钩子|主题|设定融合|参考《|借鉴《|本书将|故事讲述的是)[:：]").containsMatchIn(text)) return true
-        if (text.lines().size > 3) return true
+        if (text.lines().size > 5) return true
         val sentenceCount = Regex("[。！？!?]").findAll(text).count()
         return sentenceCount < 2
     }
@@ -178,7 +184,7 @@ internal class SynopsisQualityEditor(private val gateway: AiGateway) {
             PromptBundle(
                 system = """
                     你是中文网文平台的简介主编。只改简介，不添加、删除或偷换任何设定。
-                    输出 GeneratedChapter JSON：title="SYNOPSIS"；content=120-200字完整平台简介；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    输出 GeneratedChapter JSON：title="SYNOPSIS"；content=完整连贯的平台简介，篇幅由故事信息决定，不机械凑字或截断；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
                     必须写成连续故事：①主角身份与触发事件；②主角眼前必须完成的目标；③阻碍他的核心异常/规则；④失败的具体代价或迫近危险。
                     不写世界观说明书，不罗列名词，不出现“参考/融合/借鉴/主题/核心钩子/本书”，不剧透幕后真相和终局反转，不凭空补人物、能力或规则。句子之间必须因果连贯，主角称谓和人称保持一致。
                 """.trimIndent(),
@@ -188,7 +194,7 @@ internal class SynopsisQualityEditor(private val gateway: AiGateway) {
                     主题：${proposal.theme}
                     核心钩子：${proposal.coreHook}
                     当前简介：${proposal.premise}
-                    确认事实账本：${decisionLedger.take(1_200)}
+                    确认事实账本：$decisionLedger
                 """.trimIndent(),
             )
         )

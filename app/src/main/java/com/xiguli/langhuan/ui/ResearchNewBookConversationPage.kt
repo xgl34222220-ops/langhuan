@@ -142,7 +142,8 @@ fun ResearchNewBookConversationPage(
                         Text(
                             when {
                                 researching -> "正在补全长期研究档案"
-                                state.foundation != null -> "蓝图阶段：继续聊天修改，满意后正式建书"
+                                state.foundation != null && state.blueprintDirty -> "继续正常聊天 · 当前蓝图有新要求待同步"
+                                state.foundation != null -> "继续正常聊天修改，满意后正式建书"
                                 state.proposal != null -> "方案已成形，下一步搭世界、人物和三级大纲"
                                 archiveState.entries.isNotEmpty() -> "已记住 ${archiveState.entries.size} 个作者 / 作品研究档案"
                                 else -> "可查作品/作者，也可融合多本小说的高层设定方法"
@@ -220,6 +221,12 @@ fun ResearchNewBookConversationPage(
                     ResearchFoundationCard(
                         state.foundation!!,
                         state.isBusy || researching,
+                        outOfSync = state.blueprintDirty,
+                        pendingProposal = state.proposal,
+                        onSync = {
+                            retryFoundation = true
+                            viewModel.generateFoundation(false)
+                        },
                         onRegenerate = {
                             retryFoundation = true
                             viewModel.generateFoundation(true)
@@ -429,7 +436,15 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
     }
 }
 
-@Composable private fun ResearchFoundationCard(foundation: StoryFoundation, busy: Boolean, onRegenerate: () -> Unit, onCreate: () -> Unit) {
+@Composable private fun ResearchFoundationCard(
+    foundation: StoryFoundation,
+    busy: Boolean,
+    outOfSync: Boolean,
+    pendingProposal: NewBookProposal?,
+    onSync: () -> Unit,
+    onRegenerate: () -> Unit,
+    onCreate: () -> Unit,
+) {
     Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("建书蓝图", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -441,9 +456,26 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
             foundation.characters.take(8).forEach { Text("${it.name}｜目标：${it.goal}", style = MaterialTheme.typography.bodyMedium) }
             Text("分卷 · ${foundation.volumes.size} 卷 / 第一卷 ${foundation.volumes.firstOrNull()?.chapters?.size ?: 0} 章详细章纲", fontWeight = FontWeight.SemiBold)
             Text("伏笔 · ${foundation.foreshadowing.size} 条 / 圣经 · ${foundation.bible.size} 条", style = MaterialTheme.typography.bodyMedium)
+            if (outOfSync) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("你刚才在聊天里提出了新要求。这里暂时显示上一次同步的蓝图；聊天不会被打断，也不会每说一句就强制重跑整套蓝图。")
+                        pendingProposal?.let { proposal ->
+                            Text("聊天中的当前方案", fontWeight = FontWeight.SemiBold)
+                            Text(proposal.title, style = MaterialTheme.typography.titleMedium)
+                            Text(proposal.premise, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Button(onClick = onSync, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.Sync, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("同步当前聊天到蓝图")
+                        }
+                    }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onRegenerate, enabled = !busy, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Refresh, null); Text("整套重做") }
-                Button(onClick = onCreate, enabled = !busy, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.CheckCircle, null); Text("正式建书") }
+                Button(onClick = onCreate, enabled = !busy && !outOfSync, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.CheckCircle, null); Text("正式建书") }
             }
         }
     }

@@ -65,6 +65,7 @@ data class NewBookProposal(
     val coreHook: String,
     val coverBrief: String,
     val rationale: String,
+    val decisionLedger: String = "",
 )
 
 data class NewBookConversationState(
@@ -77,6 +78,7 @@ data class NewBookConversationState(
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
     val foundationStage: Int = 0,
+    val blueprintDirty: Boolean = false,
     val isBusy: Boolean = false,
     val busyLabel: String = "",
     val createdStoryId: String? = null,
@@ -86,11 +88,12 @@ data class NewBookConversationState(
 
 @Serializable
 private data class NewBookConversationDraft(
-    val schemaVersion: Int = 6,
+    val schemaVersion: Int = 8,
     val messages: List<CreationChatMessage>,
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
     val foundationStage: Int = 0,
+    val blueprintDirty: Boolean = false,
     val selectedReferenceTemplateIds: List<String> = emptyList(),
 )
 
@@ -112,6 +115,7 @@ private class NewBookConversationDraftStore(application: Application) {
             proposal = draft.proposal?.sanitizePlaceholders(),
             foundation = cleanFoundation,
             foundationStage = draft.foundationStage.takeIf { it in 1..3 } ?: inferFoundationStage(cleanFoundation),
+            blueprintDirty = draft.blueprintDirty,
             selectedReferenceTemplateIds = draft.selectedReferenceTemplateIds.distinct(),
         )
     }.getOrElse {
@@ -130,6 +134,7 @@ private class NewBookConversationDraftStore(application: Application) {
                 proposal = state.proposal?.sanitizePlaceholders(),
                 foundation = state.foundation?.sanitizeFoundationPlaceholders(),
                 foundationStage = state.foundationStage.coerceIn(0, 3),
+                blueprintDirty = state.blueprintDirty,
                 selectedReferenceTemplateIds = state.selectedReferenceTemplateIds.distinct(),
             )
         ).toByteArray(Charsets.UTF_8)
@@ -187,10 +192,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 isBusy = true,
                 busyLabel = when {
                     referenceQuestion -> "正在读取所选模板的 Story DNA 事实……"
-                    IdentityRefiner.isIdentityOnlyInstruction(plainInstruction) -> "AI 正在按最新会谈重写书名 / 平台简介……"
-                    before.foundation != null -> "AI 正在按最新决定重构建书蓝图……"
-                    before.proposal != null -> "AI 正在把你的新决定同步进方案……"
-                    else -> "AI 正在继续构思……"
+                    else -> "AI 正在继续和你聊这本书……"
                 },
                 error = null,
             )
@@ -207,7 +209,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 runCatching {
                     NewBookConversationEngine(gateway).reply(
                         messages = history,
-                        currentProposal = before.proposal?.sanitizePlaceholders(),
+                        currentProposal = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders(),
                         referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
                     )
                 }.onSuccess { turn ->
@@ -227,95 +229,10 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 return@launch
             }
 
-            if (IdentityRefiner.isIdentityOnlyInstruction(plainInstruction)) {
-                val currentProposal = before.foundation?.toProposal() ?: before.proposal
-                if (currentProposal != null) {
-                    runCatching {
-                        _state.update { it.copy(busyLabel = "AI 正在先核对最新聊天决定……") }
-                        val aligned = ProposalConsolidator(gateway).consolidate(
-                            current = currentProposal.sanitizePlaceholders(),
-                            messages = history,
-                        )
-                        _state.update { it.copy(proposal = aligned, busyLabel = "AI 正在只重写书名 / 平台简介……") }
-                        IdentityRefiner.refine(
-                            gateway = gateway,
-                            proposal = aligned,
-                            transcript = conversationTranscript(history, keepLatestResearch = false),
-                            instruction = plainInstruction,
-                        )
-                    }.onSuccess { refined ->
-                        _state.update {
-                            it.copy(
-                                proposal = refined.sanitizePlaceholders(),
-                                foundation = before.foundation?.copy(title = refined.title, premise = refined.premise)?.sanitizeFoundationPlaceholders(),
-                                messages = it.messages + CreationChatMessage(
-                                    "assistant",
-                                    "我先按整段会谈核对了最新决定，再只重写书名 / 对外简介；不会再拿旧简介覆盖你后面确认的新设定。",
-                                ),
-                                isBusy = false,
-                                busyLabel = "",
-                            )
-                        }
-                    }.onFailure { error ->
-                        _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "书名 / 简介重写失败")) }
-                    }
-                    return@launch
-                }
-            }
-
-            if (before.foundation != null) {
-                val baseline = before.foundation.sanitizeFoundationPlaceholders().toProposal()
-                runCatching {
-                    _state.update { it.copy(busyLabel = "AI 正在把最新聊天决定合并进当前方案……") }
-                    val refreshed = ProposalConsolidator(gateway).consolidate(
-                        current = baseline,
-                        messages = history,
-                    )
-                    _state.update { it.copy(proposal = refreshed, busyLabel = "AI 正在按最新方案重构建书蓝图……") }
-                    ProgressiveFoundationEngine(gateway).build(
-                        proposal = refreshed,
-                        messages = history,
-                        current = before.foundation.sanitizeFoundationPlaceholders(),
-                        instruction = plainInstruction,
-                        referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
-                        resumeStage = 0,
-                        onStage = { label -> _state.update { it.copy(busyLabel = label) } },
-                        onCheckpoint = { stage, checkpoint ->
-                            val cleanCheckpoint = checkpoint.sanitizeFoundationPlaceholders()
-                            _state.update {
-                                it.copy(
-                                    foundation = cleanCheckpoint,
-                                    proposal = cleanCheckpoint.toProposal(),
-                                    foundationStage = stage,
-                                )
-                            }
-                        },
-                    )
-                }.onSuccess { foundation ->
-                    val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
-                    _state.update {
-                        it.copy(
-                            foundation = cleanFoundation,
-                            proposal = cleanFoundation.toProposal(),
-                            foundationStage = 3,
-                            messages = it.messages + CreationChatMessage(
-                                "assistant",
-                                "建书蓝图已按你最新确认的决定分阶段重构完成。旧方案只作为历史参考，不会覆盖后面的修改。",
-                            ),
-                            isBusy = false,
-                            busyLabel = "",
-                        )
-                    }
-                }.onFailure { error ->
-                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "蓝图修改失败")) }
-                }
-                return@launch
-            }
-
             runCatching {
                 NewBookConversationEngine(gateway).reply(
                     messages = history,
-                    currentProposal = before.proposal?.sanitizePlaceholders(),
+                    currentProposal = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders(),
                     referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
                 )
             }.onSuccess { turn ->
@@ -323,7 +240,11 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     it.copy(
                         messages = it.messages + CreationChatMessage("assistant", turn.reply),
                         proposal = turn.proposal?.sanitizePlaceholders() ?: it.proposal,
-                        foundationStage = if (it.foundation == null) 0 else it.foundationStage,
+                        blueprintDirty = blueprintDirtyAfterConversation(
+                            alreadyDirty = it.blueprintDirty,
+                            hasFoundation = before.foundation != null,
+                            proposalUpdated = turn.proposal != null,
+                        ),
                         isBusy = false,
                         busyLabel = "",
                     )
@@ -336,9 +257,9 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
 
     fun generateFoundation(regenerate: Boolean = false) {
         val before = _state.value
-        val baseline = (before.foundation?.toProposal() ?: before.proposal)?.sanitizePlaceholders() ?: return
+        val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders() ?: return
         if (before.isBusy) return
-        val resumeStage = if (regenerate) 0 else before.foundationStage.coerceIn(0, 2)
+        val resumeStage = if (regenerate || before.blueprintDirty) 0 else before.foundationStage.coerceIn(0, 2)
         val resumeFoundation = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders()
         viewModelScope.launch {
             val gateway = activeGateway()
@@ -350,6 +271,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 it.copy(
                     proposal = baseline,
                     isBusy = true,
+                    blueprintDirty = before.blueprintDirty,
                     busyLabel = "正在把整段会谈的最新决定合并为最终方案……",
                     error = null,
                 )
@@ -386,9 +308,10 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         val cleanCheckpoint = checkpoint.sanitizeFoundationPlaceholders()
                         _state.update {
                             it.copy(
-                                foundation = cleanCheckpoint,
-                                proposal = cleanCheckpoint.toProposal(),
-                                foundationStage = stage,
+                            foundation = cleanCheckpoint,
+                            proposal = cleanCheckpoint.toProposal(),
+                            foundationStage = stage,
+                            blueprintDirty = before.blueprintDirty,
                             )
                         }
                     },
@@ -400,6 +323,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         foundation = cleanFoundation,
                         proposal = cleanFoundation.toProposal(),
                         foundationStage = 3,
+                        blueprintDirty = false,
                         messages = it.messages + CreationChatMessage(
                             "assistant",
                             "建书蓝图已经按整段会谈的最新决定分三阶段生成完成：核心世界与人物、第一卷详细章纲、伏笔计划都已对齐。",
@@ -417,6 +341,10 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     fun createCurrentFoundation() {
         val foundation = _state.value.foundation?.sanitizeFoundationPlaceholders() ?: return
         if (_state.value.isBusy) return
+        if (_state.value.blueprintDirty) {
+            _state.update { it.copy(error = "你在聊天里又改了要求，当前蓝图还是上一次同步的版本。请先点“同步当前聊天”，确认新要求已经进入蓝图后再正式建书。") }
+            return
+        }
         val stage = maxOf(_state.value.foundationStage, inferFoundationStage(foundation))
         if (stage < 3) {
             _state.update {
@@ -429,7 +357,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 it.copy(
                     foundation = foundation,
                     proposal = foundation.toProposal(),
-                    foundationStage = 3,
+                foundationStage = 3,
+                blueprintDirty = false,
                     isBusy = true,
                     busyLabel = "正在把蓝图写入小说圣经、三级大纲和长期记忆……",
                     error = null,
@@ -474,6 +403,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             it.copy(
                 selectedReferenceTemplateIds = next,
                 foundationStage = if (changed && it.foundation != null) 0 else it.foundationStage,
+                blueprintDirty = it.blueprintDirty || (changed && it.foundation != null),
             )
         }
     }
@@ -508,7 +438,7 @@ private class NewBookConversationEngine(
                     你是“琅嬛”的新书策划搭档。通过自然对话把模糊想法发展成原创长篇小说方案，不要先让用户填表。
 
                     规则：
-                    1. 先理解用户想要的阅读体验。普通创作会谈回复控制在80-260字，一次最多追问1个真正会改变路线的问题；已经明确回答过的问题禁止重复追问。不要写长篇分析、不要连续抛三套以上方案、不要用“如果你愿意我可以……”收尾。
+                    1. 先理解用户想要的阅读体验。回复篇幅必须服从当前问题：简单选择直接确认，复杂比较、设定推演或研究结论就完整讲清；不得用机械字数限制删掉必要的理由、区别或设定。只追问真正会改变路线且会谈中仍未解决的问题，已经明确回答过的问题禁止重复追问，不要用“如果你愿意我可以……”收尾。
                     2. 当前轮若带有琅嬛联网资料/长期研究档案，用它核对公开事实；用户明确纠正的作者-作品关系属于项目事实，网页暂未核验只能标待核验，不能反复否定。
                     3. 参考模板有两种用途，必须区分：
                        - 原作事实问答：用户问模板/原作主角姓名、人物、能力、世界观、规则、势力、地点、剧情结构等时，可以并且应该直接说出所选 STORY DNA 已保存的原作事实、人物名和专名；报告没保存的事实就明确说“当前蒸馏报告未确认”。
@@ -518,8 +448,8 @@ private class NewBookConversationEngine(
                        用户说“他们/它们/这两本/前面那几本”时，必须承接最近明确出现或隐藏研究上下文已经解析出的作品，绝不能把代词本身当作书名或新设定。
                     5. 如果已经存在“当前方案”，用户这一轮又修改了主角能力、身份、目标、世界规则、核心冲突、题材、阅读体验、书名或简介，你必须返回一套完整更新后的方案，不能只聊天后继续保留旧 proposal。
                     6. 用户这一轮如果是提问（尤其是模板/原作事实提问），只回答问题，不重写方案、不追问已回答事项、不输出新 proposal。此时输出 GeneratedChapter JSON：title="__CHAT__"；content=直接答案；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    7. 只有确实仍缺一个会改变主线的关键选择、或者用户只是普通聊天而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=简短直接回答或一个必要追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。能从会谈确定就直接确定，禁止为了显得专业而反复确认。
-                    8. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
+                    7. 只有确实仍缺一个会改变主线的关键选择、或者用户只是普通聊天而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=像正常 AI 聊天一样直接回应，或提出一个必要问题；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。能从会谈确定就直接确定，禁止为了显得专业而反复确认。
+                    8. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=完整连贯的平台简介，篇幅服从故事信息；summary=像正常聊天一样直接回应用户：说明你如何理解这条要求、具体改了什么及必要理由，也可以继续讨论，不要写“内部策划摘要”；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
                     9. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。只要核心设定已经改变，就必须按最新事实重写简介，禁止为了省事复用旧简介。
                     10. 若存在“用户显式选择的参考双层 DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
                 """.trimIndent(),
@@ -565,22 +495,26 @@ private class NewBookConversationEngine(
             coreHook = meta.after.trim().ifBlank { currentProposal?.coreHook ?: "一个看似普通的选择，逐渐暴露出更大的真相。" },
             coverBrief = meta.evidence.trim().ifBlank { currentProposal?.coverBrief.orEmpty() },
             rationale = output.summary.trim().ifBlank { currentProposal?.rationale.orEmpty() },
+            decisionLedger = currentProposal?.decisionLedger.orEmpty(),
         ).sanitizePlaceholders()
         val proposal = SynopsisQualityEditor(gateway).ensure(
             proposal = rawProposal,
             decisionLedger = buildString {
-                appendLine("越新的用户决定优先。最近用户输入：$latest")
-                messages.filter { it.role == "user" }.takeLast(8).forEach { message ->
-                    appendLine("- ${message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim().take(500)}")
+                if (!currentProposal?.decisionLedger.isNullOrBlank()) {
+                    appendLine("已有确认事实账本：")
+                    appendLine(currentProposal?.decisionLedger)
                 }
-            }.take(1_500),
+                appendLine("越新的用户决定优先。最近用户输入：$latest")
+                messages.filter { it.role == "user" }.forEach { message ->
+                    appendLine("- ${message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim()}")
+                }
+            },
             force = true,
         )
         return ConversationTurn(
-            reply = buildString {
-                append(if (currentProposal == null) "我已经把方向收束成一套可以落地的方案。" else "我已经按你刚才的决定更新了当前方案。")
-                if (proposal.rationale.isNotBlank()) append("\n").append(proposal.rationale)
-                append("\n如果这个方向对，就可以直接生成建书蓝图；也可以继续聊着改。")
+            reply = proposal.rationale.ifBlank {
+                if (currentProposal == null) "我理解了，这条要求已经进入当前方案。你可以继续补充或直接纠正，方案会跟着改。"
+                else "明白，已经按你刚才的要求修改。你继续说，后面的决定会覆盖前面的旧版本。"
             },
             proposal = proposal,
         )
@@ -594,65 +528,29 @@ private class NewBookConversationEngine(
         appendLine("主题：${proposal.theme}")
         appendLine("目标字数：${proposal.targetWords}")
         appendLine("核心钩子：${proposal.coreHook}")
-        appendLine("内部策划：${proposal.rationale.take(420)}")
+        appendLine("内部策划：${proposal.rationale}")
+        if (proposal.decisionLedger.isNotBlank()) {
+            appendLine("确认事实账本：")
+            appendLine(proposal.decisionLedger)
+        }
     }
 
     private fun looksLikeCreativeDecision(text: String): Boolean {
         if (text.isBlank() || isQuestionLike(text)) return false
         val markers = listOf(
-            "改成", "换成", "不要", "删掉", "就这个", "就选", "选A", "选B", "选C", "a吧", "b吧", "c吧",
+            "改成", "改为", "修改", "调整", "改下", "换成", "换一个", "不要", "删掉", "去掉", "保留", "不行", "不对", "不是", "重新", "再来", "还是", "就这个", "就选", "选A", "选B", "选C", "a吧", "b吧", "c吧",
             "主角", "能力", "身份", "性格", "目标", "世界", "规则", "设定", "剧情", "冲突", "主题", "类型",
-            "题材", "风格", "氛围", "简介", "书名", "名字", "天生", "改吧", "这样吧", "按这个", "用这个",
+            "题材", "风格", "氛围", "简介", "书名", "名字", "天生", "希望", "应该", "改吧", "这样吧", "按这个", "用这个",
         )
         return markers.any { text.contains(it, ignoreCase = true) }
     }
 }
 
-private object IdentityRefiner {
-    fun isIdentityOnlyInstruction(text: String): Boolean {
-        val value = text.trim()
-        if (value.isBlank() || isQuestionLike(value)) return false
-        val targetsIdentity = listOf("书名", "标题", "简介", "介绍", "文案").any(value::contains)
-        if (!targetsIdentity) return false
-        val asksForChange = listOf("改", "换", "重写", "重新写", "优化", "润色", "起一个", "取一个", "帮我写", "再写", "换个")
-            .any(value::contains)
-        if (!asksForChange) return false
-        return listOf("世界观", "设定", "角色", "人物", "主角", "配角", "模板", "原作", "参考", "蒸馏", "能力", "关系", "势力", "主线", "剧情", "大纲", "卷纲", "章纲", "规则", "结局", "主题", "类型", "伏笔")
-            .none(value::contains)
-    }
-
-    suspend fun refine(
-        gateway: AiGateway,
-        proposal: NewBookProposal,
-        transcript: String,
-        instruction: String,
-    ): NewBookProposal {
-        val output = gateway.generateStreaming(
-            PromptBundle(
-                system = """
-                    你是中文网络小说的书名与平台简介编辑。只能改书名和简介，不能改人物、世界规则、主线、结局、类型、主题和核心钩子。
-                    输出 GeneratedChapter JSON：title=2-12字正式书名；content=100-220字平台简介；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    简介只写故事起点、主角目标、核心异常/规则、当下代价或悬念；禁止完整剧情梗概、设定罗列和中后期剧透。
-                    当前 proposal 已经经过整段会谈重新对齐，不要恢复更早版本的简介或设定。
-                """.trimIndent(),
-                user = """
-                    当前书名：${proposal.title}
-                    当前简介：${proposal.premise}
-                    类型：${proposal.genre}
-                    主题：${proposal.theme}
-                    核心钩子：${proposal.coreHook}
-                    用户要求：$instruction
-                    会谈事实：${transcript.takeLast(3_500)}
-                    只重写 title 和 content。
-                """.trimIndent(),
-            )
-        ) { }
-        return proposal.copy(
-            title = sanitizeTitle(output.title).ifBlank { proposal.title },
-            premise = SynopsisQuality.normalize(sanitizeSynopsis(output.content)).ifBlank { proposal.premise },
-        ).sanitizePlaceholders()
-    }
-}
+internal fun blueprintDirtyAfterConversation(
+    alreadyDirty: Boolean,
+    hasFoundation: Boolean,
+    proposalUpdated: Boolean,
+): Boolean = alreadyDirty || (hasFoundation && proposalUpdated)
 
 private fun StoryFoundation.toProposal() = NewBookProposal(
     title = title,
@@ -663,6 +561,7 @@ private fun StoryFoundation.toProposal() = NewBookProposal(
     coreHook = coreHook,
     coverBrief = coverBrief,
     rationale = storyPromise,
+    decisionLedger = creationBrief,
 )
 
 private fun NewBookProposal.sanitizePlaceholders(): NewBookProposal = copy(
@@ -693,22 +592,21 @@ private fun conversationTranscript(
     messages: List<CreationChatMessage>,
     keepLatestResearch: Boolean,
 ): String {
-    val recent = messages.takeLast(18)
-    val lastUser = recent.indexOfLast { it.role == "user" }
-    return recent.mapIndexed { index, message ->
+    val lastUser = messages.indexOfLast { it.role == "user" }
+    return messages.mapIndexed { index, message ->
         var text = message.text
         if (message.role == "user" && (!keepLatestResearch || index != lastUser)) {
             text = text.substringBefore(RESEARCH_CONTEXT_MARKER).trimEnd()
         }
         text = if (message.role == "user" && keepLatestResearch && index == lastUser) {
-            val plain = text.substringBefore(RESEARCH_CONTEXT_MARKER).take(1_200)
-            val research = text.substringAfter(RESEARCH_CONTEXT_MARKER, "").take(4_500)
+            val plain = text.substringBefore(RESEARCH_CONTEXT_MARKER)
+            val research = text.substringAfter(RESEARCH_CONTEXT_MARKER, "")
             if (research.isBlank()) plain else "$plain$RESEARCH_CONTEXT_MARKER\n$research"
         } else {
-            text.take(1_000)
+            text
         }
         if (message.role == "user") "用户：$text" else "琅嬛：$text"
-    }.joinToString("\n").takeLast(9_000)
+    }.joinToString("\n")
 }
 
 private fun sanitizeTitle(value: String): String {
@@ -726,17 +624,13 @@ private fun sanitizeSynopsis(value: String): String {
     val spoiler = Regex("(?:最终.{0,20}(?:发现|揭开)|直到.{0,20}(?:发现|明白)|真正被选中的|原来.{0,30}(?:才是|就是))")
     val sentences = text.split(Regex("(?<=[。！？!?])"))
     val kept = mutableListOf<String>()
-    var length = 0
     for (sentence in sentences) {
         val part = sentence.trim()
         if (part.isBlank()) continue
-        if (spoiler.containsMatchIn(part) && length >= 70) break
-        if (length + part.length > 220) break
+        if (spoiler.containsMatchIn(part) && kept.joinToString("").length >= 70) break
         kept += part
-        length += part.length
-        if (length >= 140) break
     }
-    return kept.joinToString("").ifBlank { text.take(200) }
+    return kept.joinToString("").ifBlank { text }
 }
 
 private fun friendlyAiError(error: Throwable, fallback: String): String {

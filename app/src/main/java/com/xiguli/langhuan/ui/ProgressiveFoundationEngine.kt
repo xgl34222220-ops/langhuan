@@ -53,7 +53,7 @@ internal class ProgressiveFoundationEngine(
                         if (referenceContext.isNotBlank()) {
                             appendLine()
                             appendLine("【本次显式选中的参考 DNA】")
-                            appendLine(referenceContext.take(4_200))
+                            appendLine(referenceContext)
                         }
                         appendLine()
                         appendLine("【本轮要求】")
@@ -71,11 +71,11 @@ internal class ProgressiveFoundationEngine(
                         appendProposal(proposal)
                         appendLine()
                         appendLine("【刚生成的世界/总纲摘要】")
-                        appendLine(compactGenerated(world).take(3_800))
+                        appendLine(compactGenerated(world))
                         if (referenceContext.isNotBlank()) {
                             appendLine()
                             appendLine("【参考 DNA 的人物/结构约束】")
-                            appendLine(referenceContext.take(2_200))
+                            appendLine(referenceContext)
                         }
                         appendLine()
                         appendLine("只补人物与分卷，不重写 META / STYLE / MASTER / BIBLE。后续用户决定优先于任何旧缓存。")
@@ -98,10 +98,10 @@ internal class ProgressiveFoundationEngine(
                             appendProposal(proposal)
                             appendLine()
                             appendLine("【第一次返回的可读内容】")
-                            appendLine(compactGenerated(combined).take(5_000))
+                            appendLine(compactGenerated(combined))
                             appendLine()
                             appendLine("当前缺口：世界规则 ${working.bible.size}/3；核心人物 ${working.characters.size}/2；分卷 ${working.volumes.size}/1。")
-                            appendLine("请重新输出一份短而完整的标准结构，不能只解释标签，不能把条目写进正文。")
+                            appendLine("请重新输出一份完整的标准结构，不能只解释标签，不能把条目写进正文，也不能为了缩短输出遗漏确认事实。")
                         },
                     ),
                 )
@@ -175,11 +175,11 @@ internal class ProgressiveFoundationEngine(
                 system = FORESHADOW_SYSTEM,
                 user = buildString {
                     appendLine("【核心蓝图 + 第一卷章纲】")
-                    appendLine(compactFoundation(working, includeChapters = true).take(6_000))
+                    appendLine(compactFoundation(working, includeChapters = true))
                     if (referenceContext.isNotBlank()) {
                         appendLine()
                         appendLine("【已选参考 DNA】")
-                        appendLine(referenceContext.take(1_200))
+                        appendLine(referenceContext)
                     }
                     appendLine()
                     appendLine("只输出伏笔计划，不重写其它结构。")
@@ -215,7 +215,7 @@ internal class ProgressiveFoundationEngine(
         """.trimIndent(),
         user = buildString {
             appendLine("【核心蓝图】")
-            appendLine(compactFoundation(foundation).take(4_800))
+            appendLine(compactFoundation(foundation))
             if (prior.isNotEmpty()) {
                 appendLine()
                 appendLine("【已经确认的前置章纲】")
@@ -226,7 +226,7 @@ internal class ProgressiveFoundationEngine(
             if (referenceContext.isNotBlank()) {
                 appendLine()
                 appendLine("【已选参考 DNA 的节奏/信息释放约束】")
-                appendLine(referenceContext.take(1_800))
+                appendLine(referenceContext)
             }
         },
     )
@@ -290,7 +290,7 @@ internal class ProgressiveFoundationEngine(
             ?: fallback.targetWords
         val safeTitle = output.title.trim().takeIf { it.filterNot(Char::isWhitespace).length in 2..18 }
             ?: fallback.title
-        val safePremise = output.content.trim().takeIf { it.filterNot(Char::isWhitespace).length in 50..420 }
+        val safePremise = output.content.trim().takeIf { it.filterNot(Char::isWhitespace).length >= 50 }
             ?: fallback.premise
         val genre = meaningfulValue(meta?.field, setOf("类型", "小说类型", "题材", "genre"), fallback.genre)
         val theme = meaningfulValue(
@@ -346,6 +346,7 @@ internal class ProgressiveFoundationEngine(
                 )
             },
             foreshadowing = current?.foreshadowing.orEmpty(),
+            creationBrief = fallback.decisionLedger.ifBlank { current?.creationBrief.orEmpty() },
         )
     }
 
@@ -532,30 +533,31 @@ internal class ProgressiveFoundationEngine(
     }
 
     private fun compactConversation(messages: List<CreationChatMessage>): String = messages
-        .takeLast(14)
         .joinToString("\n") { message ->
             val raw = if (message.role == "user") message.text.substringBefore(RESEARCH_MARKER).trimEnd() else message.text
-            val text = if (message.role == "user") raw.take(760) else raw.take(420)
-            if (message.role == "user") "用户：$text" else "琅嬛：$text"
+            if (message.role == "user") "用户：$raw" else "琅嬛：$raw"
         }
-        .takeLast(5_600)
 
     private fun compactGenerated(output: GeneratedChapter): String = buildString {
         if (output.title.isNotBlank()) appendLine("书名：${output.title}")
-        if (output.content.isNotBlank()) appendLine("简介：${output.content.take(500)}")
-        if (output.summary.isNotBlank()) appendLine("摘要：${output.summary.take(400)}")
-        output.stateChanges.take(14).forEach { change ->
-            appendLine("${subject(change)} | ${change.field} | ${change.before.take(180)} | ${change.after.take(180)} | ${change.evidence.take(120)}")
+        if (output.content.isNotBlank()) appendLine("简介：${output.content}")
+        if (output.summary.isNotBlank()) appendLine("摘要：${output.summary}")
+        output.stateChanges.forEach { change ->
+            appendLine("${subject(change)} | ${change.field} | ${change.before} | ${change.after} | ${change.evidence}")
         }
     }
 
     private fun compactFoundation(foundation: StoryFoundation, includeChapters: Boolean = false): String = buildString {
         appendLine("书名：${foundation.title}")
         appendLine("类型：${foundation.genre}")
-        appendLine("简介：${foundation.premise.take(500)}")
+        appendLine("简介：${foundation.premise}")
         appendLine("主题：${foundation.theme}")
         appendLine("核心钩子：${foundation.coreHook}")
         appendLine("故事承诺：${foundation.storyPromise}")
+        if (foundation.creationBrief.isNotBlank()) {
+            appendLine("【建书会谈确认事实：所有后续阶段逐条遵守】")
+            appendLine(foundation.creationBrief)
+        }
         appendLine("总纲：${foundation.masterObjective} / ${foundation.masterConflict} / ${foundation.masterTurningPoint}")
         appendLine("圣经：${foundation.bible.take(10).joinToString("；") { "${it.category.name}:${it.name}=${it.content.take(120)}" }}")
         appendLine("角色：${foundation.characters.take(6).joinToString("；") { "${it.name}[${it.personality.joinToString("、")}]目标=${it.goal.take(100)}" }}")
@@ -567,7 +569,7 @@ internal class ProgressiveFoundationEngine(
                 }
             }
         }
-    }.take(7_000)
+    }
 
     private fun StringBuilder.appendProposal(proposal: NewBookProposal) {
         appendLine("【当前方案基线：已由会谈合并器刷新；若仍与后续用户决定冲突，以后续用户决定为准】")
@@ -578,7 +580,11 @@ internal class ProgressiveFoundationEngine(
         appendLine("目标字数：${proposal.targetWords}")
         appendLine("核心钩子：${proposal.coreHook}")
         appendLine("封面方向：${proposal.coverBrief}")
-        appendLine("内部策划：${proposal.rationale.take(500)}")
+        appendLine("内部策划：${proposal.rationale}")
+        if (proposal.decisionLedger.isNotBlank()) {
+            appendLine("【整段会谈确认事实账本：蓝图所有阶段必须逐条遵守】")
+            appendLine(proposal.decisionLedger)
+        }
     }
 
     private fun meaningfulValue(value: String?, placeholders: Set<String>, fallback: String): String {
@@ -605,10 +611,10 @@ internal class ProgressiveFoundationEngine(
         const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
 
         val WORLD_SYSTEM = """
-            你是“琅嬛”的长篇小说世界与总纲架构师。这一请求必须短而完整，只生成世界规则和总纲，不生成角色列表、分卷、章纲或伏笔。
+            你是“琅嬛”的长篇小说世界与总纲架构师。只生成世界规则和总纲，不生成角色列表、分卷、章纲或伏笔；内容篇幅服从已确认事实的完整表达。
             最新用户决定拥有最高优先级。禁止因为输入里存在旧方案，就恢复已经被用户否定、替换或改写的简介、主角能力、身份、目标、世界规则或核心冲突。
             输出 GeneratedChapter JSON：
-            - title=正式书名；content=80-180字平台简介；summary=80-160字故事承诺；touchedForeshadowingIds=[]。
+            - title=正式书名；content=完整连贯的平台简介；summary=足以约束后续阶段的故事承诺；touchedForeshadowingIds=[]。
             - stateChanges：
               * META 1条：field=实际小说类型；before=目标总字数纯数字；after=实际主题命题；evidence=核心钩子。
               * STYLE 1条：field=叙事风格；before=阅读承诺；after=风格基线；evidence=封面方向。
@@ -636,9 +642,9 @@ internal class ProgressiveFoundationEngine(
         """.trimIndent()
 
         val CORE_NORMALIZER_SYSTEM = """
-            你是“琅嬛”的蓝图结构整理器。上一个模型返回的内容可能被中转站改了字段或把数组压成了文本；你必须根据当前方案重新输出一份短小、完整、标准的 GeneratedChapter JSON。
+            你是“琅嬛”的蓝图结构整理器。上一个模型返回的内容可能被中转站改了字段或把数组压成了文本；你必须根据当前方案重新输出一份完整、标准的 GeneratedChapter JSON，不得为了缩短输出遗漏确认事实。
             不要解释，不要输出 Markdown，不要把条目写在 content/summary 里。
-            title=正式书名；content=100-180字平台简介；summary=80-150字故事承诺；touchedForeshadowingIds=[]。
+            title=正式书名；content=完整连贯的平台简介；summary=足以约束后续阶段的故事承诺；touchedForeshadowingIds=[]。
             stateChanges 必须是 JSON 数组，并完整包含：
             - META 1条：field=实际小说类型；before=目标字数纯数字；after=主题；evidence=核心钩子。
             - STYLE 1条：field=叙事风格；before=阅读承诺；after=风格基线；evidence=封面方向。
