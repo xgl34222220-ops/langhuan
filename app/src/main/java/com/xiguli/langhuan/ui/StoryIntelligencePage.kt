@@ -2,17 +2,23 @@ package com.xiguli.langhuan.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.OutlineLevel
+import com.xiguli.langhuan.engine.ChronologyRepairRisk
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,10 +39,14 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
     val volumeProgress = if (volumeChapters.isEmpty()) 0f else (volumeChapters.count { it.order <= chapter }.toFloat() / volumeChapters.size).coerceIn(0f, 1f)
     val totalProgress = (snapshot.novel.currentWords.toFloat() / snapshot.novel.targetWords.coerceAtLeast(1)).coerceIn(0f, 1f)
 
+    val chronologyVm: WholeBookChronologyViewModel = viewModel()
+    val chronologyState = chronologyVm.state.collectAsStateWithLifecycle().value
+    LaunchedEffect(snapshot.novel.id) { chronologyVm.scan(snapshot.novel.id) }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Column { Text("长篇监控", fontWeight = FontWeight.SemiBold); Text("角色弧线 · 节奏 · 伏笔 · 卷进度", style = MaterialTheme.typography.labelSmall) } },
+                title = { Column { Text("长篇监控", fontWeight = FontWeight.SemiBold); Text("角色弧线 · 节奏 · 伏笔 · 全书时间轴", style = MaterialTheme.typography.labelSmall) } },
                 navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "返回") } },
             )
         },
@@ -59,6 +69,44 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
                     }
                 }
             }
+            item { MonitorCard("全书时间线重建", Icons.Rounded.Schedule) {
+                when {
+                    chronologyState.isScanning -> {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("正在逐章读取正文、场景时间锁和长期时间线……", style = MaterialTheme.typography.bodySmall)
+                    }
+                    chronologyState.error != null -> Text(chronologyState.error, color = MaterialTheme.colorScheme.error)
+                    chronologyState.report == null -> Button(onClick = { chronologyVm.scan(snapshot.novel.id, force = true) }) { Text("扫描全书时间线") }
+                    else -> {
+                        val report = chronologyState.report
+                        Text("候选故事日 1-${report.maxStoryDay.coerceAtLeast(1)} · 高风险 ${report.highCount} · 中风险 ${report.mediumCount} · 旧章推定 ${report.inferredCount}", fontWeight = FontWeight.Bold)
+                        Text("“候选推定”只用于发现跨章矛盾，不会自动写进长期记忆。0.16 后已有时间锁的章节优先使用真实 storyDay。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            report.chapters.take(30).forEach { item ->
+                                val label = if (item.startDay == item.endDay) "第${item.startDay}天" else "第${item.startDay}-${item.endDay}天"
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text("${item.chapterNumber}章 · $label") },
+                                    leadingIcon = if (item.risk == ChronologyRepairRisk.HIGH) ({ Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(16.dp)) }) else null,
+                                )
+                            }
+                        }
+                        report.conflicts.take(10).forEach { conflict ->
+                            val color = if (conflict.risk == ChronologyRepairRisk.HIGH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)) {
+                                Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                    Text("${conflict.risk.label}风险 · 第${conflict.chapterNumber}章 · ${conflict.code}", color = color, fontWeight = FontWeight.SemiBold)
+                                    Text(conflict.message, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                        if (report.conflicts.size > 10) Text("还有 ${report.conflicts.size - 10} 个时间问题未展开。可进入对应章节使用“时间线体检 / 旧稿修复”。", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = { chronologyVm.scan(snapshot.novel.id, force = true) }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.Refresh, null); Spacer(Modifier.width(6.dp)); Text("重新扫描全书")
+                        }
+                    }
+                }
+            } }
             item { MonitorCard("当前卷进度", Icons.Rounded.MenuBook) {
                 Text(activeVolume?.title ?: "未识别当前卷", fontWeight = FontWeight.Bold)
                 LinearProgressIndicator(progress = volumeProgress, modifier = Modifier.fillMaxWidth())
@@ -81,7 +129,8 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
             } }
             item { MonitorCard("最近时间线", Icons.Rounded.Timeline) {
                 snapshot.recentTimeline.sortedByDescending { it.chapter }.take(8).forEach { event ->
-                    Text("第${event.chapter}章 · ${event.storyTime.ifBlank { "时间未标记" }} · ${event.location}\n${event.summary}", style = MaterialTheme.typography.bodySmall)
+                    val structured = event.storyDay.takeIf { it > 0 }?.let { "故事第${it}天 · ${event.timeOfDay.ifBlank { event.storyTime }}" } ?: event.storyTime.ifBlank { "时间未标记" }
+                    Text("第${event.chapter}章 · $structured · ${event.location}\n${event.summary}", style = MaterialTheme.typography.bodySmall)
                 }
                 if (snapshot.recentTimeline.isEmpty()) Text("还没有结构化时间线。章节复盘后会逐步积累。")
             } }
