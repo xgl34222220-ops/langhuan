@@ -52,7 +52,7 @@ internal fun AgentPage(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("创作 Agent", style = MaterialTheme.typography.displaySmall, color = LocalMiuixTokens.current.textPrimary)
-                    Text("自动复盘章节 · 全书一致性巡检 · 结构化记忆抽取 · 下一章候选", color = LocalMiuixTokens.current.textSecondary)
+                    Text("自动复盘章节 · 全书巡检 · 未来滚动自治规划 · 结构化长期记忆", color = LocalMiuixTokens.current.textSecondary)
                 }
                 IconButton(onClose) { Icon(Icons.Rounded.Close, "关闭 Agent") }
             }
@@ -95,6 +95,7 @@ internal fun AgentPage(
         }
 
         item { LongFormAgentPanel(state.snapshot) }
+        item { AutonomousPlanPanel(state, vm) }
 
         item {
             AgentCard {

@@ -44,7 +44,7 @@ class WorkspaceAiEngine(
                 val clock = if (it.storyDay > 0) "故事第${it.storyDay}天·${it.timeOfDay}" else it.storyTime
                 "第${it.chapter}章 $clock ${if (it.isFlashback) "[FLASHBACK]" else "[NORMAL]"} ${it.location}：${it.summary}"
             }
-        val longFormNavigation = longFormEngine.promptText(snapshot)
+        val longFormNavigation = longFormEngine.promptText(snapshot) + "\n\n" + AutonomousStoryPlanner.promptText(snapshot)
         val prompt = PromptBundle(
             system = """
                 你是长篇小说的章节策划引擎。你必须沿用现有总纲、卷纲、人物状态、滚动剧情弧、伏笔、主时间钟和最近剧情，规划紧接当前章节的下一章，不得擅自换主线。

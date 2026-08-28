@@ -31,6 +31,7 @@ import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.domain.TimelineEvent
 import com.xiguli.langhuan.engine.AgentMemoryApplier
+import com.xiguli.langhuan.engine.AutonomousStoryPlanner
 import com.xiguli.langhuan.engine.AgentReview
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.AiProviderConfig
@@ -112,6 +113,7 @@ data class StudioUiState(
     val isRewriting: Boolean = false,
     val isAgentReviewing: Boolean = false,
     val isAuditing: Boolean = false,
+    val isAutonomousPlanning: Boolean = false,
     val isSaving: Boolean = false,
     val isCreatingStory: Boolean = false,
     val isImporting: Boolean = false,
@@ -345,6 +347,40 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun dismissPlan() = _state.update { it.copy(pendingPlan = null) }
+
+    fun refreshAutonomousPlan(horizon: Int = 6) {
+        val current = _state.value
+        if (current.isAutonomousPlanning || busy(current)) return
+        if (current.isDraftDirty) {
+            _state.update { it.copy(error = "当前正文还有未保存修改，请先保存版本再刷新自治计划") }
+            return
+        }
+        viewModelScope.launch {
+            val gateway = configuredGateway()
+            if (gateway == null) {
+                _state.update { it.copy(error = "长篇自治规划需要先配置 AI 服务") }
+                return@launch
+            }
+            _state.update { it.copy(isAutonomousPlanning = true, error = null) }
+            runCatching {
+                val planner = AutonomousStoryPlanner(gateway)
+                val plan = planner.plan(current.snapshot, current.draft, horizon)
+                projects.saveStructure(planner.apply(current.snapshot, plan), current.draft)
+            }.onSuccess { persisted ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isAutonomousPlanning = false,
+                        message = "未来 ${persisted.snapshot.longForm.autonomousPlan.chapters.size} 章自治计划已刷新",
+                    )
+                }
+                refreshWorkspace()
+            }.onFailure { error ->
+                _state.update { it.copy(isAutonomousPlanning = false, error = error.message ?: "自治规划失败") }
+            }
+        }
+    }
 
     fun saveOutlineNode(
         existingId: String?,
@@ -863,6 +899,26 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         runCatching { NovelAgentEngine(gateway).reviewChapter(persisted.snapshot, persisted.draft) }
                             .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "正文已保存，Agent 复盘完成") } }
                             .onFailure { _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") } }
+                        if (AutonomousStoryPlanner.shouldRefresh(persisted.snapshot, persisted.draft.chapterNumber)) {
+                            _state.update { it.copy(isAutonomousPlanning = true, message = "正文已保存；正在补足未来滚动计划") }
+                            runCatching {
+                                val planner = AutonomousStoryPlanner(gateway)
+                                val plan = planner.plan(persisted.snapshot, persisted.draft, 6)
+                                projects.saveStructure(planner.apply(persisted.snapshot, plan), persisted.draft)
+                            }.onSuccess { planned ->
+                                _state.update {
+                                    it.copy(
+                                        snapshot = planned.snapshot,
+                                        draft = planned.draft,
+                                        isAutonomousPlanning = false,
+                                        message = "正文已保存；Agent 复盘完成，未来滚动计划已同步",
+                                    )
+                                }
+                                refreshWorkspace()
+                            }.onFailure {
+                                _state.update { it.copy(isAutonomousPlanning = false, message = "正文已保存；自治计划自动刷新失败，可在 Agent 页手动重试") }
+                            }
+                        }
                     }
                 }.onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "保存章节失败") } }
         }
@@ -903,7 +959,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun busy(state: StudioUiState): Boolean =
-        state.isGenerating || state.isSaving || state.isPlanning || state.isRewriting || state.isAgentReviewing || state.isAuditing || state.isImporting || state.isExporting || state.isRestoringVersion
+        state.isGenerating || state.isSaving || state.isPlanning || state.isRewriting || state.isAgentReviewing || state.isAuditing || state.isAutonomousPlanning || state.isImporting || state.isExporting || state.isRestoringVersion
 
     private fun effectiveOutline(snapshot: StorySnapshot): List<OutlineNode> = (if (snapshot.outline.isEmpty()) snapshot.activeOutline else snapshot.outline).distinctBy { it.id }
 
