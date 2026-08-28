@@ -1,0 +1,156 @@
+name: Wire Autonomous Planning
+
+on:
+  push:
+    paths:
+      - ".github/workflows/wire-autonomous-planning.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wire autonomous planning into app
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"marker not found: {label}")
+              return text.replace(old, new, 1)
+
+          studio_path = Path("app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt")
+          studio = studio_path.read_text(encoding="utf-8")
+          studio = replace_once(
+              studio,
+              "import com.xiguli.langhuan.engine.AgentMemoryApplier\n",
+              "import com.xiguli.langhuan.engine.AgentMemoryApplier\nimport com.xiguli.langhuan.engine.AutonomousStoryPlanner\n",
+              "studio import",
+          )
+          studio = replace_once(
+              studio,
+              "    val isAuditing: Boolean = false,\n",
+              "    val isAuditing: Boolean = false,\n    val isAutonomousPlanning: Boolean = false,\n",
+              "studio state flag",
+          )
+          plan_marker = "    fun dismissPlan() = _state.update { it.copy(pendingPlan = null) }\n"
+          plan_method = plan_marker + '''
+
+    fun refreshAutonomousPlan(horizon: Int = 6) {
+        val current = _state.value
+        if (current.isAutonomousPlanning || busy(current)) return
+        if (current.isDraftDirty) {
+            _state.update { it.copy(error = "当前正文还有未保存修改，请先保存版本再刷新自治计划") }
+            return
+        }
+        viewModelScope.launch {
+            val gateway = configuredGateway()
+            if (gateway == null) {
+                _state.update { it.copy(error = "长篇自治规划需要先配置 AI 服务") }
+                return@launch
+            }
+            _state.update { it.copy(isAutonomousPlanning = true, error = null) }
+            runCatching {
+                val planner = AutonomousStoryPlanner(gateway)
+                val plan = planner.plan(current.snapshot, current.draft, horizon)
+                projects.saveStructure(planner.apply(current.snapshot, plan), current.draft)
+            }.onSuccess { persisted ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isAutonomousPlanning = false,
+                        message = "未来 ${persisted.snapshot.longForm.autonomousPlan.chapters.size} 章自治计划已刷新",
+                    )
+                }
+                refreshWorkspace()
+            }.onFailure { error ->
+                _state.update { it.copy(isAutonomousPlanning = false, error = error.message ?: "自治规划失败") }
+            }
+        }
+    }
+'''
+          studio = replace_once(studio, plan_marker, plan_method, "refreshAutonomousPlan insertion")
+
+          review_failure = '                            .onFailure { _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") } }\n'
+          auto_block = review_failure + '''                        if (AutonomousStoryPlanner.shouldRefresh(persisted.snapshot, persisted.draft.chapterNumber)) {
+                            _state.update { it.copy(isAutonomousPlanning = true, message = "正文已保存；正在补足未来滚动计划") }
+                            runCatching {
+                                val planner = AutonomousStoryPlanner(gateway)
+                                val plan = planner.plan(persisted.snapshot, persisted.draft, 6)
+                                projects.saveStructure(planner.apply(persisted.snapshot, plan), persisted.draft)
+                            }.onSuccess { planned ->
+                                _state.update {
+                                    it.copy(
+                                        snapshot = planned.snapshot,
+                                        draft = planned.draft,
+                                        isAutonomousPlanning = false,
+                                        message = "正文已保存；Agent 复盘完成，未来滚动计划已同步",
+                                    )
+                                }
+                                refreshWorkspace()
+                            }.onFailure {
+                                _state.update { it.copy(isAutonomousPlanning = false, message = "正文已保存；自治计划自动刷新失败，可在 Agent 页手动重试") }
+                            }
+                        }
+'''
+          studio = replace_once(studio, review_failure, auto_block, "auto refresh after commit")
+          studio = replace_once(
+              studio,
+              "state.isAgentReviewing || state.isAuditing || state.isImporting",
+              "state.isAgentReviewing || state.isAuditing || state.isAutonomousPlanning || state.isImporting",
+              "busy autonomous flag",
+          )
+          studio_path.write_text(studio, encoding="utf-8")
+
+          agent_path = Path("app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt")
+          agent = agent_path.read_text(encoding="utf-8")
+          agent = replace_once(
+              agent,
+              "自动复盘章节 · 全书一致性巡检 · 结构化记忆抽取 · 下一章候选",
+              "自动复盘章节 · 全书巡检 · 未来滚动自治规划 · 结构化长期记忆",
+              "agent subtitle",
+          )
+          agent = replace_once(
+              agent,
+              "        item { LongFormAgentPanel(state.snapshot) }\n",
+              "        item { LongFormAgentPanel(state.snapshot) }\n        item { AutonomousPlanPanel(state, vm) }\n",
+              "autonomous panel",
+          )
+          agent_path.write_text(agent, encoding="utf-8")
+
+          workspace_path = Path("app/src/main/java/com/xiguli/langhuan/engine/WorkspaceAiEngine.kt")
+          workspace = workspace_path.read_text(encoding="utf-8")
+          workspace = replace_once(
+              workspace,
+              "        val longFormNavigation = longFormEngine.promptText(snapshot)\n",
+              "        val longFormNavigation = longFormEngine.promptText(snapshot) + \"\\n\\n\" + AutonomousStoryPlanner.promptText(snapshot)\n",
+              "workspace plan guidance",
+          )
+          workspace_path.write_text(workspace, encoding="utf-8")
+
+          gradle_path = Path("app/build.gradle.kts")
+          gradle = gradle_path.read_text(encoding="utf-8")
+          gradle = replace_once(gradle, "versionCode = 55", "versionCode = 56", "version code")
+          gradle = replace_once(gradle, 'versionName = "0.25.7-alpha01"', 'versionName = "0.25.8-alpha01"', "version name")
+          gradle_path.write_text(gradle, encoding="utf-8")
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt \
+                  app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt \
+                  app/src/main/java/com/xiguli/langhuan/engine/WorkspaceAiEngine.kt \
+                  app/build.gradle.kts
+          git commit -m "feat: wire autonomous long-form planning"
+          git push origin HEAD:main
