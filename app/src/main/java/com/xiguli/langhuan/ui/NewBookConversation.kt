@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.ui
 
 import android.app.Application
+import android.util.AtomicFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.FoundationBibleItem
@@ -16,19 +17,29 @@ import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private const val CHAT_SENTINEL = "__CHAT__"
+private const val NEW_BOOK_DRAFT_FILE = "new_book_conversation_draft.json"
 
+@Serializable
 data class CreationChatMessage(
     val role: String,
     val text: String,
 )
 
+@Serializable
 data class NewBookProposal(
     val title: String,
     val genre: String,
@@ -55,17 +66,90 @@ data class NewBookConversationState(
     val error: String? = null,
 )
 
+@Serializable
+private data class NewBookConversationDraft(
+    val schemaVersion: Int = 1,
+    val messages: List<CreationChatMessage>,
+    val proposal: NewBookProposal? = null,
+    val foundation: StoryFoundation? = null,
+)
+
+private class NewBookConversationDraftStore(application: Application) {
+    private val atomicFile = AtomicFile(File(application.filesDir, NEW_BOOK_DRAFT_FILE))
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    fun restore(): NewBookConversationState? {
+        return runCatching {
+            val bytes = atomicFile.openRead().use { it.readBytes() }
+            if (bytes.isEmpty()) return@runCatching null
+            val draft = json.decodeFromString<NewBookConversationDraft>(bytes.toString(Charsets.UTF_8))
+            if (draft.messages.isEmpty()) return@runCatching null
+            NewBookConversationState(
+                messages = draft.messages,
+                proposal = draft.proposal,
+                foundation = draft.foundation,
+                isBusy = false,
+                busyLabel = "",
+                createdStoryId = null,
+                error = null,
+            )
+        }.getOrElse {
+            clear()
+            null
+        }
+    }
+
+    fun persist(state: NewBookConversationState) {
+        if (!state.hasPersistentDraft()) {
+            clear()
+            return
+        }
+        val payload = json.encodeToString(
+            NewBookConversationDraft(
+                messages = state.messages,
+                proposal = state.proposal,
+                foundation = state.foundation,
+            )
+        ).toByteArray(Charsets.UTF_8)
+        val output = runCatching { atomicFile.startWrite() }.getOrNull() ?: return
+        try {
+            output.write(payload)
+            output.fd.sync()
+            atomicFile.finishWrite(output)
+        } catch (_: Throwable) {
+            atomicFile.failWrite(output)
+        }
+    }
+
+    fun clear() {
+        runCatching { atomicFile.delete() }
+    }
+}
+
+private fun NewBookConversationState.hasPersistentDraft(): Boolean =
+    messages.size > 1 || proposal != null || foundation != null
+
 class NewBookConversationViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PersistentStoryRepository(application)
     private val foundationApplier = StoryFoundationApplier(application)
-    private val _state = MutableStateFlow(NewBookConversationState())
+    private val draftStore = NewBookConversationDraftStore(application)
+    private val _state = MutableStateFlow(draftStore.restore() ?: NewBookConversationState())
     val state: StateFlow<NewBookConversationState> = _state.asStateFlow()
     private var activeProviderId: String? = null
+    @Volatile private var suppressDraftPersistence = false
 
     init {
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
                 activeProviderId = providers.firstOrNull { it.isDefault }?.id ?: providers.firstOrNull()?.id
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.collect { current ->
+                if (suppressDraftPersistence) draftStore.clear() else draftStore.persist(current)
             }
         }
     }
@@ -237,6 +321,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
             runCatching { foundationApplier.create(foundation) }
                 .onSuccess { created ->
+                    suppressDraftPersistence = true
                     _state.update {
                         it.copy(
                             isBusy = false,
@@ -248,6 +333,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                             ),
                         )
                     }
+                    draftStore.clear()
                 }.onFailure { e ->
                     _state.update { it.copy(isBusy = false, busyLabel = "", error = e.message ?: "正式建书失败") }
                 }
@@ -255,6 +341,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     }
 
     fun reset() {
+        suppressDraftPersistence = false
+        draftStore.clear()
         _state.value = NewBookConversationState()
     }
 
