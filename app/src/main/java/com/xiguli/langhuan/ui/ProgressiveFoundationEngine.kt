@@ -43,15 +43,18 @@ internal class ProgressiveFoundationEngine(
                 prompt = PromptBundle(
                     system = WORLD_SYSTEM,
                     user = buildString {
+                        appendLine("【事实优先级】")
+                        appendLine("后出现的用户明确决定 > 当前方案基线 > 琅嬛旧建议。若冲突，必须采用最新用户决定，禁止恢复被否定的旧简介、旧能力或旧冲突。")
+                        appendLine()
+                        appendLine("【用户确认过的会谈事实】")
+                        appendLine(conversation)
+                        appendLine()
                         appendProposal(proposal)
                         if (referenceContext.isNotBlank()) {
                             appendLine()
                             appendLine("【本次显式选中的参考 DNA】")
                             appendLine(referenceContext.take(4_200))
                         }
-                        appendLine()
-                        appendLine("【用户确认过的会谈事实】")
-                        appendLine(conversation)
                         appendLine()
                         appendLine("【本轮要求】")
                         appendLine(instruction)
@@ -75,7 +78,7 @@ internal class ProgressiveFoundationEngine(
                             appendLine(referenceContext.take(2_200))
                         }
                         appendLine()
-                        appendLine("只补人物与分卷，不重写 META / STYLE / MASTER / BIBLE。")
+                        appendLine("只补人物与分卷，不重写 META / STYLE / MASTER / BIBLE。后续用户决定优先于任何旧缓存。")
                     },
                 ),
             )
@@ -212,14 +215,13 @@ internal class ProgressiveFoundationEngine(
         current: StoryFoundation?,
     ): StoryFoundation {
         val changes = output.stateChanges
-        val meta = changes.firstOrNull { subject(it) in setOf("META", "BOOK_META") }
-        val style = changes.firstOrNull { subject(it) in setOf("STYLE", "STYLE_GUIDE") }
-        val master = changes.firstOrNull { subject(it) in setOf("MASTER", "MASTER_OUTLINE", "OUTLINE") }
+        val meta = changes.firstOrNull { subject(it) in setOf("META", "BOOK_META", "BOOKMETA", "书籍信息", "元信息") }
+        val style = changes.firstOrNull { subject(it) in setOf("STYLE", "STYLE_GUIDE", "STYLEGUIDE", "风格", "叙事风格") }
+        val master = changes.firstOrNull { subject(it) in setOf("MASTER", "MASTER_OUTLINE", "MASTEROUTLINE", "OUTLINE", "总纲", "总纲大纲") }
 
         val bible = changes.mapNotNull { change ->
             val normalized = subject(change)
-            if (!normalized.startsWith("BIBLE:")) return@mapNotNull null
-            val category = bibleCategory(normalized.substringAfter(':')) ?: return@mapNotNull null
+            val category = bibleCategoryFromSubject(normalized, change) ?: return@mapNotNull null
             val name = change.field.trim()
             val content = change.before.trim().ifBlank { change.after.trim() }
             if (name.isBlank() || content.isBlank()) return@mapNotNull null
@@ -327,12 +329,12 @@ internal class ProgressiveFoundationEngine(
 
     private fun validateCore(foundation: StoryFoundation) {
         require(foundation.bible.size >= 3) {
-            "1/3 世界规则只解析到 ${foundation.bible.size} 条，至少需要 3 条。请重试第 1 阶段。"
+            "1/3 世界规则只解析到 ${foundation.bible.size} 条，至少需要 3 条。已兼容 BIBLE:WORLD、BIBLE_WORLD、世界、规则等常见标签；请直接重试第 1 阶段。"
         }
         require(foundation.characters.size >= 2) {
             "1/3 核心人物只解析到 ${foundation.characters.size} 个，至少需要 2 个。请重试第 1 阶段。"
         }
-        require(foundation.volumes.isNotEmpty()) { "1/3 没有解析到有效分卷路线，请重试第 1 阶段。" }
+        require(foundation.volumes.isNotEmpty()) { "1/3 没有解析到有效分卷路线。已兼容 VOLUME:1、VOLUME_1、分卷1、卷1 等常见标签；请重试第 1 阶段。" }
     }
 
     private fun coreUsable(foundation: StoryFoundation): Boolean =
@@ -400,25 +402,82 @@ internal class ProgressiveFoundationEngine(
         .replace(Regex("\\s+"), "_")
         .uppercase()
 
-    private fun isCharacterSubject(value: String): Boolean =
-        value in setOf("CHAR", "CHARACTER", "ROLE", "人物", "角色")
+    private fun isCharacterSubject(value: String): Boolean {
+        val normalized = value.replace('-', '_')
+        return normalized in setOf("CHAR", "CHARACTER", "ROLE", "人物", "角色", "人物设定", "角色设定") ||
+            normalized.startsWith("CHAR:") || normalized.startsWith("CHAR_") ||
+            normalized.startsWith("CHARACTER:") || normalized.startsWith("CHARACTER_")
+    }
 
-    private fun isForeshadowSubject(value: String): Boolean =
-        value in setOf("FORESHADOW", "FORESHADOWING", "伏笔")
+    private fun isForeshadowSubject(value: String): Boolean {
+        val normalized = value.replace('-', '_')
+        return normalized in setOf("FORESHADOW", "FORESHADOWING", "伏笔", "伏笔计划") ||
+            normalized.startsWith("FORESHADOW:") || normalized.startsWith("FORESHADOW_") ||
+            normalized.startsWith("FORESHADOWING:") || normalized.startsWith("FORESHADOWING_\")
+    }
 
     private fun volumeOrder(value: String): Int? {
-        val normalized = value.replace("VOL:", "VOLUME:")
-        if (!normalized.startsWith("VOLUME:")) return null
-        return normalized.substringAfter(':').filter(Char::isDigit).toIntOrNull()
+        val normalized = value
+            .replace('：', ':')
+            .replace('-', '_')
+            .replace("VOL:", "VOLUME:")
+            .replace("VOL_", "VOLUME_")
+            .uppercase()
+        Regex("(?:VOLUME|分卷|卷)[:_ ]*(\\d+)", RegexOption.IGNORE_CASE)
+            .find(normalized)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.let { return it }
+        Regex("第(\\d+)卷").find(normalized)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.let { return it }
+        Regex("第([一二三四五六七八九十]+)卷").find(normalized)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let(::chineseOrder)
+            ?.let { return it }
+        return null
     }
 
     private fun chapterNumbers(value: String): Pair<Int, Int>? {
-        val normalized = value.replace('：', ':')
-        val match = Regex("(?:CHAPTER|章纲)[:_ -]*(\\d+)[:_ -]+(\\d+)", RegexOption.IGNORE_CASE).find(normalized)
+        val normalized = value.replace('：', ':').replace('-', '_')
+        val match = Regex("(?:CHAPTER|章纲)[:_ ]*(\\d+)[:_ ]+(\\d+)", RegexOption.IGNORE_CASE).find(normalized)
             ?: return null
         val volume = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return null
         val order = match.groupValues.getOrNull(2)?.toIntOrNull() ?: return null
         return volume to order
+    }
+
+    private fun bibleCategoryFromSubject(value: String, change: StateChange): BibleCategory? {
+        val normalized = value.replace('-', '_')
+        val payload = when {
+            normalized.startsWith("BIBLE:") -> normalized.substringAfter(':')
+            normalized.startsWith("BIBLE_") -> normalized.substringAfter('_')
+            normalized in setOf("WORLD", "世界", "世界观") -> "WORLD"
+            normalized in setOf("RULE", "RULES", "规则", "规则体系") -> "RULE"
+            normalized in setOf("FACTION", "势力", "组织") -> "FACTION"
+            normalized in setOf("LOCATION", "PLACE", "地点", "场景") -> "LOCATION"
+            normalized in setOf("ITEM", "OBJECT", "物品", "道具") -> "ITEM"
+            normalized in setOf("FORBIDDEN", "TABOO", "禁忌", "禁止") -> "FORBIDDEN"
+            normalized == "BIBLE" -> inferBiblePayload(change)
+            else -> return null
+        }
+        return bibleCategory(payload)
+    }
+
+    private fun inferBiblePayload(change: StateChange): String {
+        val text = "${change.field} ${change.before} ${change.after}".lowercase()
+        return when {
+            listOf("规则", "机制", "限制", "代价", "条件").any(text::contains) -> "RULE"
+            listOf("势力", "组织", "集团", "门派", "机构").any(text::contains) -> "FACTION"
+            listOf("地点", "城市", "村", "镇", "学校", "医院", "区域").any(text::contains) -> "LOCATION"
+            listOf("物品", "道具", "遗物", "器物").any(text::contains) -> "ITEM"
+            listOf("禁忌", "禁止", "不可", "不能").any(text::contains) -> "FORBIDDEN"
+            else -> "WORLD"
+        }
     }
 
     private fun bibleCategory(raw: String): BibleCategory? {
@@ -436,14 +495,28 @@ internal class ProgressiveFoundationEngine(
         }
     }
 
+    private fun chineseOrder(value: String): Int? = when (value) {
+        "一" -> 1
+        "二" -> 2
+        "三" -> 3
+        "四" -> 4
+        "五" -> 5
+        "六" -> 6
+        "七" -> 7
+        "八" -> 8
+        "九" -> 9
+        "十" -> 10
+        else -> null
+    }
+
     private fun compactConversation(messages: List<CreationChatMessage>): String = messages
-        .takeLast(12)
+        .takeLast(14)
         .joinToString("\n") { message ->
             val raw = if (message.role == "user") message.text.substringBefore(RESEARCH_MARKER).trimEnd() else message.text
-            val text = raw.take(520)
+            val text = if (message.role == "user") raw.take(760) else raw.take(420)
             if (message.role == "user") "用户：$text" else "琅嬛：$text"
         }
-        .takeLast(3_800)
+        .takeLast(5_600)
 
     private fun compactGenerated(output: GeneratedChapter): String = buildString {
         if (output.title.isNotBlank()) appendLine("书名：${output.title}")
@@ -475,7 +548,7 @@ internal class ProgressiveFoundationEngine(
     }.take(7_000)
 
     private fun StringBuilder.appendProposal(proposal: NewBookProposal) {
-        appendLine("【已确认方案】")
+        appendLine("【当前方案基线：已由会谈合并器刷新；若仍与后续用户决定冲突，以后续用户决定为准】")
         appendLine("书名：${proposal.title}")
         appendLine("类型：${proposal.genre}")
         appendLine("平台简介：${proposal.premise}")
@@ -511,6 +584,7 @@ internal class ProgressiveFoundationEngine(
 
         val WORLD_SYSTEM = """
             你是“琅嬛”的长篇小说世界与总纲架构师。这一请求必须短而完整，只生成世界规则和总纲，不生成角色列表、分卷、章纲或伏笔。
+            最新用户决定拥有最高优先级。禁止因为输入里存在旧方案，就恢复已经被用户否定、替换或改写的简介、主角能力、身份、目标、世界规则或核心冲突。
             输出 GeneratedChapter JSON：
             - title=正式书名；content=80-180字平台简介；summary=80-160字故事承诺；touchedForeshadowingIds=[]。
             - stateChanges：
@@ -518,6 +592,7 @@ internal class ProgressiveFoundationEngine(
               * STYLE 1条：field=叙事风格；before=阅读承诺；after=风格基线；evidence=封面方向。
               * MASTER 1条：field=总纲标题；before=全书目标；after=核心冲突；evidence=最大转折/终局方向。
               * BIBLE:* 4-7条，分类可用 WORLD/RULE/FACTION/LOCATION/ITEM/FORBIDDEN/STYLE；field=名称；before=硬设定内容；after=别名可留空。
+            强烈建议严格使用 BIBLE:WORLD、BIBLE:RULE 等标签；解析器也兼容 BIBLE_WORLD、WORLD、世界、规则等常见中转输出。
             不要输出 CHAR、VOLUME、CHAPTER、FORESHADOW。设定必须少而硬，禁止复制参考作品的专名、人物或独特剧情骨架。
         """.trimIndent()
 
@@ -527,6 +602,7 @@ internal class ProgressiveFoundationEngine(
             stateChanges 只允许：
             - CHAR 2-4条：field=角色名；before=2-5个性格/行为倾向；after=长期目标；evidence=地点||身体||情绪||秘密||物品||关系。
             - VOLUME:序号 2-4条：field=卷名；before=本卷目标；after=核心冲突；evidence=关键转折。
+            必须真的输出至少2条 VOLUME:*，不能只在 summary 里描述分卷。解析器同时兼容 VOLUME_1、分卷1、卷1 等常见等价标签。
             至少包含主角和一个长期重要关系角色。分卷必须形成逐级升级，而不是重复同一目标。
         """.trimIndent()
 
