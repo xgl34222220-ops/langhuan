@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.engine
 
+import com.xiguli.langhuan.domain.ChapterContract
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.CharacterState
 import com.xiguli.langhuan.domain.GeneratedChapter
@@ -40,6 +41,36 @@ class ChapterContractGuardTest {
         assertTrue("管理局" in contract.mustNotHappen)
         assertEquals("报案记录内容为空", contract.hookOut)
         assertTrue(contract.characterStateIn.containsKey("周衍"))
+    }
+
+    @Test
+    fun `chapter inherits full contract stored on outline`() {
+        val snapshot = snapshot(
+            outline = OutlineNode(
+                id = "o1",
+                novelId = "n1",
+                level = OutlineLevel.CHAPTER,
+                order = 1,
+                title = "查无此人",
+                objective = "确认记录异常",
+                conflict = "记忆与现实冲突",
+                turningPoint = "进入梦境",
+                chapterContract = ChapterContract(
+                    purpose = "只确认现实记录被改写",
+                    secretsPreserved = listOf("梦主身份", "管理局存在"),
+                    reveals = listOf("陆清璃查无此人"),
+                    hookOut = "梦里有人叫出陆清璃的名字",
+                    continuityRisks = listOf("不要提前解释十九起猝死"),
+                ),
+            )
+        )
+
+        val contract = ChapterContractGuard.resolve(snapshot, chapter())
+
+        assertEquals("只确认现实记录被改写", contract.purpose)
+        assertTrue("梦主身份" in contract.secretsPreserved)
+        assertTrue("陆清璃查无此人" in contract.reveals)
+        assertEquals("梦里有人叫出陆清璃的名字", contract.hookOut)
     }
 
     @Test

@@ -22,6 +22,7 @@ object ChapterContractGuard {
 
     fun resolve(snapshot: StorySnapshot, chapter: ChapterDraft): ChapterContract {
         val outline = snapshot.activeOutline.lastOrNull { it.level == OutlineLevel.CHAPTER }
+        val outlineContract = outline?.chapterContract ?: ChapterContract()
         val raw = chapter.contract
         val chapterNumber = chapter.chapterNumber.coerceAtLeast(1)
         val hidden = snapshot.knowledgeLedger
@@ -32,7 +33,8 @@ object ChapterContractGuard {
             .filter { it.earliestFullRevealChapter <= 0 || chapterNumber >= it.earliestFullRevealChapter }
             .map { it.title }
 
-        val stateIn = if (raw.characterStateIn.isNotEmpty()) raw.characterStateIn else {
+        val storedStateIn = raw.characterStateIn.ifEmpty { outlineContract.characterStateIn }
+        val stateIn = if (storedStateIn.isNotEmpty()) storedStateIn else {
             snapshot.characters.associate { character ->
                 character.name to buildString {
                     append("地点=${character.location}；身体=${character.physicalState}；情绪=${character.emotionalState}；目标=${character.goal}")
@@ -43,16 +45,23 @@ object ChapterContractGuard {
             }
         }
 
-        return raw.copy(
-            purpose = raw.purpose.ifBlank { chapter.objective.ifBlank { outline?.objective.orEmpty() } },
-            mustHappen = (raw.mustHappen + outline?.mustInclude.orEmpty()).cleanDistinct(),
-            mustNotHappen = (raw.mustNotHappen + outline?.forbidden.orEmpty()).cleanDistinct(),
+        return ChapterContract(
+            purpose = raw.purpose.ifBlank {
+                outlineContract.purpose.ifBlank { chapter.objective.ifBlank { outline?.objective.orEmpty() } }
+            },
+            mustHappen = (outlineContract.mustHappen + raw.mustHappen + outline?.mustInclude.orEmpty()).cleanDistinct(),
+            mustNotHappen = (outlineContract.mustNotHappen + raw.mustNotHappen + outline?.forbidden.orEmpty()).cleanDistinct(),
             characterStateIn = stateIn,
-            reveals = (raw.reveals + allowedReveals).cleanDistinct(),
-            secretsPreserved = (raw.secretsPreserved + hidden).cleanDistinct(),
-            foreshadowing = raw.foreshadowing.cleanDistinct(),
-            hookOut = raw.hookOut.ifBlank { outline?.turningPoint.orEmpty() },
-            continuityRisks = (raw.continuityRisks + defaultRisks(snapshot)).cleanDistinct(),
+            characterStateOut = (outlineContract.characterStateOut + raw.characterStateOut)
+                .filterValues(String::isNotBlank),
+            reveals = (outlineContract.reveals + raw.reveals + allowedReveals).cleanDistinct(),
+            secretsPreserved = (outlineContract.secretsPreserved + raw.secretsPreserved + hidden).cleanDistinct(),
+            foreshadowing = (outlineContract.foreshadowing + raw.foreshadowing).cleanDistinct(),
+            hookOut = raw.hookOut.ifBlank {
+                outlineContract.hookOut.ifBlank { outline?.turningPoint.orEmpty() }
+            },
+            continuityRisks = (outlineContract.continuityRisks + raw.continuityRisks + defaultRisks(snapshot)).cleanDistinct(),
+            locked = raw.locked && outlineContract.locked,
         )
     }
 
@@ -90,7 +99,7 @@ object ChapterContractGuard {
             .take(48)
             .joinToString("\n") { item ->
                 val earliest = item.earliestFullRevealChapter.takeIf { it > 0 }?.let { "第${it}章后" } ?: "未指定"
-                "- [${item.id}] ${item.title}｜已知者=${item.knownBy.ifEmpty { listOf("未登记") }.joinToString("、")}｜明确未知者=${item.unknownTo.ifEmpty { listOf("未登记") }.joinToString("、")}｜读者=${item.readerState}｜本章策略=${item.revealPolicy}｜最早完整揭露=$earliest${item.note.takeIf(String::isNotBlank)?.let { "｜$it" }.orEmpty()}"
+                "- [${item.id}] ${item.title}｜已知者=${item.knownBy.ifEmpty { listOf("未登记") }.joinToString("、")}｜明确未知者=${item.unknownTo.ifEmpty { listOf("未登记") }.joinToString("、")}｜读者=${item.readerState}｜揭露策略=${item.revealPolicy}｜最早完整揭露=$earliest${item.note.takeIf(String::isNotBlank)?.let { "｜$it" }.orEmpty()}"
             }
     }
 

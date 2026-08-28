@@ -3,13 +3,17 @@ package com.xiguli.langhuan.data
 import android.content.Context
 import com.xiguli.langhuan.domain.BibleCategory
 import com.xiguli.langhuan.domain.BibleEntry
+import com.xiguli.langhuan.domain.ChapterContract
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.CharacterState
 import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.Foreshadowing
+import com.xiguli.langhuan.domain.KnowledgeBoundary
+import com.xiguli.langhuan.domain.KnowledgeRevealPolicy
 import com.xiguli.langhuan.domain.NovelStatus
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.OutlineNode
+import com.xiguli.langhuan.domain.ReaderKnowledgeState
 import com.xiguli.langhuan.domain.ScenePlan
 import java.util.UUID
 import kotlinx.serialization.Serializable
@@ -43,6 +47,13 @@ data class FoundationChapter(
     val objective: String,
     val conflict: String,
     val turningPoint: String,
+    /** 0.25.5：可选的建书阶段显式章节合同字段；旧断点全部有默认值。 */
+    val mustHappen: List<String> = emptyList(),
+    val mustNotHappen: List<String> = emptyList(),
+    val reveals: List<String> = emptyList(),
+    val secretsPreserved: List<String> = emptyList(),
+    val hookOut: String = "",
+    val continuityRisks: List<String> = emptyList(),
 )
 
 @Serializable
@@ -62,6 +73,20 @@ data class FoundationForeshadow(
     val expectedPayoff: String,
     val expectedChapterStart: Int,
     val expectedChapterEnd: Int,
+)
+
+/** 建书预览中的秘密/信息边界；用户确认建书后才会进入正式 StorySnapshot。 */
+@Serializable
+data class FoundationKnowledgeBoundary(
+    val title: String,
+    val truth: String = "",
+    val knownBy: List<String> = emptyList(),
+    val unknownTo: List<String> = emptyList(),
+    val readerState: ReaderKnowledgeState = ReaderKnowledgeState.UNKNOWN,
+    val revealPolicy: KnowledgeRevealPolicy = KnowledgeRevealPolicy.HIDDEN,
+    val earliestFullRevealChapter: Int = 0,
+    val triggerTerms: List<String> = emptyList(),
+    val note: String = "",
 )
 
 @Serializable
@@ -84,6 +109,8 @@ data class StoryFoundation(
     val volumes: List<FoundationVolume>,
     val foreshadowing: List<FoundationForeshadow>,
     val creationBrief: String = "",
+    /** 默认空值保证旧建书断点可直接恢复；为空时由已确认伏笔计划保守派生。 */
+    val knowledgeBoundaries: List<FoundationKnowledgeBoundary> = emptyList(),
 )
 
 class StoryFoundationApplier(context: Context) {
@@ -100,6 +127,7 @@ class StoryFoundationApplier(context: Context) {
             )
         )
         val novelId = base.snapshot.novel.id
+        val effectiveKnowledge = foundation.effectiveKnowledgeBoundaries()
 
         val master = OutlineNode(
             id = "master-$novelId",
@@ -145,6 +173,11 @@ class StoryFoundationApplier(context: Context) {
         sourceVolumes.forEachIndexed { volumeIndex, volume ->
             val parent = volumeNodes[volumeIndex]
             volume.chapters.sortedBy { it.order }.forEach { seed ->
+                val contract = seed.toContract(
+                    globalOrder = globalOrder,
+                    foreshadowing = foundation.foreshadowing,
+                    knowledge = effectiveKnowledge,
+                )
                 chapterNodes += OutlineNode(
                     id = "chapter-$novelId-$globalOrder-${UUID.randomUUID()}",
                     novelId = novelId,
@@ -155,6 +188,9 @@ class StoryFoundationApplier(context: Context) {
                     objective = seed.objective.ifBlank { "推动当前主线并让人物做出新的选择。" },
                     conflict = seed.conflict.ifBlank { "人物目标遭遇具体阻碍。" },
                     turningPoint = seed.turningPoint.ifBlank { "章末出现新的信息、代价或选择。" },
+                    mustInclude = contract.mustHappen,
+                    forbidden = contract.mustNotHappen,
+                    chapterContract = contract,
                 )
                 chapterSeeds += seed
                 globalOrder++
@@ -167,7 +203,11 @@ class StoryFoundationApplier(context: Context) {
                 objective = "用一个具体异常建立开篇钩子、主角现实目标与核心问题。",
                 conflict = "主角试图维持原有生活，但异常第一次越过安全边界。",
                 turningPoint = "章末出现无法用常识解释的新证据。",
+                mustHappen = listOf("建立主角现实目标", "出现一个可观察的核心异常"),
+                mustNotHappen = listOf("提前完整解释长期谜底"),
+                hookOut = "章末出现无法用常识解释的新证据。",
             )
+            val contract = seed.toContract(1, foundation.foreshadowing, effectiveKnowledge)
             chapterNodes += OutlineNode(
                 id = "chapter-$novelId-1-${UUID.randomUUID()}",
                 novelId = novelId,
@@ -178,6 +218,9 @@ class StoryFoundationApplier(context: Context) {
                 objective = seed.objective,
                 conflict = seed.conflict,
                 turningPoint = seed.turningPoint,
+                mustInclude = contract.mustHappen,
+                forbidden = contract.mustNotHappen,
+                chapterContract = contract,
             )
             chapterSeeds += seed
         }
@@ -247,6 +290,22 @@ class StoryFoundationApplier(context: Context) {
             )
         }
 
+        // 真相只进入专用信息边界账本，不写入普通 Bible/RAG，正文模型默认永远看不到 truth。
+        val knowledgeLedger = effectiveKnowledge.take(24).map { item ->
+            KnowledgeBoundary(
+                id = "knowledge-${UUID.randomUUID()}",
+                title = item.title.ifBlank { "待命名秘密" },
+                truth = item.truth,
+                knownBy = item.knownBy.distinct(),
+                unknownTo = item.unknownTo.distinct(),
+                readerState = item.readerState,
+                revealPolicy = item.revealPolicy,
+                earliestFullRevealChapter = item.earliestFullRevealChapter.coerceAtLeast(0),
+                triggerTerms = item.triggerTerms.filter(String::isNotBlank).distinct().take(8),
+                note = item.note,
+            )
+        }
+
         val firstNode = chapterNodes.first()
         val firstSeed = chapterSeeds.first()
         val firstVolume = volumeNodes.firstOrNull { it.id == firstNode.parentId } ?: volumeNodes.first()
@@ -264,9 +323,10 @@ class StoryFoundationApplier(context: Context) {
                     location = protagonist?.location ?: "故事起点",
                     purpose = firstSeed.objective,
                     conflict = firstSeed.conflict,
-                    outcome = firstSeed.turningPoint,
+                    outcome = firstNode.chapterContract.hookOut.ifBlank { firstSeed.turningPoint },
                 )
             ),
+            contract = firstNode.chapterContract,
         )
 
         val outline = buildList {
@@ -292,9 +352,65 @@ class StoryFoundationApplier(context: Context) {
             recentSummaries = emptyList(),
             longTermSummary = "",
             outline = outline,
+            knowledgeLedger = knowledgeLedger,
         )
         val saved = projects.saveStructure(snapshot, firstDraft)
         projects.setActiveStoryId(novelId)
         return saved
+    }
+
+    private fun StoryFoundation.effectiveKnowledgeBoundaries(): List<FoundationKnowledgeBoundary> {
+        if (knowledgeBoundaries.isNotEmpty()) return knowledgeBoundaries.distinctBy { it.title }
+        val allCharacters = characters.map { it.name }.filter(String::isNotBlank).distinct()
+        return foreshadowing.mapNotNull { item ->
+            val title = item.title.trim()
+            val payoff = item.expectedPayoff.trim()
+            if (title.isBlank() || payoff.isBlank()) return@mapNotNull null
+            val start = item.expectedChapterStart.coerceAtLeast(1)
+            val end = item.expectedChapterEnd.coerceAtLeast(start)
+            FoundationKnowledgeBoundary(
+                title = title,
+                truth = payoff,
+                knownBy = emptyList(),
+                unknownTo = allCharacters,
+                readerState = ReaderKnowledgeState.UNKNOWN,
+                revealPolicy = KnowledgeRevealPolicy.FULL,
+                earliestFullRevealChapter = end,
+                triggerTerms = listOfNotNull(payoff.takeIf { it.length in 4..48 }),
+                note = "由已确认伏笔计划派生；允许在第${start}-${end}章逐步推进，完整答案最早第${end}章。",
+            )
+        }.distinctBy { it.title }.take(24)
+    }
+
+    private fun FoundationChapter.toContract(
+        globalOrder: Int,
+        foreshadowing: List<FoundationForeshadow>,
+        knowledge: List<FoundationKnowledgeBoundary>,
+    ): ChapterContract {
+        val activeForeshadows = foreshadowing.filter { item ->
+            val start = item.expectedChapterStart.coerceAtLeast(1)
+            val end = item.expectedChapterEnd.coerceAtLeast(start)
+            globalOrder in start..end
+        }
+        val protected = knowledge.filter { item ->
+            item.revealPolicy in setOf(KnowledgeRevealPolicy.HIDDEN, KnowledgeRevealPolicy.HINT_ONLY) ||
+                (item.earliestFullRevealChapter > 0 && globalOrder < item.earliestFullRevealChapter)
+        }
+        val derivedRisks = buildList {
+            add("不得把后续章纲的转折提前兑现")
+            if (protected.isNotEmpty()) add("仍有${protected.size}条秘密处于保护期，只能按当前信息层级写")
+            if (activeForeshadows.isNotEmpty()) add("本章可推进伏笔，但推进不等于完整揭底")
+        }
+        return ChapterContract(
+            purpose = objective,
+            mustHappen = mustHappen.distinct(),
+            mustNotHappen = mustNotHappen.distinct(),
+            reveals = (reveals + activeForeshadows.map { "可推进伏笔：${it.title}" }).distinct(),
+            secretsPreserved = (secretsPreserved + protected.map { it.title }).distinct(),
+            foreshadowing = activeForeshadows.map { it.title }.distinct(),
+            hookOut = hookOut.ifBlank { turningPoint },
+            continuityRisks = (continuityRisks + derivedRisks).distinct(),
+            locked = true,
+        )
     }
 }

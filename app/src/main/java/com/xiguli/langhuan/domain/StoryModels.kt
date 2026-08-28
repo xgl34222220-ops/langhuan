@@ -25,6 +25,51 @@ enum class NovelStatus { PLANNING, WRITING, PAUSED, FINISHED }
 @Serializable
 enum class OutlineLevel { MASTER, VOLUME, CHAPTER }
 
+/** 读者当前对某条秘密/事实知道到什么程度。 */
+@Serializable
+enum class ReaderKnowledgeState { UNKNOWN, PARTIAL, KNOWN }
+
+/** 当前章节允许如何触碰一条秘密。 */
+@Serializable
+enum class KnowledgeRevealPolicy { HIDDEN, HINT_ONLY, PARTIAL, FULL }
+
+/**
+ * 信息边界账本。truth 是作者/系统知道的真实答案，不代表人物或读者现在可以知道。
+ * triggerTerms 只放“完整揭底时一定会出现”的短语，供本地 Gate 做保守的明确泄漏检查。
+ */
+@Serializable
+data class KnowledgeBoundary(
+    val id: String,
+    val title: String,
+    val truth: String = "",
+    val knownBy: List<String> = emptyList(),
+    val unknownTo: List<String> = emptyList(),
+    val readerState: ReaderKnowledgeState = ReaderKnowledgeState.UNKNOWN,
+    val revealPolicy: KnowledgeRevealPolicy = KnowledgeRevealPolicy.HIDDEN,
+    val earliestFullRevealChapter: Int = 0,
+    val triggerTerms: List<String> = emptyList(),
+    val note: String = "",
+)
+
+/**
+ * 章节合同：写正文前先锁定“必须发生 / 绝不能发生 / 允许揭露 / 必须保密 / 人物进出状态”。
+ * 所有字段都有默认值，旧项目和旧章节无需迁移即可继续读取。
+ */
+@Serializable
+data class ChapterContract(
+    val purpose: String = "",
+    val mustHappen: List<String> = emptyList(),
+    val mustNotHappen: List<String> = emptyList(),
+    val characterStateIn: Map<String, String> = emptyMap(),
+    val characterStateOut: Map<String, String> = emptyMap(),
+    val reveals: List<String> = emptyList(),
+    val secretsPreserved: List<String> = emptyList(),
+    val foreshadowing: List<String> = emptyList(),
+    val hookOut: String = "",
+    val continuityRisks: List<String> = emptyList(),
+    val locked: Boolean = true,
+)
+
 @Serializable
 data class OutlineNode(
     val id: String,
@@ -39,6 +84,8 @@ data class OutlineNode(
     val mustInclude: List<String> = emptyList(),
     val forbidden: List<String> = emptyList(),
     val locked: Boolean = true,
+    /** 章纲层可保存完整章节合同；总纲/卷纲保持默认空合同。 */
+    val chapterContract: ChapterContract = ChapterContract(),
 )
 
 @Serializable
@@ -107,51 +154,6 @@ data class Foreshadowing(
     val expectedChapterStart: Int,
     val expectedChapterEnd: Int,
     val status: ForeshadowStatus,
-)
-
-/** 读者当前对某条秘密/事实知道到什么程度。 */
-@Serializable
-enum class ReaderKnowledgeState { UNKNOWN, PARTIAL, KNOWN }
-
-/** 当前章节允许如何触碰一条秘密。 */
-@Serializable
-enum class KnowledgeRevealPolicy { HIDDEN, HINT_ONLY, PARTIAL, FULL }
-
-/**
- * 信息边界账本。truth 是作者/系统知道的真实答案，不代表人物或读者现在可以知道。
- * triggerTerms 只放“完整揭底时一定会出现”的短语，供本地 Gate 做保守的明确泄漏检查。
- */
-@Serializable
-data class KnowledgeBoundary(
-    val id: String,
-    val title: String,
-    val truth: String = "",
-    val knownBy: List<String> = emptyList(),
-    val unknownTo: List<String> = emptyList(),
-    val readerState: ReaderKnowledgeState = ReaderKnowledgeState.UNKNOWN,
-    val revealPolicy: KnowledgeRevealPolicy = KnowledgeRevealPolicy.HIDDEN,
-    val earliestFullRevealChapter: Int = 0,
-    val triggerTerms: List<String> = emptyList(),
-    val note: String = "",
-)
-
-/**
- * 章节合同：写正文前先锁定“必须发生 / 绝不能发生 / 允许揭露 / 必须保密 / 人物进出状态”。
- * 所有字段都有默认值，旧项目和旧章节无需迁移即可继续读取。
- */
-@Serializable
-data class ChapterContract(
-    val purpose: String = "",
-    val mustHappen: List<String> = emptyList(),
-    val mustNotHappen: List<String> = emptyList(),
-    val characterStateIn: Map<String, String> = emptyMap(),
-    val characterStateOut: Map<String, String> = emptyMap(),
-    val reveals: List<String> = emptyList(),
-    val secretsPreserved: List<String> = emptyList(),
-    val foreshadowing: List<String> = emptyList(),
-    val hookOut: String = "",
-    val continuityRisks: List<String> = emptyList(),
-    val locked: Boolean = true,
 )
 
 /**
