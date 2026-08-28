@@ -99,6 +99,23 @@ data class Foreshadowing(
     val status: ForeshadowStatus,
 )
 
+/**
+ * Agent 已确认写入长期记忆的事实来源记录。
+ * 默认字段让旧项目无需数据库迁移即可继续反序列化；从 0.14 开始的新事实都会留下章级来源。
+ */
+@Serializable
+data class FactProvenance(
+    val id: String,
+    val novelId: StoryId,
+    val chapter: Int,
+    val kind: String,
+    val subject: String,
+    val before: String = "",
+    val after: String = "",
+    val evidence: String = "",
+    val recordedAt: Long = 0L,
+)
+
 @Serializable
 data class ChapterDraft(
     val id: String,
@@ -136,4 +153,6 @@ data class StorySnapshot(
     val longTermSummary: String = "",
     /** 完整三级大纲。0.4 以前没有该字段，加载时为空则用 activeOutline 自动补齐。 */
     val outline: List<OutlineNode> = emptyList(),
+    /** 结构化长期事实的章级来源。旧项目为空；新写入事实逐章累积，供依赖分析和安全回滚使用。 */
+    val factHistory: List<FactProvenance> = emptyList(),
 )
