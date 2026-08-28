@@ -153,7 +153,7 @@ fun ResearchNewBookConversationPage(
                                 researching -> "正在补全长期研究档案"
                                 state.foundation != null && state.blueprintDirty -> "继续正常聊天 · 当前蓝图有新要求待同步"
                                 state.foundation != null -> "继续正常聊天修改，满意后正式建书"
-                                state.proposal != null -> "方案已成形，下一步搭世界、人物和三级大纲"
+                                state.proposal != null -> "方案已整理 · 可继续聊天，满意后再生成蓝图"
                                 archiveState.entries.isNotEmpty() -> "已记住 ${archiveState.entries.size} 个作者 / 作品研究档案"
                                 else -> "可查作品/作者，也可融合多本小说的高层设定方法"
                             },
@@ -279,6 +279,31 @@ fun ResearchNewBookConversationPage(
             if (archiveState.entries.isNotEmpty()) item { ResearchArchiveMemoryCard(archiveState) }
             items(state.messages) { message -> ResearchChatBubble(message) }
             researchMessage?.let { message -> item { ResearchStatusCard(message, lastTargets, lastSources) } }
+
+            if (state.foundation == null && state.messages.any { it.role == "user" }) item {
+                Card {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("建书方案", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "普通聊天不会自动改方案。聊满意后再手动整理，避免每句话都被工作流打断。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = viewModel::syncConversationProposal,
+                            enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
+                        ) {
+                            Text(if (state.proposal == null) "整理方案" else "重新同步")
+                        }
+                    }
+                }
+            }
 
             if (state.foundation == null) {
                 state.proposal?.let { proposal ->

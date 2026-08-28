@@ -5,10 +5,17 @@ import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.OutlineLevel
 
+data class PromptMessage(
+    val role: String,
+    val content: String,
+)
+
 data class PromptBundle(
     val system: String,
     val user: String,
     val attachments: List<PromptAttachment> = emptyList(),
+    val messages: List<PromptMessage> = emptyList(),
+    val jsonMode: Boolean = true,
 )
 
 data class PromptAttachment(

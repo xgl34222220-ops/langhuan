@@ -12,6 +12,7 @@ import com.xiguli.langhuan.data.StoryFoundation
 import com.xiguli.langhuan.data.StoryFoundationApplier
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
+import com.xiguli.langhuan.engine.PromptMessage
 import com.xiguli.langhuan.engine.PromptAttachment
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
 import com.xiguli.langhuan.engine.UniversalAiGateway
@@ -269,11 +270,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     it.copy(
                         messages = it.messages + CreationChatMessage("assistant", turn.reply),
                         proposal = turn.proposal?.sanitizePlaceholders() ?: it.proposal,
-                        blueprintDirty = blueprintDirtyAfterConversation(
-                            alreadyDirty = it.blueprintDirty,
-                            hasFoundation = before.foundation != null,
-                            proposalUpdated = turn.proposal != null,
-                        ),
+                        blueprintDirty = it.blueprintDirty || (before.foundation != null && !isQuestionLike(plainInstruction)),
                         isBusy = false,
                         busyLabel = "",
                     )
@@ -352,6 +349,45 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         )
     }
 
+    fun syncConversationProposal() {
+        val before = _state.value
+        if (before.isBusy || before.isLoadingAttachments || before.messages.none { it.role == "user" }) return
+        viewModelScope.launch {
+            val gateway = activeGateway()
+            if (gateway == null) {
+                _state.update { it.copy(error = "请先在设置里添加并启用一个 AI 服务") }
+                return@launch
+            }
+            val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders()
+                ?: NewBookProposal(
+                    title = "未命名",
+                    genre = "未分类",
+                    premise = "尚未整理",
+                    theme = DEFAULT_THEME,
+                    targetWords = 500_000,
+                    coreHook = "待整理",
+                    coverBrief = "",
+                    rationale = "",
+                )
+            _state.update { it.copy(isBusy = true, busyLabel = "正在把当前会谈整理为建书方案……", error = null) }
+            runCatching {
+                ProposalConsolidator(gateway).consolidate(baseline, before.messages)
+            }.onSuccess { proposal ->
+                _state.update {
+                    it.copy(
+                        proposal = proposal.sanitizePlaceholders(),
+                        blueprintDirty = before.foundation != null,
+                        isBusy = false,
+                        busyLabel = "",
+                        error = null,
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "整理当前方案失败")) }
+            }
+        }
+    }
+
     fun generateFoundation(regenerate: Boolean = false) {
         val before = _state.value
         val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders() ?: return
@@ -374,9 +410,9 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 )
             }
             val instruction = if (regenerate) {
-                "以会谈里最后确认的决定为准，重新设计一套明显不同但更自洽的角色、规则、分卷结构和前期章节路线。任何已被用户否定或替换的旧方案都不得复用。"
+                "以会谈和用户上传作品设定为硬约束，重新整理并补全蓝图。只重做 AI 补充部分；附件明确的人物、规则、势力、卷数、卷序、主线节点和终局不得改动。"
             } else {
-                "以会谈里最后确认的决定为唯一准绳，把当前最新新书方案扩展成可直接开始长篇写作的完整建书蓝图。旧简介、旧能力、旧冲突若已被后续决定替换，禁止回滚。"
+                "以会谈最新决定和用户上传作品设定为唯一准绳，把当前方案扩展成可写作蓝图。附件原文是硬约束；AI 只能补缺口，禁止删卷、并卷、把类别当人物或偷换既定规则。"
             }
             runCatching {
                 val refreshed = runCatching {
@@ -550,100 +586,45 @@ private class NewBookConversationEngine(
         currentProposal: NewBookProposal? = null,
         referenceContext: String = "",
     ): ConversationTurn {
-        val transcript = conversationTranscript(messages, keepLatestResearch = true)
         val latest = messages.lastOrNull { it.role == "user" }?.text
             ?.substringBefore(RESEARCH_CONTEXT_MARKER)
             ?.trim()
             .orEmpty()
-        val output = gateway.generateStreaming(
+        val hiddenContext = buildString {
+            currentProposal?.let {
+                appendLine(proposalContext(it))
+                appendLine()
+            }
+            if (referenceContext.isNotBlank()) {
+                appendLine("【用户显式选择的参考双层 DNA】")
+                appendLine(referenceContext)
+            }
+        }
+        val response = gateway.generateText(
             PromptBundle(
                 system = """
-                    你是“琅嬛”的新书策划搭档。通过自然对话把模糊想法发展成原创长篇小说方案，不要先让用户填表。
+                    你是“琅嬛”的新书创作搭档。你的第一职责是像一个正常、可靠的 AI 助手一样理解用户当前这句话并自然回应，而不是把每轮聊天强行变成表格、JSON、方案卡或自动工作流。
 
-                    规则：
-                    1. 先理解用户想要的阅读体验。回复篇幅必须服从当前问题：简单选择直接确认，复杂比较、设定推演或研究结论就完整讲清；不得用机械字数限制删掉必要的理由、区别或设定。只追问真正会改变路线且会谈中仍未解决的问题，已经明确回答过的问题禁止重复追问，不要用“如果你愿意我可以……”收尾。
-                    2. 当前轮若带有琅嬛联网资料/长期研究档案，用它核对公开事实；用户明确纠正的作者-作品关系属于项目事实，网页暂未核验只能标待核验，不能反复否定。
-                    3. 参考模板有两种用途，必须区分：
-                       - 原作事实问答：用户问模板/原作主角姓名、人物、能力、世界观、规则、势力、地点、剧情结构等时，可以并且应该直接说出所选 STORY DNA 已保存的原作事实、人物名和专名；报告没保存的事实就明确说“当前蒸馏报告未确认”。
-                       - 新书创作：只能迁移高层机制，必须重新设计原创角色、规则、谜团和剧情；不得复用原作专名、具体能力规则、标志性句式和剧情骨架。
-                       “禁止照搬”只约束新书创作，绝不能用来拒绝回答用户对模板本身的事实问题。
-                    4. 会谈是唯一事实源。越新的用户明确决定优先级越高；用户说“B吧/就这个/改成/不要/换掉/天生不怕吧”这类短句也属于有效决定，必须结合前文理解并覆盖旧方案。
-                       用户说“他们/它们/这两本/前面那几本”时，必须承接最近明确出现或隐藏研究上下文已经解析出的作品，绝不能把代词本身当作书名或新设定。
-                    5. 如果已经存在“当前方案”，用户这一轮又修改了主角能力、身份、目标、世界规则、核心冲突、题材、阅读体验、书名或简介，你必须返回一套完整更新后的方案，不能只聊天后继续保留旧 proposal。
-                    6. 用户这一轮如果是提问（尤其是模板/原作事实提问），只回答问题，不重写方案、不追问已回答事项、不输出新 proposal。此时输出 GeneratedChapter JSON：title="__CHAT__"；content=直接答案；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    7. 只有确实仍缺一个会改变主线的关键选择、或者用户只是普通聊天而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=像正常 AI 聊天一样直接回应，或提出一个必要问题；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。能从会谈确定就直接确定，禁止为了显得专业而反复确认。
-                    8. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=完整连贯的平台简介，篇幅服从故事信息；summary=像正常聊天一样直接回应用户：说明你如何理解这条要求、具体改了什么及必要理由，也可以继续讨论，不要写“内部策划摘要”；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
-                    9. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。只要核心设定已经改变，就必须按最新事实重写简介，禁止为了省事复用旧简介。
-                    10. 若存在“用户显式选择的参考双层 DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
-                    11. 用户上传的文件是本轮会谈资料。必须先阅读文件内容再回答，并区分“文件明确写明”与“你的推断”；不得假装没收到附件，也不得把附件中的参考作品内容自动当成新书已确认设定。
-                    12. 若附件被识别为用户自己的“作品设定/世界观/大纲”，不能只做摘要：先把文件明确写出的书名、题材、篇幅、故事起点、人物、规则、势力、能力与代价、主线、分卷和伏笔同步进当前方案；再主动检查规则闭环、能力与代价平衡、人物动机、冲突升级、谜底释放顺序、分卷重复和前后矛盾。文件原文属于已确认基线；你补出的内容必须明确称为“优化建议/待确认”，用户认可前不得冒充锁定事实。
-                    13. 对作品设定文件的正常回复至少包含：你识别到了什么、最值得保留的核心、具体风险或空缺、可以直接采用的补强方案。要结合文件里的实际名称和规则说话，禁止只说“设定很完整、可以继续完善”这类空话。
+                    对话原则：
+                    1. 优先回答用户真正问的内容。简单问题简洁回答；复杂设定、长文件分析、剧情推演可以充分展开，不机械限字。
+                    2. 认真承接完整多轮上下文。后出现的用户明确决定覆盖旧决定；“他/他们/这本/前面那几本”等指代按最近上下文理解，不把代词当新实体。
+                    3. 用户上传的作品设定、世界观、大纲和人物文件属于项目资料。先读文件，再结合其中实际名称、规则、人物和分卷回答。文件明确写出的内容不得擅自改写；你的新增想法必须明确标成建议或待确认。
+                    4. 不要因为用户提到“小说、作品、资料、参考、融合”就自行联网。只有页面联网工具明确附带了网页研究上下文时，才把那些资料作为辅助证据。
+                    5. 普通聊天不自动生成或修改建书方案，不自动生成蓝图，不自动改简介，不输出内部状态字段，也不要要求用户填表。用户会在满意时主动点“整理当前方案 / 生成蓝图 / 正式建书”。
+                    6. 可以主动指出设定漏洞、人物动机问题、规则闭环风险、节奏问题和更好的方案，但必须区分“原文事实”和“你的建议”。不要为了显得专业而反复追问已经明确的信息。
+                    7. 参考作品用于讨论时可以正常谈其高层特点；真正创作新书时避免照搬专名、标志性规则和剧情骨架。
+                    8. 不要用“如果你愿意我可以……”之类空泛收尾。该分析就分析，该给方案就直接给方案。
+
+                    $hiddenContext
                 """.trimIndent(),
-                user = """
-                    ${if (referenceContext.isBlank()) "【参考双层 DNA】本次未选择任何蒸馏模板。" else referenceContext}
-
-                    ${currentProposal?.let(::proposalContext) ?: "【当前方案】尚未形成完整方案。"}
-
-                    【本次新书创作会谈：后出现的用户决定覆盖前面的旧方案】
-                    $transcript
-
-                    【最新用户输入】
-                    $latest
-                """.trimIndent(),
-                attachments = messagesPromptAttachments(messages),
+                user = latest,
+                messages = conversationPromptMessages(messages),
+                attachments = messagesPromptAttachments(messages.takeLast(1)),
+                jsonMode = false,
             )
-        ) { }
-
-        if (output.title.trim() == CHAT_SENTINEL || output.stateChanges.isEmpty()) {
-            val reply = output.content.trim().ifBlank { "再告诉我一点你最在意的感觉，我继续帮你收紧方向。" }
-            if (currentProposal != null && looksLikeCreativeDecision(latest)) {
-                val reconciled = runCatching {
-                    ProposalConsolidator(gateway).consolidate(currentProposal, messages)
-                }.getOrNull()
-                if (reconciled != null) {
-                    return ConversationTurn(
-                        reply = "$reply\n\n你刚才这条决定已经同步进当前方案，不会继续沿用旧简介。",
-                        proposal = reconciled,
-                    )
-                }
-            }
-            return ConversationTurn(reply = reply)
-        }
-
-        val meta = output.stateChanges.first()
-        val rawProposal = NewBookProposal(
-            title = sanitizeTitle(output.title),
-            genre = sanitizeMetaValue(meta.subject, GENRE_PLACEHOLDERS, currentProposal?.genre ?: "未分类"),
-            premise = sanitizeSynopsis(output.content),
-            theme = sanitizeMetaValue(meta.field, THEME_PLACEHOLDERS, currentProposal?.theme ?: DEFAULT_THEME),
-            targetWords = meta.before.filter(Char::isDigit).toIntOrNull()?.coerceIn(10_000, 5_000_000)
-                ?: currentProposal?.targetWords
-                ?: 500_000,
-            coreHook = meta.after.trim().ifBlank { currentProposal?.coreHook ?: "一个看似普通的选择，逐渐暴露出更大的真相。" },
-            coverBrief = meta.evidence.trim().ifBlank { currentProposal?.coverBrief.orEmpty() },
-            rationale = output.summary.trim().ifBlank { currentProposal?.rationale.orEmpty() },
-            decisionLedger = currentProposal?.decisionLedger.orEmpty(),
-        ).sanitizePlaceholders()
-        val proposal = SynopsisQualityEditor(gateway).ensure(
-            proposal = rawProposal,
-            decisionLedger = buildString {
-                if (!currentProposal?.decisionLedger.isNullOrBlank()) {
-                    appendLine("已有确认事实账本：")
-                    appendLine(currentProposal?.decisionLedger)
-                }
-                appendLine("越新的用户决定优先。最近用户输入：$latest")
-                messages.filter { it.role == "user" }.forEach { message ->
-                    appendLine("- ${message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim()}")
-                }
-            },
-            force = true,
-        )
+        ).trim()
         return ConversationTurn(
-            reply = proposal.rationale.ifBlank {
-                if (currentProposal == null) "我理解了，这条要求已经进入当前方案。你可以继续补充或直接纠正，方案会跟着改。"
-                else "明白，已经按你刚才的要求修改。你继续说，后面的决定会覆盖前面的旧版本。"
-            },
-            proposal = proposal,
+            reply = response.ifBlank { "我在。继续按你刚才的设定往下聊。" },
         )
     }
 
@@ -713,6 +694,28 @@ private fun inferFoundationStage(foundation: StoryFoundation?): Int {
 private fun sanitizeMetaValue(value: String, placeholders: Set<String>, fallback: String): String {
     val clean = value.trim()
     return if (clean.isBlank() || placeholders.any { clean.equals(it, ignoreCase = true) }) fallback else clean
+}
+
+private fun conversationPromptMessages(messages: List<CreationChatMessage>): List<PromptMessage> {
+    val firstUser = messages.indexOfFirst { it.role == "user" }
+    if (firstUser < 0) return emptyList()
+    val relevant = messages.drop(firstUser)
+    val lastUser = relevant.indexOfLast { it.role == "user" }
+    return relevant.mapIndexedNotNull { index, message ->
+        var text = message.text
+        if (message.role == "user" && index != lastUser) {
+            text = text.substringBefore(RESEARCH_CONTEXT_MARKER).trimEnd()
+        }
+        val attachments = attachmentContext(message.attachments)
+        val content = if (attachments.isBlank()) text else "$text
+$attachments"
+        content.trim().takeIf { it.isNotBlank() }?.let {
+            PromptMessage(
+                role = if (message.role == "assistant") "assistant" else "user",
+                content = it,
+            )
+        }
+    }
 }
 
 private fun conversationTranscript(

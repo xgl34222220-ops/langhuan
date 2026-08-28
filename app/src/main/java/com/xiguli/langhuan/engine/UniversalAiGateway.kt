@@ -156,6 +156,20 @@ class UniversalAiGateway(
         decodeChapter(extractText(protocol, response))
     }
 
+    override suspend fun generateText(prompt: PromptBundle): String = withContext(Dispatchers.IO) {
+        require(config.baseUrl.isNotBlank()) { "请先配置 API 地址" }
+        require(config.model.isNotBlank()) { "请先选择或填写模型" }
+        val protocol = resolvedProtocol()
+        val response = when (protocol) {
+            ApiProtocol.ANTHROPIC -> callAnthropic(prompt)
+            ApiProtocol.GEMINI -> callGemini(prompt)
+            ApiProtocol.AZURE_OPENAI -> callOpenAi(prompt, azure = true)
+            ApiProtocol.OLLAMA -> callOllama(prompt)
+            else -> callOpenAi(prompt, azure = false)
+        }
+        extractText(protocol, response)
+    }
+
     override suspend fun generateStreaming(
         prompt: PromptBundle,
         onDelta: (String) -> Unit,
@@ -228,41 +242,46 @@ class UniversalAiGateway(
     }
 
     private fun openAiBody(prompt: PromptBundle, stream: Boolean, azure: Boolean): JsonObject = buildJsonObject {
+        val turns = prompt.messages.ifEmpty { listOf(PromptMessage("user", prompt.user)) }
         put("model", config.model)
         put("temperature", config.temperature)
         put("stream", stream)
         put("messages", buildJsonArray {
             add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
-            add(buildJsonObject {
-                put("role", "user")
-                if (prompt.attachments.isEmpty()) {
-                    put("content", prompt.user)
-                } else {
-                    put("content", buildJsonArray {
-                        add(buildJsonObject { put("type", "text"); put("text", prompt.user) })
-                        prompt.attachments.forEach { attachment ->
-                            if (attachment.mimeType.startsWith("image/")) {
-                                add(buildJsonObject {
-                                    put("type", "image_url")
-                                    put("image_url", buildJsonObject {
-                                        put("url", "data:${attachment.mimeType};base64,${attachment.base64Data}")
+            turns.forEachIndexed { index, turn ->
+                val role = if (turn.role.equals("assistant", true)) "assistant" else "user"
+                val withAttachments = role == "user" && index == turns.lastIndex && prompt.attachments.isNotEmpty()
+                add(buildJsonObject {
+                    put("role", role)
+                    if (!withAttachments) {
+                        put("content", turn.content)
+                    } else {
+                        put("content", buildJsonArray {
+                            add(buildJsonObject { put("type", "text"); put("text", turn.content) })
+                            prompt.attachments.forEach { attachment ->
+                                if (attachment.mimeType.startsWith("image/")) {
+                                    add(buildJsonObject {
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject {
+                                            put("url", "data:${attachment.mimeType};base64,${attachment.base64Data}")
+                                        })
                                     })
-                                })
-                            } else {
-                                add(buildJsonObject {
-                                    put("type", "file")
-                                    put("file", buildJsonObject {
-                                        put("filename", attachment.fileName)
-                                        put("file_data", "data:${attachment.mimeType};base64,${attachment.base64Data}")
+                                } else {
+                                    add(buildJsonObject {
+                                        put("type", "file")
+                                        put("file", buildJsonObject {
+                                            put("filename", attachment.fileName)
+                                            put("file_data", "data:${attachment.mimeType};base64,${attachment.base64Data}")
+                                        })
                                     })
-                                })
+                                }
                             }
-                        }
-                    })
-                }
-            })
+                        })
+                    }
+                })
+            }
         })
-        if (config.supportsJsonMode && !azure) {
+        if (prompt.jsonMode && config.supportsJsonMode && !azure) {
             put("response_format", buildJsonObject { put("type", "json_object") })
         }
     }
@@ -289,34 +308,39 @@ class UniversalAiGateway(
     }
 
     private fun anthropicBody(prompt: PromptBundle, stream: Boolean): JsonObject = buildJsonObject {
+        val turns = prompt.messages.ifEmpty { listOf(PromptMessage("user", prompt.user)) }
         put("model", config.model)
         put("max_tokens", 8192)
         put("temperature", config.temperature)
         put("stream", stream)
         put("system", prompt.system)
         put("messages", buildJsonArray {
-            add(buildJsonObject {
-                put("role", "user")
-                if (prompt.attachments.isEmpty()) {
-                    put("content", prompt.user)
-                } else {
-                    put("content", buildJsonArray {
-                        add(buildJsonObject { put("type", "text"); put("text", prompt.user) })
-                        prompt.attachments.forEach { attachment ->
-                            val kind = if (attachment.mimeType.startsWith("image/")) "image" else "document"
-                            add(buildJsonObject {
-                                put("type", kind)
-                                put("source", buildJsonObject {
-                                    put("type", "base64")
-                                    put("media_type", attachment.mimeType)
-                                    put("data", attachment.base64Data)
+            turns.forEachIndexed { index, turn ->
+                val role = if (turn.role.equals("assistant", true)) "assistant" else "user"
+                val withAttachments = role == "user" && index == turns.lastIndex && prompt.attachments.isNotEmpty()
+                add(buildJsonObject {
+                    put("role", role)
+                    if (!withAttachments) {
+                        put("content", turn.content)
+                    } else {
+                        put("content", buildJsonArray {
+                            add(buildJsonObject { put("type", "text"); put("text", turn.content) })
+                            prompt.attachments.forEach { attachment ->
+                                val kind = if (attachment.mimeType.startsWith("image/")) "image" else "document"
+                                add(buildJsonObject {
+                                    put("type", kind)
+                                    put("source", buildJsonObject {
+                                        put("type", "base64")
+                                        put("media_type", attachment.mimeType)
+                                        put("data", attachment.base64Data)
+                                    })
+                                    if (kind == "document") put("title", attachment.fileName)
                                 })
-                                if (kind == "document") put("title", attachment.fileName)
-                            })
-                        }
-                    })
-                }
-            })
+                            }
+                        })
+                    }
+                })
+            }
         })
     }
 
@@ -350,28 +374,34 @@ class UniversalAiGateway(
     }
 
     private fun geminiBody(prompt: PromptBundle): JsonObject = buildJsonObject {
+        val turns = prompt.messages.ifEmpty { listOf(PromptMessage("user", prompt.user)) }
         put("system_instruction", buildJsonObject {
             put("parts", buildJsonArray { add(buildJsonObject { put("text", prompt.system) }) })
         })
         put("contents", buildJsonArray {
-            add(buildJsonObject {
-                put("role", "user")
-                put("parts", buildJsonArray {
-                    add(buildJsonObject { put("text", prompt.user) })
-                    prompt.attachments.forEach { attachment ->
-                        add(buildJsonObject {
-                            put("inline_data", buildJsonObject {
-                                put("mime_type", attachment.mimeType)
-                                put("data", attachment.base64Data)
-                            })
-                        })
-                    }
+            turns.forEachIndexed { index, turn ->
+                val role = if (turn.role.equals("assistant", true)) "model" else "user"
+                add(buildJsonObject {
+                    put("role", role)
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", turn.content) })
+                        if (role == "user" && index == turns.lastIndex) {
+                            prompt.attachments.forEach { attachment ->
+                                add(buildJsonObject {
+                                    put("inline_data", buildJsonObject {
+                                        put("mime_type", attachment.mimeType)
+                                        put("data", attachment.base64Data)
+                                    })
+                                })
+                            }
+                        }
+                    })
                 })
-            })
+            }
         })
         put("generationConfig", buildJsonObject {
             put("temperature", config.temperature)
-            put("responseMimeType", "application/json")
+            if (prompt.jsonMode) put("responseMimeType", "application/json")
         })
     }
 
@@ -400,18 +430,22 @@ class UniversalAiGateway(
         require(prompt.attachments.all { it.mimeType.startsWith("image/") }) {
             "当前 Ollama 对话只支持图片附件；PDF 请切换支持文档输入的 OpenAI、Claude 或 Gemini 模型。"
         }
+        val turns = prompt.messages.ifEmpty { listOf(PromptMessage("user", prompt.user)) }
         put("model", config.model)
         put("stream", stream)
-        put("format", "json")
+        if (prompt.jsonMode) put("format", "json")
         put("messages", buildJsonArray {
             add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
-            add(buildJsonObject {
-                put("role", "user")
-                put("content", prompt.user)
-                if (prompt.attachments.isNotEmpty()) {
-                    put("images", buildJsonArray { prompt.attachments.forEach { add(JsonPrimitive(it.base64Data)) } })
-                }
-            })
+            turns.forEachIndexed { index, turn ->
+                val role = if (turn.role.equals("assistant", true)) "assistant" else "user"
+                add(buildJsonObject {
+                    put("role", role)
+                    put("content", turn.content)
+                    if (role == "user" && index == turns.lastIndex && prompt.attachments.isNotEmpty()) {
+                        put("images", buildJsonArray { prompt.attachments.forEach { add(JsonPrimitive(it.base64Data)) } })
+                    }
+                })
+            }
         })
         put("options", buildJsonObject { put("temperature", config.temperature) })
     }

@@ -9,6 +9,9 @@ import kotlinx.coroutines.delay
 interface AiGateway {
     suspend fun generate(prompt: PromptBundle): GeneratedChapter
 
+    /** Plain text path for normal conversation. Structured tools continue using [generate]. */
+    suspend fun generateText(prompt: PromptBundle): String = generate(prompt).content
+
     /**
      * 默认兼容旧网关。支持流式协议的网关覆写此方法并持续回传原始文本片段。
      */
