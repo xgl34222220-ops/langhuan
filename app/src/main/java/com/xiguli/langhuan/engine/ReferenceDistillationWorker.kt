@@ -65,6 +65,7 @@ class ReferenceDistillationWorker(
 ) : CoroutineWorker(appContext, params) {
     private val repository = PersistentStoryRepository(appContext)
     private val archive = CreationResearchArchiveStore(appContext)
+    private val reportStore = ReferenceDistillationReportStore(appContext)
 
     override suspend fun doWork(): Result {
         val path = ReferenceDistillationJobs.path(inputData)
@@ -136,6 +137,17 @@ class ReferenceDistillationWorker(
             )
             setForeground(foreground("正在聚合《${manuscript.title}》风格 DNA", 78))
             val dossier = aggregate(gateway, manuscript, localMetrics, observations)
+            val reportId = id.toString()
+            reportStore.save(
+                taskId = reportId,
+                title = manuscript.title,
+                chapters = manuscript.chapters.size,
+                samples = samples.size,
+                provider = providerLabel,
+                model = modelLabel,
+                localMetrics = localMetrics,
+                dossier = dossier,
+            )
             archive.merge(
                 bundle = CreationResearchBundle(
                     originalText = "本地导入参考小说蒸馏：${manuscript.title}",
@@ -147,7 +159,7 @@ class ReferenceDistillationWorker(
                                 sources = listOf(
                                     WebResearchSource(
                                         title = "[本地蒸馏] ${manuscript.title} · Style DNA",
-                                        url = "local://distillation/${id}",
+                                        url = "local://distillation/$reportId",
                                         snippet = dossier.content.take(650),
                                         detail = buildString {
                                             appendLine(dossier.summary)
@@ -183,6 +195,7 @@ class ReferenceDistillationWorker(
                     "samples" to samples.size,
                     "provider" to providerLabel,
                     "model" to modelLabel,
+                    "reportId" to reportId,
                 )
             )
         }.getOrElse { error ->
