@@ -249,6 +249,61 @@ fun ChapterEditorPage(
 
             item {
                 Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.FactCheck, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("章节事实依赖", fontWeight = FontWeight.Bold)
+                                Text("删除、整章大改或回滚前先看这一章影响了什么。依赖判定在本地完成，AI 只生成修复方案。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        val report = state.dependencyReport
+                        if (report == null) {
+                            Button(
+                                onClick = viewModel::analyzeDependencies,
+                                enabled = !state.isAnalyzingDependencies && !state.dirty,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                if (state.isAnalyzingDependencies) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                else Icon(Icons.Rounded.Search, null)
+                                Spacer(Modifier.width(7.dp))
+                                Text(if (state.dirty) "等自动保存后检查" else if (state.isAnalyzingDependencies) "正在检查" else "检查本章对后续的影响")
+                            }
+                        } else {
+                            val riskColor = if (report.overallRisk.label == "高") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            Text("${report.overallRisk.label}风险 · 高风险 ${report.highCount} · 中风险 ${report.mediumCount} · 影响后续 ${report.downstreamChapterCount} 章", color = riskColor, fontWeight = FontWeight.Bold)
+                            Text(report.recommendation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            report.all.take(8).forEach { impact ->
+                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f)) {
+                                    Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                        Text("${impact.risk.label} · ${impact.kind.label} · ${impact.title}", fontWeight = FontWeight.SemiBold)
+                                        Text(impact.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                            if (report.all.size > 8) Text("还有 ${report.all.size - 8} 项未展开", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = viewModel::analyzeDependencies, modifier = Modifier.weight(1f), enabled = !state.isAnalyzingDependencies) { Text("重新检查") }
+                                Button(onClick = viewModel::generateRepairPlan, modifier = Modifier.weight(1f), enabled = !state.isPlanningRepair) {
+                                    if (state.isPlanningRepair) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(if (state.isPlanningRepair) "规划中" else "AI 修复计划")
+                                }
+                            }
+                            state.repairPlan?.let { plan ->
+                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .4f)) {
+                                    SelectionContainer { Text(plan, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.primary)
@@ -274,7 +329,10 @@ fun ChapterEditorPage(
                             version = version,
                             currentVersion = draft.version,
                             onCompare = { viewModel.compare(version) },
-                            onRestore = { restoreTarget = version },
+                            onRestore = {
+                                restoreTarget = version
+                                viewModel.analyzeDependencies()
+                            },
                         )
                     }
                 }
@@ -328,12 +386,34 @@ fun ChapterEditorPage(
         AlertDialog(
             onDismissRequest = { restoreTarget = null },
             title = { Text("恢复 v${version.version}？") },
-            text = { Text("不会覆盖历史。恢复后的内容会保存成一个新的版本，所以仍然可以再回到当前稿。") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("不会覆盖历史。恢复后的内容会保存成一个新版本。")
+                    if (state.isAnalyzingDependencies) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在检查人物、时间线、伏笔和后续章节依赖……")
+                        }
+                    } else {
+                        state.dependencyReport?.let { report ->
+                            val riskColor = if (report.overallRisk.label == "高") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            Text("${report.overallRisk.label}风险 · ${report.all.size} 项依赖", color = riskColor, fontWeight = FontWeight.Bold)
+                            Text(report.recommendation, style = MaterialTheme.typography.bodySmall)
+                            report.all.take(5).forEach { Text("• ${it.kind.label}：${it.title}", style = MaterialTheme.typography.bodySmall) }
+                            if (report.all.size > 5) Text("• 另有 ${report.all.size - 5} 项，请在“章节事实依赖”中查看", style = MaterialTheme.typography.bodySmall)
+                        } ?: Text("尚未得到依赖结果。建议取消后先运行章节事实依赖检查。", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
             confirmButton = {
-                Button(onClick = {
-                    restoreTarget = null
-                    viewModel.restore(version)
-                }) { Text("恢复并创建新版本") }
+                Button(
+                    onClick = {
+                        restoreTarget = null
+                        viewModel.restore(version)
+                    },
+                    enabled = !state.isAnalyzingDependencies && state.dependencyReport != null,
+                ) { Text(if (state.dependencyReport?.overallRisk?.label == "高") "已知风险，仍要回滚" else "恢复并创建新版本") }
             },
             dismissButton = { TextButton(onClick = { restoreTarget = null }) { Text("取消") } },
         )
