@@ -47,6 +47,7 @@ fun ResearchNewBookConversationPage(
     var lastTargets by remember { mutableStateOf<List<String>>(emptyList()) }
     var researchMessage by remember { mutableStateOf<String?>(null) }
     var lastSubmitted by remember { mutableStateOf("") }
+    var retryFoundation by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.createdStoryId) {
         state.createdStoryId?.let { id ->
@@ -60,6 +61,7 @@ fun ResearchNewBookConversationPage(
         if (text.isBlank() || state.isBusy || researching) return
         input = ""
         lastSubmitted = text
+        retryFoundation = false
         if (!research.shouldResearch(text)) {
             lastSources = emptyList()
             lastTargets = emptyList()
@@ -82,9 +84,6 @@ fun ResearchNewBookConversationPage(
             val primary = runCatching { research.researchForCreation(text) }.getOrNull()
             var bundle = primary
 
-            // Primary RSS/DDG can occasionally return nothing even for known Chinese web fiction.
-            // Use normal Bing HTML as a second path, but keep the primary author's group label so the
-            // archive still knows this is an author dossier rather than misclassifying it as a work.
             if (bundle?.hasSources != true) {
                 val fallbackTargets = primary?.groups?.map { it.target }.orEmpty().ifEmpty { detected }
                 val fallback = runCatching {
@@ -160,6 +159,7 @@ fun ResearchNewBookConversationPage(
                             lastSources = emptyList()
                             lastTargets = emptyList()
                             researchMessage = null
+                            retryFoundation = false
                         },
                         enabled = !state.isBusy && !researching,
                     ) { Icon(Icons.Rounded.Refresh, "重新开始") }
@@ -204,9 +204,26 @@ fun ResearchNewBookConversationPage(
             researchMessage?.let { message -> item { ResearchStatusCard(message, lastTargets, lastSources) } }
 
             if (state.foundation == null) {
-                state.proposal?.let { proposal -> item { ResearchProposalCard(proposal, state.isBusy || researching) { viewModel.generateFoundation(false) } } }
+                state.proposal?.let { proposal ->
+                    item {
+                        ResearchProposalCard(proposal, state.isBusy || researching) {
+                            retryFoundation = true
+                            viewModel.generateFoundation(false)
+                        }
+                    }
+                }
             } else {
-                item { ResearchFoundationCard(state.foundation!!, state.isBusy || researching, { viewModel.generateFoundation(true) }, viewModel::createCurrentFoundation) }
+                item {
+                    ResearchFoundationCard(
+                        state.foundation!!,
+                        state.isBusy || researching,
+                        onRegenerate = {
+                            retryFoundation = true
+                            viewModel.generateFoundation(true)
+                        },
+                        onCreate = viewModel::createCurrentFoundation,
+                    )
+                }
             }
 
             if (state.isBusy || researching) item {
@@ -220,7 +237,13 @@ fun ResearchNewBookConversationPage(
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(friendlyResearchError(error), color = MaterialTheme.colorScheme.onErrorContainer)
-                        if (lastSubmitted.isNotBlank() && !state.isBusy && !researching) {
+                        if (!state.isBusy && !researching && retryFoundation && state.proposal != null) {
+                            OutlinedButton(onClick = { viewModel.generateFoundation(state.foundation != null) }) {
+                                Icon(Icons.Rounded.Refresh, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (state.foundation == null) "重试生成蓝图" else "重试重构蓝图")
+                            }
+                        } else if (lastSubmitted.isNotBlank() && !state.isBusy && !researching) {
                             OutlinedButton(onClick = { submit(lastSubmitted) }) {
                                 Icon(Icons.Rounded.Refresh, null)
                                 Spacer(Modifier.width(6.dp))
@@ -313,12 +336,12 @@ private fun friendlyResearchError(raw: String): String {
     val lower = value.lowercase()
     return when {
         "timeout" in lower || "timed out" in lower || "sockettimeoutexception" in lower ->
-            "AI 服务请求超时：模型或中转站在规定时间内没有返回结果。当前会谈和长期研究档案都不会丢，可以直接点“重试上一句”。"
+            "AI 服务请求超时：当前阶段没有在规定时间内返回。会谈、方案和长期研究档案都不会丢，可直接重试当前阶段。"
         "429" in lower || "rate limit" in lower || "too many requests" in lower ->
             "AI 服务当前限流（429）。稍后重试即可，当前会谈内容不会丢失。"
         "502" in lower || "503" in lower || "504" in lower ->
-            "AI 中转站暂时不可用或上游响应过慢（${value.take(120)}）。可以直接重试上一句。"
-        else -> value.ifBlank { "AI 请求失败，请重试上一句。" }
+            "AI 中转站暂时不可用或上游响应过慢（${value.take(120)}）。当前状态已保留，可直接重试当前阶段。"
+        else -> value.ifBlank { "AI 请求失败，当前状态已保留，可以直接重试。" }
     }
 }
 
