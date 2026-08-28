@@ -547,7 +547,7 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onRegenerate, enabled = !busy, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Refresh, null); Text("整套重做") }
-                Button(onClick = onCreate, enabled = !busy && !outOfSync, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.CheckCircle, null); Text("正式建书") }
+                Button(onClick = onCreate, enabled = !outOfSync, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.CheckCircle, null); Text("正式建书") }
             }
         }
     }

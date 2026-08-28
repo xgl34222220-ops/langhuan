@@ -190,6 +190,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     private val _state = MutableStateFlow(draftStore.restore() ?: NewBookConversationState())
     val state: StateFlow<NewBookConversationState> = _state.asStateFlow()
     private var activeProviderId: String? = null
+    private var foundationJob: kotlinx.coroutines.Job? = null
     @Volatile private var suppressDraftPersistence = false
 
     init {
@@ -357,7 +358,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         if (before.isBusy) return
         val resumeStage = if (regenerate || before.blueprintDirty) 0 else before.foundationStage.coerceIn(0, 2)
         val resumeFoundation = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders()
-        viewModelScope.launch {
+        foundationJob = viewModelScope.launch {
             val gateway = activeGateway()
             if (gateway == null) {
                 _state.update { it.copy(error = "请先在设置里添加并启用一个 AI 服务") }
@@ -378,10 +379,14 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 "以会谈里最后确认的决定为唯一准绳，把当前最新新书方案扩展成可直接开始长篇写作的完整建书蓝图。旧简介、旧能力、旧冲突若已被后续决定替换，禁止回滚。"
             }
             runCatching {
-                val refreshed = ProposalConsolidator(gateway).consolidate(
-                    current = baseline,
-                    messages = before.messages,
-                )
+                val refreshed = runCatching {
+          kotlinx.coroutines.withTimeout(75_000L) {
+              ProposalConsolidator(gateway).consolidate(
+                  current = baseline,
+                  messages = before.messages,
+              )
+          }
+      }.getOrElse { baseline }
                 _state.update {
                     it.copy(
                         proposal = refreshed,
@@ -418,68 +423,90 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     it.copy(
                         foundation = cleanFoundation,
                         proposal = cleanFoundation.toProposal(),
-                        foundationStage = 3,
+                        foundationStage = inferFoundationStage(cleanFoundation).coerceAtLeast(1),
                         blueprintDirty = false,
                         messages = it.messages + CreationChatMessage(
                             "assistant",
-                            "建书蓝图已经按整段会谈的最新决定分三阶段生成完成：核心世界与人物、第一卷详细章纲、伏笔计划都已对齐。",
+                            "当前有效蓝图已经保存。核心蓝图完成后即可正式建书；章纲或伏笔没补完也不会再把整本书锁死。",
                         ),
                         isBusy = false,
                         busyLabel = "",
                     )
                 }
             }.onFailure { error ->
-                _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "建书蓝图生成失败")) }
+                if (error !is kotlinx.coroutines.CancellationException) {
+                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "建书蓝图生成失败")) }
+                }
             }
+            foundationJob = null
         }
     }
 
     fun createCurrentFoundation() {
-        val foundation = _state.value.foundation?.sanitizeFoundationPlaceholders() ?: return
-        if (_state.value.isBusy) return
-        if (_state.value.blueprintDirty) {
-            _state.update { it.copy(error = "你在聊天里又改了要求，当前蓝图还是上一次同步的版本。请先点“同步当前聊天”，确认新要求已经进入蓝图后再正式建书。") }
+    var snapshot = _state.value
+    val runningFoundation = foundationJob?.takeIf { it.isActive }
+    if (snapshot.isBusy) {
+        if (runningFoundation == null) {
+            _state.update { it.copy(error = "AI 还在处理当前聊天，请等这一轮回复结束后再正式建书。") }
             return
         }
-        val stage = maxOf(_state.value.foundationStage, inferFoundationStage(foundation))
-        if (stage < 3) {
-            _state.update {
-                it.copy(error = "建书蓝图目前只完成到 $stage/3。前面成功阶段已经保存，请先点“重试生成蓝图”完成剩余阶段，再正式建书。")
-            }
-            return
-        }
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    foundation = foundation,
-                    proposal = foundation.toProposal(),
-                foundationStage = 3,
-                blueprintDirty = false,
-                    isBusy = true,
-                    busyLabel = "正在把蓝图写入小说圣经、三级大纲和长期记忆……",
-                    error = null,
-                )
-            }
-            runCatching { foundationApplier.create(foundation) }
-                .onSuccess { created ->
-                    suppressDraftPersistence = true
-                    _state.update {
-                        it.copy(
-                            isBusy = false,
-                            busyLabel = "",
-                            createdStoryId = created.snapshot.novel.id,
-                            messages = it.messages + CreationChatMessage(
-                                "assistant",
-                                "《${created.snapshot.novel.title}》已经正式建好。角色、世界规则、总纲、卷纲、第一卷章纲和伏笔计划已经进入项目结构与长期记忆，可以直接从第一章开始创作。",
-                            ),
-                        )
-                    }
-                    draftStore.clear()
-                }.onFailure { error ->
-                    _state.update { it.copy(isBusy = false, busyLabel = "", error = error.message ?: "正式建书失败") }
-                }
-        }
+        runningFoundation.cancel()
+        foundationJob = null
+        _state.update { it.copy(isBusy = false, busyLabel = "", error = null) }
+        snapshot = _state.value
     }
+
+    val foundation = snapshot.foundation?.sanitizeFoundationPlaceholders() ?: return
+    if (snapshot.blueprintDirty) {
+        _state.update { it.copy(error = "你在聊天里又改了要求，当前蓝图还没同步最新决定。请先同步当前聊天，再正式建书。") }
+        return
+    }
+    val stage = maxOf(snapshot.foundationStage, inferFoundationStage(foundation))
+    if (stage < 1) {
+        _state.update { it.copy(error = "核心蓝图还没有形成。至少完成世界规则、核心人物和分卷后才能正式建书。") }
+        return
+    }
+
+    viewModelScope.launch {
+        _state.update {
+            it.copy(
+                foundation = foundation,
+                proposal = foundation.toProposal(),
+                foundationStage = stage,
+                blueprintDirty = false,
+                isBusy = true,
+                busyLabel = if (stage < 3) {
+                    "正在用当前有效核心蓝图建书；未完成的章纲/伏笔可稍后补齐……"
+                } else {
+                    "正在把蓝图写入小说圣经、三级大纲和长期记忆……"
+                },
+                error = null,
+            )
+        }
+        runCatching { foundationApplier.create(foundation) }
+            .onSuccess { created ->
+                suppressDraftPersistence = true
+                _state.update {
+                    it.copy(
+                        isBusy = false,
+                        busyLabel = "",
+                        createdStoryId = created.snapshot.novel.id,
+                        messages = it.messages + CreationChatMessage(
+                            "assistant",
+                            if (stage >= 3) {
+                                "《${created.snapshot.novel.title}》已经正式建好。完整蓝图已经进入项目结构与长期记忆。"
+                            } else {
+                                "《${created.snapshot.novel.title}》已经正式建好。核心世界、人物和分卷已经写入项目；未完成的详细章纲/伏笔不会阻止开书，可以在项目里继续补齐。"
+                            },
+                        ),
+                    )
+                }
+                draftStore.clear()
+            }.onFailure { error ->
+                _state.update { it.copy(isBusy = false, busyLabel = "", error = error.message ?: "正式建书失败") }
+            }
+    }
+}
 
     fun reset() {
         suppressDraftPersistence = false
