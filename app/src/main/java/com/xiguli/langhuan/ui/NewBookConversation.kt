@@ -26,6 +26,9 @@ import kotlinx.serialization.json.Json
 private const val CHAT_SENTINEL = "__CHAT__"
 private const val NEW_BOOK_DRAFT_FILE = "new_book_conversation_draft.json"
 private const val RESEARCH_CONTEXT_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
+private val GENRE_PLACEHOLDERS = setOf("小说类型", "类型", "题材", "genre")
+private val THEME_PLACEHOLDERS = setOf("主题命题", "主题", "核心主题", "theme")
+private const val DEFAULT_THEME = "人在真相、执念与代价之间如何选择"
 
 @Serializable
 data class CreationChatMessage(
@@ -82,8 +85,8 @@ private class NewBookConversationDraftStore(application: Application) {
         if (draft.messages.isEmpty()) return@runCatching null
         NewBookConversationState(
             messages = draft.messages.map(::compactStoredMessage),
-            proposal = draft.proposal,
-            foundation = draft.foundation,
+            proposal = draft.proposal?.sanitizePlaceholders(),
+            foundation = draft.foundation?.sanitizeFoundationPlaceholders(),
         )
     }.getOrElse {
         clear()
@@ -98,8 +101,8 @@ private class NewBookConversationDraftStore(application: Application) {
         val bytes = json.encodeToString(
             NewBookConversationDraft(
                 messages = state.messages.map(::compactStoredMessage),
-                proposal = state.proposal,
-                foundation = state.foundation,
+                proposal = state.proposal?.sanitizePlaceholders(),
+                foundation = state.foundation?.sanitizeFoundationPlaceholders(),
             )
         ).toByteArray(Charsets.UTF_8)
         val output = runCatching { atomicFile.startWrite() }.getOrNull() ?: return
@@ -174,15 +177,15 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     runCatching {
                         IdentityRefiner.refine(
                             gateway = gateway,
-                            proposal = currentProposal,
+                            proposal = currentProposal.sanitizePlaceholders(),
                             transcript = conversationTranscript(history, keepLatestResearch = false),
                             instruction = plainInstruction,
                         )
                     }.onSuccess { refined ->
                         _state.update {
                             it.copy(
-                                proposal = refined,
-                                foundation = before.foundation?.copy(title = refined.title, premise = refined.premise),
+                                proposal = refined.sanitizePlaceholders(),
+                                foundation = before.foundation?.copy(title = refined.title, premise = refined.premise)?.sanitizeFoundationPlaceholders(),
                                 messages = it.messages + CreationChatMessage(
                                     "assistant",
                                     "我只重写了书名 / 对外简介，没有动世界规则、角色、主线、大纲和伏笔。",
@@ -199,20 +202,21 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
 
             if (before.foundation != null) {
-                val fallback = before.foundation.toProposal()
+                val fallback = before.foundation.sanitizeFoundationPlaceholders().toProposal()
                 runCatching {
                     ProgressiveFoundationEngine(gateway).build(
                         proposal = fallback,
                         messages = history,
-                        current = before.foundation,
+                        current = before.foundation.sanitizeFoundationPlaceholders(),
                         instruction = plainInstruction,
                         onStage = { label -> _state.update { it.copy(busyLabel = label) } },
                     )
                 }.onSuccess { foundation ->
+                    val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
                     _state.update {
                         it.copy(
-                            foundation = foundation,
-                            proposal = foundation.toProposal(),
+                            foundation = cleanFoundation,
+                            proposal = cleanFoundation.toProposal(),
                             messages = it.messages + CreationChatMessage(
                                 "assistant",
                                 "建书蓝图已按你的要求分阶段重构完成。世界规则、人物、分卷、第一卷章纲和伏笔已经重新对齐。",
@@ -233,7 +237,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 _state.update {
                     it.copy(
                         messages = it.messages + CreationChatMessage("assistant", turn.reply),
-                        proposal = turn.proposal ?: it.proposal,
+                        proposal = turn.proposal?.sanitizePlaceholders() ?: it.proposal,
                         isBusy = false,
                         busyLabel = "",
                     )
@@ -246,7 +250,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
 
     fun generateFoundation(regenerate: Boolean = false) {
         val before = _state.value
-        val proposal = before.foundation?.toProposal() ?: before.proposal ?: return
+        val proposal = (before.foundation?.toProposal() ?: before.proposal)?.sanitizePlaceholders() ?: return
         if (before.isBusy) return
         viewModelScope.launch {
             val gateway = activeGateway()
@@ -256,6 +260,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
             _state.update {
                 it.copy(
+                    proposal = proposal,
                     isBusy = true,
                     busyLabel = "准备分阶段生成建书蓝图……",
                     error = null,
@@ -270,15 +275,16 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 ProgressiveFoundationEngine(gateway).build(
                     proposal = proposal,
                     messages = before.messages,
-                    current = if (regenerate) null else before.foundation,
+                    current = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders(),
                     instruction = instruction,
                     onStage = { label -> _state.update { it.copy(busyLabel = label) } },
                 )
             }.onSuccess { foundation ->
+                val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
                 _state.update {
                     it.copy(
-                        foundation = foundation,
-                        proposal = foundation.toProposal(),
+                        foundation = cleanFoundation,
+                        proposal = cleanFoundation.toProposal(),
                         messages = it.messages + CreationChatMessage(
                             "assistant",
                             "建书蓝图已经分三阶段生成完成：核心世界与人物、第一卷详细章纲、伏笔计划都已对齐。你可以继续聊天修改，满意后再正式写入书架和长期记忆。",
@@ -294,11 +300,13 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     }
 
     fun createCurrentFoundation() {
-        val foundation = _state.value.foundation ?: return
+        val foundation = _state.value.foundation?.sanitizeFoundationPlaceholders() ?: return
         if (_state.value.isBusy) return
         viewModelScope.launch {
             _state.update {
                 it.copy(
+                    foundation = foundation,
+                    proposal = foundation.toProposal(),
                     isBusy = true,
                     busyLabel = "正在把蓝图写入小说圣经、三级大纲和长期记忆……",
                     error = null,
@@ -361,7 +369,7 @@ private class NewBookConversationEngine(
                     2. 当前轮若带有琅嬛联网资料/长期研究档案，用它核对公开事实；用户明确纠正的作者-作品关系属于项目事实，网页暂未核验只能标待核验，不能反复否定。
                     3. 参考作品/作者只能提炼高层创作特征，必须重新设计原创角色、规则、谜团和剧情；不得复制标志性句式、专名和剧情骨架。
                     4. 信息不足时输出 GeneratedChapter JSON：title="__CHAT__"；content=自然回复或追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    5. 信息足够时输出方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject=小说类型，field=主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
+                    5. 信息足够时输出方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject 必须填写“实际小说类型”（例如“中式灵异悬疑”，禁止原样输出“小说类型/类型/题材”），field 必须填写“一句实际主题命题”（禁止原样输出“主题命题/主题”），before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
                     6. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。
                 """.trimIndent(),
                 user = """
@@ -380,14 +388,14 @@ private class NewBookConversationEngine(
         val meta = output.stateChanges.first()
         val proposal = NewBookProposal(
             title = sanitizeTitle(output.title),
-            genre = meta.subject.trim().ifBlank { "未分类" },
+            genre = sanitizeMetaValue(meta.subject, GENRE_PLACEHOLDERS, "未分类"),
             premise = sanitizeSynopsis(output.content),
-            theme = meta.field.trim().ifBlank { "人在真相与代价之间如何选择" },
+            theme = sanitizeMetaValue(meta.field, THEME_PLACEHOLDERS, DEFAULT_THEME),
             targetWords = meta.before.filter(Char::isDigit).toIntOrNull()?.coerceIn(10_000, 5_000_000) ?: 500_000,
             coreHook = meta.after.trim().ifBlank { "一个看似普通的选择，逐渐暴露出更大的真相。" },
             coverBrief = meta.evidence.trim(),
             rationale = output.summary.trim(),
-        )
+        ).sanitizePlaceholders()
         return ConversationTurn(
             reply = buildString {
                 append("我已经把方向收束成一套可以落地的方案。")
@@ -435,20 +443,35 @@ private object IdentityRefiner {
         return proposal.copy(
             title = sanitizeTitle(output.title).ifBlank { proposal.title },
             premise = sanitizeSynopsis(output.content).ifBlank { proposal.premise },
-        )
+        ).sanitizePlaceholders()
     }
 }
 
 private fun StoryFoundation.toProposal() = NewBookProposal(
     title = title,
-    genre = genre,
+    genre = sanitizeMetaValue(genre, GENRE_PLACEHOLDERS, "未分类"),
     premise = premise,
-    theme = theme,
+    theme = sanitizeMetaValue(theme, THEME_PLACEHOLDERS, DEFAULT_THEME),
     targetWords = targetWords,
     coreHook = coreHook,
     coverBrief = coverBrief,
     rationale = storyPromise,
 )
+
+private fun NewBookProposal.sanitizePlaceholders(): NewBookProposal = copy(
+    genre = sanitizeMetaValue(genre, GENRE_PLACEHOLDERS, "未分类"),
+    theme = sanitizeMetaValue(theme, THEME_PLACEHOLDERS, DEFAULT_THEME),
+)
+
+private fun StoryFoundation.sanitizeFoundationPlaceholders(): StoryFoundation = copy(
+    genre = sanitizeMetaValue(genre, GENRE_PLACEHOLDERS, "未分类"),
+    theme = sanitizeMetaValue(theme, THEME_PLACEHOLDERS, DEFAULT_THEME),
+)
+
+private fun sanitizeMetaValue(value: String, placeholders: Set<String>, fallback: String): String {
+    val clean = value.trim()
+    return if (clean.isBlank() || placeholders.any { clean.equals(it, ignoreCase = true) }) fallback else clean
+}
 
 /**
  * Normal chat may use the newest hidden research packet once. Foundation generation does not call
