@@ -95,6 +95,17 @@ fun AiFirstShelf(
     onCloseShelf: () -> Unit,
 ) {
     val distillationTasks = rememberReferenceDistillationTasks()
+    var reportTask by remember { mutableStateOf<ReferenceDistillationTaskUi?>(null) }
+
+    reportTask?.let { task ->
+        ReferenceDistillationReportDialog(
+            taskId = task.id,
+            title = task.title.ifBlank { "参考小说" },
+            fallbackProvider = task.provider.ifBlank { aiProviderLabel },
+            fallbackModel = task.model.ifBlank { aiModel },
+            onDismiss = { reportTask = null },
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().statusBarsPadding(),
@@ -162,6 +173,7 @@ fun AiFirstShelf(
                     task = task,
                     fallbackProvider = aiProviderLabel,
                     fallbackModel = aiModel,
+                    onOpenReport = { reportTask = task },
                 )
             }
         }
@@ -201,6 +213,7 @@ private fun ReferenceDistillationTaskCard(
     task: ReferenceDistillationTaskUi,
     fallbackProvider: String,
     fallbackModel: String,
+    onOpenReport: () -> Unit,
 ) {
     val progress = task.progress.coerceIn(0, 100)
     val stageLabel = when {
@@ -280,6 +293,11 @@ private fun ReferenceDistillationTaskCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                FilledTonalButton(onClick = onOpenReport, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.AutoFixHigh, null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("查看蒸馏报告 / Style DNA")
+                }
             }
             if (task.state == WorkInfo.State.FAILED && task.error.isNotBlank()) {
                 Text(
