@@ -13,6 +13,7 @@ object AgentMemoryApplier {
         val characters = snapshot.characters.toMutableList()
         val timeline = snapshot.recentTimeline.toMutableList()
         val foreshadowing = snapshot.relevantForeshadowing.toMutableList()
+        val knowledgeLedger = snapshot.knowledgeLedger.toMutableList()
         val provenance = snapshot.factHistory.toMutableList()
         val now = System.currentTimeMillis()
 
@@ -88,6 +89,37 @@ object AgentMemoryApplier {
                             relationshipNotes = current.relationshipNotes + (target to note),
                             lastUpdatedChapter = chapterNumber,
                         )
+                    }
+                }
+
+                AgentActionKind.KNOWLEDGE_GAIN -> {
+                    val index = characterIndex(action.subject)
+                    val learned = action.after.trim()
+                    if (index >= 0 && learned.isNotBlank()) {
+                        val current = characters[index]
+                        if (current.knownSecrets.none { it.equals(learned, ignoreCase = true) }) {
+                            characters[index] = current.copy(
+                                knownSecrets = (current.knownSecrets + learned).distinct(),
+                                lastUpdatedChapter = chapterNumber,
+                            )
+                        }
+
+                        // 只更新已经存在、由作者/项目确认过的信息边界；绝不让 Agent 自己创造“真相”。
+                        val ledgerIndex = knowledgeLedger.indexOfFirst { boundary ->
+                            boundary.id.equals(learned, ignoreCase = true) ||
+                                boundary.title.equals(learned, ignoreCase = true) ||
+                                (boundary.truth.isNotBlank() && learned.contains(boundary.truth, ignoreCase = true)) ||
+                                boundary.triggerTerms.any { term ->
+                                    term.isNotBlank() && (learned.contains(term, ignoreCase = true) || term.contains(learned, ignoreCase = true))
+                                }
+                        }
+                        if (ledgerIndex >= 0) {
+                            val boundary = knowledgeLedger[ledgerIndex]
+                            knowledgeLedger[ledgerIndex] = boundary.copy(
+                                knownBy = (boundary.knownBy + action.subject.trim()).distinct(),
+                                unknownTo = boundary.unknownTo.filterNot { it.equals(action.subject.trim(), ignoreCase = true) },
+                            )
+                        }
                     }
                 }
 
@@ -223,6 +255,7 @@ object AgentMemoryApplier {
             factHistory = provenance
                 .distinctBy { listOf(it.chapter, it.kind, it.subject, it.before, it.after, it.evidence) }
                 .takeLast(1_200),
+            knowledgeLedger = knowledgeLedger,
         )
         return LongFormContinuityEngine().refreshAfterMemoryUpdate(updated, chapterNumber)
     }

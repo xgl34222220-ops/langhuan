@@ -21,6 +21,8 @@ class WritingFlowEngine(
         instruction: String = "",
     ): ScenePlanSuggestion {
         val frame = chronologyGuard.frame(snapshot)
+        val contractText = ChapterContractGuard.renderContract(snapshot, chapter)
+        val knowledgeText = ChapterContractGuard.renderKnowledge(snapshot, chapter.chapterNumber)
         val outline = snapshot.activeOutline.joinToString("\n") { node ->
             buildString {
                 append("${node.level}:${node.title}｜目标=${node.objective}｜冲突=${node.conflict}｜转折=${node.turningPoint}")
@@ -29,7 +31,7 @@ class WritingFlowEngine(
             }
         }
         val characters = snapshot.characters.joinToString("\n") {
-            "${it.name}｜地点=${it.location}｜身体=${it.physicalState}｜情绪=${it.emotionalState}｜目标=${it.goal}"
+            "${it.name}｜地点=${it.location}｜身体=${it.physicalState}｜情绪=${it.emotionalState}｜目标=${it.goal}｜已知=${it.knownSecrets.joinToString("、")}"
         }
         val foreshadowing = snapshot.relevantForeshadowing
             .filter { it.status.name != "RESOLVED" && it.status.name != "ABANDONED" }
@@ -60,7 +62,7 @@ class WritingFlowEngine(
         val output = gateway.generate(
             PromptBundle(
                 system = """
-                    你是“琅嬛”的章节场景导演。你的任务是把已经锁定的章纲拆成 2-6 个可直接写正文的场景，而不是改写总纲或另起主线。
+                    你是“琅嬛”的章节场景导演。你的任务是把已经锁定的章纲和章节合同拆成 2-6 个可直接写正文的场景，而不是改写总纲或另起主线。
                     输出必须严格符合 GeneratedChapter JSON：title、content、summary、stateChanges、touchedForeshadowingIds，不要 Markdown。
 
                     字段约定：
@@ -73,19 +75,26 @@ class WritingFlowEngine(
                       例如：2||深夜||约20分钟||NORMAL||主角确认门外有人监视。
                     - touchedForeshadowingIds = 本章建议明确触及的既有伏笔 id。
 
+                    章节合同硬规则：
+                    1. 章节合同优先级高于一般创作建议。must happen 要在场景链中得到承载，must not happen 绝不能出现。
+                    2. reveals 只是本章允许触及的上限，不代表必须全部解释；secrets preserved 必须继续保密。
+                    3. 信息边界账本中明确 unknownTo 的人物不能通过场景安排突然获得答案；HIDDEN/HINT_ONLY 只能保持未知或模糊暗示。
+                    4. character state out 若已指定，场景链必须用可见因果把人物从入场状态推到离场状态。
+                    5. 最后一个场景必须兑现合同里的 hook out，但不能为了钩子偷跑长期谜底。
+
                     时间硬规则：
-                    1. 最新主时间锚点已经由 App 给出；第一场必须从该时间连续承接，除非章纲/用户明确要求跳时。
-                    2. NORMAL 场景的故事日绝不能倒退。未经授权不得突然跳过多天、数周、数月或数年。
-                    3. 每次换地点、等待、睡眠、交通、调查都要在“距上一场经过多久”里给出合理耗时。
-                    4. 只有真正切入过去叙事的完整场景才能标记 FLASHBACK；人物一句想起往事不算闪回场景。
-                    5. 闪回结束后必须回到进入闪回前的主时间钟，不能让过去时间污染当前时间。
+                    6. 最新主时间锚点已经由 App 给出；第一场必须从该时间连续承接，除非章纲/用户明确要求跳时。
+                    7. NORMAL 场景的故事日绝不能倒退。未经授权不得突然跳过多天、数周、数月或数年。
+                    8. 每次换地点、等待、睡眠、交通、调查都要在“距上一场经过多久”里给出合理耗时。
+                    9. 只有真正切入过去叙事的完整场景才能标记 FLASHBACK；人物一句想起往事不算闪回场景。
+                    10. 闪回结束后必须回到进入闪回前的主时间钟，不能让过去时间污染当前时间。
 
                     剧情硬规则：
-                    6. 本章唯一目标不能被替换；场景必须共同完成章纲目标。
-                    7. 总纲/卷纲/章纲中的 mustInclude 必须落实，forbidden 绝不能出现。
-                    8. 不得让人物知道其尚未知晓的信息，不得无因改变位置、能力、关系和性格。
-                    9. 每个场景都必须产生新的信息、代价、关系变化或选择，禁止纯过场。
-                    10. 最后一个场景必须形成章末转折或强钩子，但不能为了钩子提前泄露后续核心答案。
+                    11. 本章唯一目标不能被替换；场景必须共同完成章纲目标。
+                    12. 总纲/卷纲/章纲中的 mustInclude 必须落实，forbidden 绝不能出现。
+                    13. 不得无因改变位置、能力、关系和性格。
+                    14. 每个场景都必须产生新的信息、代价、关系变化或选择，禁止纯过场。
+                    15. 最后一个场景必须形成章末转折或强钩子，但不能为了钩子提前泄露后续核心答案。
                 """.trimIndent(),
                 user = """
                     小说：${snapshot.novel.title}
@@ -101,6 +110,12 @@ class WritingFlowEngine(
                     【当前章】
                     第${chapter.chapterNumber}章 ${chapter.title}
                     唯一目标：${chapter.objective}
+
+                    【章节合同｜最高优先级】
+                    $contractText
+
+                    【信息边界账本】
+                    $knowledgeText
 
                     【总纲→卷纲→章纲】
                     $outline
@@ -118,13 +133,13 @@ class WritingFlowEngine(
                     $recent
 
                     【当前场景计划】
-                    ${current.ifBlank { "暂无，请从章纲开始拆分，并先确定每场故事日、时段和耗时。" }}
+                    ${current.ifBlank { "暂无，请从章节合同和章纲开始拆分，并先确定每场故事日、时段和耗时。" }}
 
                     【本轮场景讨论】
                     ${chat.ifBlank { "暂无。" }}
 
                     【用户最新要求】
-                    ${instruction.ifBlank { "请重新检查本章时间连续性和场景节奏，给出可直接进入正文写作的版本。" }}
+                    ${instruction.ifBlank { "请重新检查本章合同、信息边界、时间连续性和场景节奏，给出可直接进入正文写作的版本。" }}
                 """.trimIndent(),
             )
         )
@@ -175,7 +190,7 @@ class WritingFlowEngine(
                         location = "本章核心场景",
                         purpose = chapter.objective,
                         conflict = "主要冲突升级",
-                        outcome = "章末形成新的信息、代价或转折",
+                        outcome = ChapterContractGuard.resolve(snapshot, chapter).hookOut.ifBlank { "章末形成新的信息、代价或转折" },
                         storyDay = frame.anchorDay,
                         timeOfDay = "稍后",
                         elapsedFromPrevious = "约10-30分钟",
@@ -184,7 +199,7 @@ class WritingFlowEngine(
             }
         }
         return ScenePlanSuggestion(
-            note = output.content.trim().ifBlank { output.summary.trim().ifBlank { "场景计划已按当前章纲和主时间钟重新整理。" } },
+            note = output.content.trim().ifBlank { output.summary.trim().ifBlank { "场景计划已按章节合同、信息边界和主时间钟重新整理。" } },
             scenes = scenes,
         )
     }

@@ -109,6 +109,51 @@ data class Foreshadowing(
     val status: ForeshadowStatus,
 )
 
+/** 读者当前对某条秘密/事实知道到什么程度。 */
+@Serializable
+enum class ReaderKnowledgeState { UNKNOWN, PARTIAL, KNOWN }
+
+/** 当前章节允许如何触碰一条秘密。 */
+@Serializable
+enum class KnowledgeRevealPolicy { HIDDEN, HINT_ONLY, PARTIAL, FULL }
+
+/**
+ * 信息边界账本。truth 是作者/系统知道的真实答案，不代表人物或读者现在可以知道。
+ * triggerTerms 只放“完整揭底时一定会出现”的短语，供本地 Gate 做保守的明确泄漏检查。
+ */
+@Serializable
+data class KnowledgeBoundary(
+    val id: String,
+    val title: String,
+    val truth: String = "",
+    val knownBy: List<String> = emptyList(),
+    val unknownTo: List<String> = emptyList(),
+    val readerState: ReaderKnowledgeState = ReaderKnowledgeState.UNKNOWN,
+    val revealPolicy: KnowledgeRevealPolicy = KnowledgeRevealPolicy.HIDDEN,
+    val earliestFullRevealChapter: Int = 0,
+    val triggerTerms: List<String> = emptyList(),
+    val note: String = "",
+)
+
+/**
+ * 章节合同：写正文前先锁定“必须发生 / 绝不能发生 / 允许揭露 / 必须保密 / 人物进出状态”。
+ * 所有字段都有默认值，旧项目和旧章节无需迁移即可继续读取。
+ */
+@Serializable
+data class ChapterContract(
+    val purpose: String = "",
+    val mustHappen: List<String> = emptyList(),
+    val mustNotHappen: List<String> = emptyList(),
+    val characterStateIn: Map<String, String> = emptyMap(),
+    val characterStateOut: Map<String, String> = emptyMap(),
+    val reveals: List<String> = emptyList(),
+    val secretsPreserved: List<String> = emptyList(),
+    val foreshadowing: List<String> = emptyList(),
+    val hookOut: String = "",
+    val continuityRisks: List<String> = emptyList(),
+    val locked: Boolean = true,
+)
+
 /**
  * Agent 已确认写入长期记忆的事实来源记录。
  * 默认字段让旧项目无需数据库迁移即可继续反序列化；从 0.14 开始的新事实都会留下章级来源。
@@ -137,6 +182,8 @@ data class ChapterDraft(
     val content: String = "",
     val summary: String = "",
     val version: Int = 1,
+    /** 0.25.4 起新增；为空时会由章纲和当前状态生成有效合同。 */
+    val contract: ChapterContract = ChapterContract(),
 )
 
 @Serializable
@@ -178,4 +225,6 @@ data class StorySnapshot(
      * 只保存压缩后的剧情弧、成长轨迹和中期记忆，不复制整章正文。
      */
     val longForm: LongFormState = LongFormState(),
+    /** 0.25.4 起新增的信息边界账本；旧项目默认为空。 */
+    val knowledgeLedger: List<KnowledgeBoundary> = emptyList(),
 )
