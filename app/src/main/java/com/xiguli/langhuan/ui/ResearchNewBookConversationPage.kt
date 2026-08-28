@@ -39,6 +39,8 @@ fun ResearchNewBookConversationPage(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current.applicationContext
+    val researchPrefs = remember(context) { context.getSharedPreferences("creation_research", 0) }
+    var webResearchEnabled by remember { mutableStateOf(researchPrefs.getBoolean("web_research_enabled", false)) }
     val archiveStore = remember(context) { CreationResearchArchiveStore(context) }
     var archiveState by remember { mutableStateOf(archiveStore.load()) }
     val research = remember { WebResearchEngine().also { archiveStore.seed(it, archiveState) } }
@@ -69,7 +71,7 @@ fun ResearchNewBookConversationPage(
         input = ""
         lastSubmitted = text
         retryFoundation = false
-        if (!research.shouldResearch(text)) {
+        if (!webResearchEnabled || !research.shouldResearch(text)) {
             lastSources = emptyList()
             lastTargets = emptyList()
             researchMessage = null
@@ -179,6 +181,33 @@ fun ResearchNewBookConversationPage(
         bottomBar = {
             Surface(tonalElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("联网搜索", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (webResearchEnabled) "已开启 · 只有明确说‘搜/查/联网’才会访问网页" else "已关闭 · 所有消息只使用 AI、附件和已有研究记忆",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = webResearchEnabled,
+                            onCheckedChange = { checked ->
+                                webResearchEnabled = checked
+                                researchPrefs.edit().putBoolean("web_research_enabled", checked).apply()
+                                if (!checked) {
+                                    lastSources = emptyList()
+                                    lastTargets = emptyList()
+                                    researchMessage = null
+                                }
+                            },
+                            enabled = !researching,
+                        )
+                    }
                     if (state.pendingAttachments.isNotEmpty()) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             state.pendingAttachments.forEach { attachment ->

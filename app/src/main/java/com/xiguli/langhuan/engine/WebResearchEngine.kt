@@ -142,24 +142,15 @@ class WebResearchEngine {
         val value = text.trim().lowercase()
         if (value.isBlank()) return false
 
-        if (authorTarget(text) != null) return true
-        if (lastAuthorTarget != null && isAuthorFollowUp(text)) return true
-        if (lastWorkTargets.isNotEmpty() && isWorkFollowUp(text)) return true
-        if (Regex("《[^》]{1,60}》").containsMatchIn(text)) return true
-
-        val direct = listOf(
-            "搜一下", "搜索", "查一下", "查查", "联网", "资料", "作品有哪些", "有哪些小说", "哪几本小说",
-            "参考", "借鉴", "融合", "结合", "混合", "揉在一起", "取长补短", "类似", "像这本", "这种小说",
-            "再看看", "继续看看", "继续搜", "再搜", "其他小说", "其它小说", "其他作品", "其它作品",
+        // 联网是显式能力。普通“小说 / 作品 / 资料 / 参考 / 融合”等创作词不再触发搜索。
+        // 即使联网总开关开启，也必须明确要求“搜 / 查 / 联网”才访问网页。
+        val explicitWebActions = listOf(
+            "联网搜", "联网查", "联网搜索", "联网查询", "联网看看",
+            "搜一下", "搜索一下", "搜索", "搜搜", "继续搜", "再搜",
+            "查一下", "查查", "查询一下", "查网页", "查资料", "网页搜索", "网页查询",
+            "上网查", "网上查", "网上搜索", "检索一下", "公开资料搜索",
         )
-        if (direct.any(value::contains)) return true
-
-        if (("你知道" in value || "知道" in value || "了解" in value || "听说过" in value ||
-                "看过" in value || "读过" in value) &&
-            ("作者" in value || "小说" in value || "作品" in value || "书" in value)
-        ) return true
-
-        return Regex("[\\p{L}\\p{N}·_]{2,24}(?:的)?(?:小说|作品|网文|书)").containsMatchIn(text)
+        return explicitWebActions.any(value::contains)
     }
 
     /** Extract an explicit author from natural Chinese requests. */
