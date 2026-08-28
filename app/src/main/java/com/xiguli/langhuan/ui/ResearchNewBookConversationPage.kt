@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.StoryFoundation
+import com.xiguli.langhuan.engine.CreationResearchBundle
 import com.xiguli.langhuan.engine.WebResearchEngine
 import com.xiguli.langhuan.engine.WebResearchSource
 import kotlinx.coroutines.launch
@@ -33,6 +34,7 @@ fun ResearchNewBookConversationPage(
     var input by remember { mutableStateOf("") }
     var researching by remember { mutableStateOf(false) }
     var lastSources by remember { mutableStateOf<List<WebResearchSource>>(emptyList()) }
+    var lastTargets by remember { mutableStateOf<List<String>>(emptyList()) }
     var researchMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.createdStoryId) {
@@ -48,34 +50,40 @@ fun ResearchNewBookConversationPage(
         input = ""
         if (!research.shouldResearch(text)) {
             lastSources = emptyList()
+            lastTargets = emptyList()
             researchMessage = null
             viewModel.send(text)
             return
         }
+
         researching = true
-        researchMessage = "正在联网检索公开资料……"
+        val detected = research.referenceTargets(text)
+        lastTargets = detected
+        researchMessage = if (detected.size > 1) {
+            "正在分别检索 ${detected.size} 个参考对象，避免资料混在一起……"
+        } else {
+            "正在联网检索公开资料……"
+        }
+
         scope.launch {
-            val result = runCatching { research.search(text) }.getOrNull()
-            val sources = result?.sources.orEmpty()
+            val bundle = runCatching { research.researchForCreation(text) }.getOrNull()
+            val sources = bundle?.sources.orEmpty()
+            val targets = bundle?.groups?.map { it.target }.orEmpty().ifEmpty { detected }
             lastSources = sources
+            lastTargets = targets
             researching = false
+
+            val hidden = buildResearchPrompt(text, bundle)
             if (sources.isEmpty()) {
-                researchMessage = "联网检索暂时没有拿到可靠结果，AI 会明确区分已知与不确定信息。"
-                viewModel.send(text)
+                researchMessage = "本次实时检索没有拿到足够可靠的公开结果；琅嬛会明确说“这次没搜到”，不会再说自己不能联网。"
             } else {
-                researchMessage = "已检索到 ${sources.size} 条公开结果，正在交给 AI 核对并继续构思。"
-                val hidden = buildString {
-                    append(text)
-                    append(RESEARCH_MARKER)
-                    appendLine()
-                    appendLine("App 刚刚针对用户当前问题完成了实时公开网页检索。下面是搜索标题、摘要与来源，不是模型记忆。")
-                    appendLine("你必须优先依据这些资料回答‘有哪些作品/作者/作品信息’等事实问题；不同来源冲突时要说存在不确定性。")
-                    appendLine("不要再说‘我不能联网’或要求用户自己提供资料，因为联网检索已经由 App 完成。")
-                    appendLine("只可从资料提炼高层创作特征用于原创构思，不要复制原作受保护表达、人物或剧情骨架。")
-                    appendLine(result!!.context)
+                researchMessage = if (targets.size > 1) {
+                    "已为 ${targets.size} 个参考对象找到 ${sources.size} 条公开结果，正在拆解参考基因并融合。"
+                } else {
+                    "已检索到 ${sources.size} 条公开结果，正在交给 AI 核对并继续构思。"
                 }
-                viewModel.send(hidden)
             }
+            viewModel.send(hidden)
         }
     }
 
@@ -87,10 +95,10 @@ fun ResearchNewBookConversationPage(
                         Text("和 AI 聊出一本小说", fontWeight = FontWeight.SemiBold)
                         Text(
                             when {
-                                researching -> "正在检索公开资料"
+                                researching -> "正在联网研究参考作品"
                                 state.foundation != null -> "蓝图阶段：继续聊天修改，满意后正式建书"
                                 state.proposal != null -> "方案已成形，下一步搭世界、人物和三级大纲"
-                                else -> "可直接问现有作品/作者，琅嬛会先联网检索"
+                                else -> "可查作品/作者，也可融合多本小说的高层设定方法"
                             },
                             style = MaterialTheme.typography.labelSmall,
                         )
@@ -107,7 +115,7 @@ fun ResearchNewBookConversationPage(
                         value = input,
                         onValueChange = { input = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (state.foundation == null) "比如：搜一下薄情书生的小说……" else "比如：第二卷太拖，前三章钩子加强……") },
+                        placeholder = { Text(if (state.foundation == null) "比如：融合《A》《B》《C》的优点，但做成原创世界……" else "比如：保留A的信息差，删掉B的系统设定……") },
                         minLines = 1,
                         maxLines = 5,
                         enabled = !state.isBusy && !researching,
@@ -129,12 +137,12 @@ fun ResearchNewBookConversationPage(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("直接说你的想法，也可以让我先查资料", style = MaterialTheme.typography.labelLarge)
                     ResearchStarterChip("我想写一本中式悬疑，主角是普通人", ::submit)
-                    ResearchStarterChip("搜一下薄情书生有哪些小说，再帮我提炼高层叙事特点", ::submit)
-                    ResearchStarterChip("你知道《迷雾之上》吗？先查公开资料，再帮我原创一个不同故事", ::submit)
+                    ResearchStarterChip("搜一下薄情书生的小说，再提炼能借鉴的高层设定", ::submit)
+                    ResearchStarterChip("融合《迷雾之上》《十日终焉》《诡舍》的部分优点，但角色、规则和主线全部原创", ::submit)
                 }
             }
             items(state.messages) { message -> ResearchChatBubble(message) }
-            researchMessage?.let { message -> item { ResearchStatusCard(message, lastSources) } }
+            researchMessage?.let { message -> item { ResearchStatusCard(message, lastTargets, lastSources) } }
 
             if (state.foundation == null) {
                 state.proposal?.let { proposal -> item { ResearchProposalCard(proposal, state.isBusy || researching) { viewModel.generateFoundation(false) } } }
@@ -146,7 +154,7 @@ fun ResearchNewBookConversationPage(
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text(if (researching) "正在联网检索……" else state.busyLabel.ifBlank { "AI 正在处理……" })
+                    Text(if (researching) "正在联网研究参考作品……" else state.busyLabel.ifBlank { "AI 正在处理……" })
                 }
             }
             state.error?.let { error -> item {
@@ -157,6 +165,30 @@ fun ResearchNewBookConversationPage(
             item { Spacer(Modifier.height(16.dp)) }
         }
     }
+}
+
+private fun buildResearchPrompt(text: String, bundle: CreationResearchBundle?): String = buildString {
+    append(text)
+    append(RESEARCH_MARKER)
+    appendLine()
+    appendLine("这是 App 在本轮会谈中刚刚执行的实时公开网页检索上下文，不是模型训练记忆。")
+    appendLine("重要：你绝对不要再回答“我不能联网/不能直接搜索/请用户自己提供链接”。联网动作已经由琅嬛 App 执行。")
+
+    if (bundle == null || !bundle.hasSources) {
+        appendLine("本次搜索服务没有返回足够可靠的公开结果。你必须准确表述为“我刚才这次实时检索没有找到足够可靠的公开资料”，而不是声称没有联网能力。")
+        appendLine("若用户给的是作者名或小众网文名，可以基于用户已经明确说出的目标继续构思，但不要假装知道该作品的具体事实。可以建议换书名/作者笔名/平台关键词继续检索。")
+    } else {
+        appendLine("下面按参考对象分组列出搜索标题、摘要和来源。涉及作者、作品名、简介等事实时优先以这些实时资料为依据；来源冲突就明确说不确定。")
+        appendLine(bundle.context)
+    }
+
+    appendLine()
+    appendLine("【多作品融合工作法】")
+    appendLine("如果用户提到一部或多部小说作为参考，先在内部为每个参考对象抽取“参考基因”：")
+    appendLine("1. 世界/规则机制；2. 核心谜团或冲突类型；3. 信息释放与反转方式；4. 人物关系张力；5. 节奏与升级方式；6. 叙事视角/距离；7. 氛围与情绪体验；8. 用户明确想保留或排除的部分。")
+    appendLine("然后做融合：KEEP=保留高层机制，TRANSFORM=换成原创实现，AVOID=容易变成照搬的标志性人物/专名/独特剧情骨架。")
+    appendLine("最终方案必须重新设计角色、专名、世界规则、核心谜团、因果链和结局方向。不要复制原作句子，也不要只给原作角色换名字。")
+    appendLine("用户如果已经明确说“融合这几本”，不要因为信息很多就退回问卷；先给一版你理解的融合方向，再最多追问1个真正影响路线的问题。")
 }
 
 @Composable private fun ResearchStarterChip(text: String, onClick: (String) -> Unit) {
@@ -180,17 +212,20 @@ fun ResearchNewBookConversationPage(
     }
 }
 
-@Composable private fun ResearchStatusCard(message: String, sources: List<WebResearchSource>) {
+@Composable private fun ResearchStatusCard(message: String, targets: List<String>, sources: List<WebResearchSource>) {
     Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.TravelExplore, null); Spacer(Modifier.width(6.dp)); Text(message, fontWeight = FontWeight.SemiBold)
             }
-            sources.take(4).forEach { source ->
+            if (targets.isNotEmpty()) {
+                Text("参考对象：${targets.joinToString(" · ")}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            }
+            sources.take(6).forEach { source ->
                 Text("• ${source.title}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 if (source.snippet.isNotBlank()) Text(source.snippet, style = MaterialTheme.typography.labelSmall, maxLines = 3)
             }
-            if (sources.isNotEmpty()) Text("搜索结果只作为事实核对与高层风格研究，不会直接照搬原作。", style = MaterialTheme.typography.labelSmall)
+            if (sources.isNotEmpty()) Text("资料只用于事实核对和高层创作研究；融合时会重新设计原创人物、规则和主线。", style = MaterialTheme.typography.labelSmall)
         }
     }
 }
