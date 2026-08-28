@@ -16,6 +16,7 @@ import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
 import com.xiguli.langhuan.engine.HybridMemoryRetriever
+import com.xiguli.langhuan.engine.LongFormContinuityEngine
 import com.xiguli.langhuan.engine.MemoryCandidate
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -76,6 +77,7 @@ class PersistentStoryRepository(context: Context) {
     private val memoryDao = db.memoryChunkDao()
     private val keyStore = SecureApiKeyStore(context)
     private val memoryRetriever = HybridMemoryRetriever()
+    private val longFormEngine = LongFormContinuityEngine()
 
     suspend fun seedIfNeeded(demo: DemoStoryRepository) {
         if (storyDao.get(demo.snapshot.novel.id) != null) return
@@ -115,16 +117,18 @@ class PersistentStoryRepository(context: Context) {
         val summaryHistory = (withChanges.recentSummaries + chapterSummary)
             .filter { it.isNotBlank() }
             .distinct()
-        val foldCount = (summaryHistory.size - 8).coerceAtLeast(0)
+        val hotWindow = withChanges.longForm.config.hotChapterWindow.coerceIn(5, 14)
+        val foldCount = (summaryHistory.size - hotWindow).coerceAtLeast(0)
         val folded = summaryHistory.take(foldCount)
-        val newSnapshot = withChanges.copy(
+        val baseSnapshot = withChanges.copy(
             novel = withChanges.novel.copy(
                 currentWords = (withChanges.novel.currentWords + wordDelta).coerceAtLeast(0),
                 currentChapter = draft.chapterNumber,
             ),
-            recentSummaries = summaryHistory.takeLast(8),
+            recentSummaries = summaryHistory.takeLast(hotWindow),
             longTermSummary = foldLongTermSummary(withChanges.longTermSummary, folded),
         )
+        val newSnapshot = longFormEngine.settle(baseSnapshot, newDraft, generated)
         persistStory(newSnapshot, newDraft, now)
         saveChapterVersion(newDraft, now)
         rebuildMemoryIndex(newSnapshot)
@@ -177,7 +181,7 @@ class PersistentStoryRepository(context: Context) {
         currentChapter: Int,
         limit: Int = 8,
     ): List<String> {
-        val candidates = memoryDao.recent(novelId, 1_200).map {
+        val candidates = memoryDao.recent(novelId, 1_600).map {
             MemoryCandidate(
                 text = it.text,
                 sourceType = it.sourceType,
@@ -320,6 +324,45 @@ class PersistentStoryRepository(context: Context) {
             }
             snapshot.recentSummaries.forEachIndexed { index, text ->
                 add(MemoryChunkEntity("summary:${novelId}:$index", novelId, "SUMMARY", "summary-$index", null, text, now))
+            }
+            snapshot.longForm.arcs.forEach { arc ->
+                add(
+                    MemoryChunkEntity(
+                        id = "arc:${arc.id}",
+                        novelId = novelId,
+                        sourceType = "ARC",
+                        sourceId = arc.id,
+                        chapterNumber = arc.lastUpdatedChapter.takeIf { it > 0 },
+                        text = "剧情弧「${arc.title}」第${arc.startChapter}-${arc.plannedEndChapter}章，阶段=${arc.phase}。目标：${arc.objective}。冲突：${arc.centralConflict}。预期收束：${arc.expectedPayoff}。里程碑：${arc.milestones.joinToString("；")}",
+                        updatedAt = now,
+                    )
+                )
+            }
+            snapshot.longForm.mediumMemories.forEach { memory ->
+                add(
+                    MemoryChunkEntity(
+                        id = "medium:$novelId:${memory.startChapter}",
+                        novelId = novelId,
+                        sourceType = "MEDIUM",
+                        sourceId = "${memory.startChapter}-${memory.endChapter}",
+                        chapterNumber = memory.endChapter,
+                        text = "第${memory.startChapter}-${memory.endChapter}章中期记忆：${memory.summary}\n关键事实：${memory.keyFacts.joinToString("；")}",
+                        updatedAt = memory.updatedAt.takeIf { it > 0 } ?: now,
+                    )
+                )
+            }
+            snapshot.longForm.characterGrowth.forEach { growth ->
+                add(
+                    MemoryChunkEntity(
+                        id = "growth:${growth.characterId}",
+                        novelId = novelId,
+                        sourceType = "GROWTH",
+                        sourceId = growth.characterId,
+                        chapterNumber = growth.lastTurningChapter.takeIf { it > 0 },
+                        text = "${growth.name}成长阶段=${growth.stage}。当前人格基线=${growth.currentBelief}。内部冲突=${growth.internalConflict}。成长方向=${growth.growthDirection}。里程碑=${growth.milestones.joinToString("；")}",
+                        updatedAt = now,
+                    )
+                )
             }
         }
         memoryDao.deleteStructuredForNovel(novelId)
