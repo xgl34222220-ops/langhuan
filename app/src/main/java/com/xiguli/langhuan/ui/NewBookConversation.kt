@@ -68,7 +68,7 @@ data class NewBookConversationState(
 
 @Serializable
 private data class NewBookConversationDraft(
-    val schemaVersion: Int = 5,
+    val schemaVersion: Int = 6,
     val messages: List<CreationChatMessage>,
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
@@ -167,8 +167,9 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 messages = history,
                 isBusy = true,
                 busyLabel = when {
-                    IdentityRefiner.isIdentityOnlyInstruction(plainInstruction) -> "AI 正在只重写书名 / 平台简介……"
-                    before.foundation != null -> "AI 正在分阶段重构建书蓝图……"
+                    IdentityRefiner.isIdentityOnlyInstruction(plainInstruction) -> "AI 正在按最新会谈重写书名 / 平台简介……"
+                    before.foundation != null -> "AI 正在按最新决定重构建书蓝图……"
+                    before.proposal != null -> "AI 正在把你的新决定同步进方案……"
                     else -> "AI 正在继续构思……"
                 },
                 error = null,
@@ -186,9 +187,15 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 val currentProposal = before.foundation?.toProposal() ?: before.proposal
                 if (currentProposal != null) {
                     runCatching {
+                        _state.update { it.copy(busyLabel = "AI 正在先核对最新聊天决定……") }
+                        val aligned = ProposalConsolidator(gateway).consolidate(
+                            current = currentProposal.sanitizePlaceholders(),
+                            messages = history,
+                        )
+                        _state.update { it.copy(proposal = aligned, busyLabel = "AI 正在只重写书名 / 平台简介……") }
                         IdentityRefiner.refine(
                             gateway = gateway,
-                            proposal = currentProposal.sanitizePlaceholders(),
+                            proposal = aligned,
                             transcript = conversationTranscript(history, keepLatestResearch = false),
                             instruction = plainInstruction,
                         )
@@ -199,7 +206,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                                 foundation = before.foundation?.copy(title = refined.title, premise = refined.premise)?.sanitizeFoundationPlaceholders(),
                                 messages = it.messages + CreationChatMessage(
                                     "assistant",
-                                    "我只重写了书名 / 对外简介，没有动世界规则、角色、主线、大纲和伏笔。",
+                                    "我先按整段会谈核对了最新决定，再只重写书名 / 对外简介；不会再拿旧简介覆盖你后面确认的新设定。",
                                 ),
                                 isBusy = false,
                                 busyLabel = "",
@@ -213,10 +220,16 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
 
             if (before.foundation != null) {
-                val fallback = before.foundation.sanitizeFoundationPlaceholders().toProposal()
+                val baseline = before.foundation.sanitizeFoundationPlaceholders().toProposal()
                 runCatching {
+                    _state.update { it.copy(busyLabel = "AI 正在把最新聊天决定合并进当前方案……") }
+                    val refreshed = ProposalConsolidator(gateway).consolidate(
+                        current = baseline,
+                        messages = history,
+                    )
+                    _state.update { it.copy(proposal = refreshed, busyLabel = "AI 正在按最新方案重构建书蓝图……") }
                     ProgressiveFoundationEngine(gateway).build(
-                        proposal = fallback,
+                        proposal = refreshed,
                         messages = history,
                         current = before.foundation.sanitizeFoundationPlaceholders(),
                         instruction = plainInstruction,
@@ -243,7 +256,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                             foundationStage = 3,
                             messages = it.messages + CreationChatMessage(
                                 "assistant",
-                                "建书蓝图已按你的要求分阶段重构完成。世界规则、人物、分卷、第一卷章纲和伏笔已经重新对齐。",
+                                "建书蓝图已按你最新确认的决定分阶段重构完成。旧方案只作为历史参考，不会覆盖后面的修改。",
                             ),
                             isBusy = false,
                             busyLabel = "",
@@ -258,6 +271,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             runCatching {
                 NewBookConversationEngine(gateway).reply(
                     messages = history,
+                    currentProposal = before.proposal?.sanitizePlaceholders(),
                     referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
                 )
             }.onSuccess { turn ->
@@ -278,7 +292,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
 
     fun generateFoundation(regenerate: Boolean = false) {
         val before = _state.value
-        val proposal = (before.foundation?.toProposal() ?: before.proposal)?.sanitizePlaceholders() ?: return
+        val baseline = (before.foundation?.toProposal() ?: before.proposal)?.sanitizePlaceholders() ?: return
         if (before.isBusy) return
         val resumeStage = if (regenerate) 0 else before.foundationStage.coerceIn(0, 2)
         val resumeFoundation = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders()
@@ -290,24 +304,34 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
             _state.update {
                 it.copy(
-                    proposal = proposal,
+                    proposal = baseline,
                     isBusy = true,
-                    busyLabel = if (resumeStage > 0) {
-                        "已找到蓝图断点 $resumeStage/3，准备从下一阶段继续……"
-                    } else {
-                        "准备分阶段生成建书蓝图……"
-                    },
+                    busyLabel = "正在把整段会谈的最新决定合并为最终方案……",
                     error = null,
                 )
             }
             val instruction = if (regenerate) {
-                "保留用户已经确认的题材、主题与阅读体验，重新设计一套明显不同但更自洽的角色、规则、分卷结构和前期章节路线。"
+                "以会谈里最后确认的决定为准，重新设计一套明显不同但更自洽的角色、规则、分卷结构和前期章节路线。任何已被用户否定或替换的旧方案都不得复用。"
             } else {
-                "把已经确认的新书方案扩展成可直接开始长篇写作的完整建书蓝图。"
+                "以会谈里最后确认的决定为唯一准绳，把当前最新新书方案扩展成可直接开始长篇写作的完整建书蓝图。旧简介、旧能力、旧冲突若已被后续决定替换，禁止回滚。"
             }
             runCatching {
+                val refreshed = ProposalConsolidator(gateway).consolidate(
+                    current = baseline,
+                    messages = before.messages,
+                )
+                _state.update {
+                    it.copy(
+                        proposal = refreshed,
+                        busyLabel = if (resumeStage > 0) {
+                            "最新方案已合并，检查蓝图断点 $resumeStage/3……"
+                        } else {
+                            "最新方案已合并，开始分阶段生成建书蓝图……"
+                        },
+                    )
+                }
                 ProgressiveFoundationEngine(gateway).build(
-                    proposal = proposal,
+                    proposal = refreshed,
                     messages = before.messages,
                     current = resumeFoundation,
                     instruction = instruction,
@@ -334,7 +358,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         foundationStage = 3,
                         messages = it.messages + CreationChatMessage(
                             "assistant",
-                            "建书蓝图已经分三阶段生成完成：核心世界与人物、第一卷详细章纲、伏笔计划都已对齐。你可以继续聊天修改，满意后再正式写入书架和长期记忆。",
+                            "建书蓝图已经按整段会谈的最新决定分三阶段生成完成：核心世界与人物、第一卷详细章纲、伏笔计划都已对齐。",
                         ),
                         isBusy = false,
                         busyLabel = "",
@@ -424,7 +448,11 @@ private data class ConversationTurn(
 private class NewBookConversationEngine(
     private val gateway: AiGateway,
 ) {
-    suspend fun reply(messages: List<CreationChatMessage>, referenceContext: String = ""): ConversationTurn {
+    suspend fun reply(
+        messages: List<CreationChatMessage>,
+        currentProposal: NewBookProposal? = null,
+        referenceContext: String = "",
+    ): ConversationTurn {
         val transcript = conversationTranscript(messages, keepLatestResearch = true)
         val output = gateway.generateStreaming(
             PromptBundle(
@@ -435,45 +463,86 @@ private class NewBookConversationEngine(
                     1. 先理解用户想要的阅读体验，一次最多追问1-2个关键问题。
                     2. 当前轮若带有琅嬛联网资料/长期研究档案，用它核对公开事实；用户明确纠正的作者-作品关系属于项目事实，网页暂未核验只能标待核验，不能反复否定。
                     3. 参考作品/作者只能提炼高层创作特征，必须重新设计原创角色、规则、谜团和剧情；不得复制标志性句式、专名和剧情骨架。
-                    4. 信息不足时输出 GeneratedChapter JSON：title="__CHAT__"；content=自然回复或追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-                    5. 信息足够时输出方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject 必须填写“实际小说类型”（例如“中式灵异悬疑”，禁止原样输出“小说类型/类型/题材”），field 必须填写“一句实际主题命题”（禁止原样输出“主题命题/主题”），before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
-                    6. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。
-                    7. 若存在“用户显式选择的参考 Style DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
+                    4. 会谈是唯一事实源。越新的用户明确决定优先级越高；用户说“B吧/就这个/改成/不要/换掉/天生不怕吧”这类短句也属于有效决定，必须结合前文理解并覆盖旧方案。
+                    5. 如果已经存在“当前方案”，用户这一轮又修改了主角能力、身份、目标、世界规则、核心冲突、题材、阅读体验、书名或简介，你必须返回一套完整更新后的方案，不能只聊天后继续保留旧 proposal。
+                    6. 只有确实仍缺关键选择、或者用户只是提问而没有做创作决定时，才输出 GeneratedChapter JSON：title="__CHAT__"；content=自然回复或追问；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
+                    7. 信息足够或已有方案需要更新时输出完整方案：title=2-12字正式书名；content=100-220字平台简介；summary=80-180字内部策划摘要；stateChanges只返回1项，其中 subject=实际小说类型，field=一句实际主题命题，before=目标总字数纯数字，after=一句话核心钩子，evidence=封面视觉简报；touchedForeshadowingIds=[]。
+                    8. 平台简介只写故事起点、主角眼前目标、核心异常/规则和当下代价/悬念，不泄露中后期答案和终局反转。只要核心设定已经改变，就必须按最新事实重写简介，禁止为了省事复用旧简介。
+                    9. 若存在“用户显式选择的参考 Style DNA”，只允许使用这些已选档案；绝不能自动读取或混入其它未选择的蒸馏作品。
                 """.trimIndent(),
                 user = """
                     ${if (referenceContext.isBlank()) "【参考 Style DNA】本次未选择任何蒸馏模板。" else referenceContext}
 
-                    【本次新书创作会谈】
+                    ${currentProposal?.let(::proposalContext) ?: "【当前方案】尚未形成完整方案。"}
+
+                    【本次新书创作会谈：后出现的用户决定覆盖前面的旧方案】
                     $transcript
                 """.trimIndent(),
             )
         ) { }
 
         if (output.title.trim() == CHAT_SENTINEL || output.stateChanges.isEmpty()) {
-            return ConversationTurn(
-                reply = output.content.trim().ifBlank { "再告诉我一点你最在意的感觉，我继续帮你收紧方向。" },
-            )
+            val reply = output.content.trim().ifBlank { "再告诉我一点你最在意的感觉，我继续帮你收紧方向。" }
+            val latest = messages.lastOrNull { it.role == "user" }?.text
+                ?.substringBefore(RESEARCH_CONTEXT_MARKER)
+                ?.trim()
+                .orEmpty()
+            if (currentProposal != null && looksLikeCreativeDecision(latest)) {
+                val reconciled = runCatching {
+                    ProposalConsolidator(gateway).consolidate(currentProposal, messages)
+                }.getOrNull()
+                if (reconciled != null) {
+                    return ConversationTurn(
+                        reply = "$reply\n\n你刚才这条决定已经同步进当前方案，不会继续沿用旧简介。",
+                        proposal = reconciled,
+                    )
+                }
+            }
+            return ConversationTurn(reply = reply)
         }
 
         val meta = output.stateChanges.first()
         val proposal = NewBookProposal(
             title = sanitizeTitle(output.title),
-            genre = sanitizeMetaValue(meta.subject, GENRE_PLACEHOLDERS, "未分类"),
+            genre = sanitizeMetaValue(meta.subject, GENRE_PLACEHOLDERS, currentProposal?.genre ?: "未分类"),
             premise = sanitizeSynopsis(output.content),
-            theme = sanitizeMetaValue(meta.field, THEME_PLACEHOLDERS, DEFAULT_THEME),
-            targetWords = meta.before.filter(Char::isDigit).toIntOrNull()?.coerceIn(10_000, 5_000_000) ?: 500_000,
-            coreHook = meta.after.trim().ifBlank { "一个看似普通的选择，逐渐暴露出更大的真相。" },
-            coverBrief = meta.evidence.trim(),
-            rationale = output.summary.trim(),
+            theme = sanitizeMetaValue(meta.field, THEME_PLACEHOLDERS, currentProposal?.theme ?: DEFAULT_THEME),
+            targetWords = meta.before.filter(Char::isDigit).toIntOrNull()?.coerceIn(10_000, 5_000_000)
+                ?: currentProposal?.targetWords
+                ?: 500_000,
+            coreHook = meta.after.trim().ifBlank { currentProposal?.coreHook ?: "一个看似普通的选择，逐渐暴露出更大的真相。" },
+            coverBrief = meta.evidence.trim().ifBlank { currentProposal?.coverBrief.orEmpty() },
+            rationale = output.summary.trim().ifBlank { currentProposal?.rationale.orEmpty() },
         ).sanitizePlaceholders()
         return ConversationTurn(
             reply = buildString {
-                append("我已经把方向收束成一套可以落地的方案。")
+                append(if (currentProposal == null) "我已经把方向收束成一套可以落地的方案。" else "我已经按你刚才的决定更新了当前方案。")
                 if (proposal.rationale.isNotBlank()) append("\n").append(proposal.rationale)
                 append("\n如果这个方向对，就可以直接生成建书蓝图；也可以继续聊着改。")
             },
             proposal = proposal,
         )
+    }
+
+    private fun proposalContext(proposal: NewBookProposal): String = buildString {
+        appendLine("【当前方案缓存：若与后续用户决定冲突，必须覆盖】")
+        appendLine("书名：${proposal.title}")
+        appendLine("类型：${proposal.genre}")
+        appendLine("简介：${proposal.premise}")
+        appendLine("主题：${proposal.theme}")
+        appendLine("目标字数：${proposal.targetWords}")
+        appendLine("核心钩子：${proposal.coreHook}")
+        appendLine("内部策划：${proposal.rationale.take(420)}")
+    }
+
+    private fun looksLikeCreativeDecision(text: String): Boolean {
+        if (text.isBlank()) return false
+        val markers = listOf(
+            "改成", "换成", "不要", "删掉", "就这个", "就选", "选A", "选B", "选C", "a吧", "b吧", "c吧",
+            "主角", "能力", "身份", "性格", "目标", "世界", "规则", "设定", "剧情", "冲突", "主题", "类型",
+            "题材", "风格", "氛围", "简介", "书名", "名字", "天生", "改吧", "这样吧", "按这个", "用这个",
+        )
+        return markers.any { text.contains(it, ignoreCase = true) }
     }
 }
 
@@ -497,6 +566,7 @@ private object IdentityRefiner {
                     你是中文网络小说的书名与平台简介编辑。只能改书名和简介，不能改人物、世界规则、主线、结局、类型、主题和核心钩子。
                     输出 GeneratedChapter JSON：title=2-12字正式书名；content=100-220字平台简介；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
                     简介只写故事起点、主角目标、核心异常/规则、当下代价或悬念；禁止完整剧情梗概、设定罗列和中后期剧透。
+                    当前 proposal 已经经过整段会谈重新对齐，不要恢复更早版本的简介或设定。
                 """.trimIndent(),
                 user = """
                     当前书名：${proposal.title}
