@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Apply patch
-        run: git apply --whitespace=fix .github/patches/style-template-selector.patch
+        run: git apply --recount --whitespace=fix .github/patches/style-template-selector.patch
       - name: Commit source changes
         run: |
           git config user.name "github-actions[bot]"
