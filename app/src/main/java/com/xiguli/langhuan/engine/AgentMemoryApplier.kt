@@ -120,7 +120,6 @@ object AgentMemoryApplier {
                         consequences = splitList(raw[7])
                         storyTime = "故事第${storyDay}天·$timeOfDay${if (flashback) "（闪回）" else ""}"
                     } else {
-                        // 兼容 0.15 以前：故事内时间||地点||参与者||事件摘要||后果
                         val p = packed(action.after, 5)
                         val oldTime = p.getOrNull(0).orEmpty()
                         val parsed = parseDay(oldTime)
@@ -215,7 +214,7 @@ object AgentMemoryApplier {
             }
         }
 
-        return snapshot.copy(
+        val updated = snapshot.copy(
             characters = characters,
             recentTimeline = timeline
                 .sortedWith(compareBy<TimelineEvent> { it.chapter }.thenBy { it.orderInChapter })
@@ -225,5 +224,6 @@ object AgentMemoryApplier {
                 .distinctBy { listOf(it.chapter, it.kind, it.subject, it.before, it.after, it.evidence) }
                 .takeLast(1_200),
         )
+        return LongFormContinuityEngine().refreshAfterMemoryUpdate(updated, chapterNumber)
     }
 }
