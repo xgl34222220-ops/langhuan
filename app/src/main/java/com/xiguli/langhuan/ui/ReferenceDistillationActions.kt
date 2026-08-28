@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
+import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
@@ -52,7 +53,8 @@ fun StudioViewModel.enqueueReferenceDistillation(uri: Uri) {
                     target.copyTo(stable, overwrite = true)
                     target.delete()
                 }
-                ReferenceDistillationJobs.enqueue(app, stable, displayName)
+                val taskId = ReferenceDistillationJobs.enqueue(app, stable, displayName)
+                ReferenceDistillationSourceStore(app).save(taskId, stable, displayName)
                 displayName
             }
         }
