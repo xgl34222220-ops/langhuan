@@ -23,13 +23,21 @@ class PromptAssembler {
 
         val outline = snapshot.activeOutline
             .sortedWith(compareBy({ it.level.ordinal }, { it.order }))
-            .joinToString("\n") {
-                val level = when (it.level) {
+            .joinToString("\n") { node ->
+                val level = when (node.level) {
                     OutlineLevel.MASTER -> "总纲"
                     OutlineLevel.VOLUME -> "卷纲"
                     OutlineLevel.CHAPTER -> "章纲"
                 }
-                "- [$level] ${it.title}｜目标:${it.objective}｜冲突:${it.conflict}｜转折:${it.turningPoint}"
+                buildString {
+                    append("- [$level] ${node.title}｜目标:${node.objective}｜冲突:${node.conflict}｜转折:${node.turningPoint}")
+                    if (node.mustInclude.isNotEmpty()) {
+                        append("｜必须包含:${node.mustInclude.joinToString("、")}")
+                    }
+                    if (node.forbidden.isNotEmpty()) {
+                        append("｜本层禁止:${node.forbidden.joinToString("、")}")
+                    }
+                }
             }
 
         val characters = snapshot.characters.joinToString("\n") {
@@ -66,7 +74,9 @@ class PromptAssembler {
                 6. 若用户临时要求与锁定设定冲突，以锁定设定为准。
                 7. 长期摘要、RAG 检索片段只作为历史证据；若与锁定圣经冲突，以锁定圣经为最高优先级。
                 8. 【文风模板】决定叙述语气、句式、节奏、视角距离和修辞偏好；它可以改变“怎么写”，但不能改变“发生什么”。
-                9. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
+                9. 大纲中的“必须包含”属于硬性验收条件；“本层禁止”与 FORBIDDEN 圣经同级，不得以任何方式绕过或变相出现。
+                10. 每个场景必须产生信息、代价、关系变化、目标进展或新的选择之一；禁止连续大段原地解释和无状态变化的过场。
+                11. 输出必须是可解析 JSON，禁止在 JSON 前后添加解释或 Markdown。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
