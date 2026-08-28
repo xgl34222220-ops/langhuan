@@ -13,6 +13,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -24,18 +25,51 @@ import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.domain.GeneratedChapter
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 
 object ReferenceDistillationJobs {
     const val TAG = "reference-novel-distillation"
-    private const val KEY_PATH = "path"
-    private const val KEY_NAME = "name"
+    internal const val KEY_PATH = "path"
+    internal const val KEY_NAME = "name"
+    internal const val KEY_FINGERPRINT = "fingerprint"
 
-    fun enqueue(context: Context, sourceFile: File, displayName: String): String {
-        val fingerprint = sha256("${sourceFile.absolutePath}|${sourceFile.length()}|${sourceFile.lastModified()}").take(16)
+    fun enqueue(context: Context, sourceFile: File, displayName: String): String =
+        enqueueInternal(context, sourceFile, displayName, force = false)
+
+    fun retry(context: Context, sourceFile: File, displayName: String): String =
+        enqueueInternal(context, sourceFile, displayName, force = true)
+
+    fun cancel(context: Context, workId: String) {
+        runCatching { UUID.fromString(workId) }
+            .getOrNull()
+            ?.let { WorkManager.getInstance(context).cancelWorkById(it) }
+    }
+
+    private fun enqueueInternal(context: Context, sourceFile: File, displayName: String, force: Boolean): String {
+        val fingerprint = stableFingerprint(sourceFile)
+        val uniqueName = "reference-distill-$fingerprint"
+        val workManager = WorkManager.getInstance(context)
+        if (!force) {
+            val active = runCatching { workManager.getWorkInfosForUniqueWork(uniqueName).get() }
+                .getOrDefault(emptyList())
+                .firstOrNull { info ->
+                    info.state == WorkInfo.State.ENQUEUED ||
+                        info.state == WorkInfo.State.RUNNING ||
+                        info.state == WorkInfo.State.BLOCKED
+                }
+            if (active != null) return active.id.toString()
+        }
+
         val request = OneTimeWorkRequestBuilder<ReferenceDistillationWorker>()
-            .setInputData(workDataOf(KEY_PATH to sourceFile.absolutePath, KEY_NAME to displayName))
+            .setInputData(
+                workDataOf(
+                    KEY_PATH to sourceFile.absolutePath,
+                    KEY_NAME to displayName,
+                    KEY_FINGERPRINT to fingerprint,
+                )
+            )
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -44,8 +78,8 @@ object ReferenceDistillationJobs {
             .addTag(TAG)
             .addTag("reference:$fingerprint")
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "reference-distill-$fingerprint",
+        workManager.enqueueUniqueWork(
+            uniqueName,
             ExistingWorkPolicy.REPLACE,
             request,
         )
@@ -54,6 +88,9 @@ object ReferenceDistillationJobs {
 
     internal fun path(input: Data): String = input.getString(KEY_PATH).orEmpty()
     internal fun name(input: Data): String = input.getString(KEY_NAME).orEmpty()
+    internal fun fingerprint(input: Data): String = input.getString(KEY_FINGERPRINT).orEmpty()
+
+    private fun stableFingerprint(sourceFile: File): String = sha256("${sourceFile.name}|${sourceFile.length()}").take(16)
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray())
@@ -67,13 +104,16 @@ class ReferenceDistillationWorker(
     private val repository = PersistentStoryRepository(appContext)
     private val archive = CreationResearchArchiveStore(appContext)
     private val reportStore = ReferenceDistillationReportStore(appContext)
+    private val checkpointStore = ReferenceDistillationCheckpointStore(appContext)
 
     override suspend fun doWork(): Result {
         val path = ReferenceDistillationJobs.path(inputData)
         val fileName = ReferenceDistillationJobs.name(inputData).ifBlank { File(path).name }
         val source = File(path)
+        val fingerprint = ReferenceDistillationJobs.fingerprint(inputData).ifBlank { fallbackFingerprint(source) }
         val initialTitle = fileName.substringBeforeLast('.').ifBlank { "参考小说" }
         if (!source.exists() || source.length() == 0L) {
+            checkpointStore.clear(fingerprint)
             return Result.failure(workDataOf("error" to "参考小说文件不存在或为空", "title" to initialTitle))
         }
 
@@ -84,14 +124,27 @@ class ReferenceDistillationWorker(
             val manuscript = StoryExchange.import(fileName, source.readBytes())
             require(manuscript.chapters.isNotEmpty()) { "没有识别到可蒸馏的章节" }
 
+            val savedCheckpoint = checkpointStore.load(fingerprint)
             val providers = repository.observeProviders().first()
-            val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
+            val provider = savedCheckpoint?.providerId
+                ?.let { providerId -> providers.firstOrNull { it.id == providerId } }
+                ?: providers.firstOrNull { it.isDefault }
+                ?: providers.firstOrNull()
                 ?: error("没有可用 AI 服务，请先在琅嬛添加 Key / 模型")
-            val config = repository.providerConfig(provider.id)
+            val rawConfig = repository.providerConfig(provider.id)
                 ?: error("当前 AI 服务配置无法读取")
+            val config = if (
+                savedCheckpoint != null &&
+                savedCheckpoint.providerId == provider.id &&
+                savedCheckpoint.model.isNotBlank()
+            ) {
+                rawConfig.copy(model = savedCheckpoint.model)
+            } else {
+                rawConfig
+            }
             val gateway: AiGateway = UniversalAiGateway(config)
             val providerLabel = provider.name.ifBlank { provider.protocol.label }
-            val modelLabel = provider.model.ifBlank { config.model }
+            val modelLabel = config.model.ifBlank { provider.model }
 
             setProgress(
                 progressData(
@@ -106,15 +159,68 @@ class ReferenceDistillationWorker(
 
             val samples = buildSamples(manuscript)
             val localMetrics = localMetrics(manuscript, samples.size)
-            val observations = mutableListOf<String>()
             val batchSize = when {
                 samples.size <= 12 -> 2
                 samples.size <= 24 -> 3
                 else -> 4
             }
             val batches = samples.chunked(batchSize)
+            val checkpoint = savedCheckpoint?.takeIf { saved ->
+                saved.fingerprint == fingerprint &&
+                    saved.title == manuscript.title &&
+                    saved.chapters == manuscript.chapters.size &&
+                    saved.samples == samples.size &&
+                    saved.totalBatches == batches.size &&
+                    saved.providerId == provider.id &&
+                    saved.model == modelLabel
+            }
+            if (savedCheckpoint != null && checkpoint == null) checkpointStore.clear(fingerprint)
 
-            batches.forEachIndexed { index, batch ->
+            val completed = checkpoint?.completedBatches?.coerceIn(0, batches.size) ?: 0
+            val observations = checkpoint?.observations
+                ?.take(completed)
+                ?.toMutableList()
+                ?: mutableListOf()
+
+            if (checkpoint == null) {
+                checkpointStore.save(
+                    ReferenceDistillationCheckpoint(
+                        fingerprint = fingerprint,
+                        title = manuscript.title,
+                        chapters = manuscript.chapters.size,
+                        samples = samples.size,
+                        providerId = provider.id,
+                        provider = providerLabel,
+                        model = modelLabel,
+                        completedBatches = 0,
+                        totalBatches = batches.size,
+                        observations = emptyList(),
+                        localMetrics = localMetrics,
+                    )
+                )
+            } else if (completed > 0) {
+                val resumeProgress = 10 + (completed * 60 / batches.size.coerceAtLeast(1))
+                setProgress(
+                    progressData(
+                        stage = "distill",
+                        progress = resumeProgress,
+                        title = manuscript.title,
+                        provider = providerLabel,
+                        model = modelLabel,
+                        batch = completed,
+                        batches = batches.size,
+                    )
+                )
+                setForeground(
+                    foreground(
+                        "《${manuscript.title}》从断点继续 · 已完成 $completed/${batches.size} 批",
+                        resumeProgress,
+                    )
+                )
+            }
+
+            for (index in completed until batches.size) {
+                val batch = batches[index]
                 val progress = 10 + ((index + 1) * 60 / batches.size.coerceAtLeast(1))
                 setProgress(
                     progressData(
@@ -135,6 +241,21 @@ class ReferenceDistillationWorker(
                 )
                 val observation = distillBatch(gateway, manuscript.title, batch, index + 1, batches.size)
                 observations += observation
+                checkpointStore.save(
+                    ReferenceDistillationCheckpoint(
+                        fingerprint = fingerprint,
+                        title = manuscript.title,
+                        chapters = manuscript.chapters.size,
+                        samples = samples.size,
+                        providerId = provider.id,
+                        provider = providerLabel,
+                        model = modelLabel,
+                        completedBatches = index + 1,
+                        totalBatches = batches.size,
+                        observations = observations.toList(),
+                        localMetrics = localMetrics,
+                    )
+                )
             }
 
             setProgress(
@@ -144,6 +265,8 @@ class ReferenceDistillationWorker(
                     title = manuscript.title,
                     provider = providerLabel,
                     model = modelLabel,
+                    batch = batches.size,
+                    batches = batches.size,
                 )
             )
             setForeground(foreground("正在聚合《${manuscript.title}》整书 Style DNA", 82))
@@ -195,9 +318,12 @@ class ReferenceDistillationWorker(
                     title = manuscript.title,
                     provider = providerLabel,
                     model = modelLabel,
+                    batch = batches.size,
+                    batches = batches.size,
                 )
             )
             setForeground(foreground("《${manuscript.title}》蒸馏完成，已加入长期研究档案", 100))
+            checkpointStore.clear(fingerprint)
             runCatching { source.delete() }
             Result.success(
                 workDataOf(
@@ -207,6 +333,7 @@ class ReferenceDistillationWorker(
                     "provider" to providerLabel,
                     "model" to modelLabel,
                     "reportId" to reportId,
+                    "fingerprint" to fingerprint,
                 )
             )
         }.getOrElse { error ->
@@ -214,7 +341,17 @@ class ReferenceDistillationWorker(
             if (runAttemptCount < 2 && isRetryable(message)) {
                 Result.retry()
             } else {
-                Result.failure(workDataOf("error" to message.take(500), "title" to initialTitle))
+                val checkpoint = checkpointStore.load(fingerprint)
+                Result.failure(
+                    workDataOf(
+                        "error" to message.take(500),
+                        "title" to initialTitle,
+                        "resumable" to ((checkpoint?.completedBatches ?: 0) > 0),
+                        "completedBatches" to (checkpoint?.completedBatches ?: 0),
+                        "batches" to (checkpoint?.totalBatches ?: 0),
+                        "fingerprint" to fingerprint,
+                    )
+                )
             }
         }
     }
@@ -449,6 +586,11 @@ class ReferenceDistillationWorker(
         val lower = message.lowercase()
         return listOf("timeout", "timed out", "429", "502", "503", "504", "network", "connection", "socket").any(lower::contains)
     }
+
+    private fun fallbackFingerprint(source: File): String = MessageDigest.getInstance("SHA-256")
+        .digest("${source.name}|${source.length()}".toByteArray())
+        .joinToString("") { "%02x".format(it) }
+        .take(16)
 
     private data class SampleChunk(val label: String, val text: String)
 
