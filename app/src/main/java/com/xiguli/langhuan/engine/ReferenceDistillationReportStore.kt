@@ -33,12 +33,7 @@ data class ReferenceDistillationReport(
     val legacySummaryOnly: Boolean = false,
 )
 
-/**
- * Full, user-visible Style DNA report storage.
- *
- * WorkManager output Data is intentionally small and cannot carry a complete distillation dossier,
- * so the full structured result is persisted in app-private storage and the task only exposes an id.
- */
+/** Full, user-visible Style DNA report storage. */
 class ReferenceDistillationReportStore(private val context: Context) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -94,11 +89,43 @@ class ReferenceDistillationReportStore(private val context: Context) {
         }.getOrNull()
     }
 
+    /** All complete reports available for explicit new-book template selection. */
+    fun listReports(): List<ReferenceDistillationReport> = root.listFiles()
+        .orEmpty()
+        .filter { it.isFile && it.extension.equals("json", true) }
+        .mapNotNull { file ->
+            runCatching {
+                file.bufferedReader(Charsets.UTF_8).use { reader ->
+                    json.decodeFromString<ReferenceDistillationReport>(reader.readText())
+                }
+            }.getOrNull()
+        }
+        .distinctBy { it.taskId }
+        .sortedByDescending { it.createdAt }
+
     /**
-     * Older finished jobs only wrote a shortened dossier into the research archive. Surface that
-     * instead of showing an empty screen, while making it explicit that a re-distillation is needed
-     * for the complete structured report.
+     * Build a compact prompt packet from *only* the reports explicitly selected by the user.
+     * Unselected reports never enter the creation prompt.
      */
+    fun promptContext(selectedTaskIds: List<String>, maxChars: Int = 9_000): String {
+        if (selectedTaskIds.isEmpty()) return ""
+        val selected = selectedTaskIds.distinct().mapNotNull(::load)
+        if (selected.isEmpty()) return ""
+        return buildString {
+            appendLine("【用户显式选择的参考 Style DNA】")
+            appendLine("只能使用下列已选择档案；未选择的蒸馏作品禁止自动混入。只借鉴高层写作机制，角色、专名、剧情骨架和标志性表达必须原创。")
+            selected.forEachIndexed { index, report ->
+                appendLine()
+                appendLine("--- ${index + 1}. 《${report.title}》 ---")
+                if (report.summary.isNotBlank()) appendLine("Style DNA：${report.summary.take(900)}")
+                if (report.overview.isNotBlank()) appendLine("高层档案：${report.overview.take(1_200)}")
+                report.items.take(16).forEach { item ->
+                    appendLine("${item.kind}/${item.dimension}: ${item.value.take(360)}")
+                }
+            }
+        }.take(maxChars)
+    }
+
     fun loadOrArchiveFallback(taskId: String, title: String): ReferenceDistillationReport? {
         load(taskId)?.let { return it }
         val entry = CreationResearchArchiveStore(context).load().entries.firstOrNull {
@@ -134,10 +161,6 @@ class ReferenceDistillationReportStore(private val context: Context) {
     }
 
     private fun reportFile(taskId: String): File = File(root, "${safeId(taskId)}.json")
-
     private fun safeId(value: String): String = value.replace(Regex("[^A-Za-z0-9._-]"), "_").take(96)
-
-    private fun normalize(value: String): String = value
-        .lowercase()
-        .replace(Regex("[《》“”\\\"'\\s·._—-]"), "")
+    private fun normalize(value: String): String = value.lowercase().replace(Regex("[《》“”\\\"'\\s·._—-]"), "")
 }
