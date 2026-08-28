@@ -8,6 +8,8 @@ import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.StoredChapterVersion
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.engine.ChapterDependencyAnalyzer
+import com.xiguli.langhuan.engine.ChapterDependencyReport
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import kotlinx.coroutines.Job
@@ -45,14 +47,18 @@ data class ChapterEditorUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val isRewriting: Boolean = false,
+    val isAnalyzingDependencies: Boolean = false,
+    val isPlanningRepair: Boolean = false,
     val lastSavedAt: Long? = null,
     val rewriteProposal: RewriteProposal? = null,
     val comparison: VersionComparison? = null,
+    val dependencyReport: ChapterDependencyReport? = null,
+    val repairPlan: String? = null,
     val message: String? = null,
     val error: String? = null,
 ) {
     val ready: Boolean get() = snapshot != null && draft != null
-    val busy: Boolean get() = isLoading || isSaving || isRewriting
+    val busy: Boolean get() = isLoading || isSaving || isRewriting || isPlanningRepair
 }
 
 class ChapterEditorViewModel(application: Application) : AndroidViewModel(application) {
@@ -93,14 +99,23 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     fun updateTitle(title: String) {
         val draft = _state.value.draft ?: return
         if (draft.title == title) return
-        _state.update { it.copy(draft = draft.copy(title = title), dirty = true) }
+        _state.update { it.copy(draft = draft.copy(title = title), dirty = true, dependencyReport = null, repairPlan = null) }
         scheduleAutosave()
     }
 
     fun updateContent(content: String) {
         val draft = _state.value.draft ?: return
         if (draft.content == content) return
-        _state.update { it.copy(draft = draft.copy(content = content), dirty = true, rewriteProposal = null, comparison = null) }
+        _state.update {
+            it.copy(
+                draft = draft.copy(content = content),
+                dirty = true,
+                rewriteProposal = null,
+                comparison = null,
+                dependencyReport = null,
+                repairPlan = null,
+            )
+        }
         scheduleAutosave()
     }
 
@@ -172,11 +187,90 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                         isSaving = false,
                         rewriteProposal = null,
                         comparison = null,
+                        dependencyReport = null,
+                        repairPlan = null,
                         lastSavedAt = System.currentTimeMillis(),
                     )
                 }
             }.onFailure { error ->
                 _state.update { it.copy(isSaving = false, error = error.message ?: "切换章节失败") }
+            }
+        }
+    }
+
+    fun analyzeDependencies() {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        if (current.isAnalyzingDependencies) return
+        viewModelScope.launch {
+            _state.update { it.copy(isAnalyzingDependencies = true, error = null) }
+            runCatching { ChapterDependencyAnalyzer.analyze(snapshot, current.chapters, draft.chapterNumber) }
+                .onSuccess { report ->
+                    _state.update {
+                        it.copy(
+                            isAnalyzingDependencies = false,
+                            dependencyReport = report,
+                            repairPlan = null,
+                            message = "依赖检查完成：${report.overallRisk.label}风险 · ${report.all.size} 项影响",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(isAnalyzingDependencies = false, error = error.message ?: "依赖检查失败") }
+                }
+        }
+    }
+
+    fun generateRepairPlan() {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        val report = current.dependencyReport ?: run {
+            analyzeDependencies()
+            return
+        }
+        if (current.isPlanningRepair || current.isRewriting || current.isSaving) return
+        viewModelScope.launch {
+            _state.update { it.copy(isPlanningRepair = true, error = null) }
+            runCatching {
+                val providers = repository.observeProviders().first()
+                val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
+                    ?: error("请先在设置里添加 AI 服务")
+                val config = repository.providerConfig(provider.id) ?: error("当前 AI 服务不可用")
+                val impacts = report.all.take(30).joinToString("\n") {
+                    "- ${it.risk.label}风险｜${it.kind.label}｜${it.title}｜${it.detail}"
+                }
+                val later = current.chapters.filter { it.chapterNumber > draft.chapterNumber }.take(20).joinToString("\n") {
+                    "第${it.chapterNumber}章 ${it.title}｜目标=${it.objective}｜摘要=${it.summary.take(240)}"
+                }
+                UniversalAiGateway(config).generate(
+                    PromptBundle(
+                        system = """
+                            你是长篇小说连续性修复规划器，不写小说正文。根据确定的依赖清单，给出删除/回滚/大改当前章节后如何修复后续剧情的执行计划。
+                            必须输出 GeneratedChapter JSON；title=依赖修复计划；content=纯文本计划；summary=一句风险结论；stateChanges=[]；touchedForeshadowingIds=[]。
+                            不得宣称已修改任何事实，不得擅自删除锁定设定。按“先处理结构化事实→再处理章纲→再处理正文→最后全书一致性检查”的顺序给出步骤。
+                        """.trimIndent(),
+                        user = """
+                            小说：${snapshot.novel.title}
+                            当前章节：第${draft.chapterNumber}章 ${draft.title}
+                            当前风险：${report.overallRisk.label}
+                            建议：${report.recommendation}
+
+                            【本地确定/推断的依赖】
+                            $impacts
+
+                            【后续章节摘要】
+                            $later
+
+                            请生成可执行修复计划，并明确哪些项必须人工确认，哪些项可以交给 AI 重写。
+                        """.trimIndent(),
+                    )
+                ).content.trim().ifBlank { error("AI 返回了空修复计划") }
+            }.onSuccess { plan ->
+                _state.update { it.copy(isPlanningRepair = false, repairPlan = plan) }
+            }.onFailure { error ->
+                _state.update { it.copy(isPlanningRepair = false, error = error.message ?: "生成修复计划失败") }
             }
         }
     }
@@ -255,6 +349,8 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 draft = draft.copy(content = updated),
                 dirty = true,
                 rewriteProposal = null,
+                dependencyReport = null,
+                repairPlan = null,
                 message = "已应用 AI 局部重写，正在自动保存",
             )
         }
@@ -299,17 +395,22 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
             _state.update { it.copy(isSaving = true, error = null, comparison = null) }
             runCatching { store.restore(snapshot, draft, version) }
                 .onSuccess { persisted ->
+                    val chapters = store.chapters(persisted.draft.novelId)
                     val versions = store.versions(persisted.draft.novelId, persisted.draft.chapterNumber)
+                    val report = ChapterDependencyAnalyzer.analyze(persisted.snapshot, chapters, persisted.draft.chapterNumber)
                     _state.update {
                         it.copy(
                             snapshot = persisted.snapshot,
                             draft = persisted.draft,
+                            chapters = chapters,
                             versions = versions,
                             dirty = false,
                             isSaving = false,
                             rewriteProposal = null,
+                            dependencyReport = report,
+                            repairPlan = null,
                             lastSavedAt = System.currentTimeMillis(),
-                            message = "已恢复 v${version.version} 内容，并保存为新的 v${persisted.draft.version}",
+                            message = "已恢复 v${version.version} 为新版本 v${persisted.draft.version}；${report.overallRisk.label}风险依赖 ${report.all.size} 项，请复核后续剧情",
                         )
                     }
                 }.onFailure { error ->
