@@ -828,11 +828,18 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 current.snapshot.activeOutline.forEach { append(it.objective).append(' ').append(it.turningPoint).append(' ') }
                 current.snapshot.characters.forEach { append(it.name).append(' ').append(it.goal).append(' ') }
             }
-            val memories = repository.retrieveRelevantMemories(current.snapshot.novel.id, ragQuery, current.draft.chapterNumber, 8)
-            val snapshotForPrompt = current.snapshot.copy(recentSummaries = (current.snapshot.recentSummaries + memories).distinct().takeLast(18))
+            val retrievedContext = repository.retrieveRelevantContext(
+                current.snapshot.novel.id,
+                ragQuery,
+                current.draft.chapterNumber,
+                10,
+            )
             val gateway = configuredGateway() ?: DemoAiGateway()
             runCatching {
-                GenerationPipeline(gateway).generate(GenerationRequest(snapshotForPrompt, current.draft, 2_500)) { preview ->
+                GenerationPipeline(gateway).generate(
+                    request = GenerationRequest(current.snapshot, current.draft, 2_500),
+                    retrievedContext = retrievedContext,
+                ) { preview ->
                     _state.update { state -> state.copy(streamPreview = preview) }
                 }
             }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) } }
