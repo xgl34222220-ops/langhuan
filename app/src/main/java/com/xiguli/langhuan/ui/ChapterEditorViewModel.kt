@@ -10,6 +10,9 @@ import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.ChapterDependencyAnalyzer
 import com.xiguli.langhuan.engine.ChapterDependencyReport
+import com.xiguli.langhuan.engine.ChronologyGuard
+import com.xiguli.langhuan.engine.ChronologyRepairAnalyzer
+import com.xiguli.langhuan.engine.ChronologyRepairReport
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import kotlinx.coroutines.Job
@@ -27,6 +30,12 @@ data class RewriteProposal(
     val original: String,
     val replacement: String,
     val instruction: String,
+)
+
+data class ChronologyRepairProposal(
+    val original: String,
+    val repaired: String,
+    val diagnosis: String,
 )
 
 data class VersionComparison(
@@ -49,16 +58,20 @@ data class ChapterEditorUiState(
     val isRewriting: Boolean = false,
     val isAnalyzingDependencies: Boolean = false,
     val isPlanningRepair: Boolean = false,
+    val isAnalyzingChronology: Boolean = false,
+    val isRepairingChronology: Boolean = false,
     val lastSavedAt: Long? = null,
     val rewriteProposal: RewriteProposal? = null,
+    val chronologyProposal: ChronologyRepairProposal? = null,
     val comparison: VersionComparison? = null,
     val dependencyReport: ChapterDependencyReport? = null,
+    val chronologyReport: ChronologyRepairReport? = null,
     val repairPlan: String? = null,
     val message: String? = null,
     val error: String? = null,
 ) {
     val ready: Boolean get() = snapshot != null && draft != null
-    val busy: Boolean get() = isLoading || isSaving || isRewriting || isPlanningRepair
+    val busy: Boolean get() = isLoading || isSaving || isRewriting || isPlanningRepair || isRepairingChronology
 }
 
 class ChapterEditorViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,6 +119,8 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 chapters = it.chapters.replaceDraft(updated),
                 dirty = true,
                 dependencyReport = null,
+                chronologyReport = null,
+                chronologyProposal = null,
                 repairPlan = null,
             )
         }
@@ -122,8 +137,10 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 chapters = it.chapters.replaceDraft(updated),
                 dirty = true,
                 rewriteProposal = null,
+                chronologyProposal = null,
                 comparison = null,
                 dependencyReport = null,
+                chronologyReport = null,
                 repairPlan = null,
             )
         }
@@ -198,8 +215,10 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                         dirty = false,
                         isSaving = false,
                         rewriteProposal = null,
+                        chronologyProposal = null,
                         comparison = null,
                         dependencyReport = null,
+                        chronologyReport = null,
                         repairPlan = null,
                         lastSavedAt = System.currentTimeMillis(),
                     )
@@ -209,6 +228,146 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
             }
         }
     }
+
+    fun analyzeChronology() {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        if (current.isAnalyzingChronology) return
+        _state.update { it.copy(isAnalyzingChronology = true, error = null) }
+        runCatching { ChronologyRepairAnalyzer.analyze(snapshot, draft.content) }
+            .onSuccess { report ->
+                _state.update {
+                    it.copy(
+                        isAnalyzingChronology = false,
+                        chronologyReport = report,
+                        chronologyProposal = null,
+                        message = "时间体检完成：${report.overallRisk.label}风险 · ${report.anchors.size} 个时间锚点 · ${report.findings.size} 个问题",
+                    )
+                }
+            }
+            .onFailure { error ->
+                _state.update { it.copy(isAnalyzingChronology = false, error = error.message ?: "时间线体检失败") }
+            }
+    }
+
+    fun generateChronologyRepair() {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        if (current.busy || draft.content.isBlank()) return
+        val report = current.chronologyReport ?: ChronologyRepairAnalyzer.analyze(snapshot, draft.content)
+        viewModelScope.launch {
+            _state.update { it.copy(isRepairingChronology = true, chronologyReport = report, chronologyProposal = null, error = null) }
+            runCatching {
+                val providers = repository.observeProviders().first()
+                val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
+                    ?: error("请先在设置里添加 AI 服务")
+                val config = repository.providerConfig(provider.id) ?: error("当前 AI 服务不可用")
+                val findings = report.findings.joinToString("\n") {
+                    "- ${it.risk.label}风险｜${it.code}｜第${it.paragraph}段｜${it.title}｜${it.detail}｜建议=${it.repair}"
+                }.ifBlank { "- 本地规则没有发现确定性冲突；仍请检查时间层切换是否清楚。" }
+                val anchors = report.anchors.take(60).joinToString("\n") {
+                    "- 第${it.paragraph}段｜${it.kind}｜${it.phrase}${it.relativeDay?.let { d -> "｜相对当前=$d 天" }.orEmpty()}"
+                }
+                val timeline = snapshot.recentTimeline.sortedWith(compareBy({ it.chapter }, { it.orderInChapter })).takeLast(50).joinToString("\n") {
+                    "- 第${it.chapter}章｜故事第${it.storyDay.takeIf { day -> day > 0 } ?: 0}天｜${it.timeOfDay.ifBlank { it.storyTime }}｜${it.location}｜${it.summary}｜${if (it.isFlashback) "闪回" else "主线"}"
+                }
+                val clock = ChronologyGuard().promptText(snapshot, draft.scenePlan)
+                val output = UniversalAiGateway(config).generate(
+                    PromptBundle(
+                        system = """
+                            你是“琅嬛”的旧稿时间线修复编辑。你的任务不是重写小说，而是修复时间层级、场景归属和必要的过渡句。
+                            必须输出 GeneratedChapter JSON：title=chronology-repair；content=修复后的完整章节正文；summary=80-220 字说明你修了哪些时间问题；stateChanges=[]；touchedForeshadowingIds=[]。
+
+                            硬规则：
+                            1. 最大限度保留原文。除时间桥、时间表达、场景归属提示和为消除硬矛盾所必需的极少句子外，不改剧情、人物、线索、道具、地点、对白含义和悬疑信息。
+                            2. 不得为了“顺”而删掉超自然时间异常。梦境时间冻结、监控时间错位等若明显是剧情线索，要保留并写得更清楚，而不是修成正常时间。
+                            3. 背景资料中的“十七年前/三年前”等不等于叙事镜头真的跳到过去；只有镜头进入过去场景时才算闪回。
+                            4. 遇到“某人已失踪三天，却又像正在参加三天前的聚会”这类冲突，必须明确选择一个合法解释：把聚会改成调查历史聚会资料/访问当晚参与者，或明确整段是三天前闪回。禁止两种时间同时成立。
+                            5. 如果证据不足，不编造新的日期、证人、监控或剧情事实；使用中性的时间桥解决歧义。
+                            6. 保留原章节叙事风格、悬疑节奏和段落结构，不做无关润色。
+                        """.trimIndent(),
+                        user = """
+                            小说：${snapshot.novel.title}
+                            当前章节：第${draft.chapterNumber}章 ${draft.title}
+
+                            【现有主时间钟】
+                            $clock
+
+                            【已保存长期时间线】
+                            ${timeline.ifBlank { "暂无可靠结构化时间线。" }}
+
+                            【本地扫描时间锚点】
+                            ${anchors.ifBlank { "未识别到明确锚点。" }}
+
+                            【本地确定/保守发现的问题】
+                            $findings
+
+                            【需要修复的完整正文】
+                            ${draft.content.take(32_000)}
+
+                            请只修时间与场景归属问题。若正文超过输入上限导致末尾缺失，禁止返回残缺章节，直接在 summary 说明无法安全整章修复并让 content 原样返回。
+                        """.trimIndent(),
+                    )
+                )
+                val repaired = output.content.trim().ifBlank { error("AI 没有返回修复正文") }
+                require(repaired.length >= (draft.content.length * 0.65).toInt()) { "AI 修复稿异常过短，已阻止覆盖原文" }
+                require(repaired.length <= (draft.content.length * 1.45).toInt() + 500) { "AI 修复稿异常膨胀，已阻止覆盖原文" }
+                ChronologyRepairProposal(
+                    original = draft.content,
+                    repaired = repaired,
+                    diagnosis = output.summary.trim().ifBlank { "已生成时间线修复预览，请逐段核对后再应用。" },
+                )
+            }.onSuccess { proposal ->
+                _state.update { it.copy(isRepairingChronology = false, chronologyProposal = proposal) }
+            }.onFailure { error ->
+                _state.update { it.copy(isRepairingChronology = false, error = error.message ?: "AI 时间线修复失败") }
+            }
+        }
+    }
+
+    fun applyChronologyRepair() {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        val proposal = current.chronologyProposal ?: return
+        if (current.busy || proposal.original != draft.content) {
+            if (proposal.original != draft.content) _state.update { it.copy(chronologyProposal = null, error = "正文已经变化，请重新扫描后再应用时间修复") }
+            return
+        }
+        autosaveJob?.cancel()
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            runCatching {
+                val checkpoint = store.checkpoint(snapshot, draft)
+                val repairedDraft = checkpoint.draft.copy(content = proposal.repaired)
+                val persisted = store.autosave(checkpoint.snapshot, repairedDraft)
+                Triple(persisted, store.versions(draft.novelId, draft.chapterNumber), ChronologyRepairAnalyzer.analyze(persisted.snapshot, repairedDraft.content))
+            }.onSuccess { (persisted, versions, report) ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        chapters = it.chapters.replaceDraft(persisted.draft),
+                        versions = versions,
+                        dirty = false,
+                        isSaving = false,
+                        chronologyProposal = null,
+                        chronologyReport = report,
+                        dependencyReport = null,
+                        repairPlan = null,
+                        lastSavedAt = System.currentTimeMillis(),
+                        message = "时间修复已应用；原稿已先保存为历史版本。当前仍有 ${report.findings.size} 个时间问题待复核",
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(isSaving = false, error = error.message ?: "应用时间修复失败") }
+            }
+        }
+    }
+
+    fun dismissChronologyRepair() = _state.update { it.copy(chronologyProposal = null) }
 
     fun analyzeDependencies() {
         val current = _state.value
@@ -311,10 +470,12 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 val before = draft.content.substring(0, safeStart).takeLast(900)
                 val after = draft.content.substring(safeEnd).take(900)
                 val request = instruction.trim().ifBlank { "在不改变事实和剧情含义的前提下润色，使表达更自然、更有画面感。" }
+                val chronology = current.snapshot?.let { ChronologyGuard().promptText(it, draft.scenePlan) }.orEmpty()
                 val output = gateway.generate(
                     PromptBundle(
                         system = """
                             你是中文长篇小说精修编辑。只改用户选中的片段，绝不能擅自续写选区外剧情，不能改变人物身份、时间线、地点、因果、伏笔事实。
+                            时间轴锁与锁定设定同级；即使用户只要求润色，也不得改变故事日、时段、事件先后、主线/闪回归属。
                             必须输出 GeneratedChapter JSON：title 固定 rewrite；content 只放替换后的片段正文；summary 留空；stateChanges=[]；touchedForeshadowingIds=[]。
                             不要在 content 里解释修改原因，不要加 Markdown 代码块。
                         """.trimIndent(),
@@ -322,6 +483,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                             小说：${current.snapshot?.novel?.title.orEmpty()}
                             第${draft.chapterNumber}章：${draft.title}
                             修改要求：$request
+
+                            【时间轴锁】
+                            $chronology
 
                             选区前文：
                             $before
@@ -365,6 +529,8 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 chapters = it.chapters.replaceDraft(updated),
                 dirty = true,
                 rewriteProposal = null,
+                chronologyProposal = null,
+                chronologyReport = null,
                 dependencyReport = null,
                 repairPlan = null,
                 message = "已应用 AI 局部重写，正在自动保存",
@@ -424,6 +590,8 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                             dirty = false,
                             isSaving = false,
                             rewriteProposal = null,
+                            chronologyProposal = null,
+                            chronologyReport = null,
                             dependencyReport = report,
                             repairPlan = null,
                             lastSavedAt = System.currentTimeMillis(),
