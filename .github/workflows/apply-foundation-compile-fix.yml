@@ -24,26 +24,42 @@ jobs:
           s = p.read_text()
           s = s.replace('starts.mapNotNullIndexed { idx, start ->', 'starts.mapIndexedNotNull { idx, start ->')
           s = s.replace('return@mapNotNullIndexed null', 'return@mapIndexedNotNull null')
-          old = '''    private suspend fun requestOptional(stage: String, prompt: PromptBundle): GeneratedChapter? = try {
-              withTimeout(STAGE_TIMEOUT_MS) { gateway.generate(prompt) }
-          } catch (_: TimeoutCancellationException) {
+          needle = '''    } catch (_: TimeoutCancellationException) {
               null
           } catch (_: Throwable) {
               null
           }
-          '''
-          new = '''    private suspend fun requestOptional(stage: String, prompt: PromptBundle): GeneratedChapter? = try {
-              withTimeout(STAGE_TIMEOUT_MS) { gateway.generate(prompt) }
-          } catch (_: TimeoutCancellationException) {
+
+          private fun chapterPrompt('''
+          replacement = '''    } catch (_: TimeoutCancellationException) {
               null
           } catch (cancelled: kotlinx.coroutines.CancellationException) {
               throw cancelled
           } catch (_: Throwable) {
               null
           }
-          '''
-          assert old in s, 'requestOptional anchor missing'
-          s = s.replace(old, new, 1)
+
+          private fun chapterPrompt('''
+          if needle not in s:
+              # indentation in source is 4/8 spaces; use the literal source form as fallback
+              needle = '''    } catch (_: TimeoutCancellationException) {
+        null
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun chapterPrompt('''
+              replacement = '''    } catch (_: TimeoutCancellationException) {
+        null
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun chapterPrompt('''
+          assert needle in s, 'requestOptional tail missing'
+          s = s.replace(needle, replacement, 1)
           p.write_text(s)
 
           p = Path('app/src/main/java/com/xiguli/langhuan/ui/NewBookConversation.kt')
