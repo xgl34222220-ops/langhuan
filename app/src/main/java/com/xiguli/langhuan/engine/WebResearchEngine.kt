@@ -108,18 +108,23 @@ class WebResearchEngine {
             match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }?.let(result::add)
         }
 
-        // 兼容“搜一下薄情书生的小说 / 参考紫金陈的作品”。避免把整句话丢进搜索引擎。
-        Regex("(?:搜一下|搜索|查一下|查查|参考|借鉴|了解|看看)?\\s*([\\p{L}\\p{N}·_]{2,24})的(?:小说|作品|网文|书)")
-            .findAll(text)
-            .forEach { match ->
-                match.groupValues.getOrNull(1)
-                    ?.trim()
-                    ?.trimStart('一', '下')
-                    ?.takeIf { candidate ->
-                        candidate.isNotBlank() && candidate !in setOf("作者", "这个", "那个", "好几本", "几本")
-                    }
-                    ?.let(result::add)
-            }
+        // 兼容“你去搜一下薄情书生的小说 / 我想参考紫金陈的作品 / 融合A和B的小说”。
+        // 指令前缀单独消费掉，避免连续中文被贪婪地吞进作者名。
+        val authorPattern = Regex(
+            "(?:^|[，,。；;！？!?\\s])(?:我想)?(?:你)?(?:去)?(?:帮我)?(?:先)?(?:联网)?" +
+                "(?:搜一下|搜索一下|搜索|查一下|查查|看看|了解一下|了解|参考|借鉴|融合|结合|知道|听说过)?\\s*" +
+                "([\\p{L}\\p{N}·_、，,与和]{2,40})的(?:小说|作品|网文|书)"
+        )
+        authorPattern.findAll(text).forEach { match ->
+            val raw = match.groupValues.getOrNull(1).orEmpty().trim()
+            raw.split(Regex("[、,，/]|和|与"))
+                .map { it.trim() }
+                .filter { candidate ->
+                    candidate.length in 2..24 &&
+                        candidate !in setOf("作者", "这个", "那个", "好几本", "几本", "一些", "这几本")
+                }
+                .forEach(result::add)
+        }
 
         return result.take(6)
     }
