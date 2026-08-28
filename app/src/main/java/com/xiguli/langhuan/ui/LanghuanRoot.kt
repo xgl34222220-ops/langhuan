@@ -261,6 +261,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
         ProviderQuickSwitchSheet(
             viewModel = quickModelViewModel,
             preferredProviderId = state.provider.activeProviderId,
+            onProviderActivated = viewModel::activateProvider,
             onDismiss = { showModelSwitch = false },
         )
     }
