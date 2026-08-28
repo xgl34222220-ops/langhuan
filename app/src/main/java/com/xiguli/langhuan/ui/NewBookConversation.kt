@@ -58,6 +58,7 @@ data class NewBookConversationState(
     ),
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
+    val foundationStage: Int = 0,
     val isBusy: Boolean = false,
     val busyLabel: String = "",
     val createdStoryId: String? = null,
@@ -67,10 +68,11 @@ data class NewBookConversationState(
 
 @Serializable
 private data class NewBookConversationDraft(
-    val schemaVersion: Int = 4,
+    val schemaVersion: Int = 5,
     val messages: List<CreationChatMessage>,
     val proposal: NewBookProposal? = null,
     val foundation: StoryFoundation? = null,
+    val foundationStage: Int = 0,
     val selectedReferenceTemplateIds: List<String> = emptyList(),
 )
 
@@ -86,10 +88,12 @@ private class NewBookConversationDraftStore(application: Application) {
         if (bytes.isEmpty()) return@runCatching null
         val draft = json.decodeFromString<NewBookConversationDraft>(bytes.toString(Charsets.UTF_8))
         if (draft.messages.isEmpty()) return@runCatching null
+        val cleanFoundation = draft.foundation?.sanitizeFoundationPlaceholders()
         NewBookConversationState(
             messages = draft.messages.map(::compactStoredMessage),
             proposal = draft.proposal?.sanitizePlaceholders(),
-            foundation = draft.foundation?.sanitizeFoundationPlaceholders(),
+            foundation = cleanFoundation,
+            foundationStage = draft.foundationStage.takeIf { it in 1..3 } ?: inferFoundationStage(cleanFoundation),
             selectedReferenceTemplateIds = draft.selectedReferenceTemplateIds.distinct(),
         )
     }.getOrElse {
@@ -107,6 +111,7 @@ private class NewBookConversationDraftStore(application: Application) {
                 messages = state.messages.map(::compactStoredMessage),
                 proposal = state.proposal?.sanitizePlaceholders(),
                 foundation = state.foundation?.sanitizeFoundationPlaceholders(),
+                foundationStage = state.foundationStage.coerceIn(0, 3),
                 selectedReferenceTemplateIds = state.selectedReferenceTemplateIds.distinct(),
             )
         ).toByteArray(Charsets.UTF_8)
@@ -216,7 +221,18 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         current = before.foundation.sanitizeFoundationPlaceholders(),
                         instruction = plainInstruction,
                         referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
+                        resumeStage = 0,
                         onStage = { label -> _state.update { it.copy(busyLabel = label) } },
+                        onCheckpoint = { stage, checkpoint ->
+                            val cleanCheckpoint = checkpoint.sanitizeFoundationPlaceholders()
+                            _state.update {
+                                it.copy(
+                                    foundation = cleanCheckpoint,
+                                    proposal = cleanCheckpoint.toProposal(),
+                                    foundationStage = stage,
+                                )
+                            }
+                        },
                     )
                 }.onSuccess { foundation ->
                     val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
@@ -224,6 +240,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         it.copy(
                             foundation = cleanFoundation,
                             proposal = cleanFoundation.toProposal(),
+                            foundationStage = 3,
                             messages = it.messages + CreationChatMessage(
                                 "assistant",
                                 "建书蓝图已按你的要求分阶段重构完成。世界规则、人物、分卷、第一卷章纲和伏笔已经重新对齐。",
@@ -248,6 +265,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     it.copy(
                         messages = it.messages + CreationChatMessage("assistant", turn.reply),
                         proposal = turn.proposal?.sanitizePlaceholders() ?: it.proposal,
+                        foundationStage = if (it.foundation == null) 0 else it.foundationStage,
                         isBusy = false,
                         busyLabel = "",
                     )
@@ -262,6 +280,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         val before = _state.value
         val proposal = (before.foundation?.toProposal() ?: before.proposal)?.sanitizePlaceholders() ?: return
         if (before.isBusy) return
+        val resumeStage = if (regenerate) 0 else before.foundationStage.coerceIn(0, 2)
+        val resumeFoundation = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders()
         viewModelScope.launch {
             val gateway = activeGateway()
             if (gateway == null) {
@@ -272,7 +292,11 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 it.copy(
                     proposal = proposal,
                     isBusy = true,
-                    busyLabel = "准备分阶段生成建书蓝图……",
+                    busyLabel = if (resumeStage > 0) {
+                        "已找到蓝图断点 $resumeStage/3，准备从下一阶段继续……"
+                    } else {
+                        "准备分阶段生成建书蓝图……"
+                    },
                     error = null,
                 )
             }
@@ -285,10 +309,21 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 ProgressiveFoundationEngine(gateway).build(
                     proposal = proposal,
                     messages = before.messages,
-                    current = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders(),
+                    current = resumeFoundation,
                     instruction = instruction,
                     referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
+                    resumeStage = resumeStage,
                     onStage = { label -> _state.update { it.copy(busyLabel = label) } },
+                    onCheckpoint = { stage, checkpoint ->
+                        val cleanCheckpoint = checkpoint.sanitizeFoundationPlaceholders()
+                        _state.update {
+                            it.copy(
+                                foundation = cleanCheckpoint,
+                                proposal = cleanCheckpoint.toProposal(),
+                                foundationStage = stage,
+                            )
+                        }
+                    },
                 )
             }.onSuccess { foundation ->
                 val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
@@ -296,6 +331,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     it.copy(
                         foundation = cleanFoundation,
                         proposal = cleanFoundation.toProposal(),
+                        foundationStage = 3,
                         messages = it.messages + CreationChatMessage(
                             "assistant",
                             "建书蓝图已经分三阶段生成完成：核心世界与人物、第一卷详细章纲、伏笔计划都已对齐。你可以继续聊天修改，满意后再正式写入书架和长期记忆。",
@@ -313,11 +349,19 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     fun createCurrentFoundation() {
         val foundation = _state.value.foundation?.sanitizeFoundationPlaceholders() ?: return
         if (_state.value.isBusy) return
+        val stage = maxOf(_state.value.foundationStage, inferFoundationStage(foundation))
+        if (stage < 3) {
+            _state.update {
+                it.copy(error = "建书蓝图目前只完成到 $stage/3。前面成功阶段已经保存，请先点“重试生成蓝图”完成剩余阶段，再正式建书。")
+            }
+            return
+        }
         viewModelScope.launch {
             _state.update {
                 it.copy(
                     foundation = foundation,
                     proposal = foundation.toProposal(),
+                    foundationStage = 3,
                     isBusy = true,
                     busyLabel = "正在把蓝图写入小说圣经、三级大纲和长期记忆……",
                     error = null,
@@ -356,8 +400,13 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
 
     fun setReferenceTemplateIds(ids: List<String>) {
         val valid = referenceReportStore.listReports().map { it.taskId }.toSet()
+        val next = ids.filter(valid::contains).distinct()
         _state.update {
-            it.copy(selectedReferenceTemplateIds = ids.filter(valid::contains).distinct())
+            val changed = next != it.selectedReferenceTemplateIds
+            it.copy(
+                selectedReferenceTemplateIds = next,
+                foundationStage = if (changed && it.foundation != null) 0 else it.foundationStage,
+            )
         }
     }
 
@@ -489,6 +538,15 @@ private fun StoryFoundation.sanitizeFoundationPlaceholders(): StoryFoundation = 
     theme = sanitizeMetaValue(theme, THEME_PLACEHOLDERS, DEFAULT_THEME),
 )
 
+private fun inferFoundationStage(foundation: StoryFoundation?): Int {
+    foundation ?: return 0
+    if (foundation.foreshadowing.isNotEmpty()) return 3
+    val chapterCount = foundation.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
+    if (chapterCount >= 6) return 2
+    if (foundation.bible.isNotEmpty() || foundation.characters.isNotEmpty() || foundation.volumes.isNotEmpty()) return 1
+    return 0
+}
+
 private fun sanitizeMetaValue(value: String, placeholders: Set<String>, fallback: String): String {
     val clean = value.trim()
     return if (clean.isBlank() || placeholders.any { clean.equals(it, ignoreCase = true) }) fallback else clean
@@ -553,7 +611,7 @@ private fun friendlyAiError(error: Throwable, fallback: String): String {
     val message = error.message.orEmpty()
     val timeout = message.contains("timed out", true) || message.contains("timeout", true) || message.contains("超时")
     return if (timeout) {
-        "$fallback：当前阶段请求超时。琅嬛已经把建书任务拆成小阶段；可直接重试当前操作，不需要换模型，也不会重新发送整批网页资料。"
+        "$fallback：当前阶段请求超时。已经成功完成的蓝图阶段会保留为断点；直接重试会从下一阶段继续，不需要重新发送整批网页资料，也不会重复生成已完成阶段。"
     } else {
         message.ifBlank { fallback }
     }
