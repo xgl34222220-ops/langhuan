@@ -38,7 +38,7 @@ data class ChapterDependencyReport(
     val all: List<ChapterDependencyImpact> get() = direct + downstream
     val highCount: Int get() = all.count { it.risk == DependencyRisk.HIGH }
     val mediumCount: Int get() = all.count { it.risk == DependencyRisk.MEDIUM }
-    val downstreamChapterCount: Int get() = downstream.mapNotNull { it.chapterNumber }.distinct().size
+    val downstreamChapterCount: Int get() = downstream.mapNotNull { it.chapterNumber }.filter { it > sourceChapter }.distinct().size
 
     val recommendation: String
         get() = when (overallRisk) {
@@ -50,22 +50,31 @@ data class ChapterDependencyReport(
 
 /**
  * 纯本地章节依赖分析器。
- *
- * 它只根据已经落库的结构化事实和后续章节文本判断依赖，不让 AI 决定“有没有依赖”。
- * 结构化来源能精确确认时标 HIGH；只能从文本引用推断时标 MEDIUM/LOW，避免伪装成完美可逆日志。
+ * 0.14+ 优先使用 factHistory 的精确来源；旧项目缺失来源时退化为人物更新时间、时间线、伏笔与正文锚点推断。
  */
 object ChapterDependencyAnalyzer {
-    fun analyze(
-        snapshot: StorySnapshot,
-        chapters: List<ChapterDraft>,
-        sourceChapter: Int,
-    ): ChapterDependencyReport {
-        val source = chapters.firstOrNull { it.chapterNumber == sourceChapter }
-            ?: error("找不到第${sourceChapter}章")
+    fun analyze(snapshot: StorySnapshot, chapters: List<ChapterDraft>, sourceChapter: Int): ChapterDependencyReport {
+        val source = chapters.firstOrNull { it.chapterNumber == sourceChapter } ?: error("找不到第${sourceChapter}章")
         val sourceText = source.searchableText()
         val direct = mutableListOf<ChapterDependencyImpact>()
         val downstream = mutableListOf<ChapterDependencyImpact>()
         val anchors = linkedSetOf<String>()
+
+        snapshot.factHistory.filter { it.chapter == sourceChapter }.forEach { fact ->
+            if (fact.subject.length >= 2) anchors += fact.subject
+            direct += ChapterDependencyImpact(
+                kind = fact.kind.toDependencyKind(),
+                risk = DependencyRisk.HIGH,
+                title = fact.subject.ifBlank { fact.kind },
+                detail = buildString {
+                    append("已记录精确事实来源")
+                    if (fact.before.isNotBlank()) append(" · 修改前=${fact.before}")
+                    if (fact.after.isNotBlank()) append(" · 修改后=${fact.after}")
+                    if (fact.evidence.isNotBlank()) append(" · 证据=${fact.evidence.take(180)}")
+                },
+                chapterNumber = sourceChapter,
+            )
+        }
 
         val sourceCharacters = snapshot.characters.filter { character ->
             character.name.isNotBlank() && sourceText.contains(character.name, ignoreCase = true)
@@ -86,8 +95,7 @@ object ChapterDependencyAnalyzer {
             )
         }
 
-        val sourceTimeline = snapshot.recentTimeline.filter { it.chapter == sourceChapter }
-        sourceTimeline.forEach { event ->
+        snapshot.recentTimeline.filter { it.chapter == sourceChapter }.forEach { event ->
             event.participants.filter { it.isNotBlank() }.forEach { anchors += it }
             event.location.takeIf { it.length >= 2 }?.let { anchors += it }
             direct += ChapterDependencyImpact(
@@ -125,94 +133,92 @@ object ChapterDependencyAnalyzer {
             }
         }
 
-        snapshot.recentSummaries
-            .filter { summary -> summary.trimStart().startsWith("第${sourceChapter}章") }
-            .forEach { summary ->
-                direct += ChapterDependencyImpact(
-                    kind = DependencyKind.SUMMARY,
+        snapshot.recentSummaries.filter { it.trimStart().startsWith("第${sourceChapter}章") }.forEach { summary ->
+            direct += ChapterDependencyImpact(
+                kind = DependencyKind.SUMMARY,
+                risk = DependencyRisk.HIGH,
+                title = "章节摘要已进入长期上下文",
+                detail = summary.take(260),
+                chapterNumber = sourceChapter,
+            )
+        }
+
+        val stableAnchors = anchors.map { it.trim() }.filter { it.length >= 2 }.distinct().take(24)
+
+        snapshot.factHistory.filter { it.chapter > sourceChapter }.forEach { fact ->
+            val text = "${fact.subject} ${fact.before} ${fact.after} ${fact.evidence}"
+            val hits = stableAnchors.filter { text.contains(it, ignoreCase = true) }
+            if (hits.isNotEmpty()) {
+                downstream += ChapterDependencyImpact(
+                    kind = fact.kind.toDependencyKind(),
                     risk = DependencyRisk.HIGH,
-                    title = "章节摘要已进入长期上下文",
-                    detail = summary.take(260),
-                    chapterNumber = sourceChapter,
+                    title = "第${fact.chapter}章事实 · ${fact.subject.ifBlank { fact.kind }}",
+                    detail = "后续结构化事实继续引用：${hits.take(6).joinToString("、")}。这不是文本猜测，而是已确认写入的事实链。",
+                    chapterNumber = fact.chapter,
                 )
             }
+        }
 
-        // 使用结构化事实中的名字/伏笔/地点作为锚点，避免用通用词做模糊匹配造成大量误报。
-        val stableAnchors = anchors
-            .map { it.trim() }
-            .filter { it.length >= 2 }
-            .distinct()
-            .take(24)
-
-        chapters
-            .filter { it.chapterNumber > sourceChapter }
-            .sortedBy { it.chapterNumber }
-            .forEach { chapter ->
-                val text = chapter.searchableText()
-                val hits = stableAnchors.filter { text.contains(it, ignoreCase = true) }
-                if (hits.isNotEmpty()) {
-                    val strong = hits.size >= 2 || hits.any { anchor ->
-                        direct.any { it.risk == DependencyRisk.HIGH && it.title.equals(anchor, ignoreCase = true) }
-                    }
-                    downstream += ChapterDependencyImpact(
-                        kind = DependencyKind.DOWNSTREAM_CHAPTER,
-                        risk = if (strong) DependencyRisk.HIGH else DependencyRisk.MEDIUM,
-                        title = "第${chapter.chapterNumber}章 · ${chapter.title}",
-                        detail = "后续正文/目标/场景继续引用：${hits.take(6).joinToString("、")}。本章被删除或改写后，这些引用需要复核。",
-                        chapterNumber = chapter.chapterNumber,
-                    )
-                }
+        chapters.filter { it.chapterNumber > sourceChapter }.sortedBy { it.chapterNumber }.forEach { chapter ->
+            val text = chapter.searchableText()
+            val hits = stableAnchors.filter { text.contains(it, ignoreCase = true) }
+            if (hits.isNotEmpty()) {
+                val strong = hits.size >= 2 || hits.any { anchor -> direct.any { it.risk == DependencyRisk.HIGH && it.title.equals(anchor, ignoreCase = true) } }
+                downstream += ChapterDependencyImpact(
+                    kind = DependencyKind.DOWNSTREAM_CHAPTER,
+                    risk = if (strong) DependencyRisk.HIGH else DependencyRisk.MEDIUM,
+                    title = "第${chapter.chapterNumber}章 · ${chapter.title}",
+                    detail = "后续正文/目标/场景继续引用：${hits.take(6).joinToString("、")}。本章被删除或改写后，这些引用需要复核。",
+                    chapterNumber = chapter.chapterNumber,
+                )
             }
+        }
 
         val outline = if (snapshot.outline.isEmpty()) snapshot.activeOutline else snapshot.outline
-        outline
-            .filter { it.level == OutlineLevel.CHAPTER && it.order > sourceChapter }
-            .sortedBy { it.order }
-            .forEach { node ->
-                val text = listOf(node.title, node.objective, node.conflict, node.turningPoint, node.mustInclude.joinToString(" ")).joinToString(" ")
-                val hits = stableAnchors.filter { text.contains(it, ignoreCase = true) }
-                if (hits.isNotEmpty() && downstream.none { it.kind == DependencyKind.OUTLINE && it.chapterNumber == node.order }) {
-                    downstream += ChapterDependencyImpact(
-                        kind = DependencyKind.OUTLINE,
-                        risk = DependencyRisk.MEDIUM,
-                        title = "第${node.order}章章纲 · ${node.title}",
-                        detail = "后续章纲引用：${hits.take(6).joinToString("、")}。若本章事实改变，章纲目标/转折可能需要同步调整。",
-                        chapterNumber = node.order,
-                    )
-                }
+        outline.filter { it.level == OutlineLevel.CHAPTER && it.order > sourceChapter }.sortedBy { it.order }.forEach { node ->
+            val text = listOf(node.title, node.objective, node.conflict, node.turningPoint, node.mustInclude.joinToString(" ")).joinToString(" ")
+            val hits = stableAnchors.filter { text.contains(it, ignoreCase = true) }
+            if (hits.isNotEmpty()) {
+                downstream += ChapterDependencyImpact(
+                    kind = DependencyKind.OUTLINE,
+                    risk = DependencyRisk.MEDIUM,
+                    title = "第${node.order}章章纲 · ${node.title}",
+                    detail = "后续章纲引用：${hits.take(6).joinToString("、")}。若本章事实改变，章纲目标/转折可能需要同步调整。",
+                    chapterNumber = node.order,
+                )
             }
+        }
 
-        // 后续时间线如果继续使用本章人物/地点，也属于结构化下游依赖。
-        snapshot.recentTimeline
-            .filter { it.chapter > sourceChapter }
-            .forEach { event ->
-                val text = listOf(event.location, event.summary, event.participants.joinToString(" "), event.consequences.joinToString(" ")).joinToString(" ")
-                val hits = stableAnchors.filter { text.contains(it, ignoreCase = true) }
-                if (hits.isNotEmpty()) {
-                    downstream += ChapterDependencyImpact(
-                        kind = DependencyKind.TIMELINE,
-                        risk = DependencyRisk.HIGH,
-                        title = "第${event.chapter}章时间线 · ${event.summary}",
-                        detail = "结构化时间线继续依赖：${hits.take(6).joinToString("、")}。",
-                        chapterNumber = event.chapter,
-                    )
-                }
+        snapshot.recentTimeline.filter { it.chapter > sourceChapter }.forEach { event ->
+            val text = listOf(event.location, event.summary, event.participants.joinToString(" "), event.consequences.joinToString(" ")).joinToString(" ")
+            val hits = stableAnchors.filter { text.contains(it, ignoreCase = true) }
+            if (hits.isNotEmpty()) {
+                downstream += ChapterDependencyImpact(
+                    kind = DependencyKind.TIMELINE,
+                    risk = DependencyRisk.HIGH,
+                    title = "第${event.chapter}章时间线 · ${event.summary}",
+                    detail = "结构化时间线继续依赖：${hits.take(6).joinToString("、")}。",
+                    chapterNumber = event.chapter,
+                )
             }
+        }
 
-        val all = direct + downstream
+        val directDistinct = direct.distinctBy { listOf(it.kind, it.title, it.chapterNumber, it.detail) }
+        val downstreamDistinct = downstream.distinctBy { listOf(it.kind, it.title, it.chapterNumber) }
+        val all = directDistinct + downstreamDistinct
         val overall = when {
             all.any { it.risk == DependencyRisk.HIGH } -> DependencyRisk.HIGH
             all.any { it.risk == DependencyRisk.MEDIUM } -> DependencyRisk.MEDIUM
             else -> DependencyRisk.LOW
         }
-        return ChapterDependencyReport(
-            sourceChapter = sourceChapter,
-            sourceTitle = source.title,
-            overallRisk = overall,
-            direct = direct.distinctBy { listOf(it.kind, it.title, it.chapterNumber) },
-            downstream = downstream.distinctBy { listOf(it.kind, it.title, it.chapterNumber) },
-            anchors = stableAnchors,
-        )
+        return ChapterDependencyReport(sourceChapter, source.title, overall, directDistinct, downstreamDistinct, stableAnchors)
+    }
+
+    private fun String.toDependencyKind(): DependencyKind = when {
+        startsWith("CHARACTER") || this == "RELATION" -> DependencyKind.CHARACTER
+        startsWith("FORESHADOW") -> DependencyKind.FORESHADOW
+        this == "TIMELINE" -> DependencyKind.TIMELINE
+        else -> DependencyKind.SUMMARY
     }
 
     private fun ChapterDraft.searchableText(): String = buildString {
@@ -220,11 +226,7 @@ object ChapterDependencyAnalyzer {
         append(objective).append('\n')
         append(summary).append('\n')
         scenePlan.sortedBy { it.order }.forEach { scene ->
-            append(scene.viewpoint).append(' ')
-            append(scene.location).append(' ')
-            append(scene.purpose).append(' ')
-            append(scene.conflict).append(' ')
-            append(scene.outcome).append('\n')
+            append(scene.viewpoint).append(' ').append(scene.location).append(' ').append(scene.purpose).append(' ').append(scene.conflict).append(' ').append(scene.outcome).append('\n')
         }
         append(content)
     }
