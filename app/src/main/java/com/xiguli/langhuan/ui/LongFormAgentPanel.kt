@@ -39,8 +39,16 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
         .filter { it.phase != PlotArcPhase.RESOLVED }
         .lastOrNull { chapter in it.startChapter..(it.plannedEndChapter + state.config.arcSpan) }
         ?: state.arcs.lastOrNull()
-    val due = snapshot.relevantForeshadowing.count { it.status == ForeshadowStatus.PAYOFF_DUE }
-    val overdue = snapshot.relevantForeshadowing.count { it.status == ForeshadowStatus.OVERDUE }
+    val activeForeshadows = snapshot.relevantForeshadowing.filter {
+        it.status !in setOf(ForeshadowStatus.RESOLVED, ForeshadowStatus.ABANDONED)
+    }
+    val overdue = activeForeshadows.count {
+        it.expectedChapterEnd > 0 && chapter > it.expectedChapterEnd
+    }
+    val due = activeForeshadows.count {
+        it.expectedChapterStart > 0 && chapter >= it.expectedChapterStart &&
+            (it.expectedChapterEnd <= 0 || chapter <= it.expectedChapterEnd)
+    }
     val recentGrowth = state.characterGrowth
         .sortedByDescending { it.lastTurningChapter }
         .take(3)
