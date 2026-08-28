@@ -163,12 +163,23 @@ internal class ProgressiveFoundationEngine(
             ?: fallback.title
         val safePremise = output.content.trim().takeIf { it.filterNot(Char::isWhitespace).length in 80..260 }
             ?: fallback.premise
+        val genre = meaningfulValue(
+            meta?.field,
+            placeholders = setOf("类型", "小说类型", "题材", "genre"),
+            fallback = fallback.genre,
+        )
+        val theme = meaningfulValue(
+            meta?.after,
+            placeholders = setOf("主题", "主题命题", "核心主题", "theme"),
+            fallback = fallback.theme.takeUnless { it in setOf("主题", "主题命题") }
+                ?: "人在真相、执念与代价之间如何选择",
+        )
 
         return StoryFoundation(
             title = safeTitle,
-            genre = meta?.field?.trim().orEmpty().ifBlank { fallback.genre },
+            genre = genre,
             premise = safePremise,
-            theme = meta?.after?.trim().orEmpty().ifBlank { fallback.theme },
+            theme = theme,
             targetWords = targetWords,
             coreHook = meta?.evidence?.trim().orEmpty().ifBlank { fallback.coreHook },
             storyPromise = output.summary.trim().ifBlank { style?.before?.trim().orEmpty() }
@@ -303,6 +314,12 @@ internal class ProgressiveFoundationEngine(
         }
     }.take(9_000)
 
+    private fun meaningfulValue(value: String?, placeholders: Set<String>, fallback: String): String {
+        val clean = value.orEmpty().trim()
+        if (clean.isBlank() || clean.lowercase() in placeholders.map(String::lowercase).toSet()) return fallback
+        return clean
+    }
+
     private fun split(text: String): List<String> = text
         .split(Regex("[、,，;；]"))
         .map(String::trim)
@@ -325,7 +342,7 @@ internal class ProgressiveFoundationEngine(
             必须输出 GeneratedChapter JSON：
             - title：正式书名；content：120-190字平台简介；summary：80-180字故事承诺；touchedForeshadowingIds=[]。
             - stateChanges 只允许：
-              1. 1条 META：subject=META；field=类型；before=目标总字数；after=主题；evidence=核心钩子。
+              1. 1条 META：subject 必须固定写 META；field 必须填写“实际小说类型”，例如“中式灵异悬疑”，禁止原样写“类型/小说类型”；before=目标总字数纯数字；after 必须填写一句“实际主题命题”，禁止原样写“主题/主题命题”；evidence=一句话核心钩子。
               2. 1条 STYLE：subject=STYLE；field=叙事风格；before=故事承诺补充；after=具体风格基线；evidence=封面方向。
               3. 1条 MASTER：subject=MASTER；field=总纲标题；before=全书目标；after=核心冲突；evidence=最大转折/终局方向。
               4. 6-12条 BIBLE:分类；分类仅 WORLD/RULE/CHARACTER/FACTION/LOCATION/ITEM/STYLE/FORBIDDEN。
