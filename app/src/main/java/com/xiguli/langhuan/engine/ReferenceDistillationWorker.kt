@@ -24,6 +24,7 @@ import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.domain.GeneratedChapter
 import java.io.File
 import java.security.MessageDigest
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 
 object ReferenceDistillationJobs {
@@ -101,15 +102,20 @@ class ReferenceDistillationWorker(
                     model = modelLabel,
                 )
             )
-            setForeground(foreground("《${manuscript.title}》已解析，准备 AI 蒸馏", 6))
+            setForeground(foreground("《${manuscript.title}》已解析，准备 AI 分层蒸馏", 6))
 
             val samples = buildSamples(manuscript)
-            val localMetrics = localMetrics(manuscript)
+            val localMetrics = localMetrics(manuscript, samples.size)
             val observations = mutableListOf<String>()
-            val batches = samples.chunked(2).take(4)
+            val batchSize = when {
+                samples.size <= 12 -> 2
+                samples.size <= 24 -> 3
+                else -> 4
+            }
+            val batches = samples.chunked(batchSize)
 
             batches.forEachIndexed { index, batch ->
-                val progress = 10 + ((index + 1) * 55 / batches.size.coerceAtLeast(1))
+                val progress = 10 + ((index + 1) * 60 / batches.size.coerceAtLeast(1))
                 setProgress(
                     progressData(
                         stage = "distill",
@@ -121,7 +127,12 @@ class ReferenceDistillationWorker(
                         batches = batches.size,
                     )
                 )
-                setForeground(foreground("正在蒸馏《${manuscript.title}》 · ${index + 1}/${batches.size}", progress))
+                setForeground(
+                    foreground(
+                        "正在分层蒸馏《${manuscript.title}》 · ${index + 1}/${batches.size}（共${samples.size}章样本）",
+                        progress,
+                    )
+                )
                 val observation = distillBatch(gateway, manuscript.title, batch, index + 1, batches.size)
                 observations += observation
             }
@@ -129,13 +140,13 @@ class ReferenceDistillationWorker(
             setProgress(
                 progressData(
                     stage = "aggregate",
-                    progress = 78,
+                    progress = 82,
                     title = manuscript.title,
                     provider = providerLabel,
                     model = modelLabel,
                 )
             )
-            setForeground(foreground("正在聚合《${manuscript.title}》风格 DNA", 78))
+            setForeground(foreground("正在聚合《${manuscript.title}》整书 Style DNA", 82))
             val dossier = aggregate(gateway, manuscript, localMetrics, observations)
             val reportId = id.toString()
             reportStore.save(
@@ -155,7 +166,7 @@ class ReferenceDistillationWorker(
                         ReferenceResearchGroup(
                             target = manuscript.title,
                             result = WebResearchResult(
-                                query = "本地导入蒸馏 · ${manuscript.chapters.size} 章 · 不保存原文",
+                                query = "本地导入分层蒸馏 · ${manuscript.chapters.size} 章 · AI覆盖${samples.size}章 · 不保存原文",
                                 sources = listOf(
                                     WebResearchSource(
                                         title = "[本地蒸馏] ${manuscript.title} · Style DNA",
@@ -169,7 +180,7 @@ class ReferenceDistillationWorker(
                                         }.take(1600),
                                     )
                                 ),
-                                engine = "Local import + AI distillation",
+                                engine = "Local import + adaptive AI distillation",
                             ),
                         )
                     ),
@@ -234,7 +245,7 @@ class ReferenceDistillationWorker(
         total: Int,
     ): String {
         val sampleText = batch.joinToString("\n\n") { sample ->
-            "【样本：${sample.label}】\n${sample.text}"
+            "【分层样本：${sample.label}】\n${sample.text}"
         }
         val output = gateway.generate(
             PromptBundle(
@@ -253,7 +264,7 @@ class ReferenceDistillationWorker(
                     - 可迁移的结构模式，以及不能照搬的标志性表达/专名/剧情骨架
 
                     禁止：复述长段原文；输出连续原文；记忆或要求保留原作句子；建议换名照搬人物或剧情。
-                    输出 GeneratedChapter JSON：title="DISTILL_BATCH"；content=350-700字高层观察；summary=100-220字本批最稳定规律；stateChanges可用 subject="DNA"、field=维度、after=抽象规律、evidence=极短证据描述（不要引用原句）；touchedForeshadowingIds=[]。
+                    输出 GeneratedChapter JSON：title="DISTILL_BATCH"；content=250-500字高层观察；summary=80-180字本批最稳定规律；stateChanges可用 subject="DNA"、field=维度、after=抽象规律、evidence=极短证据描述（不要引用原句）；touchedForeshadowingIds=[]。
                 """.trimIndent(),
                 user = """
                     参考作品：$title
@@ -266,12 +277,13 @@ class ReferenceDistillationWorker(
             )
         )
         return buildString {
-            appendLine(output.content.take(1800))
-            if (output.summary.isNotBlank()) appendLine("稳定规律：${output.summary.take(600)}")
-            output.stateChanges.take(12).forEach { change ->
-                appendLine("${change.field}: ${change.after.ifBlank { change.before }.take(360)}")
+            if (output.summary.isNotBlank()) appendLine("稳定规律：${output.summary.take(420)}")
+            output.stateChanges.take(10).forEach { change ->
+                val value = change.after.ifBlank { change.before }.take(180)
+                if (value.isNotBlank()) appendLine("${change.field}: $value")
             }
-        }.take(4200)
+            if (length < 500 && output.content.isNotBlank()) appendLine(output.content.take(700))
+        }.take(2_000)
     }
 
     private suspend fun aggregate(
@@ -282,7 +294,7 @@ class ReferenceDistillationWorker(
     ): GeneratedChapter = gateway.generate(
         PromptBundle(
             system = """
-                你是琅嬛的“作品 Style DNA 聚合器”。把多批局部观察合并成一份稳定、可复用的参考作品档案。
+                你是琅嬛的“作品 Style DNA 聚合器”。把覆盖全书不同阶段的多批观察合并成一份稳定、可复用的参考作品档案。
                 不得复制原作文本，不得输出标志性原句，不得要求模仿具体作者的独特句式。目标是让后续原创小说借鉴高层技术，而不是复刻作品。
 
                 输出 GeneratedChapter JSON：
@@ -294,20 +306,20 @@ class ReferenceDistillationWorker(
                   * KEEP：可直接借鉴的高层机制；
                   * TRANSFORM：可借鉴但必须原创化改造的机制；
                   * AVOID：标志性角色、专名、独特剧情骨架、原句等不得照搬的内容；
-                - evidence 只写“开篇样本/中段样本/结尾样本/本地统计”等短标签，不写原句；
+                - evidence 只写“前段分层样本/中段分层样本/后段分层样本/本地统计”等短标签，不写原句；
                 - touchedForeshadowingIds=[]。
             """.trimIndent(),
             user = """
                 作品：${manuscript.title}
                 章节数：${manuscript.chapters.size}
 
-                【本地结构统计】
+                【全书本地结构统计】
                 $metrics
 
-                【分批蒸馏观察】
-                ${observations.joinToString("\n\n---\n\n").take(13_000)}
+                【跨全书分层 AI 蒸馏观察】
+                ${observations.joinToString("\n\n---\n\n").take(20_000)}
 
-                请只聚合可迁移的高层写作技术，不还原原文，不做逐章剧情复述。
+                请综合前中后不同阶段的稳定共同规律和明显变化，不还原原文，不做逐章剧情复述。
             """.trimIndent(),
         )
     )
@@ -315,37 +327,78 @@ class ReferenceDistillationWorker(
     private fun buildSamples(manuscript: ImportedManuscript): List<SampleChunk> {
         val chapters = manuscript.chapters.filter { it.content.isNotBlank() }
         if (chapters.isEmpty()) return emptyList()
+        val desired = desiredSampleCount(chapters.size).coerceAtMost(chapters.size)
         val indices = linkedSetOf<Int>()
-        fun add(index: Int) { indices += index.coerceIn(0, chapters.lastIndex) }
-        add(0); add(1)
-        add(chapters.size / 3)
-        add(chapters.size / 2)
-        add(chapters.size * 2 / 3)
-        add(chapters.lastIndex - 1); add(chapters.lastIndex)
-        return indices.sorted().take(7).map { index ->
+        fun add(index: Int) {
+            if (index in chapters.indices) indices += index
+        }
+
+        add(0)
+        add(1)
+        add(chapters.lastIndex - 1)
+        add(chapters.lastIndex)
+
+        val slots = (desired - indices.size).coerceAtLeast(0)
+        if (slots > 0) {
+            for (slot in 1..slots) {
+                val ratio = slot.toDouble() / (slots + 1).toDouble()
+                add((ratio * chapters.lastIndex).roundToInt())
+            }
+        }
+
+        if (indices.size < desired) {
+            val step = chapters.size.toDouble() / desired.coerceAtLeast(1)
+            var cursor = step / 2.0
+            while (indices.size < desired && cursor < chapters.size) {
+                add(cursor.roundToInt().coerceAtMost(chapters.lastIndex))
+                cursor += step
+            }
+        }
+
+        val sampleChars = sampleCharsFor(chapters.size)
+        return indices.sorted().take(desired).map { index ->
             val chapter = chapters[index]
             SampleChunk(
                 label = "第${index + 1}/${chapters.size}章 ${chapter.title}",
-                text = compactChapterSample(chapter),
+                text = compactChapterSample(chapter, sampleChars),
             )
         }
     }
 
-    private fun compactChapterSample(chapter: ImportedChapter): String {
+    private fun desiredSampleCount(chapterCount: Int): Int = when {
+        chapterCount <= 12 -> chapterCount
+        chapterCount <= 60 -> 12
+        chapterCount <= 150 -> 18
+        chapterCount <= 300 -> 24
+        chapterCount <= 600 -> 30
+        chapterCount <= 1_000 -> 36
+        else -> 42
+    }
+
+    private fun sampleCharsFor(chapterCount: Int): Int = when {
+        chapterCount > 1_000 -> 2_000
+        chapterCount > 600 -> 2_300
+        chapterCount > 300 -> 2_700
+        chapterCount > 150 -> 3_100
+        chapterCount > 60 -> 3_600
+        else -> 4_800
+    }
+
+    private fun compactChapterSample(chapter: ImportedChapter, maxChars: Int): String {
         val text = chapter.content.trim()
-        if (text.length <= SAMPLE_CHARS) return text
-        val piece = SAMPLE_CHARS / 3
+        if (text.length <= maxChars) return text
+        val piece = (maxChars / 3).coerceAtLeast(300)
         val middleStart = (text.length / 2 - piece / 2).coerceAtLeast(piece)
         return buildString {
             appendLine(text.take(piece))
-            appendLine("\n[…中间省略，仅用于结构采样…]\n")
+            appendLine("\n[…中段省略，仅做结构分层采样…]\n")
             appendLine(text.substring(middleStart, (middleStart + piece).coerceAtMost(text.length)))
             appendLine("\n[…后段采样…]\n")
             append(text.takeLast(piece))
-        }
+        }.take(maxChars + 100)
     }
 
-    private fun localMetrics(manuscript: ImportedManuscript): String {
+    private fun localMetrics(manuscript: ImportedManuscript, sampledChapters: Int): String {
         val chapters = manuscript.chapters.filter { it.content.isNotBlank() }
         val lengths = chapters.map { it.content.length }
         val allParagraphs = chapters.flatMap { it.content.split(Regex("\\n\\s*\\n|\\n")) }
@@ -359,11 +412,12 @@ class ReferenceDistillationWorker(
         val chapterAverage = lengths.average().takeIf { !it.isNaN() } ?: 0.0
         val shortParagraphRatio = if (allParagraphs.isEmpty()) 0 else allParagraphs.count { it.length <= 45 } * 100 / allParagraphs.size
         return buildString {
-            appendLine("平均章节长度：${chapterAverage.toInt()} 字符")
-            appendLine("平均段落长度：${paragraphAverage.toInt()} 字符")
-            appendLine("含对白标记的段落约占：$dialogueRatio%")
-            appendLine("45字符以内短段约占：$shortParagraphRatio%")
             appendLine("总章节：${chapters.size}；总文本约：${lengths.sum()} 字符")
+            appendLine("全书平均章节长度：${chapterAverage.toInt()} 字符")
+            appendLine("全书平均段落长度：${paragraphAverage.toInt()} 字符")
+            appendLine("全书含对白标记的段落约占：$dialogueRatio%")
+            appendLine("全书45字符以内短段约占：$shortParagraphRatio%")
+            appendLine("AI分层阅读章节：$sampledChapters/${chapters.size}；样本按开篇、前中段、中段、中后段、结尾均匀覆盖。")
         }
     }
 
@@ -401,6 +455,5 @@ class ReferenceDistillationWorker(
     private companion object {
         const val CHANNEL_ID = "langhuan_long_tasks"
         const val NOTIFICATION_ID = 43021
-        const val SAMPLE_CHARS = 5_400
     }
 }
