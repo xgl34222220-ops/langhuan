@@ -251,6 +251,7 @@ private fun AgentActionKind.label(): String = when (this) {
     AgentActionKind.CHARACTER_EMOTION -> "情绪"
     AgentActionKind.CHARACTER_GOAL -> "目标"
     AgentActionKind.RELATION -> "关系"
+    AgentActionKind.KNOWLEDGE_GAIN -> "获知信息"
     AgentActionKind.TIMELINE -> "时间线"
     AgentActionKind.FORESHADOW_NEW -> "新伏笔"
     AgentActionKind.FORESHADOW_UPDATE -> "伏笔变化"
