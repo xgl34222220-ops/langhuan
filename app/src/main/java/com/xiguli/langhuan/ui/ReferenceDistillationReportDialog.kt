@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -60,33 +63,47 @@ fun ReferenceDistillationReportDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f),
-            shape = RoundedCornerShape(28.dp),
-            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
+            shape = RoundedCornerShape(30.dp),
+            tonalElevation = 8.dp,
         ) {
             Column {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 16.dp, end = 10.dp, bottom = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 16.dp, end = 8.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Rounded.Science, null, tint = MaterialTheme.colorScheme.primary)
-                    Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                        Text("蒸馏报告", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Science,
+                            null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(10.dp),
+                        )
+                    }
+                    Column(Modifier.padding(start = 11.dp).weight(1f)) {
+                        Text("双层蒸馏报告", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, "关闭") }
                 }
-                HorizontalDivider()
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
 
                 when {
                     !loaded -> {
-                        Column(Modifier.padding(24.dp)) { Text("正在读取 Style DNA 报告……") }
+                        Column(Modifier.padding(24.dp)) { Text("正在读取 Style DNA / Story DNA……") }
                     }
                     report == null -> {
                         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("没有找到可读取的蒸馏结果", fontWeight = FontWeight.Bold)
                             Text(
-                                "这个任务可能来自更早的版本，当时只记录了完成状态而没有保存可展示的报告。重新蒸馏一次后会永久保存完整 Style DNA。",
+                                "这个任务可能来自更早版本，当时没有保存完整报告。重新蒸馏后会永久保存 Story DNA、Style DNA、覆盖度和本地统计。",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -112,48 +129,69 @@ private fun DistillationReportContent(
 ) {
     val provider = report.provider.ifBlank { fallbackProvider }
     val model = report.model.ifBlank { fallbackModel }
-    val sections = listOf(
-        "DNA" to "Style DNA",
-        "KEEP" to "可直接借鉴的高层机制",
-        "TRANSFORM" to "需要原创化改造",
-        "AVOID" to "不要照搬",
-    ).mapNotNull { (kind, label) ->
-        val items = report.items.filter { it.kind == kind }
-        if (items.isEmpty()) null else Triple(kind, label, items)
-    }
+    val storyItems = report.items.filter { it.kind == "STORY" }
+    val styleItems = report.items.filter { it.kind == "STYLE" || it.kind == "DNA" }
+    val keepItems = report.items.filter { it.kind == "KEEP" }
+    val transformItems = report.items.filter { it.kind == "TRANSFORM" }
+    val avoidItems = report.items.filter { it.kind == "AVOID" }
+    val hasStory = storyItems.isNotEmpty()
 
     LazyColumn(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Spacer(Modifier.height(4.dp)) }
+
         item {
-            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                        Text(" 已进入长期研究档案", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(7.dp))
+                        Text("已进入长期研究档案", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        Surface(
+                            shape = RoundedCornerShape(99.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                        ) {
+                            Text(
+                                store.coverageLabel(report),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
-                    Text(
-                        "覆盖等级：${store.coverageLabel(report)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
                     Text(
                         store.coverageDescription(report),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (provider.isNotBlank() || model.isNotBlank()) {
-                        Text("AI：${provider.ifBlank { "未知服务" }} · ${model.ifBlank { "未知模型" }}", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SmallInfoPill("全书 ${report.chapters.coerceAtLeast(0)} 章")
+                        SmallInfoPill("AI 深度 ${report.samples.coerceAtLeast(0)} 章")
                     }
-                    if (report.chapters > 0 || report.samples > 0) {
-                        Text("分析 ${report.chapters} 章 · ${report.samples} 个代表样本", style = MaterialTheme.typography.bodySmall)
+                    if (provider.isNotBlank() || model.isNotBlank()) {
+                        Text(
+                            "${provider.ifBlank { "未知服务" }} · ${model.ifBlank { "未知模型" }}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (!hasStory && !report.legacySummaryOnly) {
+                        Text(
+                            "这份报告来自旧版 Style DNA 蒸馏，没有主角、世界观、规则等 Story DNA。重新蒸馏即可升级为双层报告。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                     if (report.legacySummaryOnly) {
                         Text(
-                            "这是旧版本任务留下的档案摘要；升级后重新蒸馏可看到完整结构化维度和本地统计。",
+                            "旧版任务只留下摘要，没有完整结构化维度。建议重新蒸馏。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -162,25 +200,43 @@ private fun DistillationReportContent(
             }
         }
 
-        if (report.summary.isNotBlank()) {
-            item { ReportTextSection("Style DNA 摘要", report.summary) }
-        }
-        if (report.overview.isNotBlank()) {
-            item { ReportTextSection("作品高层档案", report.overview) }
-        }
-        if (report.localMetrics.isNotBlank()) {
-            item { ReportTextSection("本地结构统计", report.localMetrics) }
+        if (hasStory || report.overview.isNotBlank()) {
+            item { SectionHeader(Icons.Rounded.MenuBook, "Story DNA · 作品结构", "理解主角、世界观、规则、人物关系与剧情阶段") }
+            if (report.overview.isNotBlank()) {
+                item { ReportTextSection("作品结构总览", report.overview, story = true) }
+            }
+            items(storyItems) { item -> DistillationItemCard(item, story = true) }
         }
 
-        sections.forEach { (_, label, sectionItems) ->
-            item { Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-            items(sectionItems) { item -> DistillationItemCard(item) }
+        if (report.summary.isNotBlank() || styleItems.isNotEmpty()) {
+            item { SectionHeader(Icons.Rounded.AutoAwesome, "Style DNA · 写法", "理解视角、节奏、悬念、信息释放与叙事组织") }
+            if (report.summary.isNotBlank()) {
+                item { ReportTextSection("写法摘要", report.summary, story = false) }
+            }
+            items(styleItems) { item -> DistillationItemCard(item, story = false) }
+        }
+
+        if (report.localMetrics.isNotBlank()) {
+            item { ReportTextSection("全书本地结构统计", report.localMetrics, story = false) }
+        }
+
+        if (keepItems.isNotEmpty()) {
+            item { Text("KEEP · 可借鉴的高层机制", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            items(keepItems) { item -> DistillationItemCard(item, story = false) }
+        }
+        if (transformItems.isNotEmpty()) {
+            item { Text("TRANSFORM · 必须原创化改造", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            items(transformItems) { item -> DistillationItemCard(item, story = false) }
+        }
+        if (avoidItems.isNotEmpty()) {
+            item { Text("AVOID · 禁止照搬", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            items(avoidItems) { item -> DistillationItemCard(item, story = false) }
         }
 
         if (!report.legacySummaryOnly) {
             item {
                 FilledTonalButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-                    Text("已自动加入长期研究档案，可在建书会谈中继续引用")
+                    Text("已保存为可选参考模板 · 建书时可指定只读取这一份")
                 }
             }
         }
@@ -189,21 +245,81 @@ private fun DistillationReportContent(
 }
 
 @Composable
-private fun ReportTextSection(title: String, text: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(text, style = MaterialTheme.typography.bodyMedium)
+private fun SmallInfoPill(text: String) {
+    Surface(
+        shape = RoundedCornerShape(99.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.66f),
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 @Composable
-private fun DistillationItemCard(item: ReferenceDistillationReportItem) {
-    Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 1.dp) {
+private fun SectionHeader(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+        ) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(8.dp))
+        }
+        Column(Modifier.padding(start = 9.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ReportTextSection(title: String, text: String, story: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (story) {
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f)
+        },
+    ) {
+        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(text, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun DistillationItemCard(item: ReferenceDistillationReportItem, story: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 1.dp,
+        color = if (story) {
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.28f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f)
+        },
+    ) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(dimensionLabel(item.dimension), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text(
+                dimensionLabel(item.dimension),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
             Text(item.value)
             if (item.evidence.isNotBlank()) {
-                Text("依据：${item.evidence}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "依据：${item.evidence}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -215,10 +331,24 @@ private fun dimensionLabel(value: String): String = when (value.trim().uppercase
     "DIALOGUE" -> "对白使用"
     "INFO" -> "信息释放"
     "SUSPENSE" -> "悬念 / 章末钩子"
-    "CHARACTER" -> "人物塑造"
-    "RULE" -> "规则 / 设定呈现"
+    "CHARACTER", "CHARACTERIZATION" -> "人物塑造手法"
+    "RULE_PRESENTATION" -> "规则呈现手法"
     "SCENE" -> "场景切换"
     "EMOTION" -> "情绪温度"
-    "STRUCTURE" -> "结构模式"
+    "STRUCTURE" -> "叙事结构"
+
+    "PROTAGONIST" -> "主角设定"
+    "SUPPORTING" -> "重要配角"
+    "RELATIONSHIP" -> "人物关系"
+    "WORLD" -> "世界观"
+    "RULE" -> "世界规则"
+    "POWER" -> "能力 / 成长体系"
+    "FACTION" -> "势力 / 组织"
+    "LOCATION" -> "关键地点"
+    "CONFLICT" -> "核心冲突"
+    "MYSTERY" -> "核心谜团"
+    "ARC" -> "剧情阶段 / 主线演化"
+    "PROGRESSION" -> "成长与升级路线"
+    "THEME" -> "主题命题"
     else -> value.ifBlank { "高层特征" }
 }
