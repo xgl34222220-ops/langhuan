@@ -30,6 +30,8 @@ data class ReferenceDistillationReport(
     val summary: String,
     val localMetrics: String = "",
     val items: List<ReferenceDistillationReportItem> = emptyList(),
+    val coverageGrade: String = "",
+    val coverageNote: String = "",
     val legacySummaryOnly: Boolean = false,
 )
 
@@ -74,6 +76,8 @@ class ReferenceDistillationReportStore(private val context: Context) {
                     evidence = change.evidence.trim(),
                 )
             }.take(32),
+            coverageGrade = computeCoverageGrade(chapters, samples),
+            coverageNote = computeCoverageNote(chapters, samples),
         )
         write(report)
         return report
@@ -103,6 +107,14 @@ class ReferenceDistillationReportStore(private val context: Context) {
         .distinctBy { it.taskId }
         .sortedByDescending { it.createdAt }
 
+    fun coverageLabel(report: ReferenceDistillationReport): String = report.coverageGrade.ifBlank {
+        computeCoverageGrade(report.chapters, report.samples)
+    }
+
+    fun coverageDescription(report: ReferenceDistillationReport): String = report.coverageNote.ifBlank {
+        computeCoverageNote(report.chapters, report.samples)
+    }
+
     /**
      * Build a compact prompt packet from *only* the reports explicitly selected by the user.
      * Unselected reports never enter the creation prompt.
@@ -114,9 +126,11 @@ class ReferenceDistillationReportStore(private val context: Context) {
         return buildString {
             appendLine("【用户显式选择的参考 Style DNA】")
             appendLine("只能使用下列已选择档案；未选择的蒸馏作品禁止自动混入。只借鉴高层写作机制，角色、专名、剧情骨架和标志性表达必须原创。")
+            appendLine("覆盖等级只代表风格/结构采样的可靠程度，不代表已经逐章读懂全部剧情。低覆盖或旧版摘要只允许用于稳定的高层节奏、视角、信息释放等特征，禁止据此编造具体人物、能力或剧情事实。")
             selected.forEachIndexed { index, report ->
                 appendLine()
                 appendLine("--- ${index + 1}. 《${report.title}》 ---")
+                appendLine("覆盖等级：${coverageLabel(report)}；${coverageDescription(report)}")
                 if (report.summary.isNotBlank()) appendLine("Style DNA：${report.summary.take(900)}")
                 if (report.overview.isNotBlank()) appendLine("高层档案：${report.overview.take(1_200)}")
                 report.items.take(16).forEach { item ->
@@ -144,8 +158,14 @@ class ReferenceDistillationReportStore(private val context: Context) {
             createdAt = entry.updatedAt,
             overview = source.snippet,
             summary = source.detail,
+            coverageGrade = "旧版摘要",
+            coverageNote = "旧版本没有保存分层样本数量，只能作为高层参考，不能据此推断具体剧情事实。",
             legacySummaryOnly = true,
         )
+    }
+
+    fun delete(taskId: String) {
+        runCatching { reportFile(taskId).delete() }
     }
 
     private fun write(report: ReferenceDistillationReport) {
@@ -163,4 +183,25 @@ class ReferenceDistillationReportStore(private val context: Context) {
     private fun reportFile(taskId: String): File = File(root, "${safeId(taskId)}.json")
     private fun safeId(value: String): String = value.replace(Regex("[^A-Za-z0-9._-]"), "_").take(96)
     private fun normalize(value: String): String = value.lowercase().replace(Regex("[《》“”\\\"'\\s·._—-]"), "")
+
+    private fun computeCoverageGrade(chapters: Int, samples: Int): String = when {
+        chapters <= 0 || samples <= 0 -> "旧版摘要"
+        samples >= chapters -> "高覆盖"
+        samples >= 36 -> "中高覆盖"
+        samples >= 24 -> "中等覆盖"
+        samples >= 12 -> "基础覆盖"
+        else -> "低覆盖"
+    }
+
+    private fun computeCoverageNote(chapters: Int, samples: Int): String {
+        if (chapters <= 0 || samples <= 0) {
+            return "缺少采样统计；只把现有摘要当作高层提示，不代表完整作品分析。"
+        }
+        val percent = (samples * 100 / chapters.coerceAtLeast(1)).coerceIn(0, 100)
+        return if (samples >= chapters) {
+            "全书结构统计 $chapters 章，AI 已覆盖全部可用章节；仍只提炼高层技法，不保存或复刻原文。"
+        } else {
+            "全书结构统计 $chapters 章，AI 分层阅读 $samples 章（约 $percent% 章节覆盖）；适合参考稳定风格与结构规律，不代表逐章剧情完整覆盖。"
+        }
+    }
 }
