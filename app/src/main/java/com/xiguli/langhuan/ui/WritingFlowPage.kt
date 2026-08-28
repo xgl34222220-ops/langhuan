@@ -92,7 +92,7 @@ fun WritingFlowPage(
 
             item {
                 FlowCard {
-                    FlowTitle(Icons.Rounded.Route, "① 场景规划", "先把章纲拆成 2-6 个真正发生变化的场景，再交给正文模型。")
+                    FlowTitle(Icons.Rounded.Route, "① 场景规划", "先锁定故事日、时段和场景耗时，再把章纲拆成 2-6 个真正发生变化的场景。")
                     Spacer(Modifier.height(10.dp))
                     val scenes = state.workingScenes.ifEmpty { draft.scenePlan }
                     scenes.sortedBy { it.order }.forEach { scene ->
@@ -113,7 +113,7 @@ fun WritingFlowPage(
                         onValueChange = { sceneInstruction = it },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("直接告诉 AI 怎么改场景") },
-                        placeholder = { Text("例如：第三个场景太拖，合并掉；章末钩子再狠一点") },
+                        placeholder = { Text("例如：都发生在第2天深夜；第三场延后20分钟；不要闪回") },
                         shape = RoundedCornerShape(18.dp),
                         minLines = 2,
                     )
@@ -144,7 +144,7 @@ fun WritingFlowPage(
 
             item {
                 FlowCard {
-                    FlowTitle(Icons.Rounded.AutoAwesome, "② 正文生成", "生成前会检索长期记忆、人物状态、时间线、伏笔和当前大纲链。")
+                    FlowTitle(Icons.Rounded.AutoAwesome, "② 正文生成", "生成前会锁定主时间钟，并检索长期记忆、人物状态、时间线、伏笔和当前大纲链。")
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(
                         value = extraInstruction,
@@ -344,12 +344,20 @@ private fun FlowTitle(icon: androidx.compose.ui.graphics.vector.ImageVector, tit
 
 @Composable
 private fun ScenePlanCard(scene: ScenePlan) {
+    val clock = if (scene.storyDay > 0) {
+        "故事第${scene.storyDay}天 · ${scene.timeOfDay.ifBlank { "时段待定" }}"
+    } else {
+        "时间未锁定"
+    }
+    val mode = if (scene.isFlashback) "闪回" else "主时间线"
     Surface(
         modifier = Modifier.fillMaxWidth().squircleClip(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f),
     ) {
         Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text("场景 ${scene.order} · ${scene.viewpoint}", fontWeight = FontWeight.Bold)
+            Text("$clock · $mode", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            Text("距上一场：${scene.elapsedFromPrevious.ifBlank { "未标注" }}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
             Text(scene.location, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
             Text("目的：${scene.purpose}", style = MaterialTheme.typography.bodySmall)
             Text("冲突：${scene.conflict}", style = MaterialTheme.typography.bodySmall)
