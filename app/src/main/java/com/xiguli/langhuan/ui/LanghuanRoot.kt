@@ -237,6 +237,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 ResearchNewBookConversationPage(
                     viewModel = creationViewModel,
                     onClose = { showCreation = false },
+                    onConfigureAi = {
+                        pendingCreationAfterAiSetup = false
+                        showAiSetup = true
+                    },
+                    onSwitchModel = { showModelSwitch = true },
                     onCreated = { id ->
                         writingStoryId = id
                         showCreation = false
@@ -248,28 +253,6 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 )
             }
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(end = 16.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.End,
-            ) {
-                SmallFloatingActionButton(
-                    onClick = {
-                        pendingCreationAfterAiSetup = false
-                        showAiSetup = true
-                    }
-                ) {
-                    Icon(Icons.Rounded.Key, "管理 Key / AI 服务")
-                }
-                SmallFloatingActionButton(
-                    onClick = { showModelSwitch = true },
-                ) {
-                    Icon(Icons.Rounded.Tune, "切换 AI 服务 / 模型")
-                }
-            }
         }
 
         if (showWritingFlow && !showAgent && !showEditor && !showIntelligence && !showAiSetup) {
