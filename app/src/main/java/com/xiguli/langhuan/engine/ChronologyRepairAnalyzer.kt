@@ -38,6 +38,7 @@ object ChronologyRepairAnalyzer {
     private val sceneAction = Regex("赶到|来到|走进|离开|回到|前往|抵达|站在|拨通|进入")
     private val retrospective = Regex("那晚|那天|当晚|整晚|中途离席|曾经|记得|早就回去|后来")
     private val disappearance = Regex("失踪(?:时间)?[^。；\\n]{0,24}(?:为|是|暂定为)?\\s*([一二两三四五六七八九十百\\d]+)天前")
+    private val sameTimeClaim = Regex("一模一样|完全一样|同一时间|时间一致|一样的时间|正是同一个时间")
 
     fun analyze(snapshot: StorySnapshot, content: String): ChronologyRepairReport {
         val paragraphs = content.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotBlank() }
@@ -53,6 +54,31 @@ object ChronologyRepairAnalyzer {
             }
             relativeWords.findAll(paragraph).forEach { match ->
                 anchors += ChronologyAnchor(index + 1, match.value, kind = "相对时间")
+            }
+        }
+
+        // 硬校验：正文明确说“时间一模一样/同一时间”时，前后钟点必须真的相同。
+        // 例如前文 04:03，后文 03:21 却写“和入梦前一模一样”，不能交给语义模型碰运气。
+        paragraphs.forEachIndexed { index, paragraph ->
+            if (!sameTimeClaim.containsMatchIn(paragraph)) return@forEachIndexed
+            val currentClock = clock.findAll(paragraph).lastOrNull()?.value ?: return@forEachIndexed
+            val previousClock = anchors
+                .filter { it.kind == "钟点" && it.paragraph < index + 1 }
+                .lastOrNull()
+                ?.clock
+                ?: return@forEachIndexed
+            val currentMinutes = parseClockMinutes(currentClock) ?: return@forEachIndexed
+            val previousMinutes = parseClockMinutes(previousClock) ?: return@forEachIndexed
+            if (currentMinutes != previousMinutes) {
+                findings += ChronologyRepairFinding(
+                    risk = ChronologyRepairRisk.HIGH,
+                    code = "CLOCK_EQUIVALENCE_MISMATCH",
+                    paragraph = index + 1,
+                    title = "正文声称两个钟点相同，但实际时间不同",
+                    detail = "前一个明确钟点是“$previousClock”，当前写的是“$currentClock”，却又使用“一模一样/同一时间”等等价描述。这是可确定的硬时间矛盾。",
+                    evidence = paragraph.take(220),
+                    repair = "以已经确认的主时间锚点为准：要么把当前钟点改成 $previousClock，要么删除“同一时间/一模一样”的断言并说明为什么时间不同。",
+                )
             }
         }
 
@@ -121,6 +147,18 @@ object ChronologyRepairAnalyzer {
         return ChronologyRepairReport(anchors.distinct(), findings.distinctBy { it.code to it.paragraph })
     }
 
+    private fun parseClockMinutes(raw: String): Int? {
+        val period = listOf("凌晨", "清晨", "早晨", "上午", "中午", "下午", "傍晚", "晚上", "深夜").firstOrNull { raw.startsWith(it) }.orEmpty()
+        val body = raw.removePrefix(period)
+        val hour = chineseNumber(body.substringBefore("点")) ?: return null
+        val minuteRaw = body.substringAfter("点", "").substringBefore("分")
+        val minute = if (minuteRaw.isBlank()) 0 else chineseNumber(minuteRaw) ?: return null
+        var normalizedHour = hour % 24
+        if (period in setOf("下午", "傍晚", "晚上", "深夜") && normalizedHour in 1..11) normalizedHour += 12
+        if (period == "中午" && normalizedHour in 1..10) normalizedHour += 12
+        return normalizedHour * 60 + minute.coerceIn(0, 59)
+    }
+
     private fun chineseNumber(raw: String): Int? {
         raw.toIntOrNull()?.let { return it }
         val digits = mapOf('零' to 0, '一' to 1, '二' to 2, '两' to 2, '三' to 3, '四' to 4, '五' to 5, '六' to 6, '七' to 7, '八' to 8, '九' to 9)
@@ -133,6 +171,6 @@ object ChronologyRepairAnalyzer {
         }
         var value = 0
         raw.forEach { ch -> value = value * 10 + (digits[ch] ?: return null) }
-        return value.takeIf { it > 0 }
+        return value.takeIf { it >= 0 }
     }
 }
