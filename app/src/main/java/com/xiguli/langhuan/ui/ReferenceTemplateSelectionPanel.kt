@@ -70,7 +70,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
                     Text(
                         when {
                             selectedReports.isEmpty() -> "当前不读取任何蒸馏模板"
-                            selectedReports.size == 1 -> "仅使用《${selectedReports.first().title}》"
+                            selectedReports.size == 1 -> "仅使用《${selectedReports.first().title}》 · ${store.coverageLabel(selectedReports.first())}"
                             else -> "已选择 ${selectedReports.size} 本：${selectedReports.take(3).joinToString("、") { "《${it.title}》" }}"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -80,7 +80,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
                 }
             }
             Text(
-                "只有这里勾选的蒸馏报告会进入本次聊天和建书蓝图。未选择的作品不会偷偷混入；只借鉴高层结构与节奏，不照搬角色、专名、原句或剧情骨架。",
+                "只有这里勾选的蒸馏报告会进入本次聊天和建书蓝图。未选择的作品不会偷偷混入；覆盖等级只表示风格/结构采样可靠度，不代表逐章掌握原作剧情。",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -102,6 +102,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
         ReferenceTemplatePickerDialog(
             reports = reports,
             selectedIds = selected,
+            store = store,
             onSelectedIds = viewModel::setReferenceTemplateIds,
             onDismiss = { open = false },
         )
@@ -112,6 +113,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
 private fun ReferenceTemplatePickerDialog(
     reports: List<ReferenceDistillationReport>,
     selectedIds: List<String>,
+    store: ReferenceDistillationReportStore,
     onSelectedIds: (List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -121,7 +123,7 @@ private fun ReferenceTemplatePickerDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "可以只选一本，也可以多选融合。0 本 = 完全不读取蒸馏模板。",
+                    "可以只选一本，也可以多选融合。0 本 = 完全不读取蒸馏模板。覆盖越高越适合稳定参考；低覆盖只用于高层技法，不拿来推断具体剧情。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -153,11 +155,18 @@ private fun ReferenceTemplatePickerDialog(
                                         Column(Modifier.weight(1f)) {
                                             Text(report.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             Text(
-                                                "${report.chapters} 章 · AI 分层 ${report.samples} 章 · ${report.model.ifBlank { report.provider }}",
+                                                "${store.coverageLabel(report)} · ${report.chapters} 章 · AI 分层 ${report.samples} 章 · ${report.model.ifBlank { report.provider }}",
                                                 style = MaterialTheme.typography.labelSmall,
                                             )
                                         }
                                     }
+                                    Text(
+                                        store.coverageDescription(report),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                     if (report.summary.isNotBlank()) {
                                         Text(report.summary, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                     }
