@@ -3,6 +3,7 @@
 面向长篇小说的 Android AI 创作 App。目标不是简单“一键续写”，而是让小说在几十万字的持续创作中尽量保持人物、世界观、时间线、伏笔与大纲一致。
 
 - 当前版本：`0.12.0-alpha01`
+- 状态：Alpha 开发阶段
 - 作者：惜故里丶
 - Android：minSdk 28 / targetSdk 36 / compileSdk 37
 
