@@ -67,8 +67,21 @@ class WebResearchEngine {
         return searchQuery(query, limit)
     }
 
-    /** Extract high-confidence works/authors first, search them separately, then deep-read top pages. */
+    /**
+     * Creation research has two distinct modes:
+     * 1) work mode: research one or more explicit works;
+     * 2) author mode: discover an author's works first, then research those works and infer cross-work style.
+     */
     suspend fun researchForCreation(userText: String, perTargetLimit: Int = 5): CreationResearchBundle = coroutineScope {
+        val author = authorTarget(userText)
+        if (author != null) {
+            val result = searchAuthorPortfolio(author, perTargetLimit)
+            return@coroutineScope CreationResearchBundle(
+                originalText = userText,
+                groups = listOf(ReferenceResearchGroup("作者：$author（跨作品风格）", result)),
+            )
+        }
+
         val targets = referenceTargets(userText)
         val fallback = cleanReferenceTarget(normalizeQuery(userText))
         val effectiveTargets = if (targets.isEmpty()) listOf(fallback) else targets
@@ -88,6 +101,7 @@ class WebResearchEngine {
     fun shouldResearch(text: String): Boolean {
         val value = text.trim().lowercase()
         if (value.isBlank()) return false
+        if (authorTarget(text) != null) return true
         if (Regex("《[^》]{1,60}》").containsMatchIn(text)) return true
 
         val direct = listOf(
@@ -103,11 +117,31 @@ class WebResearchEngine {
         return false
     }
 
+    /** Extract an explicit author from natural Chinese requests. */
+    fun authorTarget(text: String): String? {
+        val patterns = listOf(
+            // 融合薄情书生写的小说的风格 / 参考紫金陈写的作品
+            Regex("(?:融合|参考|借鉴|研究|看看|搜一下|搜索|查一下|了解)?\\s*([\\p{L}\\p{N}·_]{2,20})\\s*(?:所?写的|创作的|写过的)\\s*(?:小说|作品|网文|书)(?:的(?:风格|特点|优点|设定|叙事|写法))?"),
+            // 融合薄情书生的小说风格 / 搜一下薄情书生的作品
+            Regex("(?:融合|参考|借鉴|研究|看看|搜一下|搜索|查一下|了解)?\\s*([\\p{L}\\p{N}·_]{2,20})\\s*的(?:小说|作品|网文|书)(?:的?(?:风格|特点|优点|设定|叙事|写法))?"),
+            // 薄情书生这个作者 / 作者薄情书生
+            Regex("(?:作者[:：]?\\s*|)([\\p{L}\\p{N}·_]{2,20})(?:这个)?作者"),
+        )
+        patterns.forEach { pattern ->
+            pattern.find(text)?.groupValues?.getOrNull(1)?.let { raw ->
+                val candidate = cleanAuthor(raw)
+                if (isPlausibleAuthor(candidate)) return candidate
+            }
+        }
+        return null
+    }
+
     /**
-     * High-confidence target extraction. Once an explicit author/book is found, do not keep harvesting
-     * fragments from the whole sentence. This avoids targets such as “我想写一本……” or “的高层设定”.
+     * High-confidence work extraction. Author requests are handled earlier and never fall through here.
      */
     fun referenceTargets(text: String): List<String> {
+        authorTarget(text)?.let { return listOf(it) }
+
         val exact = linkedSetOf<String>()
         val direct = linkedSetOf<String>()
         val fusion = linkedSetOf<String>()
@@ -134,19 +168,6 @@ class WebResearchEngine {
             match.groupValues.getOrNull(1)?.let { addTo(exact, it) }
         }
         if (exact.isNotEmpty()) return exact.take(6)
-
-        val authorWithAction = Regex(
-            "(?:搜一下|搜索一下|搜索|查一下|查查|看看|了解一下|了解|参考|借鉴|研究)\\s*" +
-                "([\\p{L}\\p{N}·_]{2,24})\\s*的(?:小说|作品|网文|书)"
-        )
-        authorWithAction.findAll(text).forEach { match ->
-            match.groupValues.getOrNull(1)?.let { addTo(direct, it) }
-        }
-
-        val bareAuthor = Regex("(?:^|[，,。；;！？!?\\s])([\\p{L}\\p{N}·_]{2,20})的(?:小说|作品|网文|书)")
-        bareAuthor.findAll(text).forEach { match ->
-            match.groupValues.getOrNull(1)?.let { addTo(direct, it) }
-        }
 
         val directBook = Regex(
             "(?:知道|了解|听说过|看过|读过|查一下|查查|搜一下|搜索一下|搜索)\\s*" +
@@ -175,11 +196,121 @@ class WebResearchEngine {
         return fusion.take(6)
     }
 
+    private fun cleanAuthor(raw: String): String = raw
+        .trim()
+        .replace(Regex("^(?:我想|我要|帮我|给我|就是|类似于|像|融合|参考|借鉴|研究|看看|搜一下|搜索|查一下|了解)+"), "")
+        .trim('《', '》', '“', '”', '"', '\'', '，', ',', '。', '：', ':', ' ')
+        .take(20)
+
+    private fun isPlausibleAuthor(value: String): Boolean {
+        if (value.length !in 2..20) return false
+        val noise = listOf("我想写", "中式", "灵异", "惊悚", "无限流", "小说", "作品", "风格", "设定", "高层", "类似", "这种")
+        return noise.none(value::contains)
+    }
+
     private fun looksLikeInstruction(value: String): Boolean {
         val noise = listOf(
             "我想写", "我想要", "帮我", "给我", "提炼", "借鉴", "融合", "高层", "设定", "世界观", "方向", "题材", "类型", "感觉", "风格",
         )
         return noise.any(value::contains) || value.length > 28
+    }
+
+    /** Author mode: discover works first, then separately research the discovered works. */
+    private suspend fun searchAuthorPortfolio(author: String, limit: Int): WebResearchResult = coroutineScope {
+        val authorQueries = listOf(
+            "\"$author\" 小说 作者 作品",
+            "$author 代表作 小说列表",
+            "$author 作者 作品集",
+            "$author 小说 风格 特点",
+        )
+        val authorResults = authorQueries.map { query ->
+            async(Dispatchers.IO) { searchQuery(query, (limit * 4).coerceIn(16, 28)) }
+        }.awaitAll()
+
+        val authorSources = authorResults
+            .flatMap { it.sources }
+            .distinctBy { it.url }
+            .map { it to referenceScore(it, author) }
+            .filter { it.second >= relevanceThreshold(author) }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .take(8)
+
+        val discoveredWorks = discoverWorkTitles(author, authorSources).take(5)
+
+        val workSources = discoveredWorks.map { work ->
+            async(Dispatchers.IO) {
+                searchSpecificWorkForAuthor(author, work)
+            }
+        }.awaitAll().flatten()
+
+        val deepAuthorSources = authorSources.take(3).map { source ->
+            async(Dispatchers.IO) {
+                source.copy(detail = runCatching { fetchReadablePage(source.url, author) }.getOrDefault(""))
+            }
+        }.awaitAll()
+
+        val combined = (workSources + deepAuthorSources + authorSources.drop(3))
+            .distinctBy { it.url }
+            .take(18)
+
+        val engines = authorResults.map { it.engine }
+            .filter { it != "unavailable" && it != "none" }
+            .distinct()
+            .joinToString(" + ")
+            .ifBlank { "unavailable" }
+
+        val worksLabel = if (discoveredWorks.isEmpty()) "未可靠提取代表作，交由模型既有知识补充并标记未核验" else discoveredWorks.joinToString("、")
+        WebResearchResult(
+            query = "作者研究：$author；已发现作品：$worksLabel",
+            sources = combined,
+            engine = engines,
+        )
+    }
+
+    private fun discoverWorkTitles(author: String, sources: List<WebResearchSource>): List<String> {
+        val works = linkedSetOf<String>()
+        val authorKey = compact(author)
+        fun add(raw: String) {
+            val value = raw.trim().trim('《', '》', '“', '”', '"', '\'', '，', ',', '。', '：', ':')
+            if (value.length !in 2..18) return
+            if (compact(value) == authorKey) return
+            if (listOf("小说", "作品", "作者", "简介", "作品集", "全部作品", "最新章节").any { value == it }) return
+            works += value
+        }
+        sources.forEach { source ->
+            val text = source.title + "\n" + source.snippet
+            Regex("《([^》]{2,24})》").findAll(text).forEach { match -> add(match.groupValues[1]) }
+            Regex("[“\"]([^”\"，,。；;]{2,18})[”\"]").findAll(text).forEach { match -> add(match.groupValues[1]) }
+        }
+        return works.take(8)
+    }
+
+    private suspend fun searchSpecificWorkForAuthor(author: String, work: String): List<WebResearchSource> = coroutineScope {
+        val queries = listOf(
+            "\"$work\" $author 小说",
+            "$work 主角 性格 能力 剧情",
+            "$work 世界观 规则 主题 剧情",
+        )
+        val results = queries.map { query -> async(Dispatchers.IO) { searchQuery(query, 12) } }.awaitAll()
+        val ranked = results
+            .flatMap { it.sources }
+            .distinctBy { it.url }
+            .map { source -> source to (referenceScore(source, work) + if (compact(source.title + source.snippet).contains(compact(author))) 20 else 0) }
+            .filter { it.second >= relevanceThreshold(work) }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .take(3)
+
+        ranked.mapIndexed { index, source ->
+            async(Dispatchers.IO) {
+                val detail = if (index < 2) runCatching { fetchReadablePage(source.url, work) }.getOrDefault("") else ""
+                source.copy(
+                    title = "[$work] ${source.title}",
+                    detail = detail,
+                )
+            }
+        }.awaitAll()
     }
 
     private suspend fun searchReferenceTarget(target: String, limit: Int): WebResearchResult = coroutineScope {
@@ -207,7 +338,6 @@ class WebResearchEngine {
             .map { it.first }
             .take(limit)
 
-        // Search snippets are not enough for protagonist/personality/abilities/theme. Deep-read top pages.
         val ranked = rankedBase.mapIndexed { index, source ->
             async(Dispatchers.IO) {
                 if (index >= 3) source
@@ -243,6 +373,7 @@ class WebResearchEngine {
     }
 
     private fun normalizeQuery(text: String): String {
+        authorTarget(text)?.let { return it }
         val directTargets = referenceTargets(text)
         if (directTargets.size == 1) return directTargets.first()
 
