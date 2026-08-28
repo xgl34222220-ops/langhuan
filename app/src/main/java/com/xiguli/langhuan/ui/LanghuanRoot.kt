@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     var showShelf by remember { mutableStateOf(!resumeWorkspace) }
     var showCreation by remember { mutableStateOf(false) }
     var showWritingFlow by remember { mutableStateOf(false) }
+    var showIntelligence by remember { mutableStateOf(false) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
 
     val backupLauncher = rememberLauncherForActivityResult(
@@ -111,7 +113,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
 
-        if (!showShelf && !showAgent && !showCreation && !showWritingFlow) {
+        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showIntelligence) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -122,6 +124,9 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             ) {
                 SmallFloatingActionButton(onClick = { showShelf = true }) {
                     Icon(Icons.Rounded.AutoStories, "阅读书架")
+                }
+                SmallFloatingActionButton(onClick = { showIntelligence = true }) {
+                    Icon(Icons.Rounded.Insights, "长篇监控")
                 }
                 ExtendedFloatingActionButton(
                     onClick = {
@@ -139,7 +144,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showShelf && !showAgent && !showCreation && !showWritingFlow) {
+        if (showShelf && !showAgent && !showCreation && !showWritingFlow && !showIntelligence) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 if (libraryState.openedBook == null && libraryState.readingChapter == null) {
                     AiFirstShelf(
@@ -164,9 +169,9 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showCreation && !showAgent && !showWritingFlow) {
+        if (showCreation && !showAgent && !showWritingFlow && !showIntelligence) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                NewBookConversationPage(
+                ResearchNewBookConversationPage(
                     viewModel = creationViewModel,
                     onClose = { showCreation = false },
                     onCreated = { id ->
@@ -180,7 +185,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showWritingFlow && !showAgent) {
+        if (showWritingFlow && !showAgent && !showIntelligence) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 WritingFlowPage(
                     novelId = writingStoryId ?: state.snapshot.novel.id,
@@ -190,7 +195,13 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showAgent) {
+        if (showIntelligence && !showAgent && !showWritingFlow && !showCreation) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                StoryIntelligencePage(state = state, onClose = { showIntelligence = false })
+            }
+        }
+
+        if (showAgent && !showIntelligence) {
             Surface(
                 Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
