@@ -27,6 +27,7 @@ class GenerationPipeline(
     private val promptAssembler: PromptAssembler = PromptAssembler(),
     private val consistencyGate: ConsistencyGate = ConsistencyGate(),
     private val adversarialEditor: AdversarialChapterEditor = AdversarialChapterEditor(),
+    private val novelizationEngine: NovelizationEngine = NovelizationEngine(),
 ) {
     suspend fun generate(
         request: GenerationRequest,
@@ -40,11 +41,34 @@ class GenerationPipeline(
         require(prose.isNotBlank()) { "AI 没有返回可用正文" }
         onDelta(prose)
 
-        // 2) One adversarial review call contains four independent editor seats.
+        // 2) Cheap local prose diagnostics. Only clearly non-novel drafts spend one extra model call.
+        val initialQuality = novelizationEngine.analyze(prose)
+        var quality = initialQuality
+        var novelizationSucceeded = false
+        if (initialQuality.requiresNovelization) {
+            val novelized = runCatching {
+                cleanVisibleProse(
+                    aiGateway.generateText(
+                        novelizationEngine.buildRewrite(request, prose, initialQuality, retrievedContext)
+                    )
+                )
+            }.getOrNull().orEmpty()
+            if (novelized.isNotBlank()) {
+                prose = novelized
+                novelizationSucceeded = true
+                quality = novelizationEngine.analyze(prose)
+                onDelta(prose)
+            }
+        }
+
+        // 3) One adversarial review call contains four independent editor seats.
         val firstReview = runCatching {
             aiGateway.generate(adversarialEditor.buildReview(request, prose, round = 1))
         }.getOrNull()
-        val firstDeterministic = obviousProseProblems(prose)
+        val firstDeterministic = buildList {
+            addAll(obviousProseProblems(prose))
+            if (quality.requiresNovelization) addAll(quality.problems)
+        }.distinct()
         val firstRejected = adversarialEditor.requestsRewrite(firstReview) || firstDeterministic.isNotEmpty()
         var editorBlockingIssue: ConsistencyIssue? = null
 
@@ -62,26 +86,30 @@ class GenerationPipeline(
                 editorBlockingIssue = ConsistencyIssue(
                     severity = IssueSeverity.BLOCKING,
                     code = "EDITOR_REWRITE_EMPTY",
-                    message = "主编已退回第一稿，但 AI 没有返回可用的第二稿",
+                    message = "主编已退回稿件，但 AI 没有返回可用的修订稿",
                     evidence = instructions.take(800),
                     repairInstruction = "保留当前草稿但禁止正式保存；重新生成或切换模型后再次执行章节生成。",
                 )
             } else {
                 prose = rewritten
+                quality = novelizationEngine.analyze(prose)
                 onDelta(prose)
 
-                // 3) The rewritten draft must face a fresh second review. No infinite retry loop.
+                // 4) The rewritten draft must face a fresh second review. No infinite retry loop.
                 val secondReview = runCatching {
                     aiGateway.generate(adversarialEditor.buildReview(request, prose, round = 2))
                 }.getOrNull()
-                val secondDeterministic = obviousProseProblems(prose)
+                val secondDeterministic = buildList {
+                    addAll(obviousProseProblems(prose))
+                    if (quality.requiresNovelization) addAll(quality.problems)
+                }.distinct()
                 val secondRejected = adversarialEditor.requestsRewrite(secondReview) || secondDeterministic.isNotEmpty()
                 if (secondRejected) {
                     val secondInstructions = adversarialEditor.instructions(secondReview, secondDeterministic)
                     editorBlockingIssue = ConsistencyIssue(
                         severity = IssueSeverity.BLOCKING,
                         code = "EDITOR_REVIEW_FAILED",
-                        message = "第二稿仍未通过四视角主编复审，已阻止进入正式版本和长期记忆",
+                        message = "修订稿仍未通过四视角主编复审，已阻止进入正式版本和长期记忆",
                         evidence = secondReview?.summary.orEmpty().ifBlank { secondInstructions.take(800) },
                         repairInstruction = secondInstructions,
                     )
@@ -89,7 +117,7 @@ class GenerationPipeline(
             }
         }
 
-        // 4) Only after prose is frozen do we extract summary/state/foreshadowing for the database.
+        // 5) Only after prose is frozen do we extract summary/state/foreshadowing for the database.
         val metadata = runCatching {
             aiGateway.generate(promptAssembler.buildMetadata(request, prose))
         }.getOrElse {
@@ -107,9 +135,42 @@ class GenerationPipeline(
             touchedForeshadowingIds = metadata.touchedForeshadowingIds,
         )
 
+        val finalQuality = novelizationEngine.analyze(prose)
         val issues = buildList {
             addAll(consistencyGate.inspect(request, chapter))
             editorBlockingIssue?.let(::add)
+            if (novelizationSucceeded) {
+                add(
+                    ConsistencyIssue(
+                        severity = IssueSeverity.INFO,
+                        code = "PROSE_NOVELIZED",
+                        message = "初稿命中报告体/AI腔阈值，已在主编审核前自动执行小说化重构",
+                        evidence = "重构前 ${initialQuality.summary()} → 重构后 ${finalQuality.summary()}",
+                        repairInstruction = "无需额外操作；如仍不符合你的写法，可在编辑器修改，作者画像会继续学习。",
+                    )
+                )
+            }
+            if (finalQuality.blocking) {
+                add(
+                    ConsistencyIssue(
+                        severity = IssueSeverity.BLOCKING,
+                        code = "PROSE_QUALITY_FAILED",
+                        message = "最终稿仍存在严重报告体/后台痕迹，已禁止写入正式版本",
+                        evidence = finalQuality.summary(),
+                        repairInstruction = finalQuality.problems.joinToString("；").ifBlank { "重新生成整章并增加场景化表达。" },
+                    )
+                )
+            } else if (finalQuality.score < 82) {
+                add(
+                    ConsistencyIssue(
+                        severity = IssueSeverity.WARNING,
+                        code = "PROSE_QUALITY_WATCH",
+                        message = "正文可以保存，但小说化质量仍有可改进项（${finalQuality.score}分）",
+                        evidence = finalQuality.problems.take(4).joinToString("；").ifBlank { finalQuality.summary() },
+                        repairInstruction = "优先通过人物行动、对白、具体物件和因果变化承载信息，避免解释性总结。",
+                    )
+                )
+            }
         }.distinctBy { listOf(it.code, it.message, it.evidence) }
 
         return GenerationResult(
