@@ -88,6 +88,14 @@ class ChapterRunForegroundService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // The generation coroutine belongs to the Activity ViewModel. If the user explicitly removes
+        // the whole task, that ViewModel will be cleared; do not leave a stale foreground notification.
+        ChapterRunStopSignals.requestStop()
+        hideNow()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         ChapterRunKeepAliveRegistry.clear()
         super.onDestroy()
