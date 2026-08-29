@@ -66,6 +66,13 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         }
     }
 
+    LaunchedEffect(route, libraryState.openedBook?.id, coverStoryId) {
+        when {
+            route == RootRouteV3.BOOK && libraryState.openedBook == null -> route = RootRouteV3.SHELF
+            route == RootRouteV3.COVER_STUDIO && coverStoryId == null && libraryState.openedBook == null -> route = RootRouteV3.SHELF
+        }
+    }
+
     // 任务中心请求打开某一章时直接切到写作页，不再通过重启 Activity 重新挂载 UI。
     LaunchedEffect(runCenterState.openRequest?.token) {
         runCenterState.openRequest?.let { request ->
@@ -125,9 +132,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 }
 
                 RootRouteV3.BOOK -> {
-                    if (libraryState.openedBook == null) {
-                        route = RootRouteV3.SHELF
-                    } else {
+                    if (libraryState.openedBook != null) {
                         ReaderFirstLibraryV3(
                             viewModel = libraryVm,
                             studioState = studioState,
@@ -226,9 +231,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.COVER_STUDIO -> {
                     val id = coverStoryId ?: libraryState.openedBook?.id
-                    if (id == null) {
-                        route = RootRouteV3.SHELF
-                    } else {
+                    if (id != null) {
                         CoverStudioV3(
                             bookId = id,
                             libraryViewModel = libraryVm,
