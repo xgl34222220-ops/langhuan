@@ -23,7 +23,7 @@ import kotlinx.serialization.json.long
  */
 object BuiltInReferenceLibraryInstaller {
     private const val ASSET_DIR = "reference_builtin"
-    private const val LIBRARY_VERSION = "2026-08-29-1"
+    private const val LIBRARY_VERSION = "2026-08-29-2"
     private const val PINNED_CREATED_AT = 4_102_444_800_000L // 2100-01-01, keeps built-ins visible first.
 
     private val tags = listOf(
@@ -58,17 +58,25 @@ object BuiltInReferenceLibraryInstaller {
             val books = Json.parseToJsonElement(raw).jsonArray
 
             val root = File(context.filesDir, "distillation/reports").apply { mkdirs() }
+
+            // v1 used Chinese task ids. ReferenceDistillationReportStore.safeId() replaces every
+            // non-ASCII character with '_', so six built-ins collapsed into only two filenames.
+            // Remove those collided v1 files before installing stable ASCII ids.
+            listOf("builtin_____.json", "builtin________.json").forEach { legacy ->
+                runCatching { File(root, legacy).delete() }
+            }
+
             val marker = File(context.filesDir, "distillation/builtin-reference-$LIBRARY_VERSION.ready")
             val expectedFiles = books.map { element ->
-                val id = element.jsonObject.getValue("id").jsonPrimitive.content
-                File(root, "${safeId(id)}.json")
+                val title = element.jsonObject.getValue("title").jsonPrimitive.content
+                File(root, "${safeId(stableTaskId(title))}.json")
             }
             if (marker.exists() && expectedFiles.all(File::exists)) return@runCatching
 
             books.forEachIndexed { bookIndex, element ->
                 val book = element.jsonObject
-                val taskId = book.getValue("id").jsonPrimitive.content
                 val title = book.getValue("title").jsonPrimitive.content
+                val taskId = stableTaskId(title)
                 val entities = book.getValue("entities").jsonArray.map { it.jsonPrimitive.content }
                 val core = book.getValue("core").jsonArray.map { coreElement ->
                     val parts = coreElement.jsonArray
@@ -126,6 +134,16 @@ object BuiltInReferenceLibraryInstaller {
             marker.parentFile?.mkdirs()
             marker.writeText("ok", Charsets.UTF_8)
         }
+    }
+
+    private fun stableTaskId(title: String): String = when (title) {
+        "怪谈玩家" -> "builtin:guaitan-wanjia"
+        "惊惧盛宴" -> "builtin:jingju-shengyan"
+        "惊悚乐园" -> "builtin:jingsong-leyuan"
+        "迷雾之上" -> "builtin:miwu-zhishang"
+        "神秘复苏" -> "builtin:shenmi-fusu"
+        "我有一座冒险屋" -> "builtin:maoxianwu"
+        else -> "builtin:${title.hashCode().toUInt().toString(16)}"
     }
 
     private fun writeReport(root: File, report: ReferenceDistillationReport) {
