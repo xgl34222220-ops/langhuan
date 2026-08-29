@@ -16,8 +16,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Science
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +58,7 @@ fun ReferenceDistillationReportDialog(
     val store = remember(context) { ReferenceDistillationReportStore(context) }
     var report by remember(taskId, title) { mutableStateOf<ReferenceDistillationReport?>(null) }
     var loaded by remember(taskId, title) { mutableStateOf(false) }
+    var confirmDelete by remember(taskId) { mutableStateOf(false) }
 
     LaunchedEffect(taskId, title) {
         report = withContext(Dispatchers.IO) { store.loadOrArchiveFallback(taskId, title) }
@@ -79,6 +83,11 @@ fun ReferenceDistillationReportDialog(
                         Text("双层蒸馏报告", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    if (report != null && !report!!.taskId.startsWith("builtin:")) {
+                        IconButton(onClick = { confirmDelete = true }) {
+                            Icon(Icons.Rounded.DeleteOutline, "删除蒸馏数据", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
                     IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, "关闭") }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
@@ -96,6 +105,23 @@ fun ReferenceDistillationReportDialog(
                 }
             }
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            shape = RoundedCornerShape(28.dp),
+            title = { Text("删除这份蒸馏数据？") },
+            text = { Text("《${report?.title ?: title}》的 Story DNA、Style DNA 和可检索数据会从本机删除。原始 EPUB 文件不会被删除。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    report?.taskId?.let(store::delete) ?: store.delete(taskId)
+                    confirmDelete = false
+                    onDismiss()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
+        )
     }
 }
 
