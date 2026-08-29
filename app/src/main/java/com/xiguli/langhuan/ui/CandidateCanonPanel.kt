@@ -2,14 +2,7 @@ package com.xiguli.langhuan.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -112,7 +105,7 @@ internal fun CandidateCanonPanel(state: StudioUiState, vm: StudioViewModel) {
 }
 
 @Composable
-private fun CandidatePanelCard(content: @Composable Column.() -> Unit) {
+private fun CandidatePanelCard(content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(26.dp)
     Column(
         Modifier.fillMaxWidth()
