@@ -41,6 +41,7 @@ import com.xiguli.langhuan.engine.ChapterPlanSuggestion
 import com.xiguli.langhuan.engine.DemoAiGateway
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.GenerationPipeline
+import com.xiguli.langhuan.engine.FullBookEditorEngine
 import com.xiguli.langhuan.engine.NovelAgentEngine
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.ProviderDiscovery
@@ -680,17 +681,31 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val gateway = configuredGateway()
             if (gateway == null) {
-                _state.update { it.copy(error = "全书巡检需要先配置 AI 服务") }
+                _state.update { it.copy(error = "全书主编深度巡检需要先配置 AI 服务") }
                 return@launch
             }
             _state.update { it.copy(isAuditing = true, error = null, agentReview = null) }
             runCatching {
                 val drafts = projects.chapterDrafts(current.snapshot.novel.id)
-                NovelAgentEngine(gateway).auditStory(current.snapshot, drafts)
-            }.onSuccess { review ->
-                _state.update { it.copy(isAuditing = false, agentReview = review, message = "全书一致性巡检完成") }
+                val editor = FullBookEditorEngine()
+                val local = editor.localAudit(current.snapshot, drafts)
+                val review = NovelAgentEngine(gateway).auditStory(current.snapshot, drafts)
+                val report = editor.mergeAgentReview(local, review)
+                val persisted = projects.saveStructure(editor.apply(current.snapshot, report), current.draft)
+                Triple(persisted, review, report)
+            }.onSuccess { (persisted, review, report) ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isAuditing = false,
+                        agentReview = review,
+                        message = "全书主编巡检完成：${report.score}分 · ${report.level}",
+                    )
+                }
+                refreshWorkspace()
             }.onFailure { error ->
-                _state.update { it.copy(isAuditing = false, error = error.message ?: "全书巡检失败") }
+                _state.update { it.copy(isAuditing = false, error = error.message ?: "全书主编巡检失败") }
             }
         }
     }
@@ -894,9 +909,26 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 .onSuccess { persisted ->
                     _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, isDraftDirty = false, streamPreview = "", result = null, message = "正文、版本和长期记忆已保存；正在做 Agent 复盘") }
                     refreshWorkspace()
+                    var working = persisted
+                    if (FullBookEditorEngine.shouldAudit(working.snapshot, working.draft.chapterNumber)) {
+                        runCatching {
+                            val drafts = projects.chapterDrafts(working.snapshot.novel.id)
+                            val editor = FullBookEditorEngine()
+                            val report = editor.localAudit(working.snapshot, drafts)
+                            projects.saveStructure(editor.apply(working.snapshot, report), working.draft)
+                        }.onSuccess { audited ->
+                            working = audited
+                            _state.update { state ->
+                                state.copy(
+                                    snapshot = audited.snapshot,
+                                    draft = audited.draft,
+                                    message = "正文已保存；全书主编本地巡检 ${audited.snapshot.longForm.editorReport.score} 分",
+                                )
+                            }
+                        }
+                    }
                     val gateway = configuredGateway()
                     if (gateway != null) {
-                        var working = persisted
                         val executionEngine = AutonomousExecutionEngine(gateway)
                         val execution = runCatching {
                             executionEngine.assess(working.snapshot, working.draft, result.chapter)

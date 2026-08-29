@@ -7,6 +7,7 @@ import com.xiguli.langhuan.domain.DriftSeverity
 import com.xiguli.langhuan.domain.ForeshadowPlanAction
 import com.xiguli.langhuan.domain.ForeshadowCadence
 import com.xiguli.langhuan.domain.ForeshadowStatus
+import com.xiguli.langhuan.domain.LongFormHealthLevel
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.PlannedChapterBeat
 import com.xiguli.langhuan.domain.PlotArcPhase
@@ -62,6 +63,7 @@ class AutonomousStoryPlanner(
             "- ${it.title}｜读者=${it.readerState}｜最早完整揭露=第${it.earliestFullRevealChapter}章｜策略=${it.revealPolicy}｜knownBy=${it.knownBy.joinToString("、")}｜unknownTo=${it.unknownTo.joinToString("、")}"
         }
         val executionContext = AutonomousExecutionEngine.planningContext(snapshot, startChapter)
+        val fullBookEditorContext = FullBookEditorEngine.promptText(snapshot)
         val prompt = PromptBundle(
             system = """
                 你是“琅嬛”的长篇自治总编。你不写正文，也无权修改已确认 Canon。你的任务是维护未来 3-10 章滚动计划，让小说持续朝当前总纲/卷纲推进，并提前发现偏航。
@@ -122,6 +124,9 @@ class AutonomousStoryPlanner(
 
                 【长篇健康提醒】
                 ${snapshot.longForm.health.warnings.joinToString("\n") { "- $it" }.ifBlank { "- 当前没有本地健康警报。" }}
+
+                【全书主编长期模式提醒｜只用于规划纠偏】
+                ${fullBookEditorContext.ifBlank { "当前没有达到阈值的全书级模式问题。" }}
 
                 $executionContext
 
@@ -224,6 +229,7 @@ class AutonomousStoryPlanner(
             val remaining = plan.chapters.count { it.chapterNumber > currentChapter }
             return remaining < 3 ||
                 plan.driftSignals.any { it.severity == DriftSeverity.HIGH } ||
+                snapshot.longForm.editorReport.level == LongFormHealthLevel.RISK ||
                 (plan.canonDigest.isNotBlank() && plan.canonDigest != canonDigest(snapshot))
         }
 

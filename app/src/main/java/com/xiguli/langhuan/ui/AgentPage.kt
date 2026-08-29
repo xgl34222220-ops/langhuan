@@ -52,7 +52,7 @@ internal fun AgentPage(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("创作 Agent", style = MaterialTheme.typography.displaySmall, color = LocalMiuixTokens.current.textPrimary)
-                    Text("自动复盘章节 · 全书巡检 · 未来滚动自治规划 · 结构化长期记忆", color = LocalMiuixTokens.current.textSecondary)
+                    Text("自动复盘章节 · 全书主编 · 未来滚动自治规划 · 结构化长期记忆", color = LocalMiuixTokens.current.textSecondary)
                 }
                 IconButton(onClose) { Icon(Icons.Rounded.Close, "关闭 Agent") }
             }
@@ -89,12 +89,13 @@ internal fun AgentPage(
                     if (state.isAuditing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Rounded.Timeline, null)
                     Spacer(Modifier.width(7.dp))
-                    Text(if (state.isAuditing) "正在巡检整部作品…" else "全书一致性巡检")
+                    Text(if (state.isAuditing) "全书主编正在深度巡检…" else "全书主编深度巡检")
                 }
             }
         }
 
         item { LongFormAgentPanel(state.snapshot) }
+        item { FullBookEditorPanel(state.snapshot) }
         item { AutonomousPlanPanel(state, vm) }
 
         item {

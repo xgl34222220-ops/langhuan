@@ -256,6 +256,55 @@ data class AuthorPreferenceProfile(
 )
 
 @Serializable
+enum class BookEditorIssueKind {
+    STRUCTURAL_FATIGUE,
+    PATTERN_REPETITION,
+    CHARACTER_VOICE_CONVERGENCE,
+    SUSPENSE_DENSITY,
+    SUBPLOT_ABSENCE,
+    STYLE_DRIFT,
+    LOW_CHANGE_STREAK,
+}
+
+@Serializable
+enum class BookEditorSeverity { INFO, WATCH, HIGH }
+
+/** Whole-book editorial diagnosis. It is guidance, never Canon. */
+@Serializable
+data class BookEditorIssue(
+    val id: String,
+    val kind: BookEditorIssueKind,
+    val severity: BookEditorSeverity = BookEditorSeverity.INFO,
+    val title: String,
+    val chapterStart: Int = 0,
+    val chapterEnd: Int = 0,
+    val evidence: String = "",
+    val diagnosis: String = "",
+    val minimalRepair: String = "",
+    val source: String = "本地巡检",
+)
+
+/** Persistent full-book editor state. Old projects decode to this empty report. */
+@Serializable
+data class FullBookEditorReport(
+    val lastAuditChapter: Int = 0,
+    val scannedChapterStart: Int = 0,
+    val scannedChapterEnd: Int = 0,
+    val scannedChapterCount: Int = 0,
+    val score: Int = 100,
+    val level: LongFormHealthLevel = LongFormHealthLevel.HEALTHY,
+    val structureScore: Int = 100,
+    val varietyScore: Int = 100,
+    val characterVoiceScore: Int = 100,
+    val suspenseScore: Int = 100,
+    val subplotScore: Int = 100,
+    val styleScore: Int = 100,
+    val issues: List<BookEditorIssue> = emptyList(),
+    val aiSummary: String = "",
+    val updatedAt: Long = 0L,
+)
+
+@Serializable
 data class LongFormState(
     val config: LongFormConfig = LongFormConfig(),
     val arcs: List<RollingPlotArc> = emptyList(),
@@ -270,5 +319,7 @@ data class LongFormState(
     val narrativeDebts: List<NarrativeDebt> = emptyList(),
     /** Learns stable prose preferences from accepted/rejected rewrites and meaningful manual edit batches. */
     val authorProfile: AuthorPreferenceProfile = AuthorPreferenceProfile(),
+    /** Persistent whole-book editorial health; diagnostics never mutate Canon by themselves. */
+    val editorReport: FullBookEditorReport = FullBookEditorReport(),
     val lastSettledChapter: Int = 0,
 )
