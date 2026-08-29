@@ -1,0 +1,39 @@
+name: Apply Full Book Editor
+
+on:
+  push:
+    paths:
+      - ".github/scripts/apply_full_book_editor.py"
+      - ".github/workflows/apply-full-book-editor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Apply patch
+        run: python .github/scripts/apply_full_book_editor.py
+      - name: Validate patch
+        run: |
+          grep -q 'editorReport: FullBookEditorReport' app/src/main/java/com/xiguli/langhuan/domain/LongFormModels.kt
+          grep -q 'FullBookEditorEngine.shouldAudit' app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt
+          grep -q 'FullBookEditorPanel' app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt
+          grep -q 'versionName = "0.26.1-alpha01"' app/build.gradle.kts
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "feat: add persistent full-book editor"
+          git push
