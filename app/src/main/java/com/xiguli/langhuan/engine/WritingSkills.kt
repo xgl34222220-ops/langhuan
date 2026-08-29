@@ -5,10 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * Native Android adaptation of external writing skills.
- *
- * Skills are craft-layer guidance only. They may influence how a task is performed, but they never
- * mutate Canon, ChapterContract, knowledge boundaries, chronology, Candidate facts or RAG contents.
+ * Skill 只属于 C 层写作方法，不是事实源，也不允许覆盖 Canon / ChapterContract / 时间线。
  */
 data class WritingSkillDefinition(
     val id: String,
@@ -20,6 +17,9 @@ data class WritingSkillDefinition(
     val sourceRevision: String,
     val supportedTasks: Set<AiTaskType>,
     val defaultTasks: Set<AiTaskType>,
+    val author: String = "",
+    val builtin: Boolean = true,
+    val customGuidance: String = "",
 )
 
 @Serializable
@@ -30,10 +30,32 @@ data class WritingSkillBinding(
 )
 
 @Serializable
-private data class WritingSkillConfig(
+data class UserWritingSkillManifest(
     val schemaVersion: Int = 1,
-    val bindings: List<WritingSkillBinding> = emptyList(),
+    val id: String,
+    val name: String,
+    val description: String = "",
+    val version: String = "1.0.0",
+    val author: String = "",
+    val license: String = "自定义",
+    val sourceUrl: String = "",
+    val sourceRevision: String = "",
+    val supportedTasks: List<AiTaskType> = listOf(AiTaskType.PROSE_AUTHOR),
+    val defaultTasks: List<AiTaskType> = emptyList(),
+    val guidance: String,
 )
+
+@Serializable
+private data class WritingSkillConfig(
+    val schemaVersion: Int = 2,
+    val bindings: List<WritingSkillBinding> = emptyList(),
+    val installed: List<UserWritingSkillManifest> = emptyList(),
+)
+
+sealed interface SkillInstallResult {
+    data class Success(val skillName: String, val replaced: Boolean) : SkillInstallResult
+    data class Error(val message: String) : SkillInstallResult
+}
 
 object WritingSkillCatalog {
     val all: List<WritingSkillDefinition> = listOf(
@@ -61,6 +83,7 @@ object WritingSkillCatalog {
                 AiTaskType.EDITOR_REWRITE,
                 AiTaskType.AUTONOMOUS_PLANNER,
             ),
+            author = "zenstory-ai",
         ),
         WritingSkillDefinition(
             id = "avoid-ai-writing",
@@ -81,10 +104,9 @@ object WritingSkillCatalog {
                 AiTaskType.EDITOR_REVIEW,
                 AiTaskType.EDITOR_REWRITE,
             ),
+            author = "conorbronsdon",
         ),
     )
-
-    fun definition(id: String): WritingSkillDefinition? = all.firstOrNull { it.id == id }
 
     fun defaultBinding(skill: WritingSkillDefinition): WritingSkillBinding = WritingSkillBinding(
         skillId = skill.id,
@@ -92,10 +114,13 @@ object WritingSkillCatalog {
         tasks = skill.defaultTasks.toList(),
     )
 
-    fun guidance(skill: WritingSkillDefinition, task: AiTaskType): String = when (skill.id) {
-        "story-long-write" -> storyLongWriteGuidance(task)
-        "avoid-ai-writing" -> avoidAiWritingGuidance(task)
-        else -> ""
+    fun guidance(skill: WritingSkillDefinition, task: AiTaskType): String {
+        if (!skill.builtin) return skill.customGuidance.trim()
+        return when (skill.id) {
+            "story-long-write" -> storyLongWriteGuidance(task)
+            "avoid-ai-writing" -> avoidAiWritingGuidance(task)
+            else -> ""
+        }
     }
 
     private fun storyLongWriteGuidance(task: AiTaskType): String {
@@ -147,13 +172,62 @@ class WritingSkillStore(context: Context) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     @Synchronized
+    fun definitions(): List<WritingSkillDefinition> = WritingSkillCatalog.all + load().installed.map(::toDefinition)
+
+    @Synchronized
     fun bindings(): List<WritingSkillBinding> {
+        val definitions = definitions()
         val stored = load().bindings.associateBy { it.skillId }
-        return WritingSkillCatalog.all.map { skill ->
+        return definitions.map { skill ->
             val existing = stored[skill.id]
             if (existing == null) WritingSkillCatalog.defaultBinding(skill)
             else existing.copy(tasks = existing.tasks.filter { it in skill.supportedTasks }.distinct())
         }
+    }
+
+    @Synchronized
+    fun install(raw: String): SkillInstallResult {
+        val manifest = runCatching { json.decodeFromString(UserWritingSkillManifest.serializer(), raw) }
+            .getOrElse { return SkillInstallResult.Error("无法解析 Skill 文件：${it.message ?: "JSON 格式错误"}") }
+        validate(manifest)?.let { return SkillInstallResult.Error(it) }
+        if (WritingSkillCatalog.all.any { it.id == manifest.id }) {
+            return SkillInstallResult.Error("不能覆盖琅嬛内置 Skill：${manifest.id}")
+        }
+        val current = load()
+        val replaced = current.installed.any { it.id == manifest.id }
+        val normalized = manifest.copy(
+            id = manifest.id.trim(),
+            name = manifest.name.trim(),
+            description = manifest.description.trim(),
+            version = manifest.version.trim(),
+            author = manifest.author.trim(),
+            license = manifest.license.trim(),
+            sourceUrl = manifest.sourceUrl.trim(),
+            sourceRevision = manifest.sourceRevision.trim(),
+            supportedTasks = manifest.supportedTasks.distinct(),
+            defaultTasks = manifest.defaultTasks.distinct().filter { it in manifest.supportedTasks },
+            guidance = manifest.guidance.trim(),
+        )
+        val installed = current.installed.filterNot { it.id == normalized.id } + normalized
+        val bindings = current.bindings.filterNot { it.skillId == normalized.id } + WritingSkillBinding(
+            skillId = normalized.id,
+            enabled = true,
+            tasks = normalized.defaultTasks.ifEmpty { normalized.supportedTasks },
+        )
+        save(current.copy(installed = installed, bindings = bindings))
+        return SkillInstallResult.Success(normalized.name, replaced)
+    }
+
+    @Synchronized
+    fun uninstall(skillId: String): Boolean {
+        if (WritingSkillCatalog.all.any { it.id == skillId }) return false
+        val current = load()
+        if (current.installed.none { it.id == skillId }) return false
+        save(current.copy(
+            installed = current.installed.filterNot { it.id == skillId },
+            bindings = current.bindings.filterNot { it.skillId == skillId },
+        ))
+        return true
     }
 
     @Synchronized
@@ -163,7 +237,7 @@ class WritingSkillStore(context: Context) {
 
     @Synchronized
     fun setTaskEnabled(skillId: String, task: AiTaskType, enabled: Boolean) {
-        val skill = WritingSkillCatalog.definition(skillId) ?: return
+        val skill = definitions().firstOrNull { it.id == skillId } ?: return
         if (task !in skill.supportedTasks) return
         mutate(skillId) { binding ->
             val tasks = binding.tasks.toMutableSet()
@@ -174,14 +248,17 @@ class WritingSkillStore(context: Context) {
 
     @Synchronized
     fun resetDefaults() {
-        save(WritingSkillConfig(bindings = WritingSkillCatalog.all.map(WritingSkillCatalog::defaultBinding)))
+        val current = load()
+        val defaults = definitions().map(WritingSkillCatalog::defaultBinding)
+        save(current.copy(bindings = defaults))
     }
 
     @Synchronized
     fun snapshot(): WritingSkillSnapshot {
+        val definitions = definitions()
         val current = bindings().associateBy { it.skillId }
         val active = AiTaskType.entries.associateWith { task ->
-            WritingSkillCatalog.all.filter { skill ->
+            definitions.filter { skill ->
                 val binding = current[skill.id]
                 binding?.enabled == true && task in binding.tasks && task in skill.supportedTasks
             }
@@ -189,12 +266,39 @@ class WritingSkillStore(context: Context) {
         return WritingSkillSnapshot(active)
     }
 
+    private fun validate(skill: UserWritingSkillManifest): String? {
+        if (skill.schemaVersion != 1) return "暂不支持 schemaVersion=${skill.schemaVersion}"
+        if (!skill.id.matches(Regex("[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}"))) return "Skill id 只能使用 3-64 位字母、数字、点、横线或下划线"
+        if (skill.name.isBlank() || skill.name.length > 80) return "Skill 名称不能为空且不能超过 80 字"
+        if (skill.guidance.isBlank()) return "Skill guidance 不能为空"
+        if (skill.guidance.length > MAX_GUIDANCE) return "Skill guidance 不能超过 $MAX_GUIDANCE 字"
+        if (skill.supportedTasks.isEmpty()) return "至少选择一个 supportedTasks"
+        return null
+    }
+
+    private fun toDefinition(skill: UserWritingSkillManifest) = WritingSkillDefinition(
+        id = skill.id,
+        name = skill.name,
+        description = skill.description,
+        version = skill.version,
+        license = skill.license,
+        sourceUrl = skill.sourceUrl,
+        sourceRevision = skill.sourceRevision,
+        supportedTasks = skill.supportedTasks.toSet(),
+        defaultTasks = skill.defaultTasks.toSet().ifEmpty { skill.supportedTasks.toSet() },
+        author = skill.author,
+        builtin = false,
+        customGuidance = skill.guidance,
+    )
+
     private fun mutate(skillId: String, update: (WritingSkillBinding) -> WritingSkillBinding) {
-        val skill = WritingSkillCatalog.definition(skillId) ?: return
+        val skill = definitions().firstOrNull { it.id == skillId } ?: return
+        val currentConfig = load()
         val all = bindings().associateBy { it.skillId }.toMutableMap()
         val current = all[skillId] ?: WritingSkillCatalog.defaultBinding(skill)
         all[skillId] = update(current)
-        save(WritingSkillConfig(bindings = WritingSkillCatalog.all.mapNotNull { all[it.id] }))
+        val ordered = definitions().mapNotNull { all[it.id] }
+        save(currentConfig.copy(bindings = ordered))
     }
 
     private fun load(): WritingSkillConfig {
@@ -210,6 +314,7 @@ class WritingSkillStore(context: Context) {
     private companion object {
         const val PREFS = "langhuan_writing_skills"
         const val KEY_CONFIG = "writing_skills_v1"
+        const val MAX_GUIDANCE = 24_000
     }
 }
 
@@ -225,14 +330,9 @@ class SkillAwareAiGateway(
     private val skills: List<WritingSkillDefinition>,
 ) : AiGateway {
     override suspend fun generate(prompt: PromptBundle) = delegate.generate(decorate(prompt))
-
     override suspend fun generateText(prompt: PromptBundle): String = delegate.generateText(decorate(prompt))
-
-    override suspend fun generateStreaming(prompt: PromptBundle, onDelta: (String) -> Unit) =
-        delegate.generateStreaming(decorate(prompt), onDelta)
-
-    override suspend fun generateTextStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): String =
-        delegate.generateTextStreaming(decorate(prompt), onDelta)
+    override suspend fun generateStreaming(prompt: PromptBundle, onDelta: (String) -> Unit) = delegate.generateStreaming(decorate(prompt), onDelta)
+    override suspend fun generateTextStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): String = delegate.generateTextStreaming(decorate(prompt), onDelta)
 
     internal fun decorate(prompt: PromptBundle): PromptBundle {
         if (skills.isEmpty()) return prompt
