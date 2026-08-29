@@ -14,7 +14,6 @@ import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Insights
-import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Tune
@@ -42,6 +41,7 @@ import com.xiguli.langhuan.engine.RunStatus
 
 private const val ROOT_PREFS = "langhuan_root_state"
 private const val RESUME_WORKSPACE_ONCE = "resume_workspace_once"
+private const val RESUME_WRITING_STORY = "resume_writing_story"
 
 @Composable
 fun LanghuanRoot(viewModel: StudioViewModel) {
@@ -60,20 +60,25 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     val rootPrefs = remember { context.getSharedPreferences(ROOT_PREFS, 0) }
     val resumeWorkspace = remember {
         rootPrefs.getBoolean(RESUME_WORKSPACE_ONCE, false).also { shouldResume ->
-            if (shouldResume) rootPrefs.edit().remove(RESUME_WORKSPACE_ONCE).apply()
+            if (shouldResume) rootPrefs.edit().remove(RESUME_WORKSPACE_ONCE).commit()
+        }
+    }
+    val resumeWritingStory = remember {
+        rootPrefs.getString(RESUME_WRITING_STORY, null).also { storyId ->
+            if (storyId != null) rootPrefs.edit().remove(RESUME_WRITING_STORY).commit()
         }
     }
     var showAgent by remember { mutableStateOf(false) }
-    var showShelf by remember { mutableStateOf(!resumeWorkspace) }
+    var showShelf by remember { mutableStateOf(resumeWritingStory == null && !resumeWorkspace) }
     var showCreation by remember { mutableStateOf(false) }
-    var showWritingFlow by remember { mutableStateOf(false) }
+    var showWritingFlow by remember { mutableStateOf(resumeWritingStory != null) }
     var showEditor by remember { mutableStateOf(false) }
     var showIntelligence by remember { mutableStateOf(false) }
     var showRunCenter by remember { mutableStateOf(false) }
     var showModelSwitch by remember { mutableStateOf(false) }
     var showAiSetup by remember { mutableStateOf(false) }
     var pendingCreationAfterAiSetup by remember { mutableStateOf(false) }
-    var writingStoryId by remember { mutableStateOf<String?>(null) }
+    var writingStoryId by remember { mutableStateOf<String?>(resumeWritingStory) }
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
 
@@ -141,16 +146,40 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
 
     LaunchedEffect(runCenterState.openRequest?.token) {
         runCenterState.openRequest?.let { request ->
-            writingStoryId = request.novelId
-            showRunCenter = false
-            showShelf = false
-            showAgent = false
-            showCreation = false
-            showEditor = false
-            showIntelligence = false
-            showAiSetup = false
-            showWritingFlow = true
+            val loadedDraft = writingState.draft
+            val alreadyAtTarget = writingState.ready &&
+                writingState.novelId == request.novelId &&
+                loadedDraft?.chapterNumber == request.chapterNumber
             runCenterViewModel.consumeOpenRequest()
+            if (alreadyAtTarget) {
+                // Re-open the live/current writing VM. This preserves an in-flight coroutine.
+                writingStoryId = request.novelId
+                showRunCenter = false
+                showShelf = false
+                showAgent = false
+                showCreation = false
+                showEditor = false
+                showIntelligence = false
+                showAiSetup = false
+                showWritingFlow = true
+            } else {
+                // RunCenterViewModel has already selected the requested chapter in project storage.
+                // A fresh WritingFlowViewModel is required because load(novelId) intentionally no-ops
+                // once the same novel is loaded, even if the selected chapter changed underneath it.
+                rootPrefs.edit().putString(RESUME_WRITING_STORY, request.novelId).commit()
+                val activity = context as? Activity
+                if (activity != null) {
+                    val intent = activity.intent
+                    activity.finish()
+                    activity.startActivity(intent)
+                    @Suppress("DEPRECATION")
+                    activity.overridePendingTransition(0, 0)
+                } else {
+                    writingStoryId = request.novelId
+                    showRunCenter = false
+                    showWritingFlow = true
+                }
+            }
         }
     }
 
@@ -176,11 +205,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     }
 
     LaunchedEffect(libraryState.stories.isEmpty()) {
-        if (libraryState.stories.isEmpty()) showShelf = true
+        if (libraryState.stories.isEmpty() && resumeWritingStory == null) showShelf = true
     }
 
     fun reloadWorkspaceAfterOverlay() {
-        rootPrefs.edit().putBoolean(RESUME_WORKSPACE_ONCE, true).apply()
+        rootPrefs.edit().putBoolean(RESUME_WORKSPACE_ONCE, true).commit()
         val activity = context as? Activity
         if (activity != null) {
             val intent = activity.intent
