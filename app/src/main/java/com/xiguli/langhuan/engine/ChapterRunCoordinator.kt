@@ -83,12 +83,14 @@ class ChapterRunCoordinator(
         val policy = when (safe.phase) {
             DurableRunPhase.READY_TO_COMMIT -> RunResumePolicy.RESTORE_RESULT
             DurableRunPhase.COMMITTING -> RunResumePolicy.RESUME_POST_COMMIT
+            DurableRunPhase.REVIEWING -> RunResumePolicy.RESUME_REVIEW
             DurableRunPhase.GENERATING, DurableRunPhase.INTERRUPTED -> RunResumePolicy.CONTINUE_GENERATION
             DurableRunPhase.COMPLETE -> RunResumePolicy.NONE
         }
         val message = when (policy) {
             RunResumePolicy.RESTORE_RESULT -> "检测到已完成但尚未保存的生成结果，已恢复；不会重新请求模型。"
             RunResumePolicy.RESUME_POST_COMMIT -> "检测到未完成的章节后处理 Run；再次保存会从断点继续，不重复已完成模型调用。"
+            RunResumePolicy.RESUME_REVIEW -> "检测到未完成的 Agent 复盘；再次复盘会复用已经返回的模型结果，只补未完成落库。"
             RunResumePolicy.CONTINUE_GENERATION -> "检测到被中断的生成 Run；再次生成会从最近持久化阶段继续，已完成阶段不会重跑。"
             RunResumePolicy.NONE -> ""
         }
@@ -123,6 +125,9 @@ class ChapterRunCoordinator(
             existing.generationResult.chapter.content.takeIf(String::isNotBlank)?.let(onDelta)
             existing.events.mapNotNull(DurableRunEvent::toUi).forEach(onRunEvent)
             return existing.generationResult
+        }
+        if (existing?.phase == DurableRunPhase.REVIEWING && !forceNew) {
+            error("当前章节还有未完成的 Agent 复盘断点，请先继续复盘或在 Run 恢复中心放弃该断点。")
         }
         if (forceNew) checkpointStore.clear(snapshot.novel.id, draft.chapterNumber)
 
@@ -298,7 +303,7 @@ class ChapterRunCoordinator(
             if (execution == null) {
                 execution = runCatching { executionEngine.assess(working.snapshot, working.draft, result.chapter) }.getOrNull()
                 durable = durable.copy(executionRecord = execution)
-                checkpointStore.save(durable) // paid model output first, side effect second
+                checkpointStore.save(durable)
             }
             if (execution != null) {
                 executionScore = execution!!.completionScore
@@ -356,7 +361,7 @@ class ChapterRunCoordinator(
                         executionEngine.mergeSelectivePlan(working.snapshot, candidate, execution?.affectedFutureChapters.orEmpty())
                     } else candidate
                     durable = durable.copy(autonomousPlan = plan)
-                    checkpointStore.save(durable) // paid planning output first
+                    checkpointStore.save(durable)
                 }
                 runCatching {
                     store.saveStructure(AutonomousStoryPlanner(gateway).apply(working.snapshot, plan!!), working.draft)
@@ -389,13 +394,60 @@ class ChapterRunCoordinator(
         )
     }
 
-    suspend fun reviewSavedChapter(snapshot: StorySnapshot, draft: ChapterDraft, gateway: AiGateway, onRunEvent: (RunEvent) -> Unit = {}): ChapterRunReviewOutcome {
-        onRunEvent(RunEvent(RunStage.CANDIDATE, RunStatus.RUNNING, "手动 Agent 复盘：事实先进入 Candidate"))
-        val review = NovelAgentEngine(gateway).reviewChapter(snapshot, draft)
-        val staged = CandidateCanonEngine.stage(snapshot, draft, review)
-        val persisted = store.saveStructure(staged.snapshot, draft)
-        onRunEvent(RunEvent(RunStage.CANDIDATE, RunStatus.SUCCESS, "新增 ${staged.stagedCount} 条 Candidate"))
-        return ChapterRunReviewOutcome(persisted, review, staged.stagedCount, staged.autoConfirmedCount)
+    suspend fun reviewSavedChapter(
+        snapshot: StorySnapshot,
+        draft: ChapterDraft,
+        gateway: AiGateway,
+        onRunEvent: (RunEvent) -> Unit = {},
+    ): ChapterRunReviewOutcome {
+        val fingerprint = chapterRunFingerprint(snapshot, draft)
+        val stored = checkpointStore.load(snapshot.novel.id, draft.chapterNumber)
+        var durable = stored?.takeIf { matches(it, snapshot, draft) && it.phase == DurableRunPhase.REVIEWING }
+            ?: ChapterRunCheckpoint(
+                runId = UUID.randomUUID().toString(),
+                novelId = snapshot.novel.id,
+                chapterNumber = draft.chapterNumber,
+                inputFingerprint = fingerprint,
+                phase = DurableRunPhase.REVIEWING,
+                currentStage = RunStage.CANDIDATE.name,
+                note = "手动 Agent 复盘正在执行；模型结果会先于 Candidate 落库持久化",
+            )
+        durable = durable.copy(phase = DurableRunPhase.REVIEWING)
+        checkpointStore.save(durable)
+
+        fun emit(event: RunEvent) {
+            durable = durable.withEvent(event)
+            checkpointStore.save(durable)
+            onRunEvent(event)
+        }
+
+        emit(RunEvent(RunStage.CANDIDATE, RunStatus.RUNNING, "手动 Agent 复盘：事实先进入 Candidate"))
+        try {
+            var review = durable.agentReview
+            if (review == null) {
+                review = NovelAgentEngine(gateway).reviewChapter(snapshot, draft)
+                durable = durable.copy(
+                    agentReview = review,
+                    note = "Agent 模型结果已持久化；即使现在进程退出也不会重复复盘调用",
+                )
+                checkpointStore.save(durable)
+            }
+            val staged = CandidateCanonEngine.stage(snapshot, draft, review)
+            val persisted = store.saveStructure(staged.snapshot, draft)
+            emit(RunEvent(RunStage.CANDIDATE, RunStatus.SUCCESS, "新增 ${staged.stagedCount} 条 Candidate · 复盘结果已安全落库"))
+            durable = durable.copy(phase = DurableRunPhase.COMPLETE)
+            checkpointStore.save(durable)
+            checkpointStore.clear(snapshot.novel.id, draft.chapterNumber)
+            return ChapterRunReviewOutcome(persisted, review, staged.stagedCount, staged.autoConfirmedCount)
+        } catch (cancelled: CancellationException) {
+            durable = durable.copy(phase = DurableRunPhase.REVIEWING, note = "Agent 复盘被中断；已返回的模型结果仍保留")
+            checkpointStore.save(durable)
+            throw cancelled
+        } catch (error: Throwable) {
+            durable = durable.copy(phase = DurableRunPhase.REVIEWING, note = error.message ?: "Agent 复盘未完成")
+            checkpointStore.save(durable)
+            throw error
+        }
     }
 
     suspend fun confirmCandidate(snapshot: StorySnapshot, draft: ChapterDraft, candidateId: String) =
