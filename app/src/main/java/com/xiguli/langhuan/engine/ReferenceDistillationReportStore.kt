@@ -142,25 +142,16 @@ class ReferenceDistillationReportStore(private val context: Context) {
     fun kindCounts(report: ReferenceDistillationReport): Map<String, Int> =
         allItems(report).groupingBy { it.kind }.eachCount()
 
-    /**
-     * 兼容旧调用。V2 会给模型一份经过分层、多样性采样的参考包，而不是只塞最终摘要。
-     */
     fun promptContext(selectedTaskIds: List<String>, maxChars: Int = 13_000): String {
         val selected = selectedReports(selectedTaskIds)
         if (selected.isEmpty()) return ""
         val header = buildHeader(activeRetrieval = false)
         val remaining = (maxChars - header.length).coerceAtLeast(1_600)
         val perReportBudget = (remaining / selected.size).coerceIn(2_200, 7_500)
-        val body = selected.mapIndexed { index, report ->
-            buildReferencePacket(index, report, perReportBudget)
-        }.joinToString("\n")
+        val body = selected.mapIndexed { index, report -> buildReferencePacket(index, report, perReportBudget) }.joinToString("\n")
         return (header + body).take(maxChars)
     }
 
-    /**
-     * V2 主动检索：根据当前问题先在完整蒸馏库中排序，再只发送相关 DNA。
-     * allowedKinds 用于把“原作事实问答”和“原创迁移”彻底隔离，防止 Story DNA 专名泄漏进新书正文。
-     */
     fun searchContext(
         selectedTaskIds: List<String>,
         query: String,
@@ -184,9 +175,7 @@ class ReferenceDistillationReportStore(private val context: Context) {
                     if (item.evidence.isNotBlank()) append(" [${item.evidence.take(100)}]")
                     appendLine()
                 }
-                if (ranked.isEmpty() && report.summary.isNotBlank()) {
-                    appendLine("STYLE_OVERVIEW: ${report.summary.take(420)}")
-                }
+                if (ranked.isEmpty() && report.summary.isNotBlank()) appendLine("STYLE_OVERVIEW: ${report.summary.take(420)}")
             }.take(perReportBudget)
         }
         return (header + blocks.joinToString("\n")).take(maxChars)
@@ -207,16 +196,10 @@ class ReferenceDistillationReportStore(private val context: Context) {
             available += candidates.size
             matched += rankItems(candidates, terms, query).take(maxItemsPerReport).size
         }
-        return ReferenceDnaUsage(
-            reportCount = reports.size,
-            matchedItems = matched,
-            availableItems = available,
-            titles = reports.map { it.title },
-        )
+        return ReferenceDnaUsage(reports.size, matched, available, reports.map { it.title })
     }
 
-    private fun selectedReports(ids: List<String>): List<ReferenceDistillationReport> =
-        ids.distinct().mapNotNull(::load)
+    private fun selectedReports(ids: List<String>): List<ReferenceDistillationReport> = ids.distinct().mapNotNull(::load)
 
     private fun buildHeader(activeRetrieval: Boolean): String = buildString {
         appendLine(if (activeRetrieval) "【本轮主动检索的参考 DNA】" else "【用户显式选择的参考双层 DNA】")
@@ -238,17 +221,17 @@ class ReferenceDistillationReportStore(private val context: Context) {
             appendLine("覆盖：${coverageLabel(report)}；${coverageDescription(report)}；可检索 DNA=${sourceItems.size}")
             if (story.isNotEmpty()) {
                 appendLine("【Story DNA / 原作事实层】")
-                story.forEach(::appendItem)
+                story.forEach { item -> appendItem(item) }
             }
             if (report.overview.isNotBlank()) appendLine("【作品结构总览】${report.overview.take(1_100)}")
             if (report.summary.isNotBlank()) appendLine("【Style DNA 摘要】${report.summary.take(650)}")
             if (style.isNotEmpty()) {
                 appendLine("【Style DNA / 写法层】")
-                style.forEach(::appendItem)
+                style.forEach { item -> appendItem(item) }
             }
             if (transfer.isNotEmpty()) {
                 appendLine("【原创迁移边界】")
-                transfer.forEach(::appendItem)
+                transfer.forEach { item -> appendItem(item) }
             }
         }.take(maxChars)
     }
@@ -259,17 +242,9 @@ class ReferenceDistillationReportStore(private val context: Context) {
         appendLine()
     }
 
-    private fun rankItems(
-        candidates: List<ReferenceDistillationReportItem>,
-        terms: Set<String>,
-        rawQuery: String,
-    ): List<ReferenceDistillationReportItem> = candidates
+    private fun rankItems(candidates: List<ReferenceDistillationReportItem>, terms: Set<String>, rawQuery: String): List<ReferenceDistillationReportItem> = candidates
         .map { it to scoreItem(it, terms, rawQuery) }
-        .sortedWith(
-            compareByDescending<Pair<ReferenceDistillationReportItem, Int>> { it.second }
-                .thenBy { kindPriority(it.first.kind) }
-                .thenBy { it.first.dimension },
-        )
+        .sortedWith(compareByDescending<Pair<ReferenceDistillationReportItem, Int>> { it.second }.thenBy { kindPriority(it.first.kind) }.thenBy { it.first.dimension })
         .map { it.first }
         .distinctBy(::itemKey)
 
@@ -277,45 +252,33 @@ class ReferenceDistillationReportStore(private val context: Context) {
         val kind = normalizeKind(change.subject.trim().uppercase()) ?: return null
         val value = change.after.trim().ifBlank { change.before.trim() }
         if (value.isBlank()) return null
-        return ReferenceDistillationReportItem(
-            kind = kind,
-            dimension = change.field.trim().ifBlank { kind },
-            value = value.take(560),
-            evidence = change.evidence.trim().take(120),
-        )
+        return ReferenceDistillationReportItem(kind, change.field.trim().ifBlank { kind }, value.take(560), change.evidence.trim().take(120))
     }
 
-    private fun parseObservationItems(observation: String): List<ReferenceDistillationReportItem> = observation
-        .lineSequence()
-        .map(String::trim)
-        .mapNotNull { line ->
-            val colon = line.indexOf(':')
-            val slash = line.indexOf('/')
-            if (slash <= 0 || colon <= slash + 1) return@mapNotNull null
-            val kind = normalizeKind(line.substring(0, slash).trim().uppercase()) ?: return@mapNotNull null
-            val dimension = line.substring(slash + 1, colon).trim().ifBlank { kind }
-            var value = line.substring(colon + 1).trim()
-            if (value.isBlank()) return@mapNotNull null
-            var evidence = ""
-            val evidenceStart = value.lastIndexOf(" [")
-            if (evidenceStart >= 0 && value.endsWith(']')) {
-                evidence = value.substring(evidenceStart + 2, value.length - 1).trim()
-                value = value.substring(0, evidenceStart).trim()
-            }
-            ReferenceDistillationReportItem(kind, dimension, value.take(560), evidence.take(120))
+    private fun parseObservationItems(observation: String): List<ReferenceDistillationReportItem> = observation.lineSequence().map(String::trim).mapNotNull { line ->
+        val colon = line.indexOf(':')
+        val slash = line.indexOf('/')
+        if (slash <= 0 || colon <= slash + 1) return@mapNotNull null
+        val kind = normalizeKind(line.substring(0, slash).trim().uppercase()) ?: return@mapNotNull null
+        val dimension = line.substring(slash + 1, colon).trim().ifBlank { kind }
+        var value = line.substring(colon + 1).trim()
+        if (value.isBlank()) return@mapNotNull null
+        var evidence = ""
+        val evidenceStart = value.lastIndexOf(" [")
+        if (evidenceStart >= 0 && value.endsWith(']')) {
+            evidence = value.substring(evidenceStart + 2, value.length - 1).trim()
+            value = value.substring(0, evidenceStart).trim()
         }
-        .toList()
+        ReferenceDistillationReportItem(kind, dimension, value.take(560), evidence.take(120))
+    }.toList()
 
     private fun allItems(report: ReferenceDistillationReport): List<ReferenceDistillationReportItem> =
-        (report.retrievalItems.ifEmpty { report.items } + report.items)
-            .map(::normalizeItem)
-            .distinctBy(::itemKey)
+        (report.retrievalItems.ifEmpty { report.items } + report.items).map(::normalizeItem).distinctBy(::itemKey)
 
     private fun normalizeItem(item: ReferenceDistillationReportItem): ReferenceDistillationReportItem =
         if (item.kind.equals("DNA", true)) item.copy(kind = "STYLE") else item.copy(kind = item.kind.uppercase())
 
-    private fun itemKey(item: ReferenceDistillationReportItem): String =
-        "${item.kind}|${item.dimension.uppercase()}|${normalizeForKey(item.value)}"
+    private fun itemKey(item: ReferenceDistillationReportItem): String = "${item.kind}|${item.dimension.uppercase()}|${normalizeForKey(item.value)}"
 
     private fun scoreItem(item: ReferenceDistillationReportItem, terms: Set<String>, rawQuery: String): Int {
         val haystack = "${item.kind} ${item.dimension} ${item.value}".lowercase()
@@ -336,10 +299,7 @@ class ReferenceDistillationReportStore(private val context: Context) {
     private fun queryTerms(query: String): Set<String> {
         val normalized = query.lowercase().replace(Regex("[，。！？、,.!?;；:：()（）《》“”\\\"']"), " ")
         val terms = normalized.split(Regex("\\s+")).filter { it.length >= 2 }.toMutableSet()
-        val cues = listOf(
-            "主角", "配角", "人物", "能力", "世界观", "世界", "规则", "关系", "势力", "地点", "冲突", "谜团", "主题", "剧情", "结局",
-            "文风", "节奏", "对白", "悬念", "氛围", "结构", "开头", "章末", "塑造", "成长", "场景", "正文", "审稿", "主编",
-        )
+        val cues = listOf("主角", "配角", "人物", "能力", "世界观", "世界", "规则", "关系", "势力", "地点", "冲突", "谜团", "主题", "剧情", "结局", "文风", "节奏", "对白", "悬念", "氛围", "结构", "开头", "章末", "塑造", "成长", "场景", "正文", "审稿", "主编")
         cues.filter { normalized.contains(it) }.forEach(terms::add)
         return terms
     }
@@ -378,12 +338,8 @@ class ReferenceDistillationReportStore(private val context: Context) {
 
     fun loadOrArchiveFallback(taskId: String, title: String): ReferenceDistillationReport? {
         load(taskId)?.let { return it }
-        val entry = CreationResearchArchiveStore(context).load().entries.firstOrNull {
-            normalize(it.target) == normalize(title)
-        } ?: return null
-        val source = entry.sources.firstOrNull {
-            it.url.startsWith("local://distillation/") || it.title.startsWith("[本地蒸馏]")
-        } ?: return null
+        val entry = CreationResearchArchiveStore(context).load().entries.firstOrNull { normalize(it.target) == normalize(title) } ?: return null
+        val source = entry.sources.firstOrNull { it.url.startsWith("local://distillation/") || it.title.startsWith("[本地蒸馏]") } ?: return null
         return ReferenceDistillationReport(
             taskId = taskId,
             title = title.ifBlank { entry.target },
@@ -400,9 +356,7 @@ class ReferenceDistillationReportStore(private val context: Context) {
         )
     }
 
-    fun delete(taskId: String) {
-        runCatching { reportFile(taskId).delete() }
-    }
+    fun delete(taskId: String) { runCatching { reportFile(taskId).delete() } }
 
     private fun ReferenceDistillationReport.normalizeKinds(): ReferenceDistillationReport = copy(
         items = items.map(::normalizeItem),
@@ -424,9 +378,7 @@ class ReferenceDistillationReportStore(private val context: Context) {
     private fun reportFile(taskId: String): File = File(root, "${safeId(taskId)}.json")
     private fun safeId(value: String): String = value.replace(Regex("[^A-Za-z0-9._-]"), "_").take(96)
     private fun normalize(value: String): String = value.lowercase().replace(Regex("[《》“”\\\"'\\s·._—-]"), "")
-    private fun normalizeForKey(value: String): String = value.lowercase()
-        .replace(Regex("[\\s，。！？、,.!?;；:：()（）《》“”\\\"'·._—-]"), "")
-        .take(200)
+    private fun normalizeForKey(value: String): String = value.lowercase().replace(Regex("[\\s，。！？、,.!?;；:：()（）《》“”\\\"'·._—-]"), "").take(200)
 
     private fun computeCoverageGrade(chapters: Int, samples: Int): String = when {
         chapters <= 0 || samples <= 0 -> "旧版摘要"
