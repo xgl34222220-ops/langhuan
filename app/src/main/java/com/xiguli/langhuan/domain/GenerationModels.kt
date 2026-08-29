@@ -59,6 +59,14 @@ data class StateChange(
     val evidence: String = "",
 )
 
+/** Operational attribution only; never Canon/RAG. */
+@Serializable
+data class ModelUsageAttribution(
+    val task: String,
+    val providerId: String,
+    val modelId: String,
+)
+
 object GeneratedChapterSerializer : KSerializer<GeneratedChapter> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("GeneratedChapter")
 
@@ -275,6 +283,8 @@ data class ConsistencyIssue(
 data class GenerationResult(
     val chapter: GeneratedChapter,
     val issues: List<ConsistencyIssue>,
+    /** Frozen task/provider/model map from the run that produced this result. */
+    val modelAttributions: List<ModelUsageAttribution> = emptyList(),
 ) {
     val canCommit: Boolean
         get() = issues.none { it.severity == IssueSeverity.BLOCKING }

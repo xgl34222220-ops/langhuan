@@ -41,11 +41,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.StoredAiProvider
+import com.xiguli.langhuan.engine.AiModelTelemetryStore
 import com.xiguli.langhuan.engine.AiTaskRoutingStore
 import com.xiguli.langhuan.engine.AiTaskType
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.ModelCapabilityProfile
 import com.xiguli.langhuan.engine.ModelCapabilityProfiler
+import com.xiguli.langhuan.engine.ModelRecommendation
+import com.xiguli.langhuan.engine.ModelTaskTelemetry
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.TaskModelRoute
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,12 +66,14 @@ data class TaskModelRoutingUiState(
     val isLoadingModels: Boolean = false,
     val message: String? = null,
     val error: String? = null,
+    val recommendations: Map<AiTaskType, ModelRecommendation> = emptyMap(),
 )
 
 class TaskModelRoutingViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PersistentStoryRepository(application)
     private val detector = ProviderAutoDetector()
     private val routing = AiTaskRoutingStore(application)
+    private val telemetry = AiModelTelemetryStore(application)
     private val _state = MutableStateFlow(TaskModelRoutingUiState(routes = routing.routes()))
     val state: StateFlow<TaskModelRoutingUiState> = _state.asStateFlow()
 
@@ -79,7 +84,14 @@ class TaskModelRoutingViewModel(application: Application) : AndroidViewModel(app
                     val selected = current.selectedProviderId?.takeIf { id -> providers.any { it.id == id } }
                         ?: providers.firstOrNull { it.isDefault }?.id
                         ?: providers.firstOrNull()?.id
-                    current.copy(providers = providers, selectedProviderId = selected, routes = routing.routes())
+                    current.copy(
+                        providers = providers,
+                        selectedProviderId = selected,
+                        routes = routing.routes(),
+                        recommendations = AiTaskType.entries.mapNotNull { task ->
+                            telemetry.recommendation(task, providers)?.let { task to it }
+                        }.toMap(),
+                    )
                 }
             }
         }
@@ -135,6 +147,9 @@ class TaskModelRoutingViewModel(application: Application) : AndroidViewModel(app
 
     fun profile(provider: StoredAiProvider, model: DiscoveredModel): ModelCapabilityProfile =
         routing.profile(provider, model.id, model)
+
+    fun taskStats(task: AiTaskType, providerId: String, modelId: String): ModelTaskTelemetry? =
+        telemetry.stats(task).firstOrNull { it.providerId == providerId && it.modelId == modelId }
 
     private fun loadModels(providerId: String) {
         val provider = _state.value.providers.firstOrNull { it.id == providerId } ?: return
@@ -228,6 +243,22 @@ fun TaskModelRoutingPanel(viewModel: TaskModelRoutingViewModel) {
                             Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
                         }
                         Text(task.description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        state.recommendations[task]?.let { recommendation ->
+                            Text(
+                                "实测推荐：${recommendation.providerName} · ${recommendation.modelId} · ${recommendation.score}分 · ${recommendation.confidence}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                recommendation.reason,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } ?: Text(
+                            "实测推荐：暂无真实运行样本，先按能力画像选择；琅嬛不会自动换模型。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
                         if (expanded) {
                             if (route != null) {
@@ -285,6 +316,21 @@ fun TaskModelRoutingPanel(viewModel: TaskModelRoutingViewModel) {
                                                     AssistChip(onClick = {}, label = { Text(badge, style = MaterialTheme.typography.labelSmall) })
                                                 }
                                             }
+                                            val measured = viewModel.taskStats(task, selectedProvider.id, model.id)
+                                            if (measured != null) {
+                                                val firstToken = measured.averageFirstTokenMs.takeIf { it > 0 }?.let { " · 首字 ${it}ms" }.orEmpty()
+                                                val throughput = measured.charsPerSecond.takeIf { it > 0 }?.let { " · ${it.toInt()}字/s" }.orEmpty()
+                                                val quality = if (task == AiTaskType.PROSE_AUTHOR && measured.qualitySamples > 0) {
+                                                    " · 一审通过 ${(measured.qualityPassRate * 100).toInt()}% · 已采用 ${measured.userAccepted}次"
+                                                } else if (measured.structuredAttempts > 0) {
+                                                    " · 结构化成功 ${(measured.structuredRate * 100).toInt()}%"
+                                                } else ""
+                                                Text(
+                                                    "实测 ${measured.calls} 次 · 成功 ${(measured.successRate * 100).toInt()}%$firstToken$throughput$quality",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
                                             if (warnings.isNotEmpty()) {
                                                 Text(
                                                     warnings.joinToString("；"),
@@ -303,7 +349,7 @@ fun TaskModelRoutingPanel(viewModel: TaskModelRoutingViewModel) {
 
             Spacer(Modifier.size(2.dp))
             Text(
-                "能力画像中的上下文窗口为保守估算值；中转站没有返回官方参数时会标记为未知或估算，不会当作官方规格。",
+                "能力画像中的上下文窗口为保守估算值；实测分数只来自本机真实 Run。接口未返回 token usage / 价格时不伪造金额成本，琅嬛也不会根据推荐自动切换模型。",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

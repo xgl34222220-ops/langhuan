@@ -42,6 +42,8 @@ data class GenerationStageCheckpoint(
     val metadataAttempted: Boolean = false,
     val metadataSucceeded: Boolean = false,
     val metadata: com.xiguli.langhuan.domain.GeneratedChapter? = null,
+    val modelAttributions: List<com.xiguli.langhuan.domain.ModelUsageAttribution> = emptyList(),
+    val telemetrySignals: List<String> = emptyList(),
 )
 
 @Serializable

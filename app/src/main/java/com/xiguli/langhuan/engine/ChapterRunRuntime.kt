@@ -61,6 +61,7 @@ class ChapterRunRuntime(application: Application) {
     private val app = application.applicationContext
     private val repository = PersistentStoryRepository(app)
     private val projects = StoryProjectManager(app)
+    private val modelTelemetry = AiModelTelemetryStore(app)
     private val coordinator = ChapterRunCoordinator(
         AppChapterRunStore(repository, projects),
         PersistentChapterRunCheckpointStore(app),
@@ -292,6 +293,9 @@ class ChapterRunRuntime(application: Application) {
                 gateway = gateway,
                 onRunEvent = { event -> emit(command, event, canStop = false) },
             )
+            command.result.modelAttributions
+                .firstOrNull { it.task == AiTaskType.PROSE_AUTHOR.name }
+                ?.let { modelTelemetry.recordSignal(it, AiQualitySignal.USER_ACCEPTED) }
             applyPersistedOutcome(
                 persisted = outcome.persisted,
                 review = outcome.review,

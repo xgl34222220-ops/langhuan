@@ -3,6 +3,7 @@ package com.xiguli.langhuan.engine
 import android.content.Context
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.StoredAiProvider
+import com.xiguli.langhuan.domain.ModelUsageAttribution
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -233,6 +234,7 @@ class TaskRoutingSession internal constructor(
     val defaultProvider: StoredAiProvider,
     val defaultGateway: AiGateway,
     private val selections: Map<AiTaskType, ResolvedTaskModel>,
+    private val telemetry: AiModelTelemetryStore,
 ) {
     fun selection(task: AiTaskType): ResolvedTaskModel = selections[task]
         ?: ResolvedTaskModel(
@@ -252,12 +254,26 @@ class TaskRoutingSession internal constructor(
             "全局 ${defaultProvider.model} · ${overrides.size} 个任务覆盖"
         }
     }
+
+    fun modelAttributions(): List<ModelUsageAttribution> = AiTaskType.entries.map { task ->
+        val selected = selection(task)
+        ModelUsageAttribution(task.name, selected.provider.id, selected.modelId)
+    }.distinct()
+
+    fun recordQualitySignal(task: AiTaskType, signal: AiQualitySignal) {
+        val selected = selection(task)
+        telemetry.recordSignal(
+            ModelUsageAttribution(task.name, selected.provider.id, selected.modelId),
+            signal,
+        )
+    }
 }
 
 class TaskModelRouter(context: Context) {
     private val app = context.applicationContext
     private val repository = PersistentStoryRepository(app)
     private val store = AiTaskRoutingStore(app)
+    private val telemetry = AiModelTelemetryStore(app)
 
     suspend fun snapshot(): TaskRoutingSession {
         val providers = repository.observeProviders().first()
@@ -276,21 +292,22 @@ class TaskModelRouter(context: Context) {
             val provider = if (safe) candidateProvider else defaultProvider
             val model = if (safe) candidateModel else defaultProvider.model
             val profile = store.profile(provider, model)
-            val selectedGateway = if (!safe || (provider.id == defaultProvider.id && model == defaultProvider.model)) {
+            val baseGateway = if (!safe || (provider.id == defaultProvider.id && model == defaultProvider.model)) {
                 defaultGateway
             } else {
                 gateway(provider, model)
             }
+            val attribution = ModelUsageAttribution(task.name, provider.id, model)
             selections[task] = ResolvedTaskModel(
                 task = task,
                 provider = provider,
                 modelId = model,
                 profile = profile,
                 inheritedGlobal = !safe,
-                gateway = selectedGateway,
+                gateway = TelemetryAiGateway(baseGateway, attribution, telemetry),
             )
         }
-        return TaskRoutingSession(defaultProvider, defaultGateway, selections)
+        return TaskRoutingSession(defaultProvider, defaultGateway, selections, telemetry)
     }
 
     private suspend fun gateway(provider: StoredAiProvider, modelId: String): UniversalAiGateway = UniversalAiGateway(
@@ -312,7 +329,7 @@ class TaskModelRouter(context: Context) {
  */
 class TaskDispatchingAiGateway(
     private val session: TaskRoutingSession,
-) : AiGateway {
+) : AiGateway, AiTaskAttributionSource, AiTaskQualityFeedback {
     val summary: String get() = session.routeSummary()
 
     override suspend fun generate(prompt: PromptBundle) = gateway(prompt).generate(prompt)
@@ -323,6 +340,12 @@ class TaskDispatchingAiGateway(
         gateway(prompt).generateTextStreaming(prompt, onDelta)
 
     fun routeFor(prompt: PromptBundle): AiTaskType? = AiPromptTaskClassifier.classify(prompt)
+
+    override fun modelAttributions(): List<ModelUsageAttribution> = session.modelAttributions()
+
+    override fun recordQualitySignal(task: AiTaskType, signal: AiQualitySignal) {
+        session.recordQualitySignal(task, signal)
+    }
 
     private fun gateway(prompt: PromptBundle): AiGateway {
         val task = AiPromptTaskClassifier.classify(prompt) ?: return session.defaultGateway

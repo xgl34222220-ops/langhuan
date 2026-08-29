@@ -29,6 +29,17 @@ class GenerationPipeline(
             checkpoint = next
             onCheckpoint(next)
         }
+        if (checkpoint.modelAttributions.isEmpty()) {
+            val frozen = (aiGateway as? AiTaskAttributionSource)?.modelAttributions().orEmpty()
+            if (frozen.isNotEmpty()) persist(checkpoint.copy(modelAttributions = frozen))
+        }
+        fun signalOnce(task: AiTaskType, signal: AiQualitySignal) {
+            val feedback = aiGateway as? AiTaskQualityFeedback ?: return
+            val key = "${task.name}:${signal.name}"
+            if (key in checkpoint.telemetrySignals) return
+            feedback.recordQualitySignal(task, signal)
+            persist(checkpoint.copy(telemetrySignals = (checkpoint.telemetrySignals + key).distinct()))
+        }
 
         // 1) Draft prose. If this model call already completed, never send it again.
         val draftProse = if (checkpoint.draftProse.isNotBlank()) {
@@ -52,6 +63,9 @@ class GenerationPipeline(
         }
 
         val initialQuality = novelizationEngine.analyze(draftProse)
+        if (initialQuality.requiresNovelization) {
+            signalOnce(AiTaskType.PROSE_AUTHOR, AiQualitySignal.NOVELIZATION_REQUIRED)
+        }
         var prose = draftProse
         var novelizationSucceeded = checkpoint.novelizationSucceeded
 
@@ -123,6 +137,13 @@ class GenerationPipeline(
             if (quality.requiresNovelization) addAll(quality.problems)
         }.distinct()
         val firstRejected = adversarialEditor.requestsRewrite(firstReview) || firstDeterministic.isNotEmpty()
+        if (firstReview != null || firstDeterministic.isNotEmpty()) {
+            signalOnce(
+                AiTaskType.PROSE_AUTHOR,
+                if (firstRejected) AiQualitySignal.QUALITY_REJECTED else AiQualitySignal.QUALITY_PASSED,
+            )
+        }
+        if (firstRejected) signalOnce(AiTaskType.PROSE_AUTHOR, AiQualitySignal.REWRITE_REQUIRED)
         emit(
             RunStage.EDITOR_REVIEW_1,
             when {
@@ -307,6 +328,7 @@ class GenerationPipeline(
         }.distinctBy { listOf(it.code, it.message, it.evidence) }
         val blockingCount = issues.count { it.severity == IssueSeverity.BLOCKING }
         val warningCount = issues.count { it.severity == IssueSeverity.WARNING }
+        if (blockingCount > 0) signalOnce(AiTaskType.PROSE_AUTHOR, AiQualitySignal.PIPELINE_BLOCKED)
         emit(
             RunStage.CONSISTENCY,
             if (blockingCount > 0) RunStatus.WARNING else RunStatus.SUCCESS,
@@ -317,7 +339,11 @@ class GenerationPipeline(
             if (blockingCount > 0) RunStatus.WARNING else RunStatus.SUCCESS,
             if (blockingCount > 0) "生成完成，但存在阻止保存的问题" else "正文已通过生成链，可查看结果并确认保存",
         )
-        return GenerationResult(chapter = chapter, issues = issues)
+        return GenerationResult(
+            chapter = chapter,
+            issues = issues,
+            modelAttributions = checkpoint.modelAttributions,
+        )
     }
 
     private fun cleanVisibleProse(text: String): String {
