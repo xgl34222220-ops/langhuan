@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.xiguli.langhuan.MainActivity
-import com.xiguli.langhuan.R
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -111,13 +110,11 @@ class ChapterRunForegroundService : Service() {
         ChapterRunKeepAliveRegistry.update(state)
         val manager = getSystemService(NotificationManager::class.java)
         val notification = buildNotification(state)
-        if (ChapterRunKeepAliveRegistry.state.value.active) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                @Suppress("DEPRECATION")
-                startForeground(NOTIFICATION_ID, notification)
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            @Suppress("DEPRECATION")
+            startForeground(NOTIFICATION_ID, notification)
         }
         manager.notify(NOTIFICATION_ID, notification)
     }
@@ -138,7 +135,7 @@ class ChapterRunForegroundService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
             .setContentTitle(state.title)
             .setContentText(state.detail)
             .setStyle(Notification.BigTextStyle().bigText(state.detail))
@@ -155,7 +152,13 @@ class ChapterRunForegroundService : Service() {
                 stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            builder.addAction(Notification.Action.Builder(null, "停止生成", stopPending).build())
+            builder.addAction(
+                Notification.Action.Builder(
+                    android.R.drawable.ic_media_pause,
+                    "停止生成",
+                    stopPending,
+                ).build()
+            )
         }
         return builder.build()
     }
@@ -211,7 +214,11 @@ class ChapterRunForegroundService : Service() {
                 putExtra(EXTRA_DETAIL, detail)
                 putExtra(EXTRA_CAN_STOP, canStop)
             }
-            ContextCompat.startForegroundService(context, intent)
+            if (ChapterRunKeepAliveRegistry.state.value.active) {
+                context.startService(intent)
+            } else {
+                ContextCompat.startForegroundService(context, intent)
+            }
         }
 
         fun hide(context: Context) {
