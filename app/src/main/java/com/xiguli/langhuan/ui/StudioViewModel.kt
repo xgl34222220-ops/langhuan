@@ -30,7 +30,6 @@ import com.xiguli.langhuan.domain.OutlineNode
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.domain.TimelineEvent
-import com.xiguli.langhuan.engine.AgentMemoryApplier
 import com.xiguli.langhuan.engine.CandidateCanonEngine
 import com.xiguli.langhuan.engine.AutonomousStoryPlanner
 import com.xiguli.langhuan.engine.AutonomousExecutionEngine
@@ -670,9 +669,25 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             _state.update { it.copy(isAgentReviewing = true, error = null, agentReview = null) }
-            runCatching { NovelAgentEngine(gateway).reviewChapter(current.snapshot, current.draft) }
-                .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "Agent 章节复盘完成") } }
-                .onFailure { error -> _state.update { it.copy(isAgentReviewing = false, error = error.message ?: "Agent 章节复盘失败") } }
+            runCatching {
+                val review = NovelAgentEngine(gateway).reviewChapter(current.snapshot, current.draft)
+                val staged = CandidateCanonEngine.stage(current.snapshot, current.draft, review)
+                val persisted = projects.saveStructure(staged.snapshot, current.draft)
+                Triple(review, staged, persisted)
+            }.onSuccess { (review, staged, persisted) ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isAgentReviewing = false,
+                        agentReview = review,
+                        message = "Agent 复盘完成；${staged.stagedCount} 条事实已进入 Candidate${if (staged.autoConfirmedCount > 0) "，${staged.autoConfirmedCount} 条低风险状态自动确认" else ""}",
+                    )
+                }
+                refreshWorkspace()
+            }.onFailure { error ->
+                _state.update { it.copy(isAgentReviewing = false, error = error.message ?: "Agent 章节复盘失败") }
+            }
         }
     }
 
@@ -709,20 +724,6 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 _state.update { it.copy(isAuditing = false, error = error.message ?: "全书主编巡检失败") }
             }
         }
-    }
-
-    fun applyAgentMemory() {
-        val current = _state.value
-        val review = current.agentReview ?: return
-        if (busy(current) || review.memoryActions.isEmpty()) return
-        val staged = CandidateCanonEngine.stage(current.snapshot, current.draft, review)
-        val message = buildString {
-            append("已加入 ${staged.stagedCount} 条候选事实")
-            if (staged.autoConfirmedCount > 0) append("；${staged.autoConfirmedCount} 条正文可直接证明的低风险状态已自动确认")
-            append("。其余事实需在 Candidate / Canon 面板确认")
-        }
-        saveStructure(staged.snapshot, current.draft, message)
-        _state.update { it.copy(agentReview = null) }
     }
 
     fun confirmCandidateFact(candidateId: String) {
@@ -974,9 +975,25 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         }
 
                         _state.update { it.copy(isAgentReviewing = true) }
-                        runCatching { NovelAgentEngine(gateway).reviewChapter(working.snapshot, working.draft) }
-                            .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "正文已保存，Agent 复盘完成") } }
-                            .onFailure { _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") } }
+                        runCatching {
+                            val review = NovelAgentEngine(gateway).reviewChapter(working.snapshot, working.draft)
+                            val staged = CandidateCanonEngine.stage(working.snapshot, working.draft, review)
+                            val persisted = projects.saveStructure(staged.snapshot, working.draft)
+                            Triple(review, staged, persisted)
+                        }.onSuccess { (review, staged, persisted) ->
+                            working = persisted
+                            _state.update {
+                                it.copy(
+                                    snapshot = persisted.snapshot,
+                                    draft = persisted.draft,
+                                    isAgentReviewing = false,
+                                    agentReview = review,
+                                    message = "正文已保存；Agent 复盘完成，${staged.stagedCount} 条事实进入 Candidate${if (staged.autoConfirmedCount > 0) "，${staged.autoConfirmedCount} 条低风险状态自动确认" else ""}",
+                                )
+                            }
+                        }.onFailure {
+                            _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") }
+                        }
 
                         val selective = execution?.let(AutonomousExecutionEngine::shouldSelectiveReplan) == true
                         val fullRefresh = AutonomousStoryPlanner.shouldRefresh(working.snapshot, working.draft.chapterNumber)
