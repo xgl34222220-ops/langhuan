@@ -3,9 +3,9 @@ package com.xiguli.langhuan.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.xiguli.langhuan.LanghuanApplication
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.engine.ChapterRunCheckpoint
-import com.xiguli.langhuan.engine.ChapterRunKeepAliveRegistry
 import com.xiguli.langhuan.engine.DurableRunPhase
 import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
 import com.xiguli.langhuan.engine.RunEvent
@@ -47,6 +47,7 @@ data class RunCenterUiState(
 class RunCenterViewModel(application: Application) : AndroidViewModel(application) {
     private val checkpoints = PersistentChapterRunCheckpointStore(application)
     private val projects = StoryProjectManager(application)
+    private val runtime = (application as LanghuanApplication).chapterRunRuntime
     private val _state = MutableStateFlow(RunCenterUiState())
     val state: StateFlow<RunCenterUiState> = _state.asStateFlow()
     private var refreshRunning = false
@@ -75,10 +76,10 @@ class RunCenterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun open(item: RunCenterItemUi) {
-        val live = ChapterRunKeepAliveRegistry.state.value
-        if (live.active && (live.novelId != item.novelId || live.chapterNumber != item.chapterNumber)) {
+        val live = runtime.state.value
+        if (live.active && !live.matches(item.novelId, item.chapterNumber)) {
             _state.update {
-                it.copy(error = "第${live.chapterNumber}章还有后台任务正在执行。请先打开并停止当前任务，再切换到其他 Run。")
+                it.copy(error = "第${live.chapterNumber}章还有 Application 级后台任务正在执行。请先打开并停止当前任务，再切换到其他 Run。")
             }
             return
         }
@@ -101,11 +102,13 @@ class RunCenterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun abandon(item: RunCenterItemUi) {
-        if (ChapterRunKeepAliveRegistry.isActive(item.novelId, item.chapterNumber)) {
+        val live = runtime.state.value
+        if (live.active && live.matches(item.novelId, item.chapterNumber)) {
             _state.update { it.copy(error = "这个 Run 仍在执行，先停止当前生成再放弃断点。") }
             return
         }
         checkpoints.clear(item.novelId, item.chapterNumber)
+        runtime.clearTerminalState(item.novelId, item.chapterNumber)
         _state.update { state ->
             state.copy(items = state.items.filterNot { it.novelId == item.novelId && it.chapterNumber == item.chapterNumber })
         }
