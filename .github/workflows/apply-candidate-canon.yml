@@ -27,12 +27,13 @@ jobs:
         run: |
           grep -q 'CandidateCanonEngine.stage' app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt
           grep -q 'CandidateCanonPanel(state, vm)' app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt
-          grep -q '加入候选事实' app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt
+          grep -q '已经自动进入 Candidate 候选区' app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt
+          ! grep -q 'fun applyAgentMemory' app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt
       - name: Commit changes
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'feat: wire candidate canon into Agent flow'
+          git commit -m 'feat: auto-stage Agent facts before Canon'
           git push origin HEAD:stage/candidate-canon-0263
