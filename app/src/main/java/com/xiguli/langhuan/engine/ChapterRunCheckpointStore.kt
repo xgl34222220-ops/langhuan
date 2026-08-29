@@ -105,6 +105,9 @@ interface ChapterRunCheckpointStore {
     fun load(novelId: String, chapterNumber: Int): ChapterRunCheckpoint?
     fun save(checkpoint: ChapterRunCheckpoint)
     fun clear(novelId: String, chapterNumber: Int)
+
+    /** Enumerates operational checkpoints for Run Center. Implementations that cannot list may stay empty. */
+    fun list(): List<ChapterRunCheckpoint> = emptyList()
 }
 
 object NoopChapterRunCheckpointStore : ChapterRunCheckpointStore {
@@ -127,9 +130,17 @@ class PersistentChapterRunCheckpointStore(context: Context) : ChapterRunCheckpoi
 
     override fun load(novelId: String, chapterNumber: Int): ChapterRunCheckpoint? {
         val raw = prefs.getString(key(novelId, chapterNumber), null) ?: return null
-        return runCatching { json.decodeFromString(ChapterRunCheckpoint.serializer(), raw) }
-            .onFailure { prefs.edit().remove(key(novelId, chapterNumber)).commit() }
-            .getOrNull()
+        return decode(raw, key(novelId, chapterNumber))
+    }
+
+    override fun list(): List<ChapterRunCheckpoint> {
+        return prefs.all.entries
+            .mapNotNull { (key, value) ->
+                val raw = value as? String ?: return@mapNotNull null
+                decode(raw, key)
+            }
+            .filter { it.phase != DurableRunPhase.COMPLETE }
+            .sortedByDescending { it.updatedAt }
     }
 
     override fun save(checkpoint: ChapterRunCheckpoint) {
@@ -147,6 +158,12 @@ class PersistentChapterRunCheckpointStore(context: Context) : ChapterRunCheckpoi
 
     override fun clear(novelId: String, chapterNumber: Int) {
         prefs.edit().remove(key(novelId, chapterNumber)).commit()
+    }
+
+    private fun decode(raw: String, storageKey: String): ChapterRunCheckpoint? {
+        return runCatching { json.decodeFromString(ChapterRunCheckpoint.serializer(), raw) }
+            .onFailure { prefs.edit().remove(storageKey).commit() }
+            .getOrNull()
     }
 
     private fun key(novelId: String, chapterNumber: Int) = "$novelId:$chapterNumber"
