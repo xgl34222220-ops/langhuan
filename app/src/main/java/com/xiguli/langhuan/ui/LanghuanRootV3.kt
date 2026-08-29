@@ -21,6 +21,7 @@ private enum class RootRouteV3 {
     RUN_CENTER,
     AI_SETUP,
     COVER_STUDIO,
+    SKILLS,
 }
 
 /**
@@ -28,7 +29,7 @@ private enum class RootRouteV3 {
  *
  * 页面关系固定为：
  * 书架 -> 作品工作台 -> 阅读 / 写作 / AI助手 / 长篇监控 / 任务 / 封面工作室。
- * AI 设置是全局页；关闭子页面始终回到调用它的上一级，不再 finish/start Activity。
+ * Skills 是全局写作方法配置；AI 设置是全局页；关闭子页面始终回到调用它的上一级。
  */
 @Composable
 fun LanghuanRootV3(studioVm: StudioViewModel) {
@@ -39,14 +40,15 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     val writingVm: WritingFlowViewModel = viewModel()
     val runCenterVm: RunCenterViewModel = viewModel()
     val runCenterState by runCenterVm.state.collectAsStateWithLifecycle()
+    val skillVm: WritingSkillViewModel = viewModel()
     val coverGuard: CoverPersistenceGuardViewModel = viewModel()
 
     var route by remember { mutableStateOf(RootRouteV3.SHELF) }
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV3.SHELF) }
+    var returnAfterSkills by remember { mutableStateOf(RootRouteV3.SHELF) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
     var coverStoryId by remember { mutableStateOf<String?>(null) }
 
-    // 保持守卫与 Activity 生命周期一致，让旧 CoverComposer 写完同一路径后能立即版本化。
     @Suppress("UNUSED_VARIABLE")
     val keepCoverGuardAlive = coverGuard
 
@@ -61,9 +63,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     }
 
     LaunchedEffect(libraryState.openedBook?.id) {
-        libraryState.openedBook?.id?.let { id ->
-            studioVm.selectStory(id)
-        }
+        libraryState.openedBook?.id?.let { id -> studioVm.selectStory(id) }
     }
 
     LaunchedEffect(route, libraryState.openedBook?.id, coverStoryId) {
@@ -73,7 +73,6 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         }
     }
 
-    // 任务中心请求打开某一章时直接切到写作页，不再通过重启 Activity 重新挂载 UI。
     LaunchedEffect(runCenterState.openRequest?.token) {
         runCenterState.openRequest?.let { request ->
             runCenterVm.consumeOpenRequest()
@@ -105,21 +104,23 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         route = RootRouteV3.AI_SETUP
     }
 
+    fun openSkills(from: RootRouteV3) {
+        returnAfterSkills = from
+        route = RootRouteV3.SKILLS
+    }
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    ShelfV3(
+                    ShelfV4(
                         state = libraryState,
                         aiReady = studioState.provider.ready,
                         aiLabel = studioState.provider.activeProviderLabel,
                         onOpenBook = ::openBook,
                         onCreate = {
-                            if (studioState.provider.ready) {
-                                route = RootRouteV3.CREATION
-                            } else {
-                                openAiSetup(RootRouteV3.CREATION)
-                            }
+                            if (studioState.provider.ready) route = RootRouteV3.CREATION
+                            else openAiSetup(RootRouteV3.CREATION)
                         },
                         onReference = {
                             referenceLauncher.launch(
@@ -128,6 +129,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         },
                         onAiSetup = { openAiSetup(RootRouteV3.SHELF) },
                         onRunCenter = { route = RootRouteV3.RUN_CENTER },
+                        onSkills = { openSkills(RootRouteV3.SHELF) },
                     )
                 }
 
@@ -188,21 +190,14 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                     AgentPage(
                         state = studioState,
                         vm = studioVm,
-                        onProjectBackup = {
-                            backupLauncher.launch("${studioState.snapshot.novel.title}.lhproj")
-                        },
-                        onProjectRestore = {
-                            restoreLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
-                        },
+                        onProjectBackup = { backupLauncher.launch("${studioState.snapshot.novel.title}.lhproj") },
+                        onProjectRestore = { restoreLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) },
                         onClose = ::backToBook,
                     )
                 }
 
                 RootRouteV3.INTELLIGENCE -> {
-                    StoryIntelligencePage(
-                        state = studioState,
-                        onClose = ::backToBook,
-                    )
+                    StoryIntelligencePage(state = studioState, onClose = ::backToBook)
                 }
 
                 RootRouteV3.RUN_CENTER -> {
@@ -221,9 +216,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         onBack = {
                             route = if (returnAfterAiSetup == RootRouteV3.CREATION && !studioState.provider.ready) {
                                 RootRouteV3.SHELF
-                            } else {
-                                returnAfterAiSetup
-                            }
+                            } else returnAfterAiSetup
                         },
                         onDone = { route = returnAfterAiSetup },
                     )
@@ -238,6 +231,13 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                             onClose = { route = RootRouteV3.BOOK },
                         )
                     }
+                }
+
+                RootRouteV3.SKILLS -> {
+                    SkillsPageV3(
+                        viewModel = skillVm,
+                        onClose = { route = returnAfterSkills },
+                    )
                 }
             }
         }
