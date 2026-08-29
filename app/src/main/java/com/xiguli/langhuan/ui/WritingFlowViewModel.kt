@@ -3,6 +3,7 @@ package com.xiguli.langhuan.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.xiguli.langhuan.LanghuanApplication
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.domain.ChapterDraft
@@ -14,16 +15,14 @@ import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AgentReview
 import com.xiguli.langhuan.engine.AppChapterRunStore
 import com.xiguli.langhuan.engine.ChapterRunCoordinator
+import com.xiguli.langhuan.engine.ChapterRunRuntimeState
+import com.xiguli.langhuan.engine.ChapterRuntimeTaskKind
 import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
 import com.xiguli.langhuan.engine.RunEvent
-import com.xiguli.langhuan.engine.RunStage
-import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
 import com.xiguli.langhuan.engine.WritingFlowEngine
 import java.util.UUID
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -71,15 +70,23 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         AppChapterRunStore(repository, projects),
         PersistentChapterRunCheckpointStore(application),
     )
+    private val runtime = (application as LanghuanApplication).chapterRunRuntime
     private val _state = MutableStateFlow(WritingFlowUiState())
     val state: StateFlow<WritingFlowUiState> = _state.asStateFlow()
-    private var generationJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            runtime.state.collect(::syncRuntimeState)
+        }
+    }
 
     fun load(novelId: String) {
         if (novelId.isBlank()) return
         val current = _state.value
-        if (current.novelId == novelId && current.ready) return
-        generationJob?.cancel()
+        if (current.novelId == novelId && current.ready) {
+            syncRuntimeState(runtime.state.value)
+            return
+        }
         viewModelScope.launch {
             _state.value = WritingFlowUiState(novelId = novelId, isLoading = true)
             runCatching {
@@ -100,26 +107,21 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                         error = null,
                     )
                 }
-                restoreDurableRun(loaded.snapshot, loaded.draft)
+                val live = runtime.state.value
+                val hasRuntimeState = live.matches(loaded.snapshot.novel.id, loaded.draft.chapterNumber) &&
+                    (live.active || live.result != null || live.review != null || live.message != null || live.error != null)
+                if (hasRuntimeState) syncRuntimeState(live) else restoreDurableRun(loaded.snapshot, loaded.draft)
             }.onFailure { error ->
                 _state.update { it.copy(isLoading = false, error = error.message ?: "加载小说失败") }
             }
         }
     }
 
-    private fun emitRun(event: RunEvent) {
-        _state.update { state -> state.copy(runEvents = (state.runEvents + event).takeLast(96)) }
-    }
-
-    private fun emitRun(stage: RunStage, status: RunStatus, detail: String = "") {
-        emitRun(RunEvent(stage = stage, status = status, detail = detail))
-    }
-
     fun planScenes(instruction: String = "") {
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        if (current.busy) return
+        if (current.busy || runtime.state.value.active) return
         viewModelScope.launch {
             val gateway = runCatching { activeGateway() }.getOrElse {
                 _state.update { state -> state.copy(error = it.message ?: "请先配置 AI 服务") }
@@ -161,7 +163,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        if (current.busy || current.workingScenes.isEmpty()) return
+        if (current.busy || runtime.state.value.active || current.workingScenes.isEmpty()) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching {
@@ -183,70 +185,37 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun generate(extraInstruction: String = "") {
+        submitGenerate(extraInstruction, forceNew = false)
+    }
+
+    private fun submitGenerate(extraInstruction: String, forceNew: Boolean) {
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        if (current.busy) return
-        generationJob?.cancel()
-        generationJob = viewModelScope.launch {
-            try {
-                val gateway = activeGateway()
-                _state.update {
-                    it.copy(
-                        isGenerating = true,
-                        streamPreview = "",
-                        runEvents = emptyList(),
-                        result = null,
-                        review = null,
-                        memoryApplied = false,
-                        error = null,
-                    )
-                }
-                val workingDraft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan })
-                val result = chapterRuns.generate(
-                    snapshot = snapshot,
-                    draft = workingDraft,
-                    gateway = gateway,
-                    targetWords = 2_800,
-                    extraInstruction = extraInstruction,
-                    onDelta = { preview ->
-                        _state.update { state -> state.copy(streamPreview = preview) }
-                    },
-                    onRunEvent = ::emitRun,
-                )
-                _state.update {
-                    it.copy(
-                        isGenerating = false,
-                        streamPreview = result.chapter.content,
-                        result = result,
-                        message = if (result.canCommit) "正文已生成并通过阻断级检查" else "正文已生成，但存在阻断级一致性问题",
-                    )
-                }
-            } catch (_: CancellationException) {
-                emitRun(RunStage.READY_TO_COMMIT, RunStatus.WARNING, "你主动停止了生成；已收到的内容不会自动重发")
-                _state.update {
-                    it.copy(
-                        isGenerating = false,
-                        message = "已停止本次生成；已收到的内容不会自动二次请求",
-                    )
-                }
-            } catch (error: Throwable) {
-                emitRun(RunStage.READY_TO_COMMIT, RunStatus.FAILED, error.message ?: "正文生成失败")
-                _state.update {
-                    it.copy(
-                        isGenerating = false,
-                        error = error.message ?: "正文生成失败",
-                    )
-                }
-            } finally {
-                generationJob = null
-            }
+        if (current.busy || runtime.state.value.active) return
+        val workingDraft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan })
+        _state.update {
+            it.copy(
+                isGenerating = true,
+                streamPreview = "",
+                runEvents = emptyList(),
+                result = null,
+                review = null,
+                memoryApplied = false,
+                error = null,
+            )
         }
+        runtime.generate(
+            snapshot = snapshot,
+            draft = workingDraft,
+            targetWords = 2_800,
+            extraInstruction = extraInstruction,
+            forceNew = forceNew,
+        )
     }
 
     fun cancelGeneration() {
-        if (!_state.value.isGenerating) return
-        generationJob?.cancel(CancellationException("用户停止生成"))
+        runtime.stopCurrentGeneration()
     }
 
     fun repairAndRegenerate() {
@@ -258,8 +227,12 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
             .ifBlank { "保持现有章纲不变，修复所有一致性问题后重写正文。" }
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        chapterRuns.abandon(snapshot, draft)
-        generate("上一版没有通过一致性审查。必须保留章纲目标和既定事实，按以下要求重写：\n$repairs")
+        if (current.busy || runtime.state.value.active) return
+        runtime.abandon(snapshot, draft)
+        submitGenerate(
+            "上一版没有通过一致性审查。必须保留章纲目标和既定事实，按以下要求重写：\n$repairs",
+            forceNew = true,
+        )
     }
 
     fun commitAndReview() {
@@ -267,80 +240,29 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
         val result = current.result ?: return
-        if (!result.canCommit || current.busy) return
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, error = null) }
-            runCatching {
-                val gateway = activeGateway()
-                chapterRuns.commit(
-                    snapshot = snapshot,
-                    draft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan }),
-                    result = result,
-                    gateway = gateway,
-                    onRunEvent = ::emitRun,
-                )
-            }.onSuccess { outcome ->
-                _state.update {
-                    it.copy(
-                        snapshot = outcome.persisted.snapshot,
-                        draft = outcome.persisted.draft,
-                        workingScenes = outcome.persisted.draft.scenePlan,
-                        result = null,
-                        streamPreview = "",
-                        isSaving = false,
-                        isReviewing = false,
-                        chapterCommitted = true,
-                        review = outcome.review,
-                        memoryApplied = false,
-                        message = outcome.summary(),
-                    )
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(isSaving = false, isReviewing = false, error = error.message ?: "保存正文失败") }
-            }
-        }
+        if (!result.canCommit || current.busy || runtime.state.value.active) return
+        _state.update { it.copy(isSaving = true, error = null) }
+        runtime.commit(
+            snapshot = snapshot,
+            draft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan }),
+            result = result,
+        )
     }
 
     fun reviewCommittedChapter() {
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        if (current.isReviewing || current.isGenerating || current.isSaving || draft.content.isBlank()) return
-        viewModelScope.launch {
-            val gateway = runCatching { activeGateway() }.getOrElse {
-                _state.update { state -> state.copy(error = it.message ?: "Agent 复盘需要 AI 服务") }
-                return@launch
-            }
-            _state.update { it.copy(isReviewing = true, error = null, review = null) }
-            runCatching {
-                chapterRuns.reviewSavedChapter(
-                    snapshot = snapshot,
-                    draft = draft,
-                    gateway = gateway,
-                    onRunEvent = ::emitRun,
-                )
-            }.onSuccess { reviewed ->
-                _state.update {
-                    it.copy(
-                        snapshot = reviewed.persisted.snapshot,
-                        draft = reviewed.persisted.draft,
-                        isReviewing = false,
-                        review = reviewed.review,
-                        memoryApplied = false,
-                        message = "Agent 已完成复盘；${reviewed.stagedCount} 条候选事实已进入 Candidate",
-                    )
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(isReviewing = false, error = error.message ?: "章节复盘失败") }
-            }
-        }
+        if (current.busy || runtime.state.value.active || draft.content.isBlank()) return
+        _state.update { it.copy(isReviewing = true, error = null, review = null) }
+        runtime.review(snapshot, draft)
     }
 
     fun confirmCandidateFact(candidateId: String) {
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        if (current.busy) return
+        if (current.busy || runtime.state.value.active) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching { chapterRuns.confirmCandidate(snapshot, draft, candidateId) }
@@ -364,7 +286,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        if (current.busy) return
+        if (current.busy || runtime.state.value.active) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching { chapterRuns.rejectCandidate(snapshot, draft, candidateId) }
@@ -388,7 +310,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        if (current.busy || draft.content.isBlank()) return
+        if (current.busy || runtime.state.value.active || draft.content.isBlank()) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching {
@@ -450,6 +372,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 }
             }.onSuccess { next ->
                 projects.setActiveStoryId(next.snapshot.novel.id)
+                runtime.clearTerminalState(snapshot.novel.id, draft.chapterNumber)
                 _state.update {
                     it.copy(
                         snapshot = next.snapshot,
@@ -475,6 +398,31 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
 
     fun clearNotice() = _state.update { it.copy(message = null, error = null) }
 
+    private fun syncRuntimeState(run: ChapterRunRuntimeState) {
+        val current = _state.value
+        val draft = current.draft ?: return
+        if (!run.matches(current.novelId, draft.chapterNumber)) return
+        val runtimeDraft = run.draft
+        _state.update { state ->
+            state.copy(
+                snapshot = run.snapshot ?: state.snapshot,
+                draft = runtimeDraft ?: state.draft,
+                providerLabel = run.providerLabel.ifBlank { state.providerLabel },
+                workingScenes = if (runtimeDraft != null && run.taskKind != ChapterRuntimeTaskKind.GENERATE) runtimeDraft.scenePlan else state.workingScenes,
+                streamPreview = run.preview,
+                runEvents = run.events,
+                result = run.result,
+                review = run.review,
+                isGenerating = run.active && run.taskKind == ChapterRuntimeTaskKind.GENERATE,
+                isSaving = run.active && run.taskKind == ChapterRuntimeTaskKind.COMMIT,
+                isReviewing = run.active && run.taskKind == ChapterRuntimeTaskKind.REVIEW,
+                chapterCommitted = runtimeDraft?.content?.isNotBlank() ?: state.chapterCommitted,
+                memoryApplied = false,
+                message = run.message ?: state.message,
+                error = run.error ?: state.error,
+            )
+        }
+    }
 
     private fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
         val recovery = chapterRuns.recover(snapshot, draft) ?: return
