@@ -11,22 +11,18 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.content.ContextCompat
+import com.xiguli.langhuan.LanghuanApplication
 import com.xiguli.langhuan.MainActivity
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Visible keep-alive for user-started long chapter runs.
+ * Visible keep-alive for Application-scoped chapter runs.
  *
- * The actual generation still owns its coroutine in the writing flow ViewModel; this service keeps
- * the app process in foreground priority while the activity is merely backgrounded. Durable chapter
- * checkpoints remain the crash/process-death recovery source of truth. There is deliberately no
- * timer or deadline here.
+ * The paid request is owned by ChapterRunRuntime rather than an Activity/ViewModel. Removing or
+ * recreating a screen therefore does not cancel the task. This service only raises process priority
+ * and exposes a user-visible stop action; it deliberately has no App-side timer or deadline.
  */
 data class ChapterRunKeepAliveState(
     val active: Boolean = false,
@@ -55,19 +51,6 @@ object ChapterRunKeepAliveRegistry {
     }
 }
 
-object ChapterRunStopSignals {
-    private val _requests = MutableSharedFlow<Unit>(
-        replay = 0,
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
-    val requests: SharedFlow<Unit> = _requests.asSharedFlow()
-
-    internal fun requestStop() {
-        _requests.tryEmit(Unit)
-    }
-}
-
 class ChapterRunForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -75,11 +58,13 @@ class ChapterRunForegroundService : Service() {
         when (intent?.action) {
             ACTION_HIDE -> hideNow()
             ACTION_STOP -> {
-                ChapterRunStopSignals.requestStop()
+                val stopped = (application as? LanghuanApplication)
+                    ?.chapterRunRuntime
+                    ?.stopCurrentGeneration() == true
                 val current = ChapterRunKeepAliveRegistry.state.value
-                if (current.active) {
+                if (current.active && stopped) {
                     showNotification(current.copy(detail = "正在停止当前模型请求…", canStop = false))
-                } else {
+                } else if (!current.active) {
                     hideNow()
                 }
             }
@@ -89,10 +74,8 @@ class ChapterRunForegroundService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // The generation coroutine belongs to the Activity ViewModel. If the user explicitly removes
-        // the whole task, that ViewModel will be cleared; do not leave a stale foreground notification.
-        ChapterRunStopSignals.requestStop()
-        hideNow()
+        // The runtime is Application-scoped. Swiping away/recreating the Activity no longer owns or
+        // cancels the model coroutine; the foreground service may continue until the runtime finishes.
         super.onTaskRemoved(rootIntent)
     }
 
