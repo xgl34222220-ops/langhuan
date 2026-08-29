@@ -26,6 +26,12 @@
             </intent-filter>
         </activity>
 
+        <!-- User-started writing runs stay visible while the UI is backgrounded. -->
+        <service
+            android:name=".engine.ChapterRunForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- WorkManager promotes long distillation jobs to a visible data-sync foreground task. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
