@@ -173,6 +173,52 @@ data class FactProvenance(
     val recordedAt: Long = 0L,
 )
 
+/** AI/Agent 提出的事实在进入 Canon 前必须经过的候选类型。 */
+@Serializable
+enum class CandidateFactKind {
+    CHARACTER_NEW,
+    CHARACTER_LOCATION,
+    CHARACTER_EMOTION,
+    CHARACTER_GOAL,
+    RELATION,
+    KNOWLEDGE_GAIN,
+    TIMELINE,
+    FORESHADOW_NEW,
+    FORESHADOW_UPDATE,
+    BIBLE_ENTRY,
+    KNOWLEDGE_BOUNDARY,
+}
+
+@Serializable
+enum class CandidateFactRisk { LOW, MEDIUM, HIGH }
+
+@Serializable
+enum class CandidateFactStatus { PENDING, CONFIRMED, REJECTED }
+
+/**
+ * Candidate / Canon 两阶段事实。
+ * PENDING 只用于候选区，不会进入正文 Context、RAG、人物状态、时间线或信息边界。
+ * 只有 CONFIRMED 后才由唯一 Canon 写入器提交正式状态。
+ */
+@Serializable
+data class CandidateFact(
+    val id: String,
+    val novelId: StoryId,
+    val sourceChapter: Int,
+    val kind: CandidateFactKind,
+    val subject: String,
+    val before: String = "",
+    val after: String = "",
+    val evidence: String = "",
+    val risk: CandidateFactRisk = CandidateFactRisk.MEDIUM,
+    val status: CandidateFactStatus = CandidateFactStatus.PENDING,
+    val validationNotes: List<String> = emptyList(),
+    /** 只有本地能从已确认正文直接证明的低风险变更才可能为 true。 */
+    val autoApprovable: Boolean = false,
+    val createdAt: Long = 0L,
+    val resolvedAt: Long = 0L,
+)
+
 @Serializable
 data class ChapterDraft(
     val id: String,
@@ -229,4 +275,6 @@ data class StorySnapshot(
     val longForm: LongFormState = LongFormState(),
     /** 0.25.4 起新增的信息边界账本；旧项目默认为空。 */
     val knowledgeLedger: List<KnowledgeBoundary> = emptyList(),
+    /** 0.26.3 起新增的候选事实账本；PENDING 不属于 Canon，旧项目默认空。 */
+    val candidateFacts: List<CandidateFact> = emptyList(),
 )
