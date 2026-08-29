@@ -6,16 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.domain.ChapterDraft
-import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.GenerationResult
 import com.xiguli.langhuan.domain.IssueSeverity
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AgentReview
-import com.xiguli.langhuan.engine.CandidateCanonEngine
-import com.xiguli.langhuan.engine.GenerationPipeline
-import com.xiguli.langhuan.engine.NovelAgentEngine
+import com.xiguli.langhuan.engine.AppChapterRunStore
+import com.xiguli.langhuan.engine.ChapterRunCoordinator
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.RunStage
 import com.xiguli.langhuan.engine.RunStatus
@@ -68,6 +66,7 @@ data class WritingFlowUiState(
 class WritingFlowViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PersistentStoryRepository(application)
     private val projects = StoryProjectManager(application)
+    private val chapterRuns = ChapterRunCoordinator(AppChapterRunStore(repository, projects))
     private val _state = MutableStateFlow(WritingFlowUiState())
     val state: StateFlow<WritingFlowUiState> = _state.asStateFlow()
     private var generationJob: Job? = null
@@ -198,45 +197,13 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                         error = null,
                     )
                 }
-                emitRun(RunStage.CONTEXT, RunStatus.RUNNING, "构建 S/A/B/C/D 上下文并检索本章相关历史")
                 val workingDraft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan })
-                val query = buildString {
-                    append(workingDraft.title).append(' ').append(workingDraft.objective).append(' ')
-                    workingDraft.scenePlan.forEach {
-                        append(it.viewpoint).append(' ').append(it.location).append(' ')
-                        append(it.purpose).append(' ').append(it.conflict).append(' ')
-                    }
-                    snapshot.activeOutline.forEach {
-                        append(it.objective).append(' ').append(it.turningPoint).append(' ')
-                        append(it.mustInclude.joinToString(" ")).append(' ')
-                    }
-                    snapshot.characters.forEach { append(it.name).append(' ').append(it.goal).append(' ') }
-                }
-                val retrievedContext = runCatching {
-                    repository.retrieveRelevantContext(
-                        snapshot.novel.id,
-                        query,
-                        workingDraft.chapterNumber,
-                        10,
-                    )
-                }.getOrElse { error ->
-                    emitRun(RunStage.CONTEXT, RunStatus.WARNING, "RAG 召回失败：${error.message.orEmpty()}；继续使用结构化 Canon")
-                    emptyList()
-                }
-                if (retrievedContext.isNotEmpty()) {
-                    emitRun(RunStage.CONTEXT, RunStatus.SUCCESS, "D 层召回 ${retrievedContext.size} 条历史，不再污染 recentSummaries")
-                } else if (_state.value.runEvents.lastOrNull { it.stage == RunStage.CONTEXT }?.status == RunStatus.RUNNING) {
-                    emitRun(RunStage.CONTEXT, RunStatus.SUCCESS, "无需额外历史召回，继续使用结构化 Canon")
-                }
-
-                val result = GenerationPipeline(gateway).generate(
-                    request = GenerationRequest(
-                        snapshot = snapshot,
-                        chapter = workingDraft,
-                        targetWords = 2_800,
-                        extraInstruction = extraInstruction.trim(),
-                    ),
-                    retrievedContext = retrievedContext,
+                val result = chapterRuns.generate(
+                    snapshot = snapshot,
+                    draft = workingDraft,
+                    gateway = gateway,
+                    targetWords = 2_800,
+                    extraInstruction = extraInstruction,
                     onDelta = { preview ->
                         _state.update { state -> state.copy(streamPreview = preview) }
                     },
@@ -295,32 +262,33 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         if (!result.canCommit || current.busy) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
-            emitRun(RunStage.SAVE, RunStatus.RUNNING, "保存正文与版本；结构化事实不会在这里直接进入 Canon")
             runCatching {
-                repository.commitGenerated(
+                val gateway = activeGateway()
+                chapterRuns.commit(
                     snapshot = snapshot,
                     draft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan }),
-                    generated = result.chapter,
+                    result = result,
+                    gateway = gateway,
+                    onRunEvent = ::emitRun,
                 )
-            }.onSuccess { persisted ->
-                emitRun(RunStage.SAVE, RunStatus.SUCCESS, "正文 v${persisted.draft.version} 已保存")
+            }.onSuccess { outcome ->
                 _state.update {
                     it.copy(
-                        snapshot = persisted.snapshot,
-                        draft = persisted.draft,
-                        workingScenes = persisted.draft.scenePlan,
+                        snapshot = outcome.persisted.snapshot,
+                        draft = outcome.persisted.draft,
+                        workingScenes = outcome.persisted.draft.scenePlan,
                         result = null,
                         streamPreview = "",
                         isSaving = false,
+                        isReviewing = false,
                         chapterCommitted = true,
+                        review = outcome.review,
                         memoryApplied = false,
-                        message = "正文与版本已保存，开始 Agent 复盘并写入 Candidate",
+                        message = outcome.summary(),
                     )
                 }
-                reviewCommittedChapter()
             }.onFailure { error ->
-                emitRun(RunStage.SAVE, RunStatus.FAILED, error.message ?: "保存正文失败")
-                _state.update { it.copy(isSaving = false, error = error.message ?: "保存正文失败") }
+                _state.update { it.copy(isSaving = false, isReviewing = false, error = error.message ?: "保存正文失败") }
             }
         }
     }
@@ -335,27 +303,26 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 _state.update { state -> state.copy(error = it.message ?: "Agent 复盘需要 AI 服务") }
                 return@launch
             }
-            emitRun(RunStage.CANDIDATE, RunStatus.RUNNING, "从已保存正文抽取事实，全部先进入 Candidate")
             _state.update { it.copy(isReviewing = true, error = null, review = null) }
             runCatching {
-                val review = NovelAgentEngine(gateway).reviewChapter(snapshot, draft)
-                val staged = CandidateCanonEngine.stage(snapshot, draft, review)
-                val persisted = projects.saveStructure(staged.snapshot, draft)
-                Triple(review, staged, persisted)
-            }.onSuccess { (review, staged, persisted) ->
-                emitRun(RunStage.CANDIDATE, RunStatus.SUCCESS, "新增 ${staged.stagedCount} 条 Candidate · 自动确认 ${staged.autoConfirmedCount} 条低风险事实")
+                chapterRuns.reviewSavedChapter(
+                    snapshot = snapshot,
+                    draft = draft,
+                    gateway = gateway,
+                    onRunEvent = ::emitRun,
+                )
+            }.onSuccess { reviewed ->
                 _state.update {
                     it.copy(
-                        snapshot = persisted.snapshot,
-                        draft = persisted.draft,
+                        snapshot = reviewed.persisted.snapshot,
+                        draft = reviewed.persisted.draft,
                         isReviewing = false,
-                        review = review,
+                        review = reviewed.review,
                         memoryApplied = false,
-                        message = "Agent 已完成复盘；候选事实已进入 Candidate，请确认后再进入下一章",
+                        message = "Agent 已完成复盘；${reviewed.stagedCount} 条候选事实已进入 Candidate",
                     )
                 }
             }.onFailure { error ->
-                emitRun(RunStage.CANDIDATE, RunStatus.WARNING, "Candidate 提取失败：${error.message.orEmpty()}")
                 _state.update { it.copy(isReviewing = false, error = error.message ?: "章节复盘失败") }
             }
         }
@@ -368,20 +335,20 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         if (current.busy) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
-            runCatching {
-                projects.saveStructure(CandidateCanonEngine.confirm(snapshot, candidateId), draft)
-            }.onSuccess { persisted ->
-                _state.update {
-                    it.copy(
-                        snapshot = persisted.snapshot,
-                        draft = persisted.draft,
-                        isSaving = false,
-                        message = "候选事实已确认并进入 Canon",
-                    )
+            runCatching { chapterRuns.confirmCandidate(snapshot, draft, candidateId) }
+                .onSuccess { persisted ->
+                    _state.update {
+                        it.copy(
+                            snapshot = persisted.snapshot,
+                            draft = persisted.draft,
+                            isSaving = false,
+                            message = "候选事实已确认并进入 Canon",
+                        )
+                    }
                 }
-            }.onFailure { error ->
-                _state.update { it.copy(isSaving = false, error = error.message ?: "确认 Candidate 失败") }
-            }
+                .onFailure { error ->
+                    _state.update { it.copy(isSaving = false, error = error.message ?: "确认 Candidate 失败") }
+                }
         }
     }
 
@@ -392,20 +359,20 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         if (current.busy) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
-            runCatching {
-                projects.saveStructure(CandidateCanonEngine.reject(snapshot, candidateId), draft)
-            }.onSuccess { persisted ->
-                _state.update {
-                    it.copy(
-                        snapshot = persisted.snapshot,
-                        draft = persisted.draft,
-                        isSaving = false,
-                        message = "候选事实已拒绝，不会进入 Canon",
-                    )
+            runCatching { chapterRuns.rejectCandidate(snapshot, draft, candidateId) }
+                .onSuccess { persisted ->
+                    _state.update {
+                        it.copy(
+                            snapshot = persisted.snapshot,
+                            draft = persisted.draft,
+                            isSaving = false,
+                            message = "候选事实已拒绝，不会进入 Canon",
+                        )
+                    }
                 }
-            }.onFailure { error ->
-                _state.update { it.copy(isSaving = false, error = error.message ?: "拒绝 Candidate 失败") }
-            }
+                .onFailure { error ->
+                    _state.update { it.copy(isSaving = false, error = error.message ?: "拒绝 Candidate 失败") }
+                }
         }
     }
 
