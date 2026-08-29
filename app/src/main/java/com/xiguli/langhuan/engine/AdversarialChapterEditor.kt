@@ -5,27 +5,20 @@ import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.OutlineLevel
 
 /**
- * 单次模型调用内的四席位对抗审稿。
- *
- * AI 主编只能补充“解释性审稿”，不能凌驾于本地 Consistency Gate 之上。
- * 只有能锚定到明确章节合同 / Canon / 信息边界 / 时间线的【硬冲突】才允许触发 REWRITE；
- * 节奏、线索密度、异常数量、审美取舍等普通编辑意见只能作为【建议】，不能卡死正文。
+ * 四席位章节主编。AI 主编只负责解释性审稿和修改建议，不能单独制造 BLOCKING。
+ * 真正的硬阻断只由本地 ConsistencyGate / ChronologyGuard / Canon 边界决定。
  */
 class AdversarialChapterEditor(
     private val contextBuilder: GenerationContextBuilder = GenerationContextBuilder(),
 ) {
-    fun buildReview(
-        request: GenerationRequest,
-        prose: String,
-        round: Int,
-    ): PromptBundle {
+    fun buildReview(request: GenerationRequest, prose: String, round: Int): PromptBundle {
         val snapshot = request.snapshot
         val current = request.chapter.chapterNumber.coerceAtLeast(1)
         val currentNode = snapshot.activeOutline.lastOrNull { it.level == OutlineLevel.CHAPTER }
         val future = snapshot.outline
             .filter { it.level == OutlineLevel.CHAPTER && it.order > current }
             .sortedBy { it.order }
-            .take(12)
+            .take(10)
             .joinToString("\n") {
                 "- 第${it.order}章 ${it.title}｜目标=${it.objective}｜转折=${it.turningPoint}｜必须=${it.mustInclude.joinToString("、")}"
             }
@@ -34,54 +27,31 @@ class AdversarialChapterEditor(
 
         return PromptBundle(
             system = """
-                你是“琅嬛”的对抗式章节主编委员会。这是第 $round 轮审核。
-                一次审核中让四个互相独立的编辑席位分别检查：
+                你是琅嬛的章节主编委员会，第 $round 轮审核。
+                分别从【结构】【人物】【文字】【连续性】四个角度给意见。
 
-                1. Story Architect / 结构编辑：章节合同、因果推进、唯一目标、章末钩子、是否明确提前消费后续章纲。
-                2. Character Editor / 人物编辑：人物当前欲望、关系、情绪、已知信息；是否无因变性或越权获知。
-                3. Narrative Editor / 文字编辑：是否像小说而不是报告；节奏、场景化、重复、AI腔。
-                4. Consistency Checker / 连续性编辑：给定 Canon、信息边界、时间、地点、能力、物品、伏笔保护期和人物状态。
+                必须区分：
+                - 【建议】：节奏、表达、线索密度、场景组织、可读性等编辑意见。
+                - 【硬冲突】：只有正文与提供的 S/A/B 权威上下文存在可以逐字核对的直接矛盾时才允许标记。
 
-                你必须严格区分“硬冲突”和“编辑建议”。
+                注意：你不是最终 Gate。即使你输出 REWRITE，App 仍会由本地确定性规则决定是否真的重写或阻断。
+                因此不要为了“更好看”夸大成硬冲突；证据不足一律降级为【建议】。
 
-                【硬冲突】只允许用于以下情况，而且必须能从我提供的 S/A/B 权威上下文中逐字指出锚点：
-                - 明确违反章节合同 mustHappen / mustNotHappen / 人物进出状态 / reveal / secret / hook；
-                - 正文明确写出了后续章纲才允许发生或揭晓的具体内容；
-                - 人物明确知道了信息边界中禁止其知道的事实；
-                - 正文与给出的锁定 Canon、时间线、地点、能力、物品或人物当前状态直接矛盾；
-                - 正文出现确定性的创作后台文本、严重报告体，达到无法作为小说正文交付的程度。
-
-                以下情况绝不能单独判为硬冲突，只能写【建议】：
-                - 你觉得异常、线索、证据“太多”“太复杂”“最好删一条”；
-                - 你更喜欢另一种节奏、悬念、人物反应或叙事取舍；
-                - 正文第一次出现了一个新异常/新证据，但 S/A/B 并没有禁止它；
-                - 你根据类型套路、常识或自己的推测，猜测某内容“应该不是 Canon”；
-                - 你认为某事实可能会影响后续，但后续章纲并没有明确把该事实锁定到未来章节；
-                - 只是“可以更自然”“可以更克制”“可以更集中”等质量建议。
-
-                证据不足时必须降级为【建议】，不得用猜测制造冲突。后续章纲只用于检查“明确提前抢戏”，不能反过来当成当前 Canon，也不能要求正文只保留一种异常。
-
-                输出 GeneratedChapter JSON，不要 Markdown：
-                - title 只能是 PASS 或 REWRITE。
-                - 只有至少一席存在合格的【硬冲突】时 title 才能是 REWRITE；只有建议时必须 PASS。
-                - content 必须有四行，分别以【结构】【人物】【文字】【连续性】开头。
-                - 通过：`【结构】通过`
-                - 普通意见：`【结构】【建议】具体建议`
-                - 硬冲突：`【结构】【硬冲突】锚点=引用 S/A/B 中的明确约束｜正文证据=引用正文事实｜修法=最小修改方案`
-                - summary 用一句话给出最终结论。
-                - stateChanges=[]；touchedForeshadowingIds=[]。
-
-                第 2 轮也遵守同一标准：只有修订稿仍存在可验证【硬冲突】才能继续 REWRITE。
-                不续写正文，不新增设定，不把作者真相泄露给读者。
+                输出 GeneratedChapter JSON：
+                - title 只能 PASS 或 REWRITE；
+                - content 四行，分别以【结构】【人物】【文字】【连续性】开头；
+                - 硬冲突格式：`【硬冲突】锚点=...｜正文证据=...｜最小修法=...`；
+                - summary 一句话总结；stateChanges=[]；touchedForeshadowingIds=[]。
+                不续写正文，不新增设定，不把后续章纲当当前 Canon。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
-                审核章节：第${request.chapter.chapterNumber}章 ${request.chapter.title}
+                第${request.chapter.chapterNumber}章：${request.chapter.title}
                 唯一目标：${request.chapter.objective}
-                本章冲突：${currentNode?.conflict.orEmpty()}
-                本章转折：${currentNode?.turningPoint.orEmpty()}
+                当前冲突：${currentNode?.conflict.orEmpty()}
+                当前转折：${currentNode?.turningPoint.orEmpty()}
 
-                【S·本章执行合同｜权威】
+                【S·章节执行合同｜权威】
                 ${context.execution}
 
                 【A·Canon 与硬边界｜权威】
@@ -90,7 +60,7 @@ class AdversarialChapterEditor(
                 【B·当前剧情状态｜权威】
                 ${context.state}
 
-                【后续章纲｜只用于检查明确提前抢戏，不是当前 Canon】
+                【后续章纲｜仅用于检查明确提前抢戏】
                 $future
 
                 【待审正文】
@@ -100,21 +70,17 @@ class AdversarialChapterEditor(
     }
 
     /**
-     * 模型说 REWRITE 还不够：必须同时按协议给出至少一个【硬冲突】。
-     * 这样普通审美/节奏建议不会把章节变成 BLOCKING；真正硬规则仍由本地 Gate 再兜底。
+     * AI 主编从本版本开始不再直接触发重写。
+     * 本地确定性规则如果发现真正硬问题，GenerationPipeline 仍会自动修订或阻断。
+     * 这样 CHAPTER_CONTRACT_MISSING / MISSING_REQUIRED_ELEMENT 这类 WARNING 不会被 AI 升级成 EDITOR_REVIEW_FAILED。
      */
-    fun requestsRewrite(review: GeneratedChapter?): Boolean {
-        if (review?.title?.trim()?.equals("REWRITE", ignoreCase = true) != true) return false
-        return review.content.contains(HARD_CONFLICT_MARKER)
-    }
+    fun requestsRewrite(review: GeneratedChapter?): Boolean = false
 
     fun instructions(review: GeneratedChapter?, deterministicProblems: List<String>): String = buildString {
-        review?.content?.trim()?.takeIf {
-            it.isNotBlank() && !it.equals("通过", ignoreCase = true)
-        }?.let { appendLine(it) }
         deterministicProblems.forEach { appendLine("【确定性检查】$it") }
+        review?.content?.trim()?.takeIf { it.isNotBlank() }?.let { appendLine("【主编建议】$it") }
     }.trim().ifBlank {
-        "从头重写本章：只修复明确硬问题，保持已经成立的剧情与人物动机；只完成章节合同允许的内容，不写报告，不提前泄露后续章纲。"
+        "只做最小必要修改；保持既有剧情、人物动机、场景顺序和已经成立的正文，禁止无关整章重写。"
     }
 
     companion object {
