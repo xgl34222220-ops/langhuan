@@ -5,33 +5,6 @@ import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.GenerationResult
 import com.xiguli.langhuan.domain.IssueSeverity
-import com.xiguli.langhuan.domain.StateChange
-import kotlinx.coroutines.delay
-
-interface AiGateway {
-    suspend fun generate(prompt: PromptBundle): GeneratedChapter
-
-    /** Plain text path for normal conversation and novel prose. */
-    suspend fun generateText(prompt: PromptBundle): String = generate(prompt).content
-
-    /**
-     * Raw text streaming contract. onDelta receives the cumulative visible response so UI can replace
-     * its preview without reconstructing provider-specific token deltas. Providers may fall back to a
-     * single final callback only when streaming is unavailable before any bytes are emitted.
-     */
-    suspend fun generateTextStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): String {
-        val text = generateText(prompt)
-        onDelta(text)
-        return text
-    }
-
-    /** Structured streaming remains available for legacy structured generation paths. */
-    suspend fun generateStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): GeneratedChapter {
-        val chapter = generate(prompt)
-        onDelta(chapter.content)
-        return chapter
-    }
-}
 
 class GenerationPipeline(
     private val aiGateway: AiGateway,
@@ -260,7 +233,7 @@ class GenerationPipeline(
         val metadataSucceeded: Boolean
         val metadataRestored = checkpoint.metadataAttempted && checkpoint.metadata != null
         if (metadataRestored) {
-            metadata = checkpoint.metadata
+            metadata = requireNotNull(checkpoint.metadata)
             metadataSucceeded = checkpoint.metadataSucceeded
         } else {
             val metadataResult = runCatching { aiGateway.generate(promptAssembler.buildMetadata(request, prose)) }
@@ -347,99 +320,42 @@ class GenerationPipeline(
         return GenerationResult(chapter = chapter, issues = issues)
     }
 
-    private fun cleanVisibleProse(raw: String): String {
-        var text = raw.trim()
-            .removePrefix("```markdown").removePrefix("```text").removePrefix("```")
-            .removeSuffix("```").trim()
-        // Some relays still wrap plain-text requests in a tiny JSON object. Extract content defensively.
-        if (text.startsWith("{") && text.contains("\"content\"")) {
-            val extracted = Regex("\"content\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"")
-                .find(text)?.groupValues?.getOrNull(1)
-                ?.replace("\\n", "\n")
-                ?.replace("\\\"", "\"")
-                ?.replace("\\\\", "\\")
-                ?.trim()
-            if (!extracted.isNullOrBlank()) text = extracted
-        }
-        return text.trim()
+    private fun cleanVisibleProse(text: String): String {
+        var cleaned = text
+            .replace(Regex("(?s)^\\s*```(?:markdown|md|text)?\\s*"), "")
+            .replace(Regex("(?s)\\s*```\\s*$"), "")
+            .trim()
+        if (cleaned.startsWith("content:", true)) cleaned = cleaned.substringAfter(':').trim()
+        return cleaned
     }
 
-    private fun obviousProseProblems(prose: String): List<String> {
+    private fun obviousProseProblems(text: String): List<String> {
+        val compact = text.trim()
         val problems = mutableListOf<String>()
-        val backendPhrases = listOf(
-            "他目前掌握的信息", "她目前掌握的信息", "目前掌握的信息", "本章总结", "状态更新",
-            "已确认事实", "touchedForeshadowingIds", "stateChanges", "场景计划", "本章约",
+        if (compact.isBlank()) return listOf("正文为空")
+        val reportPhrases = listOf(
+            "目前掌握的信息", "目前已知的信息", "当前掌握的信息", "本章信息汇总",
+            "以下是", "综上所述", "总结如下", "已确认事实", "信息如下",
         )
-        if (backendPhrases.any { prose.contains(it, ignoreCase = true) }) {
-            problems += "正文混入了后台总结/状态字段，必须全部删除并改成场景叙事。"
+        val matched = reportPhrases.filter { compact.contains(it) }
+        if (matched.isNotEmpty()) problems += "存在报告/后台总结措辞：${matched.joinToString("、")}" 
+        val listLines = compact.lineSequence().count { line ->
+            line.trim().matches(Regex("^(?:[-•*]|\\d+[.、)])\\s*.+"))
         }
-        val numberedListLines = prose.lineSequence().count { line ->
-            Regex("^\\s*(?:第[一二三四五六七八九十百]+人|第\\d+人|\\d+[.、])").containsMatchIn(line)
+        if (listLines >= 5) problems += "正文包含连续清单式信息罗列（$listLines 行）"
+        val cardLines = compact.lineSequence().count { line ->
+            line.trim().matches(Regex("^[\\p{L}\\p{N}_·]{1,12}[：:].+"))
         }
-        if (numberedListLines >= 8) {
-            problems += "存在大段枚举式信息倾倒；只保留最有戏剧价值的少数例子，其余自然概括。"
-        }
-        val functionVerbs = Regex("(?:搜索|核对|记录|分类|整理|重新排列|逐条|输入|打开|写下)")
-            .findAll(prose).count()
-        if (functionVerbs >= 18) {
-            problems += "功能性调查动作过密，人物像检索程序；重写时增加欲望、情绪、关系、阻力和具体场景。"
-        }
+        if (cardLines >= 5) problems += "正文出现资料卡式字段堆叠（$cardLines 行）"
         return problems
     }
 
-    private fun fallbackSummary(prose: String): String {
-        val compact = prose.replace(Regex("\\s+"), " ").trim()
-        return if (compact.length <= 220) compact else compact.take(217) + "…"
-    }
-}
-
-class DemoAiGateway : AiGateway {
-    override suspend fun generate(prompt: PromptBundle): GeneratedChapter {
-        delay(900)
-        return demoChapter()
-    }
-
-    override suspend fun generateText(prompt: PromptBundle): String {
-        delay(900)
-        return demoChapter().content
-    }
-
-    override suspend fun generateTextStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): String {
-        val content = demoChapter().content
-        val buffer = StringBuilder()
-        content.chunked(24).forEach { chunk ->
-            delay(35)
-            buffer.append(chunk)
-            onDelta(buffer.toString())
+    private fun fallbackSummary(text: String): String {
+        val compact = text.replace(Regex("\\s+"), " ").trim()
+        return when {
+            compact.isBlank() -> "本章正文已生成，等待进一步提取结构化摘要。"
+            compact.length <= 220 -> compact
+            else -> compact.take(217) + "…"
         }
-        return buffer.toString()
     }
-
-    override suspend fun generateStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): GeneratedChapter {
-        val chapter = demoChapter()
-        val chunks = chapter.content.chunked(36)
-        val buffer = StringBuilder()
-        chunks.forEach {
-            delay(45)
-            buffer.append(it)
-            onDelta(buffer.toString())
-        }
-        return chapter
-    }
-
-    private fun demoChapter() = GeneratedChapter(
-        title = "雾港来信",
-        content = """
-            港城的雾在子夜后压得更低。沈砚把那封没有署名的信平放在灯下，纸角残留的银色盐晶与旧案卷上的样本完全一致。
-
-            他没有立刻去码头，而是先敲响了顾遥的门。两人核对城门记录，发现失踪商队入城的日期恰好被人改过一次。顾遥坚持从档案馆追查，沈砚却注意到窗外那道停留过久的影子。
-
-            他们故意熄灯，从后门离开。追踪者把二人引向废弃钟楼，也让沈砚确认：寄信人并不是求救，而是在测试他们是否已经发现时间记录的矛盾。
-        """.trimIndent(),
-        summary = "沈砚与顾遥通过匿名信确认失踪商队记录被篡改，并在废弃钟楼发现寄信人正在试探他们。",
-        stateChanges = listOf(
-            StateChange("沈砚", "knownSecrets", "不知道记录被改", "确认商队记录被篡改", "核对城门记录"),
-        ),
-        touchedForeshadowingIds = listOf("f1"),
-    )
 }
