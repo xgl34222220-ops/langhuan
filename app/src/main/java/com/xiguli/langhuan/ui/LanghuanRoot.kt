@@ -16,6 +16,7 @@ import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -35,6 +36,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.engine.ChapterRunForegroundService
+import com.xiguli.langhuan.engine.ChapterRunStopSignals
+import com.xiguli.langhuan.engine.RunStatus
 
 private const val ROOT_PREFS = "langhuan_root_state"
 private const val RESUME_WORKSPACE_ONCE = "resume_workspace_once"
@@ -46,9 +50,12 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
     val creationViewModel: NewBookConversationViewModel = viewModel()
     val writingViewModel: WritingFlowViewModel = viewModel()
+    val writingState by writingViewModel.state.collectAsStateWithLifecycle()
     val editorViewModel: ChapterEditorViewModel = viewModel()
     val quickModelViewModel: ProviderQuickSwitchViewModel = viewModel()
     val coverGuardViewModel: CoverPersistenceGuardViewModel = viewModel()
+    val runCenterViewModel: RunCenterViewModel = viewModel()
+    val runCenterState by runCenterViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val rootPrefs = remember { context.getSharedPreferences(ROOT_PREFS, 0) }
     val resumeWorkspace = remember {
@@ -62,6 +69,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     var showWritingFlow by remember { mutableStateOf(false) }
     var showEditor by remember { mutableStateOf(false) }
     var showIntelligence by remember { mutableStateOf(false) }
+    var showRunCenter by remember { mutableStateOf(false) }
     var showModelSwitch by remember { mutableStateOf(false) }
     var showAiSetup by remember { mutableStateOf(false) }
     var pendingCreationAfterAiSetup by remember { mutableStateOf(false) }
@@ -86,6 +94,64 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) viewModel.enqueueReferenceDistillation(uri)
+    }
+
+    LaunchedEffect(Unit) {
+        ChapterRunStopSignals.requests.collect {
+            writingViewModel.cancelGeneration()
+        }
+    }
+
+    val writingLongTaskActive = writingState.isGenerating ||
+        writingState.isSaving ||
+        writingState.isReviewing ||
+        writingState.isPlanningScenes
+    val runningStage = writingState.runEvents.lastOrNull { it.status == RunStatus.RUNNING }?.stage?.label
+    LaunchedEffect(
+        writingLongTaskActive,
+        writingState.isGenerating,
+        writingState.isSaving,
+        writingState.isReviewing,
+        writingState.isPlanningScenes,
+        runningStage,
+        writingState.draft?.id,
+    ) {
+        val snapshot = writingState.snapshot
+        val draft = writingState.draft
+        if (writingLongTaskActive && snapshot != null && draft != null) {
+            val action = when {
+                writingState.isGenerating -> "正在生成正文"
+                writingState.isSaving -> "正在保存并执行章节后处理"
+                writingState.isReviewing -> "正在进行 Agent 章节复盘"
+                writingState.isPlanningScenes -> "正在编排章节场景"
+                else -> "正在执行章节任务"
+            }
+            ChapterRunForegroundService.show(
+                context = context,
+                novelId = snapshot.novel.id,
+                chapterNumber = draft.chapterNumber,
+                title = "《${snapshot.novel.title}》第${draft.chapterNumber}章",
+                detail = runningStage?.let { "$action · $it" } ?: "$action · 无 App 侧超时",
+                canStop = writingState.isGenerating,
+            )
+        } else {
+            ChapterRunForegroundService.hide(context)
+        }
+    }
+
+    LaunchedEffect(runCenterState.openRequest?.token) {
+        runCenterState.openRequest?.let { request ->
+            writingStoryId = request.novelId
+            showRunCenter = false
+            showShelf = false
+            showAgent = false
+            showCreation = false
+            showEditor = false
+            showIntelligence = false
+            showAiSetup = false
+            showWritingFlow = true
+            runCenterViewModel.consumeOpenRequest()
+        }
     }
 
     LaunchedEffect(libraryState.workspaceStoryId) {
@@ -131,7 +197,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
     Box(Modifier.fillMaxSize()) {
         LanghuanApp(viewModel)
 
-        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showModelSwitch && !showAiSetup) {
+        if (!showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showRunCenter && !showModelSwitch && !showAiSetup) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -146,6 +212,11 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 SmallFloatingActionButton(onClick = { showIntelligence = true }) {
                     Icon(Icons.Rounded.Insights, "长篇监控")
                 }
+                ExtendedFloatingActionButton(
+                    onClick = { showRunCenter = true },
+                    icon = { Icon(Icons.Rounded.TaskAlt, null) },
+                    text = { Text("任务") },
+                )
                 ExtendedFloatingActionButton(
                     onClick = { showModelSwitch = true },
                     icon = { Icon(Icons.Rounded.Tune, null) },
@@ -176,7 +247,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showAiSetup) {
+        if (showShelf && !showAgent && !showCreation && !showWritingFlow && !showEditor && !showIntelligence && !showRunCenter && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 if (libraryState.openedBook == null && libraryState.readingChapter == null) {
                     AiFirstShelf(
@@ -212,7 +283,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showAiSetup && !showAgent && !showWritingFlow && !showEditor && !showIntelligence) {
+        if (showAiSetup && !showAgent && !showWritingFlow && !showEditor && !showIntelligence && !showRunCenter) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 AiProviderSetupPage(
                     state = state,
@@ -232,7 +303,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showCreation && !showAgent && !showWritingFlow && !showEditor && !showIntelligence && !showAiSetup) {
+        if (showCreation && !showAgent && !showWritingFlow && !showEditor && !showIntelligence && !showRunCenter && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 ResearchNewBookConversationPage(
                     viewModel = creationViewModel,
@@ -255,17 +326,25 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
 
         }
 
-        if (showWritingFlow && !showAgent && !showEditor && !showIntelligence && !showAiSetup) {
+        if (showWritingFlow && !showAgent && !showEditor && !showIntelligence && !showRunCenter && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 WritingFlowPage(
                     novelId = writingStoryId ?: state.snapshot.novel.id,
                     viewModel = writingViewModel,
-                    onClose = ::reloadWorkspaceAfterOverlay,
+                    onClose = {
+                        if (writingState.busy) {
+                            // Hide the overlay without destroying its ViewModel/coroutine. The foreground
+                            // service keeps the process important while the task continues.
+                            showWritingFlow = false
+                        } else {
+                            reloadWorkspaceAfterOverlay()
+                        }
+                    },
                 )
             }
         }
 
-        if (showEditor && !showAgent && !showWritingFlow && !showIntelligence && !showAiSetup) {
+        if (showEditor && !showAgent && !showWritingFlow && !showIntelligence && !showRunCenter && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 ChapterEditorPage(
                     novelId = editorStoryId ?: state.snapshot.novel.id,
@@ -276,13 +355,22 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
             }
         }
 
-        if (showIntelligence && !showAgent && !showWritingFlow && !showEditor && !showCreation && !showAiSetup) {
+        if (showIntelligence && !showAgent && !showWritingFlow && !showEditor && !showCreation && !showRunCenter && !showAiSetup) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 StoryIntelligencePage(state = state, onClose = { showIntelligence = false })
             }
         }
 
-        if (showAgent && !showIntelligence && !showEditor && !showAiSetup) {
+        if (showRunCenter && !showAgent && !showWritingFlow && !showEditor && !showCreation && !showIntelligence && !showAiSetup) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                RunCenterPage(
+                    viewModel = runCenterViewModel,
+                    onClose = { showRunCenter = false },
+                )
+            }
+        }
+
+        if (showAgent && !showIntelligence && !showEditor && !showRunCenter && !showAiSetup) {
             Surface(
                 Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
