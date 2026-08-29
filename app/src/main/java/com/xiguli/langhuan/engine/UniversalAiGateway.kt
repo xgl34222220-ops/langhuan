@@ -170,10 +170,10 @@ class UniversalAiGateway(
         extractText(protocol, response)
     }
 
-    override suspend fun generateStreaming(
+    override suspend fun generateTextStreaming(
         prompt: PromptBundle,
         onDelta: (String) -> Unit,
-    ): GeneratedChapter {
+    ): String {
         require(config.baseUrl.isNotBlank()) { "请先配置 API 地址" }
         require(config.model.isNotBlank()) { "请先选择或填写模型" }
         val protocol = resolvedProtocol()
@@ -184,20 +184,19 @@ class UniversalAiGateway(
         }
 
         return try {
-            val raw = when (protocol) {
+            when (protocol) {
                 ApiProtocol.ANTHROPIC -> streamAnthropic(prompt, guardedDelta)
                 ApiProtocol.GEMINI -> streamGemini(prompt, guardedDelta)
                 ApiProtocol.AZURE_OPENAI -> streamOpenAi(prompt, azure = true, guardedDelta)
                 ApiProtocol.OLLAMA -> streamOllama(prompt, guardedDelta)
                 else -> streamOpenAi(prompt, azure = false, guardedDelta)
             }
-            decodeChapter(raw)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
             if (emitted) {
                 throw IllegalStateException(
-                    "流式连接在已经开始返回正文后中断。为避免重复扣费，琅嬛没有自动发起第二次请求；可手动重新生成。",
+                    "流式连接在已经开始返回内容后中断。为避免重复扣费，琅嬛没有自动发起第二次请求；可手动重试。",
                     error,
                 )
             }
@@ -207,11 +206,16 @@ class UniversalAiGateway(
                     error,
                 )
             }
-            val chapter = generate(prompt)
-            onDelta(chapter.content)
-            chapter
+            val text = generateText(prompt)
+            onDelta(text)
+            text
         }
     }
+
+    override suspend fun generateStreaming(
+        prompt: PromptBundle,
+        onDelta: (String) -> Unit,
+    ): GeneratedChapter = decodeChapter(generateTextStreaming(prompt, onDelta))
 
     private fun resolvedProtocol(): ApiProtocol = if (config.protocol == ApiProtocol.AUTO) {
         candidateOrder(normalizeBaseUrl(config.baseUrl)).first()

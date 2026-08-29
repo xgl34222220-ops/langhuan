@@ -351,6 +351,12 @@ fun ResearchNewBookConversationPage(
             if (showReferenceTools) item { ReferenceTemplateSelectionPanel(viewModel) }
             if (showResearchMemory && archiveState.entries.isNotEmpty()) item { ResearchArchiveMemoryCard(archiveState) }
             items(state.messages) { message -> ResearchChatBubble(message) }
+            if (state.streamingReply.isNotBlank()) item {
+                ResearchChatBubble(CreationChatMessage("assistant", state.streamingReply))
+            }
+            if (state.runEvents.isNotEmpty() && (state.isBusy || state.runEvents.map { it.stage }.distinct().size > 1)) item {
+                RunInspectorPanel(state.runEvents, "建书 Run Inspector")
+            }
             researchMessage?.let { message -> item { ResearchStatusCard(message, lastTargets, lastSources) } }
 
             if (state.foundation == null) {
@@ -382,7 +388,7 @@ fun ResearchNewBookConversationPage(
                 }
             }
 
-            if (state.isBusy || researching || state.isLoadingAttachments) item {
+            if (researching || state.isLoadingAttachments || (state.isBusy && state.runEvents.isEmpty())) item {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))

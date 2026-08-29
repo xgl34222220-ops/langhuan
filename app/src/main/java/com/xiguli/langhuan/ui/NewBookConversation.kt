@@ -15,6 +15,10 @@ import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.PromptMessage
 import com.xiguli.langhuan.engine.PromptAttachment
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
+import com.xiguli.langhuan.engine.RunEvent
+import com.xiguli.langhuan.engine.RunStage
+import com.xiguli.langhuan.engine.RunStatus
+import com.xiguli.langhuan.engine.blueprintRunStage
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -103,6 +107,8 @@ data class NewBookConversationState(
     val isLoadingAttachments: Boolean = false,
     val isBusy: Boolean = false,
     val busyLabel: String = "",
+    val streamingReply: String = "",
+    val runEvents: List<RunEvent> = emptyList(),
     val createdStoryId: String? = null,
     val error: String? = null,
     val selectedReferenceTemplateIds: List<String> = emptyList(),
@@ -202,7 +208,12 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             _state.collect { current ->
-                if (suppressDraftPersistence) draftStore.clear() else draftStore.persist(current)
+                if (suppressDraftPersistence) {
+                    draftStore.clear()
+                } else if (current.streamingReply.isBlank()) {
+                    // Streaming deltas are transient; do not rewrite AtomicFile for every chunk.
+                    draftStore.persist(current)
+                }
             }
         }
     }
@@ -224,6 +235,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     referenceQuestion -> "正在读取所选模板的 Story DNA 事实……"
                     else -> "AI 正在继续和你聊这本书……"
                 },
+                streamingReply = "",
+                runEvents = listOf(RunEvent(RunStage.CREATION_CHAT, RunStatus.RUNNING, "模型正在流式回复")),
                 error = null,
             )
         }
@@ -231,31 +244,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         viewModelScope.launch {
             val gateway = activeGateway()
             if (gateway == null) {
-                _state.update { it.copy(isBusy = false, busyLabel = "", error = "请先在设置里添加并启用一个 AI 服务") }
-                return@launch
-            }
-
-            if (referenceQuestion) {
-                runCatching {
-                    NewBookConversationEngine(gateway).reply(
-                        messages = history,
-                        currentProposal = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders(),
-                        referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
-                    )
-                }.onSuccess { turn ->
-                    _state.update {
-                        it.copy(
-                            messages = it.messages + CreationChatMessage("assistant", turn.reply),
-                            proposal = before.proposal,
-                            foundation = before.foundation,
-                            foundationStage = before.foundationStage,
-                            isBusy = false,
-                            busyLabel = "",
-                        )
-                    }
-                }.onFailure { error ->
-                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "模板事实读取失败")) }
-                }
+                emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "未配置 AI 服务")
+                _state.update { it.copy(isBusy = false, busyLabel = "", streamingReply = "", error = "请先在设置里添加并启用一个 AI 服务") }
                 return@launch
             }
 
@@ -264,19 +254,32 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     messages = history,
                     currentProposal = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders(),
                     referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
+                    onDelta = { partial -> _state.update { it.copy(streamingReply = partial) } },
                 )
             }.onSuccess { turn ->
+                emitRun(RunStage.CREATION_CHAT, RunStatus.SUCCESS, "回复完成")
                 _state.update {
                     it.copy(
                         messages = it.messages + CreationChatMessage("assistant", turn.reply),
-                        proposal = turn.proposal?.sanitizePlaceholders() ?: it.proposal,
-                        blueprintDirty = it.blueprintDirty || (before.foundation != null && !isQuestionLike(plainInstruction)),
+                        proposal = if (referenceQuestion) before.proposal else turn.proposal?.sanitizePlaceholders() ?: it.proposal,
+                        foundation = if (referenceQuestion) before.foundation else it.foundation,
+                        foundationStage = if (referenceQuestion) before.foundationStage else it.foundationStage,
+                        blueprintDirty = if (referenceQuestion) it.blueprintDirty else it.blueprintDirty || (before.foundation != null && !isQuestionLike(plainInstruction)),
                         isBusy = false,
                         busyLabel = "",
+                        streamingReply = "",
                     )
                 }
             }.onFailure { error ->
-                _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "AI 构思失败")) }
+                emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, error.message.orEmpty())
+                _state.update {
+                    it.copy(
+                        isBusy = false,
+                        busyLabel = "",
+                        streamingReply = "",
+                        error = friendlyAiError(error, if (referenceQuestion) "模板事实读取失败" else "AI 构思失败"),
+                    )
+                }
             }
         }
     }
@@ -369,10 +372,18 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     coverBrief = "",
                     rationale = "",
                 )
-            _state.update { it.copy(isBusy = true, busyLabel = "正在把当前会谈整理为建书方案……", error = null) }
+            _state.update {
+                it.copy(
+                    isBusy = true,
+                    busyLabel = "正在把当前会谈整理为建书方案……",
+                    runEvents = listOf(RunEvent(RunStage.PROPOSAL_SYNC, RunStatus.RUNNING, "合并用户最新决定，不自动生成蓝图")),
+                    error = null,
+                )
+            }
             runCatching {
                 ProposalConsolidator(gateway).consolidate(baseline, before.messages)
             }.onSuccess { proposal ->
+                emitRun(RunStage.PROPOSAL_SYNC, RunStatus.SUCCESS, "当前会谈已整理成方案缓存")
                 _state.update {
                     it.copy(
                         proposal = proposal.sanitizePlaceholders(),
@@ -383,6 +394,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     )
                 }
             }.onFailure { error ->
+                emitRun(RunStage.PROPOSAL_SYNC, RunStatus.FAILED, error.message.orEmpty())
                 _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "整理当前方案失败")) }
             }
         }
@@ -406,6 +418,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     isBusy = true,
                     blueprintDirty = before.blueprintDirty,
                     busyLabel = "正在把整段会谈的最新决定合并为最终方案……",
+                    runEvents = listOf(RunEvent(RunStage.PROPOSAL_SYNC, RunStatus.RUNNING, "先把会谈最新决定锁成蓝图输入")),
                     error = null,
                 )
             }
@@ -421,6 +434,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         messages = before.messages,
                     )
                 }.getOrElse { baseline }
+                emitRun(RunStage.PROPOSAL_SYNC, RunStatus.SUCCESS, "方案合并完成")
                 _state.update {
                     it.copy(
                         proposal = refreshed,
@@ -438,8 +452,18 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     instruction = instruction,
                     referenceContext = referenceReportStore.promptContext(before.selectedReferenceTemplateIds),
                     resumeStage = resumeStage,
-                    onStage = { label -> _state.update { it.copy(busyLabel = label) } },
+                    onStage = { label ->
+                        val parsedStage = when {
+                            label.contains("3/3") -> 3
+                            label.contains("2/3") -> 2
+                            label.contains("1/3") -> 1
+                            else -> (_state.value.foundationStage + 1).coerceIn(1, 3)
+                        }
+                        emitRun(blueprintRunStage(parsedStage), RunStatus.RUNNING, label)
+                        _state.update { it.copy(busyLabel = label) }
+                    },
                     onCheckpoint = { stage, checkpoint ->
+                        emitRun(blueprintRunStage(stage), RunStatus.SUCCESS, "第 $stage/3 阶段已保存检查点，可断点续跑")
                         val cleanCheckpoint = checkpoint.sanitizeFoundationPlaceholders()
                         _state.update {
                             it.copy(
@@ -469,6 +493,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 }
             }.onFailure { error ->
                 if (error !is kotlinx.coroutines.CancellationException) {
+                    emitRun(blueprintRunStage((_state.value.foundationStage + 1).coerceIn(1, 3)), RunStatus.FAILED, error.message.orEmpty())
                     _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "建书蓝图生成失败")) }
                 }
             }
@@ -509,6 +534,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 foundationStage = stage,
                 blueprintDirty = false,
                 isBusy = true,
+                runEvents = listOf(RunEvent(RunStage.CREATE_BOOK, RunStatus.RUNNING, "把已确认核心蓝图写入正式项目结构")),
                 busyLabel = if (stage < 3) {
                     "正在用当前有效核心蓝图建书；未完成的章纲/伏笔可稍后补齐……"
                 } else {
@@ -519,6 +545,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         }
         runCatching { foundationApplier.create(foundation) }
             .onSuccess { created ->
+                emitRun(RunStage.CREATE_BOOK, RunStatus.SUCCESS, "《${created.snapshot.novel.title}》项目已创建")
                 suppressDraftPersistence = true
                 _state.update {
                     it.copy(
@@ -537,6 +564,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 }
                 draftStore.clear()
             }.onFailure { error ->
+                emitRun(RunStage.CREATE_BOOK, RunStatus.FAILED, error.message.orEmpty())
                 _state.update { it.copy(isBusy = false, busyLabel = "", error = error.message ?: "正式建书失败") }
             }
     }
@@ -565,6 +593,10 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         }
     }
 
+    private fun emitRun(stage: RunStage, status: RunStatus, detail: String = "") {
+        _state.update { state -> state.copy(runEvents = (state.runEvents + RunEvent(stage, status, detail)).takeLast(72)) }
+    }
+
     private suspend fun activeGateway(): AiGateway? {
         val id = activeProviderId ?: return null
         return repository.providerConfig(id)?.let(::UniversalAiGateway)
@@ -583,6 +615,7 @@ private class NewBookConversationEngine(
         messages: List<CreationChatMessage>,
         currentProposal: NewBookProposal? = null,
         referenceContext: String = "",
+        onDelta: (String) -> Unit = {},
     ): ConversationTurn {
         val latest = messages.lastOrNull { it.role == "user" }?.text
             ?.substringBefore(RESEARCH_CONTEXT_MARKER)
@@ -598,7 +631,7 @@ private class NewBookConversationEngine(
                 appendLine(referenceContext)
             }
         }
-        val response = gateway.generateText(
+        val response = gateway.generateTextStreaming(
             PromptBundle(
                 system = """
                     你是“琅嬛”的新书创作搭档。你的第一职责是像一个正常、可靠的 AI 助手一样理解用户当前这句话并自然回应，而不是把每轮聊天强行变成表格、JSON、方案卡或自动工作流。
@@ -619,7 +652,8 @@ private class NewBookConversationEngine(
                 messages = conversationPromptMessages(messages),
                 attachments = messagesPromptAttachments(messages.takeLast(1)),
                 jsonMode = false,
-            )
+            ),
+            onDelta = { partial -> onDelta(partial) },
         ).trim()
         return ConversationTurn(
             reply = response.ifBlank { "我在。继续按你刚才的设定往下聊。" },

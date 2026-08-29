@@ -45,6 +45,9 @@ import com.xiguli.langhuan.engine.FullBookEditorEngine
 import com.xiguli.langhuan.engine.NovelAgentEngine
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.ProviderDiscovery
+import com.xiguli.langhuan.engine.RunEvent
+import com.xiguli.langhuan.engine.RunStage
+import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
 import java.util.UUID
@@ -107,6 +110,7 @@ data class StudioUiState(
     val provider: ProviderUiState = ProviderUiState(),
     val versions: List<ChapterVersionUi> = emptyList(),
     val streamPreview: String = "",
+    val runEvents: List<RunEvent> = emptyList(),
     val pendingPlan: ChapterPlanSuggestion? = null,
     val rewriteSuggestion: RewriteSuggestion? = null,
     val agentReview: AgentReview? = null,
@@ -206,6 +210,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     versions = emptyList(),
                     chapters = emptyList(),
                     streamPreview = "",
+                    runEvents = emptyList(),
                     isDraftDirty = false,
                     pendingPlan = null,
                     rewriteSuggestion = null,
@@ -258,6 +263,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                 snapshot = persisted.snapshot,
                                 draft = persisted.draft,
                                 streamPreview = "",
+                                runEvents = emptyList(),
                                 isDraftDirty = false,
                                 result = null,
                                 pendingPlan = null,
@@ -818,6 +824,14 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun emitRun(event: RunEvent) {
+        _state.update { state -> state.copy(runEvents = (state.runEvents + event).takeLast(96)) }
+    }
+
+    private fun emitRun(stage: RunStage, status: RunStatus, detail: String = "") {
+        emitRun(RunEvent(stage = stage, status = status, detail = detail))
+    }
+
     fun clearMessage() = _state.update { it.copy(message = null, error = null) }
 
     fun setProviderName(value: String) = updateProvider { it.copy(providerName = value, error = null) }
@@ -895,30 +909,55 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     fun generateChapter() {
         if (_state.value.isGenerating) return
         viewModelScope.launch {
-            _state.update { it.copy(isGenerating = true, streamPreview = "正在分析章纲与长期记忆…", error = null) }
+            _state.update {
+                it.copy(
+                    isGenerating = true,
+                    streamPreview = "",
+                    error = null,
+                    runEvents = emptyList(),
+                )
+            }
             val current = _state.value
+            emitRun(RunStage.CONTEXT, RunStatus.RUNNING, "正在构建 S/A/B/C/D 分层上下文并检索相关历史")
             val ragQuery = buildString {
                 append(current.draft.title).append(' ').append(current.draft.objective).append(' ')
                 current.draft.scenePlan.forEach { append(it.viewpoint).append(' ').append(it.location).append(' ').append(it.purpose).append(' ').append(it.conflict).append(' ') }
                 current.snapshot.activeOutline.forEach { append(it.objective).append(' ').append(it.turningPoint).append(' ') }
                 current.snapshot.characters.forEach { append(it.name).append(' ').append(it.goal).append(' ') }
             }
-            val retrievedContext = repository.retrieveRelevantContext(
-                current.snapshot.novel.id,
-                ragQuery,
-                current.draft.chapterNumber,
-                10,
-            )
+            val retrievedContext = runCatching {
+                repository.retrieveRelevantContext(
+                    current.snapshot.novel.id,
+                    ragQuery,
+                    current.draft.chapterNumber,
+                    10,
+                )
+            }.getOrElse { error ->
+                emitRun(RunStage.CONTEXT, RunStatus.WARNING, "历史召回失败：${error.message.orEmpty()}；继续使用结构化 Canon")
+                emptyList()
+            }
+            if (retrievedContext.isNotEmpty()) {
+                emitRun(RunStage.CONTEXT, RunStatus.SUCCESS, "召回 ${retrievedContext.size} 条可解释历史；硬约束优先级不会被 RAG 挤掉")
+            } else if (_state.value.runEvents.lastOrNull { it.stage == RunStage.CONTEXT }?.status == RunStatus.RUNNING) {
+                emitRun(RunStage.CONTEXT, RunStatus.SUCCESS, "本章没有需要补充的历史召回，继续使用结构化上下文")
+            }
+
             val gateway = configuredGateway() ?: DemoAiGateway()
             runCatching {
                 GenerationPipeline(gateway).generate(
                     request = GenerationRequest(current.snapshot, current.draft, 2_500),
                     retrievedContext = retrievedContext,
-                ) { preview ->
-                    _state.update { state -> state.copy(streamPreview = preview) }
-                }
-            }.onSuccess { result -> _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) } }
-                .onFailure { error -> _state.update { it.copy(isGenerating = false, streamPreview = "", error = error.message ?: "生成失败") } }
+                    onDelta = { preview ->
+                        _state.update { state -> state.copy(streamPreview = preview) }
+                    },
+                    onRunEvent = ::emitRun,
+                )
+            }.onSuccess { result ->
+                _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
+            }.onFailure { error ->
+                emitRun(RunStage.READY_TO_COMMIT, RunStatus.FAILED, error.message ?: "生成失败")
+                _state.update { it.copy(isGenerating = false, streamPreview = "", error = error.message ?: "生成失败") }
+            }
         }
     }
 
@@ -928,12 +967,16 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         if (!result.canCommit || current.isSaving) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
+            emitRun(RunStage.SAVE, RunStatus.RUNNING, "写入正文、版本与章节摘要；AI 抽取事实不会直接改 Canon")
             runCatching { repository.commitGenerated(current.snapshot, current.draft, result.chapter) }
                 .onSuccess { persisted ->
+                    emitRun(RunStage.SAVE, RunStatus.SUCCESS, "正文 v${persisted.draft.version} 已保存")
                     _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, isDraftDirty = false, streamPreview = "", result = null, message = "正文与版本已保存；结构化事实将先进入 Candidate，正在做 Agent 复盘") }
                     refreshWorkspace()
                     var working = persisted
+
                     if (FullBookEditorEngine.shouldAudit(working.snapshot, working.draft.chapterNumber)) {
+                        emitRun(RunStage.FULL_BOOK_AUDIT, RunStatus.RUNNING, "到达周期巡检点，执行零额外模型成本的全书本地扫描")
                         runCatching {
                             val drafts = projects.chapterDrafts(working.snapshot.novel.id)
                             val editor = FullBookEditorEngine()
@@ -941,6 +984,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                             projects.saveStructure(editor.apply(working.snapshot, report), working.draft)
                         }.onSuccess { audited ->
                             working = audited
+                            emitRun(RunStage.FULL_BOOK_AUDIT, RunStatus.SUCCESS, "全书主编 ${audited.snapshot.longForm.editorReport.score} 分")
                             _state.update { state ->
                                 state.copy(
                                     snapshot = audited.snapshot,
@@ -948,10 +992,16 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                     message = "正文已保存；全书主编本地巡检 ${audited.snapshot.longForm.editorReport.score} 分",
                                 )
                             }
+                        }.onFailure { error ->
+                            emitRun(RunStage.FULL_BOOK_AUDIT, RunStatus.WARNING, "巡检未完成：${error.message.orEmpty()}")
                         }
+                    } else {
+                        emitRun(RunStage.FULL_BOOK_AUDIT, RunStatus.SKIPPED, "未到周期巡检点")
                     }
+
                     val gateway = configuredGateway()
                     if (gateway != null) {
+                        emitRun(RunStage.EXECUTION_AUDIT, RunStatus.RUNNING, "比较滚动计划与实际正文，只标记真正受影响的未来章节")
                         val executionEngine = AutonomousExecutionEngine(gateway)
                         val execution = runCatching {
                             executionEngine.assess(working.snapshot, working.draft, result.chapter)
@@ -962,6 +1012,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                 projects.saveStructure(settled, working.draft)
                             }.onSuccess { settled ->
                                 working = settled
+                                emitRun(RunStage.EXECUTION_AUDIT, RunStatus.SUCCESS, "执行完成度 ${execution.completionScore} 分 · 影响后续 ${execution.affectedFutureChapters.size} 章")
                                 _state.update { state ->
                                     state.copy(
                                         snapshot = settled.snapshot,
@@ -969,35 +1020,46 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                         message = "正文已保存；计划执行审计 ${execution.completionScore} 分",
                                     )
                                 }
-                            }.onFailure {
+                            }.onFailure { error ->
+                                emitRun(RunStage.EXECUTION_AUDIT, RunStatus.WARNING, "审计完成但未能落库：${error.message.orEmpty()}")
                                 _state.update { state -> state.copy(message = "正文已保存；计划执行审计未能落库，后续可自动补算") }
                             }
+                        } else {
+                            emitRun(RunStage.EXECUTION_AUDIT, RunStatus.WARNING, "AI 执行审计未返回可用结果")
                         }
 
+                        emitRun(RunStage.CANDIDATE, RunStatus.RUNNING, "Agent 从已保存正文抽取结构化事实；先进入 Candidate，不直写 Canon")
                         _state.update { it.copy(isAgentReviewing = true) }
                         runCatching {
                             val review = NovelAgentEngine(gateway).reviewChapter(working.snapshot, working.draft)
                             val staged = CandidateCanonEngine.stage(working.snapshot, working.draft, review)
-                            val persisted = projects.saveStructure(staged.snapshot, working.draft)
-                            Triple(review, staged, persisted)
-                        }.onSuccess { (review, staged, persisted) ->
-                            working = persisted
+                            val persistedCandidate = projects.saveStructure(staged.snapshot, working.draft)
+                            Triple(review, staged, persistedCandidate)
+                        }.onSuccess { (review, staged, persistedCandidate) ->
+                            working = persistedCandidate
+                            emitRun(RunStage.CANDIDATE, RunStatus.SUCCESS, "新增 ${staged.stagedCount} 条 Candidate · 自动确认 ${staged.autoConfirmedCount} 条低风险事实")
                             _state.update {
                                 it.copy(
-                                    snapshot = persisted.snapshot,
-                                    draft = persisted.draft,
+                                    snapshot = persistedCandidate.snapshot,
+                                    draft = persistedCandidate.draft,
                                     isAgentReviewing = false,
                                     agentReview = review,
                                     message = "正文已保存；Agent 复盘完成，${staged.stagedCount} 条事实进入 Candidate${if (staged.autoConfirmedCount > 0) "，${staged.autoConfirmedCount} 条低风险状态自动确认" else ""}",
                                 )
                             }
-                        }.onFailure {
+                        }.onFailure { error ->
+                            emitRun(RunStage.CANDIDATE, RunStatus.WARNING, "Candidate 提取失败：${error.message.orEmpty()}；正文已安全保存，可稍后手动复盘")
                             _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") }
                         }
 
                         val selective = execution?.let(AutonomousExecutionEngine::shouldSelectiveReplan) == true
                         val fullRefresh = AutonomousStoryPlanner.shouldRefresh(working.snapshot, working.draft.chapterNumber)
                         if (selective || fullRefresh) {
+                            emitRun(
+                                RunStage.AUTONOMOUS_REPLAN,
+                                RunStatus.RUNNING,
+                                if (selective && !fullRefresh) "只重算被计划偏差影响的后续章节" else "滚动窗口变薄或风险升高，补足未来计划",
+                            )
                             _state.update {
                                 it.copy(
                                     isAutonomousPlanning = true,
@@ -1017,6 +1079,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                 projects.saveStructure(planner.apply(working.snapshot, nextPlan), working.draft)
                             }.onSuccess { planned ->
                                 working = planned
+                                emitRun(RunStage.AUTONOMOUS_REPLAN, RunStatus.SUCCESS, "未来滚动计划已同步")
                                 _state.update {
                                     it.copy(
                                         snapshot = planned.snapshot,
@@ -1026,12 +1089,24 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                     )
                                 }
                                 refreshWorkspace()
-                            }.onFailure {
+                            }.onFailure { error ->
+                                emitRun(RunStage.AUTONOMOUS_REPLAN, RunStatus.WARNING, "重规划失败：${error.message.orEmpty()}")
                                 _state.update { it.copy(isAutonomousPlanning = false, message = "正文已保存；自治计划重算失败，可在 Agent 页手动重试") }
                             }
+                        } else {
+                            emitRun(RunStage.AUTONOMOUS_REPLAN, RunStatus.SKIPPED, "计划与实际仍对齐，无需洗掉未来规划")
                         }
+                    } else {
+                        emitRun(RunStage.EXECUTION_AUDIT, RunStatus.SKIPPED, "未配置 AI 服务，跳过语义执行审计")
+                        emitRun(RunStage.CANDIDATE, RunStatus.SKIPPED, "未配置 AI 服务，可稍后手动复盘")
+                        emitRun(RunStage.AUTONOMOUS_REPLAN, RunStatus.SKIPPED, "未配置 AI 服务")
                     }
-                }.onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "保存章节失败") } }
+                    emitRun(RunStage.COMPLETE, RunStatus.SUCCESS, "正文已保存，所有可执行后处理阶段结束")
+                }.onFailure { error ->
+                    emitRun(RunStage.SAVE, RunStatus.FAILED, error.message ?: "保存章节失败")
+                    emitRun(RunStage.COMPLETE, RunStatus.FAILED, "正文未写入正式版本")
+                    _state.update { it.copy(isSaving = false, error = error.message ?: "保存章节失败") }
+                }
         }
     }
 

@@ -45,6 +45,7 @@ import com.xiguli.langhuan.data.ExportFormat
 import com.xiguli.langhuan.domain.*
 import com.xiguli.langhuan.engine.ChapterPlanSuggestion
 import com.xiguli.langhuan.engine.DiscoveredModel
+import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.ui.glass.liquidGlassLens
 import com.xiguli.langhuan.ui.theme.LocalLanghuanAppearance
 import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
@@ -249,10 +250,12 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 Spacer(Modifier.width(8.dp)); Text(if (state.isGenerating) "正在检索记忆并生成…" else "AI 生成本章正文")
             }
         } }
+        if (state.runEvents.isNotEmpty()) item { RunInspectorPanel(state.runEvents, "章节 Run Inspector") }
         if (state.streamPreview.isNotBlank() && state.isGenerating) item {
             MiuixCard {
-                Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Text("实时生成预览", Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.height(10.dp)); Text(state.streamPreview, maxLines = 14, overflow = TextOverflow.Ellipsis)
+                val activeLabel = state.runEvents.lastOrNull { it.status == RunStatus.RUNNING }?.stage?.label ?: "实时生成预览"
+                Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Text(activeLabel, Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.height(10.dp)); Text(state.streamPreview, maxLines = 18, overflow = TextOverflow.Ellipsis)
             }
         }
         item { MiuixCard {
