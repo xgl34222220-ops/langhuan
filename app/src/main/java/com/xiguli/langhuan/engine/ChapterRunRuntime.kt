@@ -79,12 +79,18 @@ class ChapterRunRuntime(application: Application) {
         targetWords: Int,
         extraInstruction: String = "",
         forceNew: Boolean = false,
+        allowDemoFallback: Boolean = false,
     ) {
-        enqueue(RuntimeCommand.Generate(snapshot, draft, targetWords, extraInstruction, forceNew))
+        enqueue(RuntimeCommand.Generate(snapshot, draft, targetWords, extraInstruction, forceNew, allowDemoFallback))
     }
 
-    fun commit(snapshot: StorySnapshot, draft: ChapterDraft, result: GenerationResult) {
-        enqueue(RuntimeCommand.Commit(snapshot, draft, result))
+    fun commit(
+        snapshot: StorySnapshot,
+        draft: ChapterDraft,
+        result: GenerationResult,
+        allowNoAi: Boolean = false,
+    ) {
+        enqueue(RuntimeCommand.Commit(snapshot, draft, result, allowNoAi))
     }
 
     fun review(snapshot: StorySnapshot, draft: ChapterDraft) {
@@ -123,7 +129,9 @@ class ChapterRunRuntime(application: Application) {
 
     private fun enqueue(command: RuntimeCommand) {
         synchronized(lock) {
-            val duplicate = queue.any { it.kind == command.kind && it.novelId == command.novelId && it.chapterNumber == command.chapterNumber }
+            val duplicate = queue.any {
+                it.kind == command.kind && it.novelId == command.novelId && it.chapterNumber == command.chapterNumber
+            }
             val runningDuplicate = _state.value.active && _state.value.taskKind == command.kind &&
                 _state.value.matches(command.novelId, command.chapterNumber)
             if (duplicate || runningDuplicate) return
@@ -142,6 +150,36 @@ class ChapterRunRuntime(application: Application) {
         activeJob = scope.launch {
             try {
                 execute(command)
+            } catch (cancelled: CancellationException) {
+                if (_state.value.active) {
+                    _state.update {
+                        it.copy(
+                            active = false,
+                            message = it.message ?: "当前后台任务已停止；持久化断点已保留",
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    }
+                }
+            } catch (error: Throwable) {
+                // Covers failures that happen before an operation has published its active state,
+                // especially provider discovery/configuration errors.
+                val previous = _state.value.takeIf { it.matches(command.novelId, command.chapterNumber) }
+                _state.value = ChapterRunRuntimeState(
+                    active = false,
+                    taskKind = command.kind,
+                    novelId = command.novelId,
+                    chapterNumber = command.chapterNumber,
+                    snapshot = previous?.snapshot,
+                    draft = previous?.draft,
+                    providerLabel = previous?.providerLabel.orEmpty(),
+                    preview = previous?.preview.orEmpty(),
+                    events = previous?.events.orEmpty(),
+                    result = previous?.result,
+                    review = previous?.review,
+                    queuedCount = queuedSize(),
+                    error = error.message ?: "后台章节任务失败",
+                    updatedAt = System.currentTimeMillis(),
+                )
             } finally {
                 ChapterRunForegroundService.hide(app)
                 synchronized(lock) {
@@ -162,7 +200,7 @@ class ChapterRunRuntime(application: Application) {
 
     private suspend fun executeGenerate(command: RuntimeCommand.Generate) {
         val started = System.currentTimeMillis()
-        val (providerLabel, gateway) = resolveGateway()
+        val (providerLabel, gateway) = resolveGateway(command.allowDemoFallback)
         _state.value = ChapterRunRuntimeState(
             active = true,
             taskKind = ChapterRuntimeTaskKind.GENERATE,
@@ -223,7 +261,10 @@ class ChapterRunRuntime(application: Application) {
 
     private suspend fun executeCommit(command: RuntimeCommand.Commit) {
         val started = System.currentTimeMillis()
-        val (providerLabel, gateway) = resolveGateway()
+        val resolved = resolveGatewayOrNull()
+        if (resolved == null && !command.allowNoAi) error("请先到设置添加并启用一个 AI 服务")
+        val providerLabel = resolved?.first ?: "未配置 AI · 仅保存正文"
+        val gateway = resolved?.second
         val previous = _state.value.takeIf { it.matches(command.novelId, command.chapterNumber) }
         _state.value = ChapterRunRuntimeState(
             active = true,
@@ -279,7 +320,7 @@ class ChapterRunRuntime(application: Application) {
 
     private suspend fun executeReview(command: RuntimeCommand.Review) {
         val started = System.currentTimeMillis()
-        val (providerLabel, gateway) = resolveGateway()
+        val resolved = resolveGatewayOrNull() ?: error("请先到设置添加并启用一个 AI 服务")
         val previous = _state.value.takeIf { it.matches(command.novelId, command.chapterNumber) }
         _state.value = ChapterRunRuntimeState(
             active = true,
@@ -288,7 +329,7 @@ class ChapterRunRuntime(application: Application) {
             chapterNumber = command.chapterNumber,
             snapshot = command.snapshot,
             draft = command.draft,
-            providerLabel = providerLabel,
+            providerLabel = resolved.first,
             preview = previous?.preview.orEmpty(),
             events = previous?.events.orEmpty(),
             result = previous?.result,
@@ -302,7 +343,7 @@ class ChapterRunRuntime(application: Application) {
             val reviewed = coordinator.reviewSavedChapter(
                 snapshot = command.snapshot,
                 draft = command.draft,
-                gateway = gateway,
+                gateway = resolved.second,
                 onRunEvent = { event -> emit(command, event, canStop = false) },
             )
             applyPersistedOutcome(
@@ -381,11 +422,17 @@ class ChapterRunRuntime(application: Application) {
         )
     }
 
-    private suspend fun resolveGateway(): Pair<String, UniversalAiGateway> {
+    private suspend fun resolveGateway(allowDemoFallback: Boolean): Pair<String, AiGateway> {
+        val resolved = resolveGatewayOrNull()
+        if (resolved != null) return resolved.first to resolved.second
+        if (allowDemoFallback) return "离线体验模式" to DemoAiGateway()
+        error("请先到设置添加并启用一个 AI 服务")
+    }
+
+    private suspend fun resolveGatewayOrNull(): Pair<String, UniversalAiGateway>? {
         val providers = repository.observeProviders().first()
-        val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
-            ?: error("请先到设置添加并启用一个 AI 服务")
-        val config = repository.providerConfig(provider.id) ?: error("当前 AI 服务配置不可用")
+        val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull() ?: return null
+        val config = repository.providerConfig(provider.id) ?: return null
         return "${provider.name} · ${provider.model}" to UniversalAiGateway(config)
     }
 
@@ -402,6 +449,7 @@ class ChapterRunRuntime(application: Application) {
             val targetWords: Int,
             val extraInstruction: String,
             val forceNew: Boolean,
+            val allowDemoFallback: Boolean,
         ) : RuntimeCommand {
             override val kind = ChapterRuntimeTaskKind.GENERATE
             override val novelId: String = snapshot.novel.id
@@ -412,6 +460,7 @@ class ChapterRunRuntime(application: Application) {
             val snapshot: StorySnapshot,
             val draft: ChapterDraft,
             val result: GenerationResult,
+            val allowNoAi: Boolean,
         ) : RuntimeCommand {
             override val kind = ChapterRuntimeTaskKind.COMMIT
             override val novelId: String = snapshot.novel.id
