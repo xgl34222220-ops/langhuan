@@ -2,22 +2,67 @@ from pathlib import Path
 
 studio_path = Path('app/src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt')
 studio = studio_path.read_text()
+studio = studio.replace('import com.xiguli.langhuan.engine.AgentMemoryApplier\n', '')
 
-studio = studio.replace(
-    'import com.xiguli.langhuan.engine.AgentMemoryApplier\n',
-    'import com.xiguli.langhuan.engine.AgentMemoryApplier\nimport com.xiguli.langhuan.engine.CandidateCanonEngine\n',
-)
-
-old = '''    fun applyAgentMemory() {
-        val current = _state.value
-        val review = current.agentReview ?: return
-        if (busy(current) || review.memoryActions.isEmpty()) return
-        val updated = AgentMemoryApplier.apply(current.snapshot, current.draft.chapterNumber, review)
-        saveStructure(updated, current.draft, "Agent 提取的事实已写入长期记忆")
-        _state.update { it.copy(agentReview = null) }
-    }
+old_manual = '''            runCatching { NovelAgentEngine(gateway).reviewChapter(current.snapshot, current.draft) }
+                .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "Agent 章节复盘完成") } }
+                .onFailure { error -> _state.update { it.copy(isAgentReviewing = false, error = error.message ?: "Agent 章节复盘失败") } }
 '''
-new = '''    fun applyAgentMemory() {
+new_manual = '''            runCatching {
+                val review = NovelAgentEngine(gateway).reviewChapter(current.snapshot, current.draft)
+                val staged = CandidateCanonEngine.stage(current.snapshot, current.draft, review)
+                val persisted = projects.saveStructure(staged.snapshot, current.draft)
+                Triple(review, staged, persisted)
+            }.onSuccess { (review, staged, persisted) ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isAgentReviewing = false,
+                        agentReview = review,
+                        message = "Agent 复盘完成；${staged.stagedCount} 条事实已进入 Candidate${if (staged.autoConfirmedCount > 0) "，${staged.autoConfirmedCount} 条低风险状态自动确认" else ""}",
+                    )
+                }
+                refreshWorkspace()
+            }.onFailure { error ->
+                _state.update { it.copy(isAgentReviewing = false, error = error.message ?: "Agent 章节复盘失败") }
+            }
+'''
+if old_manual not in studio:
+    raise SystemExit('manual review block not found')
+studio = studio.replace(old_manual, new_manual, 1)
+
+old_auto = '''                        _state.update { it.copy(isAgentReviewing = true) }
+                        runCatching { NovelAgentEngine(gateway).reviewChapter(working.snapshot, working.draft) }
+                            .onSuccess { review -> _state.update { it.copy(isAgentReviewing = false, agentReview = review, message = "正文已保存，Agent 复盘完成") } }
+                            .onFailure { _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") } }
+'''
+new_auto = '''                        _state.update { it.copy(isAgentReviewing = true) }
+                        runCatching {
+                            val review = NovelAgentEngine(gateway).reviewChapter(working.snapshot, working.draft)
+                            val staged = CandidateCanonEngine.stage(working.snapshot, working.draft, review)
+                            val persisted = projects.saveStructure(staged.snapshot, working.draft)
+                            Triple(review, staged, persisted)
+                        }.onSuccess { (review, staged, persisted) ->
+                            working = persisted
+                            _state.update {
+                                it.copy(
+                                    snapshot = persisted.snapshot,
+                                    draft = persisted.draft,
+                                    isAgentReviewing = false,
+                                    agentReview = review,
+                                    message = "正文已保存；Agent 复盘完成，${staged.stagedCount} 条事实进入 Candidate${if (staged.autoConfirmedCount > 0) "，${staged.autoConfirmedCount} 条低风险状态自动确认" else ""}",
+                                )
+                            }
+                        }.onFailure {
+                            _state.update { it.copy(isAgentReviewing = false, message = "正文已保存；Agent 自动复盘失败，可在 Agent 页手动重试") }
+                        }
+'''
+if old_auto not in studio:
+    raise SystemExit('auto review block not found')
+studio = studio.replace(old_auto, new_auto, 1)
+
+old_apply = '''    fun applyAgentMemory() {
         val current = _state.value
         val review = current.agentReview ?: return
         if (busy(current) || review.memoryActions.isEmpty()) return
@@ -31,43 +76,21 @@ new = '''    fun applyAgentMemory() {
         _state.update { it.copy(agentReview = null) }
     }
 
-    fun confirmCandidateFact(candidateId: String) {
-        val current = _state.value
-        if (busy(current)) return
-        val updated = runCatching { CandidateCanonEngine.confirm(current.snapshot, candidateId) }
-            .onFailure { error -> _state.update { it.copy(error = error.message ?: "候选事实无法写入 Canon") } }
-            .getOrNull() ?: return
-        saveStructure(updated, current.draft, "候选事实已确认并写入 Canon")
-    }
-
-    fun rejectCandidateFact(candidateId: String) {
-        val current = _state.value
-        if (busy(current)) return
-        val updated = CandidateCanonEngine.reject(current.snapshot, candidateId)
-        saveStructure(updated, current.draft, "候选事实已拒绝；不会进入 Canon")
-    }
 '''
-if old not in studio:
-    raise SystemExit('StudioViewModel applyAgentMemory block not found')
-studio = studio.replace(old, new)
+studio = studio.replace(old_apply, '')
 studio_path.write_text(studio)
 
 agent_path = Path('app/src/main/java/com/xiguli/langhuan/ui/AgentPage.kt')
 agent = agent_path.read_text()
-anchor = '        item { AutonomousPlanPanel(state, vm) }\n'
-if anchor not in agent:
-    raise SystemExit('AgentPage autonomous panel anchor not found')
-agent = agent.replace(anchor, anchor + '        item { CandidateCanonPanel(state, vm) }\n', 1)
-agent = agent.replace(
-    'Text("待写入长期记忆", style = MaterialTheme.typography.titleMedium)',
-    'Text("本次提取的候选事实", style = MaterialTheme.typography.titleMedium)'
-)
-agent = agent.replace(
-    'Text("${report.memoryActions.size} 项结构化事实。确认后才会进入人物/时间线/伏笔和 RAG。", color = LocalMiuixTokens.current.textSecondary)',
-    'Text("${report.memoryActions.size} 项结构化事实。先加入 Candidate；只有通过本地证明或你确认后才会进入 Canon。", color = LocalMiuixTokens.current.textSecondary)'
-)
-agent = agent.replace(
-    'Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(7.dp)); Text("确认并写入长期记忆")',
-    'Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(7.dp)); Text("加入候选事实")'
-)
+old_button = '''                        Spacer(Modifier.height(10.dp))
+                        Button(vm::applyAgentMemory, enabled = !state.isSaving, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
+                            Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(7.dp)); Text("加入候选事实")
+                        }
+'''
+new_button = '''                        Spacer(Modifier.height(8.dp))
+                        Text("这些提取项已经自动进入 Candidate 候选区；这里的报告本身不会直接改 Canon。", color = LocalMiuixTokens.current.textSecondary)
+'''
+if old_button not in agent:
+    raise SystemExit('candidate button block not found')
+agent = agent.replace(old_button, new_button, 1)
 agent_path.write_text(agent)
