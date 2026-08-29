@@ -13,6 +13,8 @@ import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -79,6 +81,50 @@ class ChapterRunCoordinatorTest {
         assertTrue(events.any { it.stage == RunStage.COMPLETE && it.status == RunStatus.SUCCESS })
     }
 
+    @Test
+    fun `manual Agent review reuses paid result after Candidate side effect failure`() = runBlocking {
+        val reviewedDraft = draft().copy(content = PROSE)
+        val store = FakeStore(snapshot(), reviewedDraft)
+        val checkpoints = MemoryCheckpointStore()
+        val gateway = StreamingGateway()
+        val coordinator = ChapterRunCoordinator(store, checkpoints)
+
+        store.failNextSave = true
+        val first = runCatching {
+            coordinator.reviewSavedChapter(store.snapshot, reviewedDraft, gateway)
+        }
+
+        assertTrue(first.isFailure)
+        assertEquals(1, gateway.generateCalls)
+        val durable = checkpoints.load(reviewedDraft.novelId, reviewedDraft.chapterNumber)
+        assertNotNull(durable)
+        assertEquals(DurableRunPhase.REVIEWING, durable?.phase)
+        assertNotNull(durable?.agentReview)
+
+        val second = coordinator.reviewSavedChapter(store.snapshot, reviewedDraft, gateway)
+
+        assertEquals(1, gateway.generateCalls)
+        assertEquals(reviewedDraft.chapterNumber, second.persisted.draft.chapterNumber)
+        assertNull(checkpoints.load(reviewedDraft.novelId, reviewedDraft.chapterNumber))
+    }
+
+    private class MemoryCheckpointStore : ChapterRunCheckpointStore {
+        private val values = mutableMapOf<String, ChapterRunCheckpoint>()
+
+        override fun load(novelId: String, chapterNumber: Int): ChapterRunCheckpoint? =
+            values["$novelId:$chapterNumber"]
+
+        override fun save(checkpoint: ChapterRunCheckpoint) {
+            values["${checkpoint.novelId}:${checkpoint.chapterNumber}"] = checkpoint
+        }
+
+        override fun clear(novelId: String, chapterNumber: Int) {
+            values.remove("$novelId:$chapterNumber")
+        }
+
+        override fun list(): List<ChapterRunCheckpoint> = values.values.toList()
+    }
+
     private class FakeStore(
         var snapshot: StorySnapshot,
         var draft: ChapterDraft,
@@ -87,6 +133,7 @@ class ChapterRunCoordinatorTest {
         var commitCalls = 0
         var saveCalls = 0
         var lastQuery = ""
+        var failNextSave = false
 
         override suspend fun retrieveRelevantContext(
             novelId: String,
@@ -124,6 +171,10 @@ class ChapterRunCoordinatorTest {
 
         override suspend fun saveStructure(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory {
             saveCalls++
+            if (failNextSave) {
+                failNextSave = false
+                error("模拟 Candidate 落库失败")
+            }
             this.snapshot = snapshot
             this.draft = draft
             return PersistedStory(snapshot, draft)
@@ -135,6 +186,7 @@ class ChapterRunCoordinatorTest {
 
     private class StreamingGateway : AiGateway {
         var streamingCalls = 0
+        var generateCalls = 0
 
         override suspend fun generateTextStreaming(prompt: PromptBundle, onDelta: (String) -> Unit): String {
             streamingCalls++
@@ -142,8 +194,9 @@ class ChapterRunCoordinatorTest {
             return PROSE
         }
 
-        override suspend fun generate(prompt: PromptBundle): GeneratedChapter =
-            if (prompt.system.contains("对抗式章节主编委员会")) {
+        override suspend fun generate(prompt: PromptBundle): GeneratedChapter {
+            generateCalls++
+            return if (prompt.system.contains("对抗式章节主编委员会")) {
                 GeneratedChapter(
                     title = "PASS",
                     content = "【结构】通过\n【人物】通过\n【文字】通过\n【连续性】通过",
@@ -156,6 +209,7 @@ class ChapterRunCoordinatorTest {
                     summary = "周衍确认门外来客身份存在矛盾，没有开门。",
                 )
             }
+        }
     }
 
     private fun snapshot(): StorySnapshot {
