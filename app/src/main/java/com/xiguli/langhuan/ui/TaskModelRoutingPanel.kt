@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -144,8 +145,9 @@ class TaskModelRoutingViewModel(application: Application) : AndroidViewModel(app
             val key = repository.apiKey(provider.id).orEmpty()
             runCatching { detector.detect(provider.baseUrl, key) }
                 .onSuccess { discovery ->
+                    val routedModel = _state.value.expandedTask?.let { task -> _state.value.routes[task]?.modelId }
                     val models = discovery.models.sortedWith(
-                        compareByDescending<DiscoveredModel> { it.id == _state.value.routes[_state.value.expandedTask]?.modelId }
+                        compareByDescending<DiscoveredModel> { it.id == routedModel }
                             .thenByDescending { it.id == provider.model }
                             .thenBy { it.displayName.lowercase() }
                     )

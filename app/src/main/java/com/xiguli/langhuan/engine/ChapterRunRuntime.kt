@@ -429,12 +429,10 @@ class ChapterRunRuntime(application: Application) {
         error("请先到设置添加并启用一个 AI 服务")
     }
 
-    private suspend fun resolveGatewayOrNull(): Pair<String, UniversalAiGateway>? {
-        val providers = repository.observeProviders().first()
-        val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull() ?: return null
-        val config = repository.providerConfig(provider.id) ?: return null
-        return "${provider.name} · ${provider.model}" to UniversalAiGateway(config)
-    }
+    private suspend fun resolveGatewayOrNull(): Pair<String, AiGateway>? = runCatching {
+        val routed = TaskDispatchingAiGateway(TaskModelRouter(app).snapshot())
+        routed.summary to routed
+    }.getOrNull()
 
     private fun queuedSize(): Int = synchronized(lock) { queue.size }
 

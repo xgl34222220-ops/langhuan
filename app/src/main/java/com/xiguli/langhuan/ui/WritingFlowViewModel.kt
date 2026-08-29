@@ -13,12 +13,15 @@ import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AgentReview
+import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.AppChapterRunStore
 import com.xiguli.langhuan.engine.ChapterRunCoordinator
 import com.xiguli.langhuan.engine.ChapterRunRuntimeState
 import com.xiguli.langhuan.engine.ChapterRuntimeTaskKind
 import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
 import com.xiguli.langhuan.engine.RunEvent
+import com.xiguli.langhuan.engine.TaskDispatchingAiGateway
+import com.xiguli.langhuan.engine.TaskModelRouter
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
 import com.xiguli.langhuan.engine.WritingFlowEngine
@@ -436,12 +439,9 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private suspend fun activeGateway(): UniversalAiGateway {
-        val providers = repository.observeProviders().first()
-        val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
-            ?: error("请先到设置添加并启用一个 AI 服务")
-        val config = repository.providerConfig(provider.id) ?: error("当前 AI 服务配置不可用")
-        _state.update { it.copy(providerLabel = "${provider.name} · ${provider.model}") }
-        return UniversalAiGateway(config)
+    private suspend fun activeGateway(): AiGateway {
+        val routed = TaskDispatchingAiGateway(TaskModelRouter(getApplication<Application>()).snapshot())
+        _state.update { it.copy(providerLabel = routed.summary) }
+        return routed
     }
 }

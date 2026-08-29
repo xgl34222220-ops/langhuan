@@ -31,6 +31,7 @@ fun AiProviderSetupPage(
 ) {
     val p = state.provider
     val quickModelVm: ProviderQuickSwitchViewModel = viewModel()
+    val taskRoutingVm: TaskModelRoutingViewModel = viewModel()
     var quickProviderId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -128,6 +129,10 @@ fun AiProviderSetupPage(
                         Text("添加另一个 AI 服务")
                     }
                 }
+            }
+
+            if (p.savedProviders.isNotEmpty()) {
+                item { TaskModelRoutingPanel(taskRoutingVm) }
             }
 
             item {

@@ -46,6 +46,8 @@ import com.xiguli.langhuan.engine.FullBookEditorEngine
 import com.xiguli.langhuan.engine.NovelAgentEngine
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.ProviderDiscovery
+import com.xiguli.langhuan.engine.TaskDispatchingAiGateway
+import com.xiguli.langhuan.engine.TaskModelRouter
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
@@ -1014,11 +1016,16 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun configuredGateway(): AiGateway? {
         val provider = _state.value.provider
-        val savedConfig = provider.activeProviderId?.let { repository.providerConfig(it) }
+        if (provider.activeProviderId != null) {
+            val routed = runCatching {
+                TaskDispatchingAiGateway(TaskModelRouter(getApplication<Application>()).snapshot())
+            }.getOrNull()
+            if (routed != null) return routed
+        }
         val transientConfig = provider.discovery?.takeIf { provider.formModel.isNotBlank() }?.let { discovery ->
             AiProviderConfig(discovery.normalizedBaseUrl, provider.apiKey, provider.formModel, discovery.protocol, supportsJsonMode = discovery.supportsJsonMode)
         }
-        return (savedConfig ?: transientConfig)?.let(::UniversalAiGateway)
+        return transientConfig?.let(::UniversalAiGateway)
     }
 
     private suspend fun refreshWorkspace() {

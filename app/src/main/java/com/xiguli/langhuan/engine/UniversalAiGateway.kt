@@ -47,6 +47,8 @@ data class DiscoveredModel(
     val displayName: String = id,
     val reasoning: Boolean = false,
     val vision: Boolean = false,
+    /** Exact only when the provider's model endpoint exposes it; otherwise 0 and capability profiling stays estimated. */
+    val contextWindow: Int = 0,
 )
 
 @Serializable
@@ -113,16 +115,24 @@ class ProviderAutoDetector {
         val root = WireJson.parseToJsonElement(response.body).jsonObject
         val models = when (protocol) {
             ApiProtocol.OPENAI_COMPATIBLE, ApiProtocol.ANTHROPIC ->
-                root["data"].asObjects().mapNotNull { item -> item.string("id")?.toModel() }
+                root["data"].asObjects().mapNotNull { item ->
+                    item.string("id")?.toModel()?.copy(
+                        contextWindow = item.firstInt("context_window", "context_length", "max_context_length", "input_token_limit"),
+                    )
+                }
 
             ApiProtocol.GEMINI -> root["models"].asObjects().mapNotNull { item ->
                 val methods = item["supportedGenerationMethods"] as? JsonArray
                 if (methods != null && methods.none { it.jsonPrimitive.contentOrNull == "generateContent" }) return@mapNotNull null
-                item.string("name")?.removePrefix("models/")?.toModel(item.string("displayName"))
+                item.string("name")?.removePrefix("models/")?.toModel(item.string("displayName"))?.copy(
+                    contextWindow = item.firstInt("inputTokenLimit", "contextWindow", "context_window"),
+                )
             }
 
             ApiProtocol.OLLAMA -> root["models"].asObjects().mapNotNull { item ->
-                item.string("name")?.toModel(item.string("name"))
+                item.string("name")?.toModel(item.string("name"))?.copy(
+                    contextWindow = item.firstInt("context_length", "context_window"),
+                )
             }
 
             else -> emptyList()
@@ -712,6 +722,9 @@ private fun String.toModel(display: String? = null): DiscoveredModel {
 }
 
 private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+
+private fun JsonObject.firstInt(vararg keys: String): Int =
+    keys.firstNotNullOfOrNull { key -> this[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull() } ?: 0
 
 private fun JsonElement?.asObjects(): List<JsonObject> =
     (this as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()

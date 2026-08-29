@@ -155,7 +155,8 @@ object ModelCapabilityProfiler {
         val vision = discovered?.vision == true || listOf(
             "vision", "vl", "gemini", "claude-3", "claude-4", "gpt-4o", "gpt-4.1", "gpt-5",
         ).any(id::contains)
-        val contextWindow = estimateContext(id)
+        val discoveredContext = discovered?.contextWindow?.takeIf { it > 0 }
+        val contextWindow = discoveredContext ?: estimateContext(id)
         val longText = contextWindow >= 128_000 || listOf(
             "claude", "gemini", "gpt-4.1", "gpt-5", "qwen", "deepseek", "minimax",
         ).any(id::contains)
@@ -174,7 +175,7 @@ object ModelCapabilityProfiler {
             vision = vision,
             longText = longText,
             transportSupported = transportSupported(provider.baseUrl, modelId),
-            estimated = true,
+            estimated = discoveredContext == null,
         )
     }
 
@@ -264,7 +265,8 @@ class TaskModelRouter(context: Context) {
             ?: error("请先到设置添加并启用一个 AI 服务")
         val defaultGateway = gateway(defaultProvider, defaultProvider.model)
         val routes = store.routes()
-        val selections = AiTaskType.entries.associateWith { task ->
+        val selections = linkedMapOf<AiTaskType, ResolvedTaskModel>()
+        for (task in AiTaskType.entries) {
             val route = routes[task]
             val routedProvider = route?.let { target -> providers.firstOrNull { it.id == target.providerId } }
             val candidateProvider = routedProvider ?: defaultProvider
@@ -274,17 +276,18 @@ class TaskModelRouter(context: Context) {
             val provider = if (safe) candidateProvider else defaultProvider
             val model = if (safe) candidateModel else defaultProvider.model
             val profile = store.profile(provider, model)
-            ResolvedTaskModel(
+            val selectedGateway = if (!safe || (provider.id == defaultProvider.id && model == defaultProvider.model)) {
+                defaultGateway
+            } else {
+                gateway(provider, model)
+            }
+            selections[task] = ResolvedTaskModel(
                 task = task,
                 provider = provider,
                 modelId = model,
                 profile = profile,
                 inheritedGlobal = !safe,
-                gateway = if (!safe || (provider.id == defaultProvider.id && model == defaultProvider.model)) {
-                    defaultGateway
-                } else {
-                    gateway(provider, model)
-                },
+                gateway = selectedGateway,
             )
         }
         return TaskRoutingSession(defaultProvider, defaultGateway, selections)

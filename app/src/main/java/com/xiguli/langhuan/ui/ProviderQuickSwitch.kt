@@ -26,6 +26,7 @@ import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.data.ProviderSaveRequest
 import com.xiguli.langhuan.data.StoredAiProvider
+import com.xiguli.langhuan.engine.AiTaskRoutingStore
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +51,7 @@ data class ProviderQuickSwitchState(
 class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PersistentStoryRepository(application)
     private val detector = ProviderAutoDetector()
+    private val routingStore = AiTaskRoutingStore(application)
     private val _state = MutableStateFlow(ProviderQuickSwitchState())
     val state: StateFlow<ProviderQuickSwitchState> = _state.asStateFlow()
 
@@ -88,6 +90,7 @@ class ProviderQuickSwitchViewModel(application: Application) : AndroidViewModel(
             val key = repository.apiKey(provider.id).orEmpty()
             runCatching { detector.detect(provider.baseUrl, key) }
                 .onSuccess { discovery ->
+                    routingStore.rememberDiscovery(provider, discovery.models)
                     val ordered = discovery.models.sortedWith(
                         compareByDescending<DiscoveredModel> { it.id == provider.model }
                             .thenBy { it.displayName.lowercase() }
