@@ -240,6 +240,10 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                     )
                 }
             }
+
+            if (route == RootRouteV3.CREATION) {
+                CreationQuickActionsOverlay(creationVm)
+            }
         }
     }
 }
