@@ -12,10 +12,13 @@ import com.xiguli.langhuan.domain.IssueSeverity
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
-import com.xiguli.langhuan.engine.AgentMemoryApplier
 import com.xiguli.langhuan.engine.AgentReview
+import com.xiguli.langhuan.engine.CandidateCanonEngine
 import com.xiguli.langhuan.engine.GenerationPipeline
 import com.xiguli.langhuan.engine.NovelAgentEngine
+import com.xiguli.langhuan.engine.RunEvent
+import com.xiguli.langhuan.engine.RunStage
+import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
 import com.xiguli.langhuan.engine.WritingFlowEngine
@@ -44,6 +47,7 @@ data class WritingFlowUiState(
     val sceneNote: String = "",
     val sceneConversation: List<WritingFlowMessage> = emptyList(),
     val streamPreview: String = "",
+    val runEvents: List<RunEvent> = emptyList(),
     val result: GenerationResult? = null,
     val review: AgentReview? = null,
     val isLoading: Boolean = false,
@@ -87,6 +91,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                         draft = loaded.draft,
                         providerLabel = label.ifBlank { "未配置 AI 服务" },
                         workingScenes = loaded.draft.scenePlan,
+                        runEvents = emptyList(),
                         chapterCommitted = loaded.draft.content.isNotBlank(),
                         isLoading = false,
                         error = null,
@@ -96,6 +101,14 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 _state.update { it.copy(isLoading = false, error = error.message ?: "加载小说失败") }
             }
         }
+    }
+
+    private fun emitRun(event: RunEvent) {
+        _state.update { state -> state.copy(runEvents = (state.runEvents + event).takeLast(96)) }
+    }
+
+    private fun emitRun(stage: RunStage, status: RunStatus, detail: String = "") {
+        emitRun(RunEvent(stage = stage, status = status, detail = detail))
     }
 
     fun planScenes(instruction: String = "") {
@@ -177,13 +190,15 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 _state.update {
                     it.copy(
                         isGenerating = true,
-                        streamPreview = "正在检索与本章最相关的历史剧情……",
+                        streamPreview = "",
+                        runEvents = emptyList(),
                         result = null,
                         review = null,
                         memoryApplied = false,
                         error = null,
                     )
                 }
+                emitRun(RunStage.CONTEXT, RunStatus.RUNNING, "构建 S/A/B/C/D 上下文并检索本章相关历史")
                 val workingDraft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan })
                 val query = buildString {
                     append(workingDraft.title).append(' ').append(workingDraft.objective).append(' ')
@@ -197,25 +212,36 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     snapshot.characters.forEach { append(it.name).append(' ').append(it.goal).append(' ') }
                 }
-                val memories = repository.retrieveRelevantMemories(
-                    snapshot.novel.id,
-                    query,
-                    workingDraft.chapterNumber,
-                    10,
-                )
-                val promptSnapshot = snapshot.copy(
-                    recentSummaries = (snapshot.recentSummaries + memories).distinct().takeLast(20)
-                )
+                val retrievedContext = runCatching {
+                    repository.retrieveRelevantContext(
+                        snapshot.novel.id,
+                        query,
+                        workingDraft.chapterNumber,
+                        10,
+                    )
+                }.getOrElse { error ->
+                    emitRun(RunStage.CONTEXT, RunStatus.WARNING, "RAG 召回失败：${error.message.orEmpty()}；继续使用结构化 Canon")
+                    emptyList()
+                }
+                if (retrievedContext.isNotEmpty()) {
+                    emitRun(RunStage.CONTEXT, RunStatus.SUCCESS, "D 层召回 ${retrievedContext.size} 条历史，不再污染 recentSummaries")
+                } else if (_state.value.runEvents.lastOrNull { it.stage == RunStage.CONTEXT }?.status == RunStatus.RUNNING) {
+                    emitRun(RunStage.CONTEXT, RunStatus.SUCCESS, "无需额外历史召回，继续使用结构化 Canon")
+                }
+
                 val result = GenerationPipeline(gateway).generate(
-                    GenerationRequest(
-                        snapshot = promptSnapshot,
+                    request = GenerationRequest(
+                        snapshot = snapshot,
                         chapter = workingDraft,
                         targetWords = 2_800,
                         extraInstruction = extraInstruction.trim(),
-                    )
-                ) { preview ->
-                    _state.update { state -> state.copy(streamPreview = preview) }
-                }
+                    ),
+                    retrievedContext = retrievedContext,
+                    onDelta = { preview ->
+                        _state.update { state -> state.copy(streamPreview = preview) }
+                    },
+                    onRunEvent = ::emitRun,
+                )
                 _state.update {
                     it.copy(
                         isGenerating = false,
@@ -225,6 +251,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 }
             } catch (_: CancellationException) {
+                emitRun(RunStage.READY_TO_COMMIT, RunStatus.WARNING, "你主动停止了生成；已收到的内容不会自动重发")
                 _state.update {
                     it.copy(
                         isGenerating = false,
@@ -232,6 +259,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 }
             } catch (error: Throwable) {
+                emitRun(RunStage.READY_TO_COMMIT, RunStatus.FAILED, error.message ?: "正文生成失败")
                 _state.update {
                     it.copy(
                         isGenerating = false,
@@ -267,6 +295,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         if (!result.canCommit || current.busy) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
+            emitRun(RunStage.SAVE, RunStatus.RUNNING, "保存正文与版本；结构化事实不会在这里直接进入 Canon")
             runCatching {
                 repository.commitGenerated(
                     snapshot = snapshot,
@@ -274,6 +303,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                     generated = result.chapter,
                 )
             }.onSuccess { persisted ->
+                emitRun(RunStage.SAVE, RunStatus.SUCCESS, "正文 v${persisted.draft.version} 已保存")
                 _state.update {
                     it.copy(
                         snapshot = persisted.snapshot,
@@ -284,11 +314,12 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                         isSaving = false,
                         chapterCommitted = true,
                         memoryApplied = false,
-                        message = "正文与版本已保存，开始自动复盘事实、伏笔和人物状态",
+                        message = "正文与版本已保存，开始 Agent 复盘并写入 Candidate",
                     )
                 }
                 reviewCommittedChapter()
             }.onFailure { error ->
+                emitRun(RunStage.SAVE, RunStatus.FAILED, error.message ?: "保存正文失败")
                 _state.update { it.copy(isSaving = false, error = error.message ?: "保存正文失败") }
             }
         }
@@ -304,46 +335,76 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 _state.update { state -> state.copy(error = it.message ?: "Agent 复盘需要 AI 服务") }
                 return@launch
             }
+            emitRun(RunStage.CANDIDATE, RunStatus.RUNNING, "从已保存正文抽取事实，全部先进入 Candidate")
             _state.update { it.copy(isReviewing = true, error = null, review = null) }
-            runCatching { NovelAgentEngine(gateway).reviewChapter(snapshot, draft) }
-                .onSuccess { review ->
-                    _state.update {
-                        it.copy(
-                            isReviewing = false,
-                            review = review,
-                            memoryApplied = false,
-                            message = "Agent 已完成章节复盘，等待你确认事实记忆和下一章方向",
-                        )
-                    }
-                }.onFailure { error ->
-                    _state.update { it.copy(isReviewing = false, error = error.message ?: "章节复盘失败") }
+            runCatching {
+                val review = NovelAgentEngine(gateway).reviewChapter(snapshot, draft)
+                val staged = CandidateCanonEngine.stage(snapshot, draft, review)
+                val persisted = projects.saveStructure(staged.snapshot, draft)
+                Triple(review, staged, persisted)
+            }.onSuccess { (review, staged, persisted) ->
+                emitRun(RunStage.CANDIDATE, RunStatus.SUCCESS, "新增 ${staged.stagedCount} 条 Candidate · 自动确认 ${staged.autoConfirmedCount} 条低风险事实")
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isReviewing = false,
+                        review = review,
+                        memoryApplied = false,
+                        message = "Agent 已完成复盘；候选事实已进入 Candidate，请确认后再进入下一章",
+                    )
                 }
+            }.onFailure { error ->
+                emitRun(RunStage.CANDIDATE, RunStatus.WARNING, "Candidate 提取失败：${error.message.orEmpty()}")
+                _state.update { it.copy(isReviewing = false, error = error.message ?: "章节复盘失败") }
+            }
         }
     }
 
-    fun applyMemoryOnly() {
+    fun confirmCandidateFact(candidateId: String) {
         val current = _state.value
         val snapshot = current.snapshot ?: return
         val draft = current.draft ?: return
-        val review = current.review ?: return
-        if (current.busy || current.memoryApplied) return
+        if (current.busy) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching {
-                val updated = AgentMemoryApplier.apply(snapshot, draft.chapterNumber, review)
-                projects.saveStructure(updated, draft)
+                projects.saveStructure(CandidateCanonEngine.confirm(snapshot, candidateId), draft)
             }.onSuccess { persisted ->
                 _state.update {
                     it.copy(
                         snapshot = persisted.snapshot,
                         draft = persisted.draft,
                         isSaving = false,
-                        memoryApplied = true,
-                        message = "人物、关系、时间线与伏笔变化已写入长期记忆",
+                        message = "候选事实已确认并进入 Canon",
                     )
                 }
             }.onFailure { error ->
-                _state.update { it.copy(isSaving = false, error = error.message ?: "写入 Agent 记忆失败") }
+                _state.update { it.copy(isSaving = false, error = error.message ?: "确认 Candidate 失败") }
+            }
+        }
+    }
+
+    fun rejectCandidateFact(candidateId: String) {
+        val current = _state.value
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        if (current.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            runCatching {
+                projects.saveStructure(CandidateCanonEngine.reject(snapshot, candidateId), draft)
+            }.onSuccess { persisted ->
+                _state.update {
+                    it.copy(
+                        snapshot = persisted.snapshot,
+                        draft = persisted.draft,
+                        isSaving = false,
+                        message = "候选事实已拒绝，不会进入 Canon",
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(isSaving = false, error = error.message ?: "拒绝 Candidate 失败") }
             }
         }
     }
@@ -357,12 +418,11 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching {
                 val review = current.review
-                val base = if (review != null && !current.memoryApplied) {
-                    val updated = AgentMemoryApplier.apply(snapshot, draft.chapterNumber, review)
-                    projects.saveStructure(updated, draft)
-                } else {
-                    projects.saveStructure(snapshot, draft)
+                val pendingForChapter = snapshot.candidateFacts.any {
+                    it.sourceChapter == draft.chapterNumber && it.status == com.xiguli.langhuan.domain.CandidateFactStatus.PENDING
                 }
+                require(!pendingForChapter) { "当前章节还有待确认 Candidate。请先确认或拒绝这些事实，再进入下一章，避免下一章缺少关键连续性状态。" }
+                val base = projects.saveStructure(snapshot, draft)
 
                 val option = optionIndex?.let { review?.nextOptions?.getOrNull(it) }
                 val nextNumber = draft.chapterNumber + 1
@@ -423,6 +483,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                         sceneNote = "",
                         sceneConversation = emptyList(),
                         streamPreview = "",
+                        runEvents = emptyList(),
                         result = null,
                         review = null,
                         isSaving = false,

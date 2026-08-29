@@ -15,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xiguli.langhuan.domain.CandidateFactRisk
+import com.xiguli.langhuan.domain.CandidateFactStatus
 import com.xiguli.langhuan.domain.IssueSeverity
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
@@ -88,6 +90,10 @@ fun WritingFlowPage(
                     Spacer(Modifier.height(12.dp))
                     WritingSteps(state)
                 }
+            }
+
+            if (state.runEvents.isNotEmpty()) {
+                item { RunInspectorPanel(state.runEvents, "写作 Run Inspector") }
             }
 
             item {
@@ -177,7 +183,7 @@ fun WritingFlowPage(
                     }
                     if (state.streamPreview.isNotBlank()) {
                         Spacer(Modifier.height(12.dp))
-                        Text(if (state.isGenerating) "实时生成预览" else "本次生成结果", fontWeight = FontWeight.Bold)
+                        Text(if (state.isGenerating) state.runEvents.lastOrNull { it.status == com.xiguli.langhuan.engine.RunStatus.RUNNING }?.stage?.label ?: "实时生成预览" else "本次生成结果", fontWeight = FontWeight.Bold)
                         Text(
                             state.streamPreview,
                             color = LocalMiuixTokens.current.textSecondary,
@@ -264,26 +270,56 @@ fun WritingFlowPage(
                             }
                         }
                         Spacer(Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = viewModel::applyMemoryOnly,
-                            enabled = !state.memoryApplied && !state.busy && review.memoryActions.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Rounded.Memory, null)
-                            Spacer(Modifier.size(6.dp))
-                            Text(if (state.memoryApplied) "事实记忆已写入" else "确认并写入事实记忆")
+                        Text(
+                            "这些提取项已经进入 Candidate；未经本地证明或你的确认，不会进入人物、时间线、伏笔、信息边界或 RAG。",
+                            color = LocalMiuixTokens.current.textSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        val pendingCandidates = snapshot.candidateFacts.filter {
+                            it.sourceChapter == draft.chapterNumber && it.status == CandidateFactStatus.PENDING
+                        }
+                        if (pendingCandidates.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("待确认 Candidate · ${pendingCandidates.size} 条", fontWeight = FontWeight.Bold)
+                            pendingCandidates.take(16).forEach { fact ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).squircleClip(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .5f),
+                                ) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        Text("${fact.kind} · ${if (fact.risk == CandidateFactRisk.HIGH) "高风险" else if (fact.risk == CandidateFactRisk.MEDIUM) "需确认" else "低风险"}", fontWeight = FontWeight.Bold)
+                                        Text(fact.subject, color = MaterialTheme.colorScheme.primary)
+                                        Text(fact.after, style = MaterialTheme.typography.bodySmall)
+                                        if (fact.evidence.isNotBlank()) Text("依据：${fact.evidence}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(onClick = { viewModel.rejectCandidateFact(fact.id) }, enabled = !state.busy, modifier = Modifier.weight(1f)) { Text("拒绝") }
+                                            Button(onClick = { viewModel.confirmCandidateFact(fact.id) }, enabled = !state.busy, modifier = Modifier.weight(1f)) { Text("确认进 Canon") }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Spacer(Modifier.height(8.dp))
+                            Text("当前章节没有待确认 Candidate，可以安全进入下一章。", color = LocalMiuixTokens.current.success, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
 
                 item {
                     FlowCard {
-                        FlowTitle(Icons.Rounded.ArrowForward, "⑤ 下一章", "先选方向，再进入下一章；新一轮仍会从场景规划开始。")
+                        val pendingBeforeNext = snapshot.candidateFacts.count {
+                            it.sourceChapter == draft.chapterNumber && it.status == CandidateFactStatus.PENDING
+                        }
+                        FlowTitle(Icons.Rounded.ArrowForward, "⑤ 下一章", "先处理当前章 Candidate，再选方向进入下一章；新一轮仍会从场景规划开始。")
                         Spacer(Modifier.height(10.dp))
+                        if (pendingBeforeNext > 0) {
+                            Text("还有 $pendingBeforeNext 条候选事实待确认/拒绝。为避免下一章在错误状态上续写，先处理上面的 Candidate。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.height(8.dp))
+                        }
                         if (review.nextOptions.isEmpty()) {
                             Text("本次复盘没有给出候选，可让章节规划器自动生成下一章。", color = LocalMiuixTokens.current.textSecondary)
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = { viewModel.advanceToNext(null) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                            Button(onClick = { viewModel.advanceToNext(null) }, enabled = !state.busy && pendingBeforeNext == 0, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.size(6.dp)); Text("AI 自动规划下一章")
                             }
                         } else {
@@ -298,7 +334,7 @@ fun WritingFlowPage(
                                         Text("冲突：${option.conflict}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
                                         Text("转折：${option.turningPoint}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
                                         Spacer(Modifier.height(8.dp))
-                                        Button(onClick = { viewModel.advanceToNext(index) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                                        Button(onClick = { viewModel.advanceToNext(index) }, enabled = !state.busy && pendingBeforeNext == 0, modifier = Modifier.fillMaxWidth()) {
                                             Text("采用这个方向并进入下一章")
                                             Spacer(Modifier.size(6.dp))
                                             Icon(Icons.Rounded.ArrowForward, null)
@@ -378,7 +414,7 @@ private fun WritingSteps(state: WritingFlowUiState) {
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        listOf("场景", "正文", "审查", "记忆", "下一章").forEachIndexed { index, label ->
+        listOf("场景", "正文", "审查", "事实", "下一章").forEachIndexed { index, label ->
             val step = index + 1
             AssistChip(
                 onClick = {},
