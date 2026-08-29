@@ -56,6 +56,8 @@ data class ModelTaskTelemetry(
 @Serializable
 private data class ModelTelemetryConfig(
     val stats: List<ModelTaskTelemetry> = emptyList(),
+    /** Bounded idempotency ledger for successful formal-save adoption signals. */
+    val acceptedKeys: List<String> = emptyList(),
 )
 
 data class ModelRecommendation(
@@ -117,6 +119,28 @@ class AiModelTelemetryStore(context: Context) {
             updatedAt = System.currentTimeMillis(),
         )
         replace(current, next)
+    }
+
+    @Synchronized
+    fun recordUserAccepted(attribution: ModelUsageAttribution, acceptanceKey: String) {
+        if (acceptanceKey.isBlank()) return
+        val task = runCatching { AiTaskType.valueOf(attribution.task) }.getOrNull() ?: return
+        val current = load()
+        val scopedKey = "${attribution.providerId}|${attribution.modelId}|${attribution.task}|$acceptanceKey"
+        if (scopedKey in current.acceptedKeys) return
+        val old = current.stats.lastOrNull {
+            it.providerId == attribution.providerId && it.modelId == attribution.modelId && it.task == task
+        } ?: ModelTaskTelemetry(attribution.providerId, attribution.modelId, task)
+        val next = old.copy(userAccepted = old.userAccepted + 1, updatedAt = System.currentTimeMillis())
+        val kept = current.stats.filterNot {
+            it.providerId == next.providerId && it.modelId == next.modelId && it.task == next.task
+        }
+        save(
+            current.copy(
+                stats = (kept + next).sortedByDescending { it.updatedAt }.take(500),
+                acceptedKeys = (current.acceptedKeys + scopedKey).takeLast(2_000),
+            )
+        )
     }
 
     @Synchronized

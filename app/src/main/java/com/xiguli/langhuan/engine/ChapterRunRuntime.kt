@@ -295,7 +295,15 @@ class ChapterRunRuntime(application: Application) {
             )
             command.result.modelAttributions
                 .firstOrNull { it.task == AiTaskType.PROSE_AUTHOR.name }
-                ?.let { modelTelemetry.recordSignal(it, AiQualitySignal.USER_ACCEPTED) }
+                ?.let { attribution ->
+                    val acceptanceKey = listOf(
+                        command.novelId,
+                        command.chapterNumber.toString(),
+                        command.draft.version.toString(),
+                        command.result.chapter.content.hashCode().toString(),
+                    ).joinToString(":")
+                    modelTelemetry.recordUserAccepted(attribution, acceptanceKey)
+                }
             applyPersistedOutcome(
                 persisted = outcome.persisted,
                 review = outcome.review,
