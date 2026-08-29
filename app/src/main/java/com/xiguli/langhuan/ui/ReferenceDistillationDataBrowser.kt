@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,10 +50,10 @@ private val DnaCategories = listOf(
     DnaCategory("ALL", "全部 DNA"),
     DnaCategory("CHARACTER", "人物 / 关系", setOf("PROTAGONIST", "SUPPORTING", "CHARACTER", "CHARACTERIZATION", "RELATIONSHIP", "CHARACTER_STATE", "RELATION_STATE")),
     DnaCategory("POWER", "能力 / 规则", setOf("POWER", "PROGRESSION", "RULE", "WORLD_RULE", "RULE_PRESENTATION", "POWER_STATE")),
-    DnaCategory("INSTANCE", "副本", setOf("INSTANCE", "INSTANCE_RULE", "INSTANCE_ENTRY", "INSTANCE_OBJECTIVE", "INSTANCE_NPC", "INSTANCE_MONSTER", "INSTANCE_CLUE", "INSTANCE_FAILURE", "INSTANCE_CLEAR", "INSTANCE_REWARD")),
+    DnaCategory("INSTANCE", "副本 / 任务", setOf("INSTANCE", "INSTANCE_RULE", "INSTANCE_ENTRY", "INSTANCE_OBJECTIVE", "INSTANCE_NPC", "INSTANCE_MONSTER", "INSTANCE_CLUE", "INSTANCE_FAILURE", "INSTANCE_CLEAR", "INSTANCE_REWARD", "INSTANCE_MAINLINE")),
     DnaCategory("PLOT", "剧情 / 事件", setOf("ARC", "CONFLICT", "EVENT", "TIMELINE", "STRUCTURE", "CHAPTER_TRACE")),
     DnaCategory("MYSTERY", "谜团 / 伏笔", setOf("MYSTERY", "CLUE", "REVEAL", "FORESHADOW", "PAYOFF")),
-    DnaCategory("WORLD", "世界 / 势力 / 地点", setOf("WORLD", "FACTION", "LOCATION", "THEME")),
+    DnaCategory("WORLD", "世界 / 势力 / 地点", setOf("WORLD", "FACTION", "LOCATION", "THEME", "ORGANIZATION", "SETTING")),
     DnaCategory("STYLE", "Style DNA", kinds = setOf("STYLE", "DNA")),
     DnaCategory("KEEP", "KEEP", kinds = setOf("KEEP")),
     DnaCategory("TRANSFORM", "TRANSFORM", kinds = setOf("TRANSFORM")),
@@ -75,21 +74,19 @@ internal fun ReferenceDistillationDataBrowserDialog(
             .distinctBy { listOf(it.kind, it.dimension, it.value, it.evidence).joinToString("|") }
     }
     val active = DnaCategories.first { it.key == categoryKey }
+    val categoryCounts = remember(allItems) {
+        DnaCategories.drop(1).associate { category -> category.key to allItems.count { matchesCategory(it, category) } }
+    }
     val filtered = remember(allItems, query, categoryKey) {
         val q = query.trim()
         allItems.filter { item ->
-            val dimension = item.dimension.trim().uppercase()
-            val kind = item.kind.trim().uppercase()
-            val categoryMatch = when (active.key) {
-                "ALL" -> true
-                else -> (active.dimensions.isNotEmpty() && dimension in active.dimensions) ||
-                    (active.kinds.isNotEmpty() && kind in active.kinds)
-            }
+            val categoryMatch = active.key == "ALL" || matchesCategory(item, active)
             val queryMatch = q.isBlank() || listOf(item.kind, item.dimension, item.value, item.evidence)
                 .any { it.contains(q, ignoreCase = true) }
             categoryMatch && queryMatch
         }
     }
+    val builtin = report.taskId.startsWith("builtin:")
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -108,7 +105,7 @@ internal fun ReferenceDistillationDataBrowserDialog(
                     Column(Modifier.padding(start = 10.dp).weight(1f)) {
                         Text(report.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            "蒸馏数据库 · 共 ${allItems.size} 条 · ${if (report.taskId.startsWith("builtin:")) "内置参考" else "我的蒸馏"}",
+                            "蒸馏数据库 · 共 ${allItems.size} 条 · ${if (builtin) "内置参考" else "我的蒸馏"}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -119,10 +116,27 @@ internal fun ReferenceDistillationDataBrowserDialog(
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text("${store.coverageLabel(report)} · 全书 ${report.chapters} 章 · AI 深读 ${report.samples} 章", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "STORY ${store.kindCounts(report)["STORY"] ?: 0} · STYLE ${store.kindCounts(report)["STYLE"] ?: 0} · KEEP ${store.kindCounts(report)["KEEP"] ?: 0} · TRANSFORM ${store.kindCounts(report)["TRANSFORM"] ?: 0} · AVOID ${store.kindCounts(report)["AVOID"] ?: 0}",
+                                if (builtin) {
+                                    "${store.coverageLabel(report)} · 全书 ${report.chapters} 章 · 全章结构索引 ${report.samples} 章"
+                                } else {
+                                    "${store.coverageLabel(report)} · 全书 ${report.chapters} 章 · AI 深读 ${report.samples} 章"
+                                },
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "人物/关系 ${categoryCounts["CHARACTER"] ?: 0} · 能力/规则 ${categoryCounts["POWER"] ?: 0} · 副本/任务 ${categoryCounts["INSTANCE"] ?: 0}",
                                 style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "剧情/事件 ${categoryCounts["PLOT"] ?: 0} · 谜团/伏笔 ${categoryCounts["MYSTERY"] ?: 0} · 世界/势力/地点 ${categoryCounts["WORLD"] ?: 0}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "STYLE ${store.kindCounts(report)["STYLE"] ?: 0} · KEEP ${store.kindCounts(report)["KEEP"] ?: 0} · TRANSFORM ${store.kindCounts(report)["TRANSFORM"] ?: 0} · AVOID ${store.kindCounts(report)["AVOID"] ?: 0}",
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -141,9 +155,10 @@ internal fun ReferenceDistillationDataBrowserDialog(
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         items(DnaCategories, key = { it.key }) { category ->
                             val selected = category.key == categoryKey
+                            val count = if (category.key == "ALL") allItems.size else categoryCounts[category.key] ?: 0
                             AssistChip(
                                 onClick = { categoryKey = category.key },
-                                label = { Text(category.label) },
+                                label = { Text("${category.label} $count") },
                                 colors = AssistChipDefaults.assistChipColors(
                                     containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                                     labelColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -173,6 +188,13 @@ internal fun ReferenceDistillationDataBrowserDialog(
             }
         }
     }
+}
+
+private fun matchesCategory(item: ReferenceDistillationReportItem, category: DnaCategory): Boolean {
+    val dimension = item.dimension.trim().uppercase()
+    val kind = item.kind.trim().uppercase()
+    return (category.dimensions.isNotEmpty() && dimension in category.dimensions) ||
+        (category.kinds.isNotEmpty() && kind in category.kinds)
 }
 
 @Composable
@@ -205,31 +227,35 @@ private fun itemKey(item: ReferenceDistillationReportItem): String =
 private fun browserDimensionLabel(value: String): String = when (value.trim().uppercase()) {
     "PROTAGONIST" -> "主角"
     "SUPPORTING" -> "重要配角"
-    "RELATIONSHIP", "RELATION_STATE" -> "人物关系"
+    "RELATIONSHIP", "RELATION_STATE" -> "人物关系 / 共现"
     "CHARACTER", "CHARACTER_STATE", "CHARACTERIZATION" -> "人物 / 状态"
     "POWER", "POWER_STATE" -> "能力"
     "PROGRESSION" -> "成长路线"
-    "RULE", "WORLD_RULE" -> "规则"
-    "INSTANCE" -> "副本"
+    "RULE", "WORLD_RULE", "RULE_PRESENTATION" -> "规则"
+    "INSTANCE" -> "副本 / 任务"
     "INSTANCE_RULE" -> "副本规则"
     "INSTANCE_ENTRY" -> "进入条件"
     "INSTANCE_OBJECTIVE" -> "阶段目标"
-    "INSTANCE_NPC" -> "副本 NPC"
+    "INSTANCE_NPC" -> "参与人物 / NPC"
     "INSTANCE_MONSTER" -> "怪物 / 威胁"
     "INSTANCE_CLUE" -> "副本线索"
     "INSTANCE_FAILURE" -> "失败 / 死亡条件"
     "INSTANCE_CLEAR" -> "通关 / 离开条件"
     "INSTANCE_REWARD" -> "奖励 / 代价"
+    "INSTANCE_MAINLINE" -> "与主线关系"
     "ARC" -> "主线阶段"
-    "EVENT" -> "关键事件"
-    "TIMELINE" -> "时间线"
+    "CONFLICT" -> "冲突"
+    "EVENT" -> "关键 / 异常事件段"
+    "TIMELINE" -> "时间 / 空间线索"
     "CHAPTER_TRACE" -> "章节索引"
-    "MYSTERY" -> "谜团"
+    "MYSTERY" -> "谜团 / 线索段"
     "CLUE" -> "线索"
     "REVEAL" -> "揭示"
     "FORESHADOW" -> "伏笔"
     "PAYOFF" -> "伏笔回收"
-    "WORLD" -> "世界观"
+    "WORLD" -> "世界观 / 组织段"
+    "ORGANIZATION" -> "组织"
+    "SETTING" -> "舞台 / 地点"
     "FACTION" -> "势力 / 组织"
     "LOCATION" -> "地点"
     "POV" -> "视角"
