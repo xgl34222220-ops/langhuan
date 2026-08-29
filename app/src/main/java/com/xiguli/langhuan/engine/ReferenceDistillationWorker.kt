@@ -110,9 +110,7 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
                 ?: providers.firstOrNull()
                 ?: error("没有可用 AI 服务，请先在琅嬛添加 Key / 模型")
             val rawConfig = repository.providerConfig(provider.id) ?: error("当前 AI 服务配置无法读取")
-            val config = if (savedCheckpoint != null && savedCheckpoint.providerId == provider.id && savedCheckpoint.model.isNotBlank()) {
-                rawConfig.copy(model = savedCheckpoint.model)
-            } else rawConfig
+            val config = if (savedCheckpoint != null && savedCheckpoint.providerId == provider.id && savedCheckpoint.model.isNotBlank()) rawConfig.copy(model = savedCheckpoint.model) else rawConfig
             val gateway: AiGateway = UniversalAiGateway(config)
             val providerLabel = provider.name.ifBlank { provider.protocol.label }
             val modelLabel = config.model.ifBlank { provider.model }
@@ -129,9 +127,8 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
             }
             val batches = samples.chunked(batchSize)
             val checkpoint = savedCheckpoint?.takeIf { saved ->
-                saved.fingerprint == fingerprint && saved.title == manuscript.title &&
-                    saved.chapters == manuscript.chapters.size && saved.samples == samples.size &&
-                    saved.totalBatches == batches.size && saved.providerId == provider.id && saved.model == modelLabel
+                saved.fingerprint == fingerprint && saved.title == manuscript.title && saved.chapters == manuscript.chapters.size &&
+                    saved.samples == samples.size && saved.totalBatches == batches.size && saved.providerId == provider.id && saved.model == modelLabel
             }
             if (savedCheckpoint != null && checkpoint == null) checkpointStore.clear(fingerprint)
 
@@ -140,17 +137,9 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
             if (checkpoint == null) {
                 checkpointStore.save(
                     ReferenceDistillationCheckpoint(
-                        fingerprint = fingerprint,
-                        title = manuscript.title,
-                        chapters = manuscript.chapters.size,
-                        samples = samples.size,
-                        providerId = provider.id,
-                        provider = providerLabel,
-                        model = modelLabel,
-                        completedBatches = 0,
-                        totalBatches = batches.size,
-                        observations = emptyList(),
-                        localMetrics = localMetrics,
+                        fingerprint = fingerprint, title = manuscript.title, chapters = manuscript.chapters.size, samples = samples.size,
+                        providerId = provider.id, provider = providerLabel, model = modelLabel, completedBatches = 0,
+                        totalBatches = batches.size, observations = emptyList(), localMetrics = localMetrics,
                     )
                 )
             } else if (completed > 0) {
@@ -169,17 +158,9 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
                 val previous = checkpointStore.load(fingerprint)
                 checkpointStore.save(
                     (previous ?: ReferenceDistillationCheckpoint(
-                        fingerprint = fingerprint,
-                        title = manuscript.title,
-                        chapters = manuscript.chapters.size,
-                        samples = samples.size,
-                        providerId = provider.id,
-                        provider = providerLabel,
-                        model = modelLabel,
-                        completedBatches = 0,
-                        totalBatches = batches.size,
-                        observations = emptyList(),
-                        localMetrics = localMetrics,
+                        fingerprint = fingerprint, title = manuscript.title, chapters = manuscript.chapters.size, samples = samples.size,
+                        providerId = provider.id, provider = providerLabel, model = modelLabel, completedBatches = 0,
+                        totalBatches = batches.size, observations = emptyList(), localMetrics = localMetrics,
                     )).copy(
                         completedBatches = index + 1,
                         observations = observations.toList(),
@@ -193,11 +174,7 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
             setProgress(progressData("aggregate_prepare", 84, manuscript.title, providerLabel, modelLabel, batches.size, batches.size))
             setForeground(foreground("正在准备《${manuscript.title}》分层 DNA 聚合", 84))
             val dossier = ReferenceDistillationHierarchicalAggregator(checkpointStore).aggregate(
-                gateway = gateway,
-                manuscript = manuscript,
-                metrics = localMetrics,
-                observations = observations,
-                fingerprint = fingerprint,
+                gateway = gateway, manuscript = manuscript, metrics = localMetrics, observations = observations, fingerprint = fingerprint,
                 onProgress = { stage, progress, group, groups ->
                     setProgress(progressData(stage, progress, manuscript.title, providerLabel, modelLabel, group, groups))
                     val text = when (stage) {
@@ -210,15 +187,8 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
             )
             val reportId = id.toString()
             val report = reportStore.save(
-                taskId = reportId,
-                title = manuscript.title,
-                chapters = manuscript.chapters.size,
-                samples = samples.size,
-                provider = providerLabel,
-                model = modelLabel,
-                localMetrics = localMetrics,
-                dossier = dossier,
-                retainedObservations = observations,
+                taskId = reportId, title = manuscript.title, chapters = manuscript.chapters.size, samples = samples.size,
+                provider = providerLabel, model = modelLabel, localMetrics = localMetrics, dossier = dossier, retainedObservations = observations,
             )
 
             archive.merge(
@@ -254,38 +224,25 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
             checkpointStore.clear(fingerprint)
             sourceStore.remove(id.toString())
             runCatching { source.delete() }
-            Result.success(
-                workDataOf(
-                    "title" to manuscript.title,
-                    "chapters" to manuscript.chapters.size,
-                    "samples" to samples.size,
-                    "provider" to providerLabel,
-                    "model" to modelLabel,
-                    "reportId" to reportId,
-                    "fingerprint" to fingerprint,
-                    "storyDna" to true,
-                    "retrievalItems" to reportStore.retainedItemCount(report),
-                )
-            )
+            Result.success(workDataOf(
+                "title" to manuscript.title, "chapters" to manuscript.chapters.size, "samples" to samples.size,
+                "provider" to providerLabel, "model" to modelLabel, "reportId" to reportId, "fingerprint" to fingerprint,
+                "storyDna" to true, "retrievalItems" to reportStore.retainedItemCount(report),
+            ))
         }.getOrElse { error ->
             val rawMessage = error.message ?: "参考小说蒸馏失败"
             if (runAttemptCount < 2 && isRetryable(rawMessage)) Result.retry()
             else {
                 val checkpoint = checkpointStore.load(fingerprint)
-                Result.failure(
-                    workDataOf(
-                        "error" to friendlyFailure(rawMessage, checkpoint).take(500),
-                        "title" to checkpoint?.title.orEmpty().ifBlank { initialTitle },
-                        "provider" to checkpoint?.provider.orEmpty(),
-                        "model" to checkpoint?.model.orEmpty(),
-                        "resumable" to ((checkpoint?.completedBatches ?: 0) > 0),
-                        "completedBatches" to (checkpoint?.completedBatches ?: 0),
-                        "batches" to (checkpoint?.totalBatches ?: 0),
-                        "completedAggregateGroups" to (checkpoint?.completedAggregateGroups ?: 0),
-                        "aggregateGroups" to (checkpoint?.totalAggregateGroups ?: 0),
-                        "fingerprint" to fingerprint,
-                    )
-                )
+                Result.failure(workDataOf(
+                    "error" to friendlyFailure(rawMessage, checkpoint).take(500),
+                    "title" to checkpoint?.title.orEmpty().ifBlank { initialTitle },
+                    "provider" to checkpoint?.provider.orEmpty(), "model" to checkpoint?.model.orEmpty(),
+                    "resumable" to ((checkpoint?.completedBatches ?: 0) > 0),
+                    "completedBatches" to (checkpoint?.completedBatches ?: 0), "batches" to (checkpoint?.totalBatches ?: 0),
+                    "completedAggregateGroups" to (checkpoint?.completedAggregateGroups ?: 0), "aggregateGroups" to (checkpoint?.totalAggregateGroups ?: 0),
+                    "fingerprint" to fingerprint,
+                ))
             }
         }
     }
@@ -301,12 +258,21 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
                     你是琅嬛“参考小说 V2 双层蒸馏器”。这里不是写摘要，而是在建立之后能被检索的作品 DNA 库。
                     同一批材料同时抽取：
                     A. STYLE：POV / RHYTHM / DIALOGUE / INFO / SUSPENSE / CHARACTERIZATION / RULE_PRESENTATION / SCENE / EMOTION / STRUCTURE。
-                    B. STORY：PROTAGONIST / SUPPORTING / RELATIONSHIP / WORLD / RULE / POWER / FACTION / LOCATION / CONFLICT / MYSTERY / ARC / PROGRESSION / THEME。
+                    B. STORY：PROTAGONIST / SUPPORTING / RELATIONSHIP / WORLD / RULE / POWER / FACTION / LOCATION / CONFLICT / MYSTERY / ARC / PROGRESSION / THEME；如果作品存在副本、试炼、关卡、梦境任务、规则场域等，还必须优先抽取 INSTANCE / INSTANCE_RULE / INSTANCE_OBJECTIVE / INSTANCE_NPC / INSTANCE_THREAT / INSTANCE_CLUE / INSTANCE_CLEAR / INSTANCE_REWARD / INSTANCE_MAINLINE。
+
+                    副本信息抽取标准：
+                    - INSTANCE：副本名/类型/整体场景/首次出现阶段；
+                    - INSTANCE_RULE：进入条件、限制、禁忌、触发规则；
+                    - INSTANCE_OBJECTIVE：阶段目标与任务推进；INSTANCE_NPC：关键 NPC/怪物/参与者；
+                    - INSTANCE_THREAT：失败、死亡、惩罚或失控条件；INSTANCE_CLUE：核心线索链与误导；
+                    - INSTANCE_CLEAR：通关/离开/结算条件；INSTANCE_REWARD：奖励、代价、能力或资源变化；
+                    - INSTANCE_MAINLINE：该副本与主线、人物成长、谜团或世界观的关系。
+                    同一副本不要压成一句总述；文本支持时拆成多条单一、可检索事实。若样本只覆盖副本的一部分，明确“阶段信息/未见结算”，禁止脑补完整通关流程。
 
                     输出 GeneratedChapter JSON：
                     - title="DISTILL_BATCH"；content=180-380字阶段观察；summary=100-220字写法规律；
-                    - stateChanges=12-28项，subject 只能 STYLE 或 STORY；每项只表达一个可检索事实/规律，不把多个维度塞进同一句；
-                    - STORY 可以准确保存作品人物名、身份、规则、能力以支持原作事实问答，但证据不足必须省略；
+                    - stateChanges=12-32项，subject 只能 STYLE 或 STORY；每项只表达一个可检索事实/规律，不把多个维度塞进同一句；
+                    - STORY 可以准确保存作品人物名、身份、规则、能力、副本名与副本机制，以支持原作事实问答，但证据不足必须省略；
                     - evidence 写“第X章附近/前段样本/中段样本/后段样本”等短证据标签，不抄原文；
                     - touchedForeshadowingIds=[]。
                     禁止逐章复述、禁止长引原文、禁止靠类型常识补事实。宁可保留更多互不重复的细粒度 DNA，也不要把整批压成几句空泛总结。
@@ -317,13 +283,13 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
 
                     $sampleText
 
-                    先提取本批真正被文本支持的 STORY，再提取 STYLE。每条 DNA 尽量单一、具体、可检索。
+                    先提取本批真正被文本支持的 STORY；若出现副本/试炼/规则场域，先把副本结构拆清楚，再提取其他 STORY 与 STYLE。每条 DNA 尽量单一、具体、可检索。
                 """.trimIndent(),
             )
         )
         return buildString {
             if (output.summary.isNotBlank()) appendLine("STYLE_SUMMARY: ${output.summary.take(520)}")
-            output.stateChanges.take(28).forEach { change ->
+            output.stateChanges.take(32).forEach { change ->
                 val kind = change.subject.trim().uppercase().let { if (it == "DNA") "STYLE" else it }
                 if (kind !in setOf("STYLE", "STORY")) return@forEach
                 val value = change.after.ifBlank { change.before }.trim().take(420)
@@ -332,7 +298,7 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
                 }
             }
             if (length < 900 && output.content.isNotBlank()) appendLine("BATCH_OVERVIEW: ${output.content.take(800)}")
-        }.take(5_200)
+        }.take(5_800)
     }
 
     private fun buildSamples(manuscript: ImportedManuscript): List<SampleChunk> {
@@ -341,23 +307,14 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
         val desired = desiredSampleCount(chapters.size).coerceAtMost(chapters.size)
         val indices = linkedSetOf<Int>()
         fun add(index: Int) { if (index in chapters.indices) indices += index }
-        // 锁定首尾，避免均匀采样错过开篇建模和结局回收。
         (0..4).forEach(::add)
         (chapters.lastIndex - 4..chapters.lastIndex).forEach(::add)
         val slots = (desired - indices.size).coerceAtLeast(0)
-        if (slots > 0) {
-            for (slot in 1..slots) {
-                val ratio = slot.toDouble() / (slots + 1).toDouble()
-                add((ratio * chapters.lastIndex).roundToInt())
-            }
-        }
+        if (slots > 0) for (slot in 1..slots) add((slot.toDouble() / (slots + 1).toDouble() * chapters.lastIndex).roundToInt())
         if (indices.size < desired) {
             val step = chapters.size.toDouble() / desired.coerceAtLeast(1)
             var cursor = step / 2.0
-            while (indices.size < desired && cursor < chapters.size) {
-                add(cursor.roundToInt().coerceAtMost(chapters.lastIndex))
-                cursor += step
-            }
+            while (indices.size < desired && cursor < chapters.size) { add(cursor.roundToInt().coerceAtMost(chapters.lastIndex)); cursor += step }
         }
         val sampleChars = sampleCharsFor(chapters.size)
         return indices.sorted().take(desired).map { index ->
@@ -366,7 +323,6 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
         }
     }
 
-    /** V2: significantly denser long-book coverage while remaining bounded for mobile/background use. */
     private fun desiredSampleCount(chapterCount: Int): Int = when {
         chapterCount <= 24 -> chapterCount
         chapterCount <= 80 -> 40
@@ -394,11 +350,9 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
         val piece = (maxChars / 3).coerceAtLeast(320)
         val middleStart = (text.length / 2 - piece / 2).coerceAtLeast(piece)
         return buildString {
-            appendLine(text.take(piece))
-            appendLine("\n[…保留本章中段采样…]\n")
+            appendLine(text.take(piece)); appendLine("\n[…保留本章中段采样…]\n")
             appendLine(text.substring(middleStart, (middleStart + piece).coerceAtMost(text.length)))
-            appendLine("\n[…保留本章后段采样…]\n")
-            append(text.takeLast(piece))
+            appendLine("\n[…保留本章后段采样…]\n"); append(text.takeLast(piece))
         }.take(maxChars + 120)
     }
 
@@ -421,21 +375,11 @@ class ReferenceDistillationWorker(appContext: Context, params: WorkerParameters)
 
     private fun foreground(text: String, progress: Int): ForegroundInfo {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= 26) {
-            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "琅嬛长任务", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "参考小说蒸馏、全书分析等长时间任务"
-            })
-        }
+        if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "琅嬛长任务", NotificationManager.IMPORTANCE_LOW).apply { description = "参考小说蒸馏、全书分析等长时间任务" })
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("琅嬛 · 参考小说 V2 蒸馏")
-            .setContentText(text)
-            .setOnlyAlertOnce(true)
-            .setOngoing(progress < 100)
-            .setProgress(100, progress.coerceIn(0, 100), false)
-            .build()
-        return if (Build.VERSION.SDK_INT >= 29) ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        else ForegroundInfo(NOTIFICATION_ID, notification)
+            .setSmallIcon(R.mipmap.ic_launcher).setContentTitle("琅嬛 · 参考小说 V2 蒸馏").setContentText(text)
+            .setOnlyAlertOnce(true).setOngoing(progress < 100).setProgress(100, progress.coerceIn(0, 100), false).build()
+        return if (Build.VERSION.SDK_INT >= 29) ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else ForegroundInfo(NOTIFICATION_ID, notification)
     }
 
     private fun isRetryable(message: String): Boolean {

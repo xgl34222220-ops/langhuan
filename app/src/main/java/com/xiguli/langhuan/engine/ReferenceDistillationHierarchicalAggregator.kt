@@ -111,9 +111,10 @@ class ReferenceDistillationHierarchicalAggregator(
 
                     原则：
                     1. 合并重复事实和重复写法，不要为了完整而扩写。
-                    2. 同一人物、规则或阶段出现冲突时，保留“阶段变化/样本不一致”，禁止擅自选边。
-                    3. 这里只生成可阅读摘要；批次级 DNA 会由 App 单独长期保留，所以不要为了压缩而杜撰概括。
-                    4. 不输出原文句子，不仿写。
+                    2. 同一人物、规则、副本或阶段出现冲突时，保留“阶段变化/样本不一致”，禁止擅自选边。
+                    3. 副本相关 INSTANCE_* 条目要保留副本归属，不要把多个副本的规则、NPC、通关条件混成一套。
+                    4. 这里只生成可阅读摘要；批次级 DNA 会由 App 单独长期保留，所以不要为了压缩而杜撰概括。
+                    5. 不输出原文句子，不仿写。
 
                     输出 GeneratedChapter JSON：
                     - title="DISTILL_GROUP"；
@@ -148,16 +149,17 @@ class ReferenceDistillationHierarchicalAggregator(
                 你是琅嬛的“作品双层 DNA 最终聚合器”。输入已经经过分层摘要；原始批次 DNA 由 App 另行保留，因此这里的职责是形成稳定总览，而不是把所有细节再次压进几十条里。
 
                 必须同时输出：
-                1. Story DNA（content，650-1200字）：主角身份/动机/困境、重要配角与关系、世界观、硬规则、能力/成长体系、主要势力与地点、核心谜团/冲突、剧情阶段演化、主题。只写摘要支持的内容；冲突必须标阶段变化或样本不一致。
+                1. Story DNA（content，650-1400字）：主角身份/动机/困境、重要配角与关系、世界观、硬规则、能力/成长体系、主要势力与地点、核心谜团/冲突、剧情阶段演化、主题；如果存在副本/试炼/关卡/规则场域，还要单独总结主要副本及其类型、进入条件、核心规则、阶段目标、关键 NPC/怪物、威胁与失败条件、线索链、通关条件、奖励/代价和与主线关系。只写摘要支持的内容；冲突必须标阶段变化或样本不一致。
                 2. Style DNA（summary，300-600字）：视角、叙事距离、句段节奏、对白、信息释放、悬念、章末钩子、人物塑造、规则呈现、场景切换、情绪与结构模式。
-                3. stateChanges 28-64项，尽量覆盖不同维度而不是同义重复：
+                3. stateChanges 28-72项，尽量覆盖不同维度而不是同义重复：
                    - STYLE：稳定高层技法；
-                   - STORY：结构化事实或阶段变化；
+                   - STORY：结构化事实或阶段变化；副本使用 INSTANCE / INSTANCE_RULE / INSTANCE_OBJECTIVE / INSTANCE_NPC / INSTANCE_THREAT / INSTANCE_CLUE / INSTANCE_CLEAR / INSTANCE_REWARD / INSTANCE_MAINLINE；
                    - KEEP：可迁移的通用机制；
                    - TRANSFORM：值得参考但必须原创重构的机制；
-                   - AVOID：原作专名、人物组合、具体能力规则、独特谜底、剧情骨架、标志性表达等禁止照搬内容。
-                4. evidence 只能使用“分层聚合1/跨段共同出现/本地统计”等短标签，不写原句。
-                5. touchedForeshadowingIds=[]。
+                   - AVOID：原作专名、人物组合、具体能力规则、独特谜底、副本专名与独特通关解法、剧情骨架、标志性表达等禁止照搬内容。
+                4. 同一副本的各项信息必须能看出归属于哪个副本；不要把多个副本揉成“典型副本机制”。
+                5. evidence 只能使用“分层聚合1/跨段共同出现/本地统计”等短标签，不写原句。
+                6. touchedForeshadowingIds=[]。
 
                 这是研究档案，不是仿写模板。可以准确描述原作帮助理解，但新书引用时必须原创转换。
             """.trimIndent(),
@@ -171,7 +173,7 @@ class ReferenceDistillationHierarchicalAggregator(
                 【已完成的分层聚合摘要】
                 ${groupSummaries.joinToString("\n\n===\n\n").take(20_000)}
 
-                生成最终 Story DNA + Style DNA 总览。不要逐章复述，也不要丢掉 KEEP / TRANSFORM / AVOID 的方法论边界。
+                生成最终 Story DNA + Style DNA 总览。若存在副本体系，必须给出可检索的副本结构总览；不要逐章复述，也不要丢掉 KEEP / TRANSFORM / AVOID 的方法论边界。
             """.trimIndent(),
         )
     )
