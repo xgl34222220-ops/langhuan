@@ -45,6 +45,9 @@ internal fun RunInspectorPanel(
     title: String = "Run Inspector",
 ) {
     if (events.isEmpty()) return
+    // 建书会谈属于普通用户流程，内部 Run 调试信息不应直接铺在聊天页。
+    if (title == "建书 Run Inspector") return
+
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val running = events.any { it.status == RunStatus.RUNNING }
     LaunchedEffect(running) {
@@ -115,8 +118,9 @@ private fun RunStatusIcon(status: RunStatus) {
 }
 
 private fun elapsedMillis(events: List<RunEvent>, stage: RunStage, now: Long): Long {
-    val start = events.firstOrNull { it.stage == stage && it.status == RunStatus.RUNNING }?.atMillis ?: return -1L
-    val end = events.lastOrNull { it.stage == stage && it.status != RunStatus.RUNNING }?.atMillis ?: now
+    // 同一阶段可能因断点/重试多次进入 RUNNING；只按最近一次进入运行态计时。
+    val start = events.lastOrNull { it.stage == stage && it.status == RunStatus.RUNNING }?.atMillis ?: return -1L
+    val end = events.lastOrNull { it.stage == stage && it.status != RunStatus.RUNNING && it.atMillis >= start }?.atMillis ?: now
     return (end - start).coerceAtLeast(0L)
 }
 
