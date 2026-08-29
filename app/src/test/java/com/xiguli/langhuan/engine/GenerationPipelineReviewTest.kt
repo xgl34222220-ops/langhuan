@@ -16,7 +16,7 @@ import org.junit.Test
 class GenerationPipelineReviewTest {
     @Test
     fun `first pass does not rewrite`() = runBlocking {
-        val gateway = ScriptedGateway(mutableListOf("PASS"))
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.Pass))
         val result = GenerationPipeline(gateway).generate(request())
 
         assertEquals(FIRST_PROSE, result.chapter.content)
@@ -26,8 +26,20 @@ class GenerationPipelineReviewTest {
     }
 
     @Test
-    fun `rejected first draft is rewritten and second pass can commit`() = runBlocking {
-        val gateway = ScriptedGateway(mutableListOf("REWRITE", "PASS"))
+    fun `editorial advice cannot force rewrite or block`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.AdviceRewrite))
+        val result = GenerationPipeline(gateway).generate(request())
+
+        assertEquals(FIRST_PROSE, result.chapter.content)
+        assertEquals(1, gateway.reviewCalls)
+        assertEquals(1, gateway.proseCalls)
+        assertFalse(result.issues.any { it.code == "EDITOR_REVIEW_FAILED" })
+        assertTrue(result.canCommit)
+    }
+
+    @Test
+    fun `hard rejected first draft is rewritten and second pass can commit`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite, ReviewScript.Pass))
         val result = GenerationPipeline(gateway).generate(request())
 
         assertEquals(SECOND_PROSE, result.chapter.content)
@@ -37,8 +49,8 @@ class GenerationPipelineReviewTest {
     }
 
     @Test
-    fun `second rejection blocks commit instead of infinite rewriting`() = runBlocking {
-        val gateway = ScriptedGateway(mutableListOf("REWRITE", "REWRITE"))
+    fun `second hard rejection blocks commit instead of infinite rewriting`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite, ReviewScript.HardRewrite))
         val result = GenerationPipeline(gateway).generate(request())
 
         assertEquals(2, gateway.reviewCalls)
@@ -47,8 +59,14 @@ class GenerationPipelineReviewTest {
         assertFalse(result.canCommit)
     }
 
+    private enum class ReviewScript {
+        Pass,
+        AdviceRewrite,
+        HardRewrite,
+    }
+
     private class ScriptedGateway(
-        private val verdicts: MutableList<String>,
+        private val verdicts: MutableList<ReviewScript>,
     ) : AiGateway {
         var reviewCalls = 0
         var proseCalls = 0
@@ -61,16 +79,23 @@ class GenerationPipelineReviewTest {
         override suspend fun generate(prompt: PromptBundle): GeneratedChapter {
             return if (prompt.system.contains("对抗式章节主编委员会")) {
                 reviewCalls++
-                val verdict = verdicts.removeAt(0)
-                GeneratedChapter(
-                    title = verdict,
-                    content = if (verdict == "PASS") {
-                        "【结构】通过\n【人物】通过\n【文字】通过\n【连续性】通过"
-                    } else {
-                        "【结构】章末推进不足，需要让选择产生不可逆后果\n【人物】通过\n【文字】通过\n【连续性】通过"
-                    },
-                    summary = if (verdict == "PASS") "四席通过" else "结构席退回",
-                )
+                when (verdicts.removeAt(0)) {
+                    ReviewScript.Pass -> GeneratedChapter(
+                        title = "PASS",
+                        content = "【结构】通过\n【人物】通过\n【文字】通过\n【连续性】通过",
+                        summary = "四席通过",
+                    )
+                    ReviewScript.AdviceRewrite -> GeneratedChapter(
+                        title = "REWRITE",
+                        content = "【结构】【建议】章末可以更集中，让选择产生更强后果\n【人物】通过\n【文字】通过\n【连续性】通过",
+                        summary = "结构席有编辑建议，但不存在可验证硬冲突",
+                    )
+                    ReviewScript.HardRewrite -> GeneratedChapter(
+                        title = "REWRITE",
+                        content = "【结构】【硬冲突】锚点=本章必须确认来客身份不一致｜正文证据=正文没有完成该确认｜修法=在本章场景内补足明确确认\n【人物】通过\n【文字】通过\n【连续性】通过",
+                        summary = "结构席发现可验证硬冲突",
+                    )
+                }
             } else {
                 GeneratedChapter(
                     title = "测试章",
