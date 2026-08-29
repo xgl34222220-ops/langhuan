@@ -103,6 +103,7 @@ class ChapterRunCoordinatorTest {
             snapshot: StorySnapshot,
             draft: ChapterDraft,
             generated: GeneratedChapter,
+            runId: String,
         ): PersistedStory {
             commitCalls++
             val nextDraft = draft.copy(
@@ -110,6 +111,7 @@ class ChapterRunCoordinatorTest {
                 content = generated.content,
                 summary = generated.summary,
                 version = draft.version + 1,
+                lastCommittedRunId = runId,
             )
             val nextSnapshot = snapshot.copy(
                 novel = snapshot.novel.copy(currentChapter = draft.chapterNumber),
@@ -128,6 +130,7 @@ class ChapterRunCoordinatorTest {
         }
 
         override suspend fun chapterDrafts(novelId: String): List<ChapterDraft> = listOf(draft)
+        override suspend fun loadStory(novelId: String): PersistedStory = PersistedStory(snapshot, draft)
     }
 
     private class StreamingGateway : AiGateway {

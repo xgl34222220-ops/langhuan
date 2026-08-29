@@ -223,6 +223,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     error = null,
                 )
             }
+            restoreDurableRun(loaded.snapshot, loaded.draft)
             refreshWorkspace()
         }
     }

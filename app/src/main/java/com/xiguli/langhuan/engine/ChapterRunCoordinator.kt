@@ -409,7 +409,7 @@ class ChapterRunCoordinator(
             (checkpoint.inputFingerprint == chapterRunFingerprint(snapshot, draft) || draft.lastCommittedRunId == checkpoint.runId)
 
     private fun ChapterRunCheckpoint.withEvent(event: RunEvent): ChapterRunCheckpoint {
-        val terminal = event.status != RunStatus.RUNNING
+        val terminal = event.status in setOf(RunStatus.SUCCESS, RunStatus.SKIPPED)
         return copy(
             currentStage = event.stage.name,
             completedStages = if (terminal) (completedStages + event.stage.name).distinct() else completedStages,

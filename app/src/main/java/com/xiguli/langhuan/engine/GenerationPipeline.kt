@@ -258,7 +258,8 @@ class GenerationPipeline(
         emit(RunStage.METADATA, RunStatus.RUNNING, "正文冻结后再提取摘要 / 状态 / 伏笔触碰；提取结果仍不是 Canon")
         val metadata: GeneratedChapter
         val metadataSucceeded: Boolean
-        if (checkpoint.metadataAttempted && checkpoint.metadata != null) {
+        val metadataRestored = checkpoint.metadataAttempted && checkpoint.metadata != null
+        if (metadataRestored) {
             metadata = checkpoint.metadata
             metadataSucceeded = checkpoint.metadataSucceeded
         } else {
@@ -282,7 +283,7 @@ class GenerationPipeline(
         emit(
             RunStage.METADATA,
             if (metadataSucceeded) RunStatus.SUCCESS else RunStatus.WARNING,
-            if (checkpoint.metadataAttempted) "元数据从断点恢复；未重复请求模型" else if (metadataSucceeded) "结构化提取完成" else "元数据提取失败，使用正文摘要兜底；不会凭空写入 Canon",
+            if (metadataRestored) "元数据从断点恢复；未重复请求模型" else if (metadataSucceeded) "结构化提取完成" else "元数据提取失败，使用正文摘要兜底；不会凭空写入 Canon",
         )
 
         val chapter = GeneratedChapter(
