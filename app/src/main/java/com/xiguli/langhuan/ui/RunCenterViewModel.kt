@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.engine.ChapterRunCheckpoint
+import com.xiguli.langhuan.engine.ChapterRunKeepAliveRegistry
 import com.xiguli.langhuan.engine.DurableRunPhase
 import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
 import com.xiguli.langhuan.engine.RunEvent
@@ -55,43 +56,55 @@ class RunCenterViewModel(application: Application) : AndroidViewModel(applicatio
         refreshRunning = true
         viewModelScope.launch {
             if (!silent) _state.update { it.copy(isLoading = true, error = null) }
-            runCatching {
-                checkpoints.list().map { checkpoint -> checkpoint.toUi() }
-            }.onSuccess { items ->
+            try {
+                val items = buildList {
+                    for (checkpoint in checkpoints.list()) add(checkpoint.toUi())
+                }
                 _state.update { it.copy(items = items, isLoading = false, error = null) }
-            }.onFailure { error ->
+            } catch (error: Throwable) {
                 _state.update {
                     it.copy(
                         isLoading = false,
                         error = error.message ?: "无法读取运行断点",
                     )
                 }
+            } finally {
+                refreshRunning = false
             }
-            refreshRunning = false
         }
     }
 
     fun open(item: RunCenterItemUi) {
+        val live = ChapterRunKeepAliveRegistry.state.value
+        if (live.active && (live.novelId != item.novelId || live.chapterNumber != item.chapterNumber)) {
+            _state.update {
+                it.copy(error = "第${live.chapterNumber}章还有后台任务正在执行。请先打开并停止当前任务，再切换到其他 Run。")
+            }
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
-            runCatching {
+            try {
                 projects.setActiveStoryId(item.novelId)
                 projects.selectChapter(item.novelId, item.chapterNumber)
                     ?: error("找不到第${item.chapterNumber}章，无法恢复这个 Run")
-            }.onSuccess {
                 _state.update {
                     it.copy(
                         isLoading = false,
                         openRequest = RunCenterOpenRequest(item.novelId, item.chapterNumber),
                     )
                 }
-            }.onFailure { error ->
+            } catch (error: Throwable) {
                 _state.update { it.copy(isLoading = false, error = error.message ?: "无法打开运行断点") }
             }
         }
     }
 
     fun abandon(item: RunCenterItemUi) {
+        if (ChapterRunKeepAliveRegistry.isActive(item.novelId, item.chapterNumber)) {
+            _state.update { it.copy(error = "这个 Run 仍在执行，先停止当前生成再放弃断点。") }
+            return
+        }
         checkpoints.clear(item.novelId, item.chapterNumber)
         _state.update { state ->
             state.copy(items = state.items.filterNot { it.novelId == item.novelId && it.chapterNumber == item.chapterNumber })
