@@ -3,7 +3,9 @@ package com.xiguli.langhuan.engine
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.StateChange
 import com.xiguli.langhuan.domain.StorySnapshot
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class AgentActionKind {
     CHARACTER_NEW,
     CHARACTER_LOCATION,
@@ -22,6 +24,7 @@ enum class AgentActionKind {
     UNKNOWN,
 }
 
+@Serializable
 data class AgentAction(
     val kind: AgentActionKind,
     val subject: String,
@@ -30,6 +33,7 @@ data class AgentAction(
     val evidence: String,
 )
 
+@Serializable
 data class AgentNextOption(
     val title: String,
     val objective: String,
@@ -37,6 +41,7 @@ data class AgentNextOption(
     val turningPoint: String,
 )
 
+@Serializable
 data class AgentReview(
     val title: String,
     val summary: String,

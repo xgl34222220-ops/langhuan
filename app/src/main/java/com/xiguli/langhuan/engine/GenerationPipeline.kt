@@ -45,61 +45,108 @@ class GenerationPipeline(
         retrievedContext: List<RetrievedContextItem> = emptyList(),
         onDelta: (String) -> Unit = {},
         onRunEvent: (RunEvent) -> Unit = {},
+        resumeCheckpoint: GenerationStageCheckpoint = GenerationStageCheckpoint(),
+        onCheckpoint: (GenerationStageCheckpoint) -> Unit = {},
     ): GenerationResult {
         fun emit(stage: RunStage, status: RunStatus, detail: String = "") {
             onRunEvent(RunEvent(stage = stage, status = status, detail = detail))
         }
+        var checkpoint = resumeCheckpoint
+        fun persist(next: GenerationStageCheckpoint) {
+            checkpoint = next
+            onCheckpoint(next)
+        }
 
-        // 1) Author writes only prose. Context Builder 2.0 keeps RAG in D layer.
-        emit(RunStage.DRAFT, RunStatus.RUNNING, "S/A/B/C/D 上下文已锁定，模型开始返回正文")
-        var prose = cleanVisibleProse(
-            aiGateway.generateTextStreaming(promptAssembler.buildProse(request, retrievedContext)) { partial ->
-                val visible = cleanVisibleProse(partial)
-                if (visible.isNotBlank()) onDelta(visible)
-            }
-        )
-        require(prose.isNotBlank()) { "AI 没有返回可用正文" }
-        onDelta(prose)
-        emit(RunStage.DRAFT, RunStatus.SUCCESS, "初稿 ${prose.length} 字")
+        // 1) Draft prose. If this model call already completed, never send it again.
+        val draftProse = if (checkpoint.draftProse.isNotBlank()) {
+            val restored = cleanVisibleProse(checkpoint.draftProse)
+            onDelta(restored)
+            emit(RunStage.DRAFT, RunStatus.SUCCESS, "从持久化断点恢复初稿 ${restored.length} 字；未重复请求模型")
+            restored
+        } else {
+            emit(RunStage.DRAFT, RunStatus.RUNNING, "S/A/B/C/D 上下文已锁定，模型开始返回正文")
+            val generated = cleanVisibleProse(
+                aiGateway.generateTextStreaming(promptAssembler.buildProse(request, retrievedContext)) { partial ->
+                    val visible = cleanVisibleProse(partial)
+                    if (visible.isNotBlank()) onDelta(visible)
+                }
+            )
+            require(generated.isNotBlank()) { "AI 没有返回可用正文" }
+            persist(checkpoint.copy(draftProse = generated))
+            onDelta(generated)
+            emit(RunStage.DRAFT, RunStatus.SUCCESS, "初稿 ${generated.length} 字")
+            generated
+        }
 
-        // 2) Cheap local prose diagnostics. Only clearly non-novel drafts spend one extra model call.
-        val initialQuality = novelizationEngine.analyze(prose)
-        var quality = initialQuality
-        var novelizationSucceeded = false
+        val initialQuality = novelizationEngine.analyze(draftProse)
+        var prose = draftProse
+        var novelizationSucceeded = checkpoint.novelizationSucceeded
+
+        // 2) Novelization. Attempt outcome (including an empty/failed response) is checkpointed.
         if (initialQuality.requiresNovelization) {
-            emit(RunStage.NOVELIZATION, RunStatus.RUNNING, initialQuality.problems.take(3).joinToString("；"))
-            onDelta("")
-            val novelized = runCatching {
-                cleanVisibleProse(
-                    aiGateway.generateTextStreaming(
-                        novelizationEngine.buildRewrite(request, prose, initialQuality, retrievedContext)
-                    ) { partial ->
-                        val visible = cleanVisibleProse(partial)
-                        if (visible.isNotBlank()) onDelta(visible)
-                    }
+            if (checkpoint.novelizationAttempted) {
+                prose = checkpoint.postNovelizationProse.ifBlank { draftProse }
+                novelizationSucceeded = checkpoint.novelizationSucceeded
+                onDelta(prose)
+                emit(
+                    RunStage.NOVELIZATION,
+                    if (novelizationSucceeded) RunStatus.SUCCESS else RunStatus.WARNING,
+                    if (novelizationSucceeded) "从断点恢复小说化重构；未重复请求模型" else "上次小说化重构未得到可用文本；恢复初稿继续",
                 )
-            }.getOrNull().orEmpty()
-            if (novelized.isNotBlank()) {
-                prose = novelized
-                novelizationSucceeded = true
-                quality = novelizationEngine.analyze(prose)
-                onDelta(prose)
-                emit(RunStage.NOVELIZATION, RunStatus.SUCCESS, "重构后小说化评分 ${quality.score} 分")
             } else {
+                emit(RunStage.NOVELIZATION, RunStatus.RUNNING, initialQuality.problems.take(3).joinToString("；"))
+                onDelta("")
+                val novelized = runCatching {
+                    cleanVisibleProse(
+                        aiGateway.generateTextStreaming(
+                            novelizationEngine.buildRewrite(request, draftProse, initialQuality, retrievedContext)
+                        ) { partial ->
+                            val visible = cleanVisibleProse(partial)
+                            if (visible.isNotBlank()) onDelta(visible)
+                        }
+                    )
+                }.getOrNull().orEmpty()
+                novelizationSucceeded = novelized.isNotBlank()
+                prose = novelized.ifBlank { draftProse }
+                persist(
+                    checkpoint.copy(
+                        novelizationAttempted = true,
+                        postNovelizationProse = prose,
+                        novelizationSucceeded = novelizationSucceeded,
+                    )
+                )
                 onDelta(prose)
-                emit(RunStage.NOVELIZATION, RunStatus.WARNING, "小说化重构未返回可用文本，保留初稿交给主编继续检查")
+                emit(
+                    RunStage.NOVELIZATION,
+                    if (novelizationSucceeded) RunStatus.SUCCESS else RunStatus.WARNING,
+                    if (novelizationSucceeded) "重构后小说化评分 ${novelizationEngine.analyze(prose).score} 分" else "小说化重构未返回可用文本，保留初稿交给主编继续检查",
+                )
             }
         } else {
+            if (!checkpoint.novelizationAttempted) {
+                persist(checkpoint.copy(novelizationAttempted = true, postNovelizationProse = draftProse))
+            }
+            prose = draftProse
             emit(RunStage.NOVELIZATION, RunStatus.SKIPPED, "初稿未命中报告体 / AI 腔阈值")
         }
 
-        // 3) One adversarial review call contains four independent editor seats.
-        emit(RunStage.EDITOR_REVIEW_1, RunStatus.RUNNING, "结构 / 人物 / 文字 / 连续性四席同时审稿")
-        val firstReview = runCatching {
-            aiGateway.generate(adversarialEditor.buildReview(request, prose, round = 1))
-        }.getOrNull()
+        val preEditorProse = prose
+        var quality = novelizationEngine.analyze(preEditorProse)
+
+        // 3) First adversarial review. A null response is also a completed attempt and is not replayed.
+        val firstReview = if (checkpoint.firstReviewAttempted) {
+            emit(RunStage.EDITOR_REVIEW_1, RunStatus.RUNNING, "恢复已完成的一审结果")
+            checkpoint.firstReview
+        } else {
+            emit(RunStage.EDITOR_REVIEW_1, RunStatus.RUNNING, "结构 / 人物 / 文字 / 连续性四席同时审稿")
+            val reviewed = runCatching {
+                aiGateway.generate(adversarialEditor.buildReview(request, preEditorProse, round = 1))
+            }.getOrNull()
+            persist(checkpoint.copy(firstReviewAttempted = true, firstReview = reviewed))
+            reviewed
+        }
         val firstDeterministic = buildList {
-            addAll(obviousProseProblems(prose))
+            addAll(obviousProseProblems(preEditorProse))
             if (quality.requiresNovelization) addAll(quality.problems)
         }.distinct()
         val firstRejected = adversarialEditor.requestsRewrite(firstReview) || firstDeterministic.isNotEmpty()
@@ -111,29 +158,37 @@ class GenerationPipeline(
                 else -> RunStatus.SUCCESS
             },
             when {
+                checkpoint.firstReviewAttempted && firstReview != null && !firstRejected -> "一审结果从断点复用 · 四席通过"
                 firstReview == null -> "AI 主编响应失败；仍会执行本地确定性质量规则"
                 firstRejected -> "主编退回：${adversarialEditor.instructions(firstReview, firstDeterministic).take(220)}"
                 else -> "四席通过"
             },
         )
-        var editorBlockingIssue: ConsistencyIssue? = null
 
+        var editorBlockingIssue: ConsistencyIssue? = null
         if (firstRejected) {
             val instructions = adversarialEditor.instructions(firstReview, firstDeterministic)
-            emit(RunStage.EDITOR_REWRITE, RunStatus.RUNNING, "按主编意见从头修订整章")
-            onDelta("")
-            val rewritten = runCatching {
-                cleanVisibleProse(
-                    aiGateway.generateTextStreaming(
-                        promptAssembler.buildRewrite(request, prose, instructions, retrievedContext)
-                    ) { partial ->
-                        val visible = cleanVisibleProse(partial)
-                        if (visible.isNotBlank()) onDelta(visible)
-                    }
-                )
-            }.getOrNull().orEmpty()
+            val rewritten = if (checkpoint.editorRewriteAttempted) {
+                checkpoint.editorRewriteProse
+            } else {
+                emit(RunStage.EDITOR_REWRITE, RunStatus.RUNNING, "按主编意见从头修订整章")
+                onDelta("")
+                val value = runCatching {
+                    cleanVisibleProse(
+                        aiGateway.generateTextStreaming(
+                            promptAssembler.buildRewrite(request, preEditorProse, instructions, retrievedContext)
+                        ) { partial ->
+                            val visible = cleanVisibleProse(partial)
+                            if (visible.isNotBlank()) onDelta(visible)
+                        }
+                    )
+                }.getOrNull().orEmpty()
+                persist(checkpoint.copy(editorRewriteAttempted = true, editorRewriteProse = value))
+                value
+            }
 
             if (rewritten.isBlank()) {
+                prose = preEditorProse
                 onDelta(prose)
                 emit(RunStage.EDITOR_REWRITE, RunStatus.FAILED, "主编已退回，但修订请求没有返回可用正文")
                 emit(RunStage.EDITOR_REVIEW_2, RunStatus.SKIPPED, "没有可复审的修订稿")
@@ -145,16 +200,25 @@ class GenerationPipeline(
                     repairInstruction = "保留当前草稿但禁止正式保存；重新生成或切换模型后再次执行章节生成。",
                 )
             } else {
-                prose = rewritten
+                prose = cleanVisibleProse(rewritten)
                 quality = novelizationEngine.analyze(prose)
                 onDelta(prose)
-                emit(RunStage.EDITOR_REWRITE, RunStatus.SUCCESS, "修订稿 ${prose.length} 字")
+                emit(
+                    RunStage.EDITOR_REWRITE,
+                    RunStatus.SUCCESS,
+                    if (checkpoint.editorRewriteAttempted) "从断点恢复修订稿 ${prose.length} 字" else "修订稿 ${prose.length} 字",
+                )
 
-                // 4) The rewritten draft must face a fresh second review. No infinite retry loop.
-                emit(RunStage.EDITOR_REVIEW_2, RunStatus.RUNNING, "修订稿重新进入四席复审；不会无限循环改写")
-                val secondReview = runCatching {
-                    aiGateway.generate(adversarialEditor.buildReview(request, prose, round = 2))
-                }.getOrNull()
+                val secondReview = if (checkpoint.secondReviewAttempted) {
+                    checkpoint.secondReview
+                } else {
+                    emit(RunStage.EDITOR_REVIEW_2, RunStatus.RUNNING, "修订稿重新进入四席复审；不会无限循环改写")
+                    val reviewed = runCatching {
+                        aiGateway.generate(adversarialEditor.buildReview(request, prose, round = 2))
+                    }.getOrNull()
+                    persist(checkpoint.copy(secondReviewAttempted = true, secondReview = reviewed))
+                    reviewed
+                }
                 val secondDeterministic = buildList {
                     addAll(obviousProseProblems(prose))
                     if (quality.requiresNovelization) addAll(quality.problems)
@@ -168,6 +232,7 @@ class GenerationPipeline(
                         else -> RunStatus.SUCCESS
                     },
                     when {
+                        checkpoint.secondReviewAttempted && secondReview != null && !secondRejected -> "二审结果从断点复用 · 四席通过"
                         secondReview == null -> "二审响应失败；以本地规则和 Consistency Gate 继续判定"
                         secondRejected -> "二审仍退回，结果将被 BLOCKING"
                         else -> "二审通过"
@@ -189,23 +254,37 @@ class GenerationPipeline(
             emit(RunStage.EDITOR_REVIEW_2, RunStatus.SKIPPED, "一审通过，无需二审")
         }
 
-        // 5) Only after prose is frozen do we extract summary/state/foreshadowing for the database.
+        // 4) Metadata extraction is paid/remote, so its fallback result is checkpointed too.
         emit(RunStage.METADATA, RunStatus.RUNNING, "正文冻结后再提取摘要 / 状态 / 伏笔触碰；提取结果仍不是 Canon")
-        val metadataResult = runCatching {
-            aiGateway.generate(promptAssembler.buildMetadata(request, prose))
-        }
-        val metadata = metadataResult.getOrElse {
-            GeneratedChapter(
-                title = request.chapter.title,
-                content = "",
-                summary = fallbackSummary(prose),
+        val metadata: GeneratedChapter
+        val metadataSucceeded: Boolean
+        if (checkpoint.metadataAttempted && checkpoint.metadata != null) {
+            metadata = checkpoint.metadata
+            metadataSucceeded = checkpoint.metadataSucceeded
+        } else {
+            val metadataResult = runCatching { aiGateway.generate(promptAssembler.buildMetadata(request, prose)) }
+            metadataSucceeded = metadataResult.isSuccess
+            metadata = metadataResult.getOrElse {
+                GeneratedChapter(
+                    title = request.chapter.title,
+                    content = "",
+                    summary = fallbackSummary(prose),
+                )
+            }
+            persist(
+                checkpoint.copy(
+                    metadataAttempted = true,
+                    metadataSucceeded = metadataSucceeded,
+                    metadata = metadata,
+                )
             )
         }
         emit(
             RunStage.METADATA,
-            if (metadataResult.isSuccess) RunStatus.SUCCESS else RunStatus.WARNING,
-            if (metadataResult.isSuccess) "结构化提取完成" else "元数据提取失败，使用正文摘要兜底；不会凭空写入 Canon",
+            if (metadataSucceeded) RunStatus.SUCCESS else RunStatus.WARNING,
+            if (checkpoint.metadataAttempted) "元数据从断点恢复；未重复请求模型" else if (metadataSucceeded) "结构化提取完成" else "元数据提取失败，使用正文摘要兜底；不会凭空写入 Canon",
         )
+
         val chapter = GeneratedChapter(
             title = metadata.title.trim().ifBlank { request.chapter.title },
             content = prose,
@@ -264,11 +343,7 @@ class GenerationPipeline(
             if (blockingCount > 0) RunStatus.WARNING else RunStatus.SUCCESS,
             if (blockingCount > 0) "生成完成，但存在阻止保存的问题" else "正文已通过生成链，可查看结果并确认保存",
         )
-
-        return GenerationResult(
-            chapter = chapter,
-            issues = issues,
-        )
+        return GenerationResult(chapter = chapter, issues = issues)
     }
 
     private fun cleanVisibleProse(raw: String): String {

@@ -232,6 +232,8 @@ data class ChapterDraft(
     val version: Int = 1,
     /** 0.25.4 起新增；为空时会由章纲和当前状态生成有效合同。 */
     val contract: ChapterContract = ChapterContract(),
+    /** 最近一次正式正文提交的运行 id；只用于 exactly-once 保存，不属于 Canon。 */
+    val lastCommittedRunId: String = "",
 )
 
 @Serializable

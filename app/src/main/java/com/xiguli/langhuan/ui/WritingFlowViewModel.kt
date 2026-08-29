@@ -14,6 +14,7 @@ import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AgentReview
 import com.xiguli.langhuan.engine.AppChapterRunStore
 import com.xiguli.langhuan.engine.ChapterRunCoordinator
+import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.RunStage
 import com.xiguli.langhuan.engine.RunStatus
@@ -66,7 +67,10 @@ data class WritingFlowUiState(
 class WritingFlowViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PersistentStoryRepository(application)
     private val projects = StoryProjectManager(application)
-    private val chapterRuns = ChapterRunCoordinator(AppChapterRunStore(repository, projects))
+    private val chapterRuns = ChapterRunCoordinator(
+        AppChapterRunStore(repository, projects),
+        PersistentChapterRunCheckpointStore(application),
+    )
     private val _state = MutableStateFlow(WritingFlowUiState())
     val state: StateFlow<WritingFlowUiState> = _state.asStateFlow()
     private var generationJob: Job? = null
@@ -96,6 +100,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                         error = null,
                     )
                 }
+                restoreDurableRun(loaded.snapshot, loaded.draft)
             }.onFailure { error ->
                 _state.update { it.copy(isLoading = false, error = error.message ?: "加载小说失败") }
             }
@@ -251,6 +256,9 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
             .filter { it.severity != IssueSeverity.INFO }
             .joinToString("\n") { "- ${it.repairInstruction}" }
             .ifBlank { "保持现有章纲不变，修复所有一致性问题后重写正文。" }
+        val snapshot = current.snapshot ?: return
+        val draft = current.draft ?: return
+        chapterRuns.abandon(snapshot, draft)
         generate("上一版没有通过一致性审查。必须保留章纲目标和既定事实，按以下要求重写：\n$repairs")
     }
 
@@ -466,6 +474,19 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun clearNotice() = _state.update { it.copy(message = null, error = null) }
+
+
+    private fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
+        val recovery = chapterRuns.recover(snapshot, draft) ?: return
+        _state.update {
+            it.copy(
+                streamPreview = recovery.preview,
+                result = recovery.result,
+                runEvents = recovery.events,
+                message = recovery.message,
+            )
+        }
+    }
 
     private suspend fun activeGateway(): UniversalAiGateway {
         val providers = repository.observeProviders().first()

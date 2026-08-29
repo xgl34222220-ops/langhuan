@@ -33,6 +33,7 @@ import com.xiguli.langhuan.engine.AutonomousStoryPlanner
 import com.xiguli.langhuan.engine.AgentReview
 import com.xiguli.langhuan.engine.AppChapterRunStore
 import com.xiguli.langhuan.engine.ChapterRunCoordinator
+import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
@@ -156,7 +157,10 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     private val demo = DemoStoryRepository()
     private val repository = PersistentStoryRepository(application)
     private val projects = StoryProjectManager(application)
-    private val chapterRuns = ChapterRunCoordinator(AppChapterRunStore(repository, projects))
+    private val chapterRuns = ChapterRunCoordinator(
+        AppChapterRunStore(repository, projects),
+        PersistentChapterRunCheckpointStore(application),
+    )
     private val backups = ProjectBackupManager(application)
     private val detector = ProviderAutoDetector()
     private val _state = MutableStateFlow(
@@ -175,6 +179,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 )
             projects.setActiveStoryId(loaded.snapshot.novel.id)
             _state.update { it.copy(snapshot = loaded.snapshot, draft = loaded.draft) }
+            restoreDurableRun(loaded.snapshot, loaded.draft)
             refreshWorkspace()
         }
         viewModelScope.launch {
@@ -271,6 +276,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                 error = null,
                             )
                         }
+                        restoreDurableRun(persisted.snapshot, persisted.draft)
                         refreshWorkspace()
                     }
                 }.onFailure { error ->
@@ -1013,7 +1019,11 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun dismissResult() = _state.update { it.copy(result = null, streamPreview = "") }
+    fun dismissResult() {
+        val current = _state.value
+        chapterRuns.abandon(current.snapshot, current.draft)
+        _state.update { it.copy(result = null, streamPreview = "", runEvents = emptyList()) }
+    }
 
     private fun saveStructure(snapshot: StorySnapshot, draft: ChapterDraft, message: String) {
         viewModelScope.launch {
@@ -1023,6 +1033,19 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, message = message) }
                     refreshWorkspace()
                 }.onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "保存失败") } }
+        }
+    }
+
+
+    private fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
+        val recovery = chapterRuns.recover(snapshot, draft) ?: return
+        _state.update {
+            it.copy(
+                streamPreview = recovery.preview,
+                result = recovery.result,
+                runEvents = recovery.events,
+                message = recovery.message,
+            )
         }
     }
 

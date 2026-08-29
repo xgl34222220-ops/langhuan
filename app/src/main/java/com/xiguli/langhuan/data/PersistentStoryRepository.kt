@@ -100,7 +100,15 @@ class PersistentStoryRepository(context: Context) {
         snapshot: StorySnapshot,
         draft: ChapterDraft,
         generated: GeneratedChapter,
+        runId: String = "",
     ): PersistedStory {
+        val existingDraft = chapterStateDao.get(draft.novelId, draft.chapterNumber)?.decodeDraftOrNull()
+        if (runId.isNotBlank() && existingDraft?.lastCommittedRunId == runId) {
+            val storedSnapshot = storyDao.get(draft.novelId)?.let { entity ->
+                runCatching { StoreJson.decodeFromString(StorySnapshot.serializer(), entity.snapshotJson) }.getOrNull()
+            } ?: snapshot
+            return PersistedStory(storedSnapshot, existingDraft)
+        }
         val now = System.currentTimeMillis()
         val latestVersion = chapterDao.forChapter(draft.novelId, draft.chapterNumber).firstOrNull()?.version ?: draft.version
         val newVersion = maxOf(draft.version, latestVersion) + 1
@@ -109,8 +117,9 @@ class PersistentStoryRepository(context: Context) {
             content = generated.content,
             summary = generated.summary,
             version = newVersion,
+            lastCommittedRunId = runId.ifBlank { draft.lastCommittedRunId },
         )
-        val previous = chapterStateDao.get(draft.novelId, draft.chapterNumber)?.decodeDraftOrNull() ?: draft
+        val previous = existingDraft ?: draft
         val wordDelta = generated.content.length - previous.content.length
         // Generated metadata is untrusted extraction. Do not let stateChanges mutate Canon here.
         // Character/knowledge/timeline/foreshadow facts must travel Agent -> Candidate -> Canon.
