@@ -35,9 +35,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xiguli.langhuan.engine.ChapterRunForegroundService
-import com.xiguli.langhuan.engine.ChapterRunStopSignals
-import com.xiguli.langhuan.engine.RunStatus
 
 private const val ROOT_PREFS = "langhuan_root_state"
 private const val RESUME_WORKSPACE_ONCE = "resume_workspace_once"
@@ -101,49 +98,6 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
         if (uri != null) viewModel.enqueueReferenceDistillation(uri)
     }
 
-    LaunchedEffect(Unit) {
-        ChapterRunStopSignals.requests.collect {
-            writingViewModel.cancelGeneration()
-        }
-    }
-
-    val writingLongTaskActive = writingState.isGenerating ||
-        writingState.isSaving ||
-        writingState.isReviewing ||
-        writingState.isPlanningScenes
-    val runningStage = writingState.runEvents.lastOrNull { it.status == RunStatus.RUNNING }?.stage?.label
-    LaunchedEffect(
-        writingLongTaskActive,
-        writingState.isGenerating,
-        writingState.isSaving,
-        writingState.isReviewing,
-        writingState.isPlanningScenes,
-        runningStage,
-        writingState.draft?.id,
-    ) {
-        val snapshot = writingState.snapshot
-        val draft = writingState.draft
-        if (writingLongTaskActive && snapshot != null && draft != null) {
-            val action = when {
-                writingState.isGenerating -> "正在生成正文"
-                writingState.isSaving -> "正在保存并执行章节后处理"
-                writingState.isReviewing -> "正在进行 Agent 章节复盘"
-                writingState.isPlanningScenes -> "正在编排章节场景"
-                else -> "正在执行章节任务"
-            }
-            ChapterRunForegroundService.show(
-                context = context,
-                novelId = snapshot.novel.id,
-                chapterNumber = draft.chapterNumber,
-                title = "《${snapshot.novel.title}》第${draft.chapterNumber}章",
-                detail = runningStage?.let { "$action · $it" } ?: "$action · 无 App 侧超时",
-                canStop = writingState.isGenerating,
-            )
-        } else {
-            ChapterRunForegroundService.hide(context)
-        }
-    }
-
     LaunchedEffect(runCenterState.openRequest?.token) {
         runCenterState.openRequest?.let { request ->
             val loadedDraft = writingState.draft
@@ -152,7 +106,6 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 loadedDraft?.chapterNumber == request.chapterNumber
             runCenterViewModel.consumeOpenRequest()
             if (alreadyAtTarget) {
-                // Re-open the live/current writing VM. This preserves an in-flight coroutine.
                 writingStoryId = request.novelId
                 showRunCenter = false
                 showShelf = false
@@ -163,9 +116,8 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                 showAiSetup = false
                 showWritingFlow = true
             } else {
-                // RunCenterViewModel has already selected the requested chapter in project storage.
-                // A fresh WritingFlowViewModel is required because load(novelId) intentionally no-ops
-                // once the same novel is loaded, even if the selected chapter changed underneath it.
+                // RunCenterViewModel has selected the requested chapter in project storage. Recreate the
+                // screen layer only; the Application-scoped ChapterRunRuntime keeps any live task intact.
                 rootPrefs.edit().putString(RESUME_WRITING_STORY, request.novelId).commit()
                 val activity = context as? Activity
                 if (activity != null) {
@@ -352,7 +304,6 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                     },
                 )
             }
-
         }
 
         if (showWritingFlow && !showAgent && !showEditor && !showIntelligence && !showRunCenter && !showAiSetup) {
@@ -362,8 +313,7 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                     viewModel = writingViewModel,
                     onClose = {
                         if (writingState.busy) {
-                            // Hide the overlay without destroying its ViewModel/coroutine. The foreground
-                            // service keeps the process important while the task continues.
+                            // The long command is Application-scoped; closing this overlay only detaches UI.
                             showWritingFlow = false
                         } else {
                             reloadWorkspaceAfterOverlay()
