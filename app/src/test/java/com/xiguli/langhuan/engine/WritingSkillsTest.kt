@@ -12,7 +12,7 @@ class WritingSkillsTest {
     @Test
     fun skillDecoratorInjectsCraftLayerWithoutTouchingPayload() = runBlocking {
         val capture = CapturingGateway()
-        val skill = WritingSkillCatalog.definition("story-long-write")!!
+        val skill = WritingSkillCatalog.all.first { it.id == "story-long-write" }
         val gateway = SkillAwareAiGateway(capture, AiTaskType.PROSE_AUTHOR, listOf(skill))
         val prompt = PromptBundle(
             system = "你是正文作者",
@@ -44,7 +44,7 @@ class WritingSkillsTest {
 
     @Test
     fun recommendedBindingsDoNotLetAntiAiSkillControlPlanning() {
-        val anti = WritingSkillCatalog.definition("avoid-ai-writing")!!
+        val anti = WritingSkillCatalog.all.first { it.id == "avoid-ai-writing" }
         val binding = WritingSkillCatalog.defaultBinding(anti)
         assertTrue(AiTaskType.NOVELIZATION in binding.tasks)
         assertTrue(AiTaskType.EDITOR_REWRITE in binding.tasks)

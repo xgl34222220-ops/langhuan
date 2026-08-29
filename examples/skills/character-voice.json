@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "character-voice-consistency",
+  "name": "角色声线一致性",
+  "description": "减少不同人物说话方式趋同，保持词汇、句长、回避习惯和情绪表达差异。",
+  "version": "1.0.0",
+  "author": "琅嬛示例",
+  "license": "CC0-1.0",
+  "sourceUrl": "",
+  "sourceRevision": "",
+  "supportedTasks": [
+    "PROSE_AUTHOR",
+    "NOVELIZATION",
+    "EDITOR_REVIEW",
+    "EDITOR_REWRITE"
+  ],
+  "defaultTasks": [
+    "PROSE_AUTHOR",
+    "EDITOR_REVIEW",
+    "EDITOR_REWRITE"
+  ],
+  "guidance": "先从已知人物资料与近期正文中提取每个出场人物稳定的语言特征：常用词、句长、礼貌程度、是否直接表达情绪、是否爱反问、是否习惯省略主语。写对话时保持差异，不要让所有人物都使用相同的解释腔和完整逻辑句。人物在压力下可以偏离日常声线，但偏离必须由当前情境解释。审稿时只指出能定位到具体人物与具体台词的声线漂移，不凭空新增人物性格。"
+}
