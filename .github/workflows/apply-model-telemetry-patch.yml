@@ -1,0 +1,30 @@
+name: Apply model telemetry patch
+
+on:
+  push:
+    branches: [feat/model-telemetry]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "github.event.head_commit.message == 'chore: run model telemetry patch'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/model-telemetry
+          fetch-depth: 0
+      - name: Apply empirical telemetry wiring
+        run: python3 .github/scripts/apply_model_telemetry_patch.py
+      - name: Remove one-shot patch tooling
+        run: git rm .github/scripts/apply_model_telemetry_patch.py .github/workflows/apply-model-telemetry-patch.yml
+      - name: Commit clean feature result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: add empirical model quality telemetry"
+          git push origin HEAD:feat/model-telemetry
