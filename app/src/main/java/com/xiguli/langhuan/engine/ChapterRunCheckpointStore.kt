@@ -12,6 +12,7 @@ enum class DurableRunPhase {
     GENERATING,
     READY_TO_COMMIT,
     COMMITTING,
+    REVIEWING,
     INTERRUPTED,
     COMPLETE,
 }
@@ -21,6 +22,7 @@ enum class RunResumePolicy {
     CONTINUE_GENERATION,
     RESTORE_RESULT,
     RESUME_POST_COMMIT,
+    RESUME_REVIEW,
     NONE,
 }
 
