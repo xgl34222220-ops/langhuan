@@ -27,7 +27,7 @@ class AdversarialChapterEditor(
 
         return PromptBundle(
             system = """
-                你是琅嬛的章节主编委员会，第 $round 轮审核。
+                你是琅嬛的对抗式章节主编委员会，第 $round 轮审核。
                 分别从【结构】【人物】【文字】【连续性】四个角度给意见。
 
                 必须区分：
@@ -70,9 +70,8 @@ class AdversarialChapterEditor(
     }
 
     /**
-     * AI 主编从本版本开始不再直接触发重写。
-     * 本地确定性规则如果发现真正硬问题，GenerationPipeline 仍会自动修订或阻断。
-     * 这样 CHAPTER_CONTRACT_MISSING / MISSING_REQUIRED_ELEMENT 这类 WARNING 不会被 AI 升级成 EDITOR_REVIEW_FAILED。
+     * AI 主编不能直接触发重写或 BLOCKING。
+     * 真正硬问题由本地确定性 Gate 负责；主编输出即使写了 REWRITE / 【硬冲突】，也只能作为诊断建议。
      */
     fun requestsRewrite(review: GeneratedChapter?): Boolean = false
 
