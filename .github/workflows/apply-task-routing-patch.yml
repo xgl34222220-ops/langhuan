@@ -1,0 +1,30 @@
+name: Apply task routing patch
+
+on:
+  push:
+    branches: [feat/task-model-routing]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: apply task routing patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/task-model-routing
+          fetch-depth: 0
+      - name: Apply routing wiring
+        run: python3 .github/scripts/apply_task_routing_patch.py
+      - name: Remove one-shot patch tooling
+        run: git rm .github/scripts/apply_task_routing_patch.py .github/workflows/apply-task-routing-patch.yml
+      - name: Commit clean feature result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: wire task-level model routing"
+          git push origin HEAD:feat/task-model-routing
