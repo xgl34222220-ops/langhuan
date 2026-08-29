@@ -274,6 +274,7 @@ class TaskModelRouter(context: Context) {
     private val repository = PersistentStoryRepository(app)
     private val store = AiTaskRoutingStore(app)
     private val telemetry = AiModelTelemetryStore(app)
+    private val skillStore = WritingSkillStore(app)
 
     suspend fun snapshot(): TaskRoutingSession {
         val providers = repository.observeProviders().first()
@@ -281,6 +282,7 @@ class TaskModelRouter(context: Context) {
             ?: error("请先到设置添加并启用一个 AI 服务")
         val defaultGateway = gateway(defaultProvider, defaultProvider.model)
         val routes = store.routes()
+        val skillSnapshot = skillStore.snapshot()
         val selections = linkedMapOf<AiTaskType, ResolvedTaskModel>()
         for (task in AiTaskType.entries) {
             val route = routes[task]
@@ -304,7 +306,11 @@ class TaskModelRouter(context: Context) {
                 modelId = model,
                 profile = profile,
                 inheritedGlobal = !safe,
-                gateway = TelemetryAiGateway(baseGateway, attribution, telemetry),
+                gateway = TelemetryAiGateway(
+                    SkillAwareAiGateway(baseGateway, task, skillSnapshot.forTask(task)),
+                    attribution,
+                    telemetry,
+                ),
             )
         }
         return TaskRoutingSession(defaultProvider, defaultGateway, selections, telemetry)

@@ -32,6 +32,7 @@ fun AiProviderSetupPage(
     val p = state.provider
     val quickModelVm: ProviderQuickSwitchViewModel = viewModel()
     val taskRoutingVm: TaskModelRoutingViewModel = viewModel()
+    val writingSkillVm: WritingSkillViewModel = viewModel()
     var quickProviderId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -134,6 +135,8 @@ fun AiProviderSetupPage(
             if (p.savedProviders.isNotEmpty()) {
                 item { TaskModelRoutingPanel(taskRoutingVm) }
             }
+
+            item { WritingSkillPanel(writingSkillVm) }
 
             item {
                 Card(shape = RoundedCornerShape(24.dp)) {

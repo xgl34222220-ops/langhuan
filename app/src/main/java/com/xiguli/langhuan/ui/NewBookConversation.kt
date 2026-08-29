@@ -402,7 +402,19 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
 
     fun generateFoundation(regenerate: Boolean = false) {
         val before = _state.value
-        val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders() ?: return
+        val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders()
+            ?: if (before.messages.any { it.role == "user" }) {
+                NewBookProposal(
+                    title = "未命名",
+                    genre = "未分类",
+                    premise = "尚未整理",
+                    theme = DEFAULT_THEME,
+                    targetWords = 500_000,
+                    coreHook = "待整理",
+                    coverBrief = "",
+                    rationale = "",
+                )
+            } else return
         if (before.isBusy) return
         val resumeStage = if (regenerate || before.blueprintDirty) 0 else before.foundationStage.coerceIn(0, 2)
         val resumeFoundation = if (regenerate) null else before.foundation?.sanitizeFoundationPlaceholders()
