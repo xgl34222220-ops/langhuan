@@ -31,6 +31,7 @@ import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.domain.TimelineEvent
 import com.xiguli.langhuan.engine.AgentMemoryApplier
+import com.xiguli.langhuan.engine.CandidateCanonEngine
 import com.xiguli.langhuan.engine.AutonomousStoryPlanner
 import com.xiguli.langhuan.engine.AutonomousExecutionEngine
 import com.xiguli.langhuan.engine.AgentReview
@@ -714,9 +715,30 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         val current = _state.value
         val review = current.agentReview ?: return
         if (busy(current) || review.memoryActions.isEmpty()) return
-        val updated = AgentMemoryApplier.apply(current.snapshot, current.draft.chapterNumber, review)
-        saveStructure(updated, current.draft, "Agent 提取的事实已写入长期记忆")
+        val staged = CandidateCanonEngine.stage(current.snapshot, current.draft, review)
+        val message = buildString {
+            append("已加入 ${staged.stagedCount} 条候选事实")
+            if (staged.autoConfirmedCount > 0) append("；${staged.autoConfirmedCount} 条正文可直接证明的低风险状态已自动确认")
+            append("。其余事实需在 Candidate / Canon 面板确认")
+        }
+        saveStructure(staged.snapshot, current.draft, message)
         _state.update { it.copy(agentReview = null) }
+    }
+
+    fun confirmCandidateFact(candidateId: String) {
+        val current = _state.value
+        if (busy(current)) return
+        val updated = runCatching { CandidateCanonEngine.confirm(current.snapshot, candidateId) }
+            .onFailure { error -> _state.update { it.copy(error = error.message ?: "候选事实无法写入 Canon") } }
+            .getOrNull() ?: return
+        saveStructure(updated, current.draft, "候选事实已确认并写入 Canon")
+    }
+
+    fun rejectCandidateFact(candidateId: String) {
+        val current = _state.value
+        if (busy(current)) return
+        val updated = CandidateCanonEngine.reject(current.snapshot, candidateId)
+        saveStructure(updated, current.draft, "候选事实已拒绝；不会进入 Canon")
     }
 
     fun useAgentNextOption(index: Int) {

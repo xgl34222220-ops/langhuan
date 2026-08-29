@@ -97,6 +97,7 @@ internal fun AgentPage(
         item { LongFormAgentPanel(state.snapshot) }
         item { FullBookEditorPanel(state.snapshot) }
         item { AutonomousPlanPanel(state, vm) }
+        item { CandidateCanonPanel(state, vm) }
 
         item {
             AgentCard {
@@ -187,13 +188,13 @@ internal fun AgentPage(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Memory, null, tint = MaterialTheme.colorScheme.primary)
                             Column(Modifier.padding(start = 9.dp).weight(1f)) {
-                                Text("待写入长期记忆", style = MaterialTheme.typography.titleMedium)
-                                Text("${report.memoryActions.size} 项结构化事实。确认后才会进入人物/时间线/伏笔和 RAG。", color = LocalMiuixTokens.current.textSecondary)
+                                Text("本次提取的候选事实", style = MaterialTheme.typography.titleMedium)
+                                Text("${report.memoryActions.size} 项结构化事实。先加入 Candidate；只有通过本地证明或你确认后才会进入 Canon。", color = LocalMiuixTokens.current.textSecondary)
                             }
                         }
                         Spacer(Modifier.height(10.dp))
                         Button(vm::applyAgentMemory, enabled = !state.isSaving, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
-                            Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(7.dp)); Text("确认并写入长期记忆")
+                            Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(7.dp)); Text("加入候选事实")
                         }
                     }
                 }
