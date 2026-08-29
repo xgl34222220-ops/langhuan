@@ -13,11 +13,11 @@ import android.graphics.Typeface
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.PersistentStoryRepository
+import com.xiguli.langhuan.data.StoredAiProvider
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.ProviderAutoDetector
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -62,26 +63,28 @@ private data class GeneratedCoverCandidate(
     val notice: String,
 )
 
+private data class CoverProviderCandidate(
+    val name: String,
+    val isDefault: Boolean,
+    val config: AiProviderConfig,
+)
+
 /**
- * V3 封面生成：
- * 1. 自动发现当前 AI 服务里的图像生成模型；
- * 2. 图像模型只负责“无文字背景图”，避免中文乱码；
- * 3. 书名/类型由琅嬛本地排版；
- * 4. 服务没有图像模型或图片接口不兼容时，明确降级到干净的本地封面模板。
- *
- * 生成结果先写 candidates 目录，只有用户点“设为当前封面”后才进入正式 coverPath。
+ * 封面生成与正文模型彻底解耦：封面工作室会检查全部已保存 AI 服务，而不是只看默认文字服务。
+ * 名称启发式只负责排序；OpenAI-compatible 服务在找不到典型图像模型名时，会对该服务当前模型
+ * 做一次真实 images/generations 能力探测。这样中转站自定义模型名也不会被直接漏掉。
  */
 class CoverStudioViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PersistentStoryRepository(application)
     private val generator = CoverImageGeneratorV3()
     private val _state = MutableStateFlow(CoverGenerationUiState())
     val state: StateFlow<CoverGenerationUiState> = _state.asStateFlow()
-    private var activeProviderId: String? = null
+    private var providers: List<StoredAiProvider> = emptyList()
 
     init {
         viewModelScope.launch {
-            repository.observeProviders().collect { providers ->
-                activeProviderId = providers.firstOrNull { it.isDefault }?.id ?: providers.firstOrNull()?.id
+            repository.observeProviders().collect { stored ->
+                providers = stored
             }
         }
     }
@@ -91,8 +94,18 @@ class CoverStudioViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _state.update { it.copy(busy = true, notice = null, error = null) }
             runCatching {
-                val config = activeProviderId?.let { repository.providerConfig(it) }
-                generator.generate(getApplication(), book, config)
+                val routes = providers
+                    .sortedWith(compareByDescending<StoredAiProvider> { it.isDefault }.thenBy { it.name })
+                    .mapNotNull { stored ->
+                        repository.providerConfig(stored.id)?.let { config ->
+                            CoverProviderCandidate(
+                                name = stored.name.ifBlank { config.protocol.label },
+                                isDefault = stored.isDefault,
+                                config = config,
+                            )
+                        }
+                    }
+                generator.generate(getApplication(), book, routes)
             }.onSuccess { result ->
                 _state.update {
                     it.copy(
@@ -121,25 +134,40 @@ private class CoverImageGeneratorV3 {
     suspend fun generate(
         application: Application,
         book: ReaderBookUi,
-        config: AiProviderConfig?,
+        providers: List<CoverProviderCandidate>,
     ): GeneratedCoverCandidate = withContext(Dispatchers.IO) {
         val prompt = coverPrompt(book)
-        var fallbackReason = "当前没有配置可用的图像生成模型"
+        val failures = mutableListOf<String>()
 
-        if (config != null) {
+        providers.forEach { provider ->
+            val config = provider.config
             val discovery = runCatching { detector.detect(config.baseUrl, config.apiKey) }.getOrNull()
             val protocol = when {
                 config.protocol != ApiProtocol.AUTO -> config.protocol
                 discovery != null -> discovery.protocol
-                else -> ApiProtocol.AUTO
+                else -> ApiProtocol.OPENAI_COMPATIBLE
             }
-            val imageModel = chooseImageModel(config.model, discovery?.models.orEmpty())
 
-            if (imageModel != null) {
+            if (protocol !in setOf(ApiProtocol.OPENAI_COMPATIBLE, ApiProtocol.AUTO, ApiProtocol.GEMINI)) {
+                failures += "${provider.name}：${protocol.label}没有图片生成协议"
+                return@forEach
+            }
+
+            val modelCandidates = chooseImageModels(
+                currentModel = config.model,
+                models = discovery?.models.orEmpty(),
+                protocol = protocol,
+            )
+            if (modelCandidates.isEmpty()) {
+                failures += "${provider.name}：模型列表未发现可出图模型"
+                return@forEach
+            }
+
+            modelCandidates.forEach { model ->
                 val remote = runCatching {
                     when (protocol) {
-                        ApiProtocol.GEMINI -> generateGemini(config, imageModel, prompt)
-                        ApiProtocol.OPENAI_COMPATIBLE, ApiProtocol.AUTO -> generateOpenAiCompatible(config, imageModel, prompt)
+                        ApiProtocol.GEMINI -> generateGemini(config, model, prompt)
+                        ApiProtocol.OPENAI_COMPATIBLE, ApiProtocol.AUTO -> generateOpenAiCompatible(config, model, prompt)
                         else -> null
                     }
                 }
@@ -149,50 +177,77 @@ private class CoverImageGeneratorV3 {
                     composeRemoteBackground(bytes, file, book)
                     return@withContext GeneratedCoverCandidate(
                         path = file.absolutePath,
-                        sourceLabel = "AI 图像模型 · $imageModel",
-                        notice = "已生成 AI 背景。中文书名由琅嬛本地排版，确认后再设为封面。",
+                        sourceLabel = "AI 图像 · ${provider.name} · $model",
+                        notice = "已从“${provider.name}”使用 $model 生成真实 AI 背景；中文书名由琅嬛本地排版。",
                     )
                 }
-                fallbackReason = remote.exceptionOrNull()?.message
-                    ?.take(120)
-                    ?.let { "图像接口未兼容：$it" }
-                    ?: "图像模型没有返回可用图片"
-            } else {
-                fallbackReason = "当前 AI 服务未发现图像生成模型"
+                val reason = remote.exceptionOrNull()?.message.orEmpty().take(140)
+                failures += "${provider.name}/$model：${reason.ifBlank { "没有返回图片" }}"
             }
         }
 
         val file = candidateFile(application, book.id)
         renderLocalFallback(file, book)
+        val reason = when {
+            providers.isEmpty() -> "还没有配置 AI 服务"
+            failures.isEmpty() -> "已检查 ${providers.size} 个 AI 服务，但没有可调用的图片生成模型"
+            else -> "已检查 ${providers.size} 个 AI 服务；${failures.take(2).joinToString("；")}"
+        }
         GeneratedCoverCandidate(
             path = file.absolutePath,
             sourceLabel = "本地封面模板",
-            notice = "$fallbackReason；已改用本地干净模板，没有冒充 AI 图片。",
+            notice = "$reason。已暂用本地模板；不会把模板冒充 AI 图片。",
         )
     }
 
-    private fun chooseImageModel(currentModel: String, models: List<DiscoveredModel>): String? {
-        if (looksLikeImageModel(currentModel)) return currentModel
-        return models
-            .map { it.id }
-            .sortedByDescending(::imageModelScore)
-            .firstOrNull { imageModelScore(it) > 0 }
+    private fun chooseImageModels(
+        currentModel: String,
+        models: List<DiscoveredModel>,
+        protocol: ApiProtocol,
+    ): List<String> {
+        val discovered = models
+            .map { model -> model to maxOf(imageModelScore(model.id), imageModelScore(model.displayName)) }
+            .filter { (_, score) -> score > 0 }
+            .sortedByDescending { (_, score) -> score }
+            .map { (model, _) -> model.id }
+
+        val result = mutableListOf<String>()
+        if (imageModelScore(currentModel) > 0) result += currentModel
+        result += discovered
+
+        // OpenAI-compatible 中转站经常把图片模型改成私有名称，/models 也不声明 output modality。
+        // 用户已经主动点击“生成封面”，因此在没有识别到典型名字时，对当前配置模型做一次真实能力探测。
+        // Unsupported text models通常会在 images/generations 立即返回 4xx，不会继续生成文本。
+        if (protocol in setOf(ApiProtocol.OPENAI_COMPATIBLE, ApiProtocol.AUTO) && currentModel.isNotBlank()) {
+            result += currentModel
+        }
+        return result.filter(String::isNotBlank).distinct().take(8)
     }
 
-    private fun looksLikeImageModel(model: String): Boolean = imageModelScore(model) > 0
-
     private fun imageModelScore(model: String): Int {
-        val id = model.lowercase()
+        val id = model.lowercase().replace('_', '-')
         return when {
-            "gpt-image" in id -> 100
-            "dall-e" in id || "dalle" in id -> 95
-            "gemini" in id && "image" in id -> 92
-            "flux" in id -> 90
-            "imagen" in id -> 88
-            "stable-diffusion" in id || "stable_diffusion" in id -> 85
-            "sdxl" in id -> 82
-            "image-gen" in id || "imagegen" in id -> 78
-            id.startsWith("image-") || id.endsWith("-image") -> 70
+            "gpt-image" in id -> 120
+            "dall-e" in id || "dalle" in id -> 118
+            "gemini" in id && ("image" in id || "banana" in id) -> 116
+            "imagen" in id -> 114
+            "seedream" in id || "dreamina" in id -> 112
+            "qwen-image" in id || "qwen image" in id -> 110
+            "flux" in id -> 108
+            "cogview" in id -> 106
+            "hunyuan-image" in id || "hunyuan image" in id -> 104
+            "kolors" in id -> 102
+            "recraft" in id -> 100
+            "ideogram" in id -> 98
+            "stable-diffusion" in id || "stable diffusion" in id -> 96
+            "sdxl" in id -> 94
+            "playground-v" in id -> 92
+            "firefly" in id -> 90
+            "image-generation" in id || "image-gen" in id || "imagegen" in id -> 88
+            "text-to-image" in id || "text2image" in id || "txt2img" in id -> 86
+            "flash-image" in id || "image-preview" in id -> 84
+            "janus" in id && ("pro" in id || "flow" in id) -> 80
+            id.startsWith("image-") || id.endsWith("-image") -> 76
             else -> 0
         }
     }
@@ -201,7 +256,7 @@ private class CoverImageGeneratorV3 {
         append("Create a premium vertical cover BACKGROUND for a Chinese web novel. ")
         append("Absolutely no words, no letters, no typography, no logo, no watermark. ")
         append("Leave deliberate negative space around the upper-middle area for a Chinese title overlay. ")
-        append("Cinematic composition, strong focal image, readable at phone-thumbnail size, restrained details, professional publishing quality. ")
+        append("Cinematic composition, one strong focal image, readable at phone-thumbnail size, restrained details, professional publishing quality. ")
         append("Genre: ${book.genre}. ")
         append("Story premise: ${book.premise.take(650)}. ")
         if (book.theme.isNotBlank()) append("Theme: ${book.theme.take(260)}. ")
@@ -210,34 +265,75 @@ private class CoverImageGeneratorV3 {
 
     private fun generateOpenAiCompatible(config: AiProviderConfig, model: String, prompt: String): ByteArray? {
         val endpoint = openAiImageEndpoint(config.baseUrl)
-        val body = buildJsonObject {
+        val standardBody = buildJsonObject {
             put("model", model)
             put("prompt", prompt)
             put("n", 1)
             put("size", "1024x1536")
         }.toString()
-        val response = request(
+        var response = request(
             url = endpoint,
             method = "POST",
-            headers = buildMap {
-                put("Content-Type", "application/json")
-                if (config.apiKey.isNotBlank()) put("Authorization", "Bearer ${config.apiKey}")
-            },
-            body = body,
+            headers = openAiHeaders(config),
+            body = standardBody,
         )
+
+        // 一些中转站声明 OpenAI-compatible，但图片接口采用 image_size/batch_size 字段。
+        if (response.first in setOf(400, 404, 405, 422)) {
+            val alternateBody = buildJsonObject {
+                put("model", model)
+                put("prompt", prompt)
+                put("image_size", "1024x1536")
+                put("batch_size", 1)
+            }.toString()
+            response = request(
+                url = endpoint,
+                method = "POST",
+                headers = openAiHeaders(config),
+                body = alternateBody,
+            )
+        }
         require(response.first in 200..299) {
-            "图片接口 HTTP ${response.first}: ${response.second.decodeToString().take(120)}"
+            "图片接口 HTTP ${response.first}: ${response.second.decodeToString().take(140)}"
         }
-        val root = CoverWireJson.parseToJsonElement(response.second.decodeToString()).jsonObject
-        val first = (root["data"] as? JsonArray)?.firstOrNull()?.jsonObject ?: return null
-        first["b64_json"]?.jsonPrimitive?.contentOrNull?.let { encoded ->
-            return Base64.getDecoder().decode(encoded)
+        return extractOpenAiImage(response.second)
+    }
+
+    private fun openAiHeaders(config: AiProviderConfig): Map<String, String> = buildMap {
+        put("Content-Type", "application/json")
+        if (config.apiKey.isNotBlank()) put("Authorization", "Bearer ${config.apiKey}")
+    }
+
+    private fun extractOpenAiImage(bytes: ByteArray): ByteArray? {
+        val root = CoverWireJson.parseToJsonElement(bytes.decodeToString()).jsonObject
+        val containers = buildList<JsonElement> {
+            (root["data"] as? JsonArray)?.forEach(::add)
+            (root["images"] as? JsonArray)?.forEach(::add)
+            root["image"]?.let(::add)
+            root["output"]?.let(::add)
         }
-        first["url"]?.jsonPrimitive?.contentOrNull?.let { imageUrl ->
-            return downloadImage(imageUrl)
+        containers.forEach { element ->
+            val obj = element as? JsonObject ?: return@forEach
+            listOf("b64_json", "base64", "image_base64", "b64").forEach { key ->
+                obj[key]?.jsonPrimitive?.contentOrNull?.let { encoded ->
+                    decodeBase64Image(encoded)?.let { return it }
+                }
+            }
+            listOf("url", "image_url", "imageUrl").forEach { key ->
+                obj[key]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let { imageUrl ->
+                    if (imageUrl.startsWith("data:")) {
+                        decodeBase64Image(imageUrl.substringAfter("base64,"))?.let { return it }
+                    }
+                    return downloadImage(imageUrl)
+                }
+            }
         }
         return null
     }
+
+    private fun decodeBase64Image(raw: String): ByteArray? = runCatching {
+        Base64.getDecoder().decode(raw.substringAfter("base64,", raw).trim())
+    }.getOrNull()
 
     private fun generateGemini(config: AiProviderConfig, model: String, prompt: String): ByteArray? {
         val endpoint = geminiImageEndpoint(config.baseUrl, model)
@@ -266,7 +362,7 @@ private class CoverImageGeneratorV3 {
             body = body,
         )
         require(response.first in 200..299) {
-            "Gemini 图片接口 HTTP ${response.first}: ${response.second.decodeToString().take(120)}"
+            "Gemini 图片接口 HTTP ${response.first}: ${response.second.decodeToString().take(140)}"
         }
         val root = CoverWireJson.parseToJsonElement(response.second.decodeToString()).jsonObject
         val candidates = root["candidates"] as? JsonArray ?: return null
@@ -278,7 +374,7 @@ private class CoverImageGeneratorV3 {
                 val part = partElement.jsonObject
                 val inline = (part["inlineData"] ?: part["inline_data"]) as? JsonObject ?: return@forEach
                 val data = inline["data"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                return Base64.getDecoder().decode(data)
+                return decodeBase64Image(data)
             }
         }
         return null
@@ -334,7 +430,8 @@ private class CoverImageGeneratorV3 {
         connection.connectTimeout = 30_000
         connection.readTimeout = 120_000
         connection.instanceFollowRedirects = true
-        require(connection.responseCode in 200..299) { "图片下载失败 HTTP ${connection.responseCode}" }
+        val status = connection.responseCode
+        require(status in 200..299) { "图片下载失败 HTTP $status" }
         return connection.inputStream.use { it.readBytes() }.also { connection.disconnect() }
     }
 
