@@ -38,32 +38,29 @@ class GenerationPipelineReviewTest {
     }
 
     @Test
-    fun `hard rejected first draft is rewritten and second pass can commit`() = runBlocking {
-        val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite, ReviewScript.Pass))
+    fun `ai claimed hard conflict cannot force rewrite when deterministic gate is clean`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite))
         val result = GenerationPipeline(gateway).generate(request())
 
-        assertEquals(SECOND_PROSE, result.chapter.content)
-        assertEquals(2, gateway.reviewCalls)
-        assertEquals(2, gateway.proseCalls)
+        assertEquals(FIRST_PROSE, result.chapter.content)
+        assertEquals(1, gateway.reviewCalls)
+        assertEquals(1, gateway.proseCalls)
         assertFalse(result.issues.any { it.code == "EDITOR_REVIEW_FAILED" })
+        assertTrue(result.canCommit)
     }
 
     @Test
-    fun `second hard rejection blocks commit instead of infinite rewriting`() = runBlocking {
-        val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite, ReviewScript.HardRewrite))
+    fun `repeated ai hard claims cannot create editor blocking`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite))
         val result = GenerationPipeline(gateway).generate(request())
 
-        assertEquals(2, gateway.reviewCalls)
-        assertEquals(2, gateway.proseCalls)
-        assertTrue(result.issues.any { it.code == "EDITOR_REVIEW_FAILED" && it.severity == IssueSeverity.BLOCKING })
-        assertFalse(result.canCommit)
+        assertEquals(1, gateway.reviewCalls)
+        assertEquals(1, gateway.proseCalls)
+        assertFalse(result.issues.any { it.code.startsWith("EDITOR_") && it.severity == IssueSeverity.BLOCKING })
+        assertTrue(result.canCommit)
     }
 
-    private enum class ReviewScript {
-        Pass,
-        AdviceRewrite,
-        HardRewrite,
-    }
+    private enum class ReviewScript { Pass, AdviceRewrite, HardRewrite }
 
     private class ScriptedGateway(
         private val verdicts: MutableList<ReviewScript>,
@@ -93,7 +90,7 @@ class GenerationPipelineReviewTest {
                     ReviewScript.HardRewrite -> GeneratedChapter(
                         title = "REWRITE",
                         content = "【结构】【硬冲突】锚点=本章必须确认来客身份不一致｜正文证据=正文没有完成该确认｜修法=在本章场景内补足明确确认\n【人物】通过\n【文字】通过\n【连续性】通过",
-                        summary = "结构席发现可验证硬冲突",
+                        summary = "结构席声称发现硬冲突",
                     )
                 }
             } else {
