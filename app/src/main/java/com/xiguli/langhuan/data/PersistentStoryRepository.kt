@@ -9,9 +9,7 @@ import com.xiguli.langhuan.data.local.MemoryChunkEntity
 import com.xiguli.langhuan.data.local.SecureApiKeyStore
 import com.xiguli.langhuan.data.local.StoryStateEntity
 import com.xiguli.langhuan.domain.ChapterDraft
-import com.xiguli.langhuan.domain.CharacterState
 import com.xiguli.langhuan.domain.GeneratedChapter
-import com.xiguli.langhuan.domain.StateChange
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
@@ -114,23 +112,25 @@ class PersistentStoryRepository(context: Context) {
         )
         val previous = chapterStateDao.get(draft.novelId, draft.chapterNumber)?.decodeDraftOrNull() ?: draft
         val wordDelta = generated.content.length - previous.content.length
-        val withChanges = applyCharacterChanges(snapshot, generated.stateChanges, draft.chapterNumber)
+        // Generated metadata is untrusted extraction. Do not let stateChanges mutate Canon here.
+        // Character/knowledge/timeline/foreshadow facts must travel Agent -> Candidate -> Canon.
         val chapterSummary = "第${draft.chapterNumber}章：${generated.summary}".trim()
-        val summaryHistory = (withChanges.recentSummaries + chapterSummary)
+        val summaryHistory = (snapshot.recentSummaries + chapterSummary)
             .filter { it.isNotBlank() }
             .distinct()
-        val hotWindow = withChanges.longForm.config.hotChapterWindow.coerceIn(5, 14)
+        val hotWindow = snapshot.longForm.config.hotChapterWindow.coerceIn(5, 14)
         val foldCount = (summaryHistory.size - hotWindow).coerceAtLeast(0)
         val folded = summaryHistory.take(foldCount)
-        val baseSnapshot = withChanges.copy(
-            novel = withChanges.novel.copy(
-                currentWords = (withChanges.novel.currentWords + wordDelta).coerceAtLeast(0),
+        val baseSnapshot = snapshot.copy(
+            novel = snapshot.novel.copy(
+                currentWords = (snapshot.novel.currentWords + wordDelta).coerceAtLeast(0),
                 currentChapter = draft.chapterNumber,
             ),
             recentSummaries = summaryHistory.takeLast(hotWindow),
-            longTermSummary = foldLongTermSummary(withChanges.longTermSummary, folded),
+            longTermSummary = foldLongTermSummary(snapshot.longTermSummary, folded),
         )
-        val newSnapshot = longFormEngine.settle(baseSnapshot, newDraft, generated)
+        val safeGenerated = generated.copy(stateChanges = emptyList())
+        val newSnapshot = longFormEngine.settle(baseSnapshot, newDraft, safeGenerated)
         persistStory(newSnapshot, newDraft, now)
         saveChapterVersion(newDraft, now)
         rebuildMemoryIndex(newSnapshot)
@@ -408,32 +408,6 @@ class PersistentStoryRepository(context: Context) {
         val merged = listOf(existing.trim(), additions.trim()).filter { it.isNotBlank() }.joinToString("\n")
         if (merged.length <= 6_500) return merged
         return merged.take(1_500) + "\n……\n" + merged.takeLast(4_700)
-    }
-
-    private fun applyCharacterChanges(snapshot: StorySnapshot, changes: List<StateChange>, chapter: Int): StorySnapshot {
-        if (changes.isEmpty()) return snapshot
-        val updated = snapshot.characters.map { original ->
-            changes.filter { it.subject == original.name }.fold(original) { current, change ->
-                current.applyChange(change, chapter)
-            }
-        }
-        return snapshot.copy(characters = updated)
-    }
-
-    private fun CharacterState.applyChange(change: StateChange, chapter: Int): CharacterState = when (change.field.lowercase()) {
-        "location", "位置" -> copy(location = change.after, lastUpdatedChapter = chapter)
-        "physicalstate", "身体状态", "伤势" -> copy(physicalState = change.after, lastUpdatedChapter = chapter)
-        "emotionalstate", "情绪", "情绪状态" -> copy(emotionalState = change.after, lastUpdatedChapter = chapter)
-        "goal", "目标" -> copy(goal = change.after, lastUpdatedChapter = chapter)
-        "knownsecrets", "秘密", "已知秘密" -> copy(
-            knownSecrets = (knownSecrets + change.after).filter { it.isNotBlank() }.distinct(),
-            lastUpdatedChapter = chapter,
-        )
-        "possessions", "物品", "持有物" -> copy(
-            possessions = (possessions + change.after).filter { it.isNotBlank() }.distinct(),
-            lastUpdatedChapter = chapter,
-        )
-        else -> this
     }
 
     private fun ChapterStateEntity.decodeDraftOrNull(): ChapterDraft? = runCatching {

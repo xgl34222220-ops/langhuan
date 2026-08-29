@@ -930,7 +930,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching { repository.commitGenerated(current.snapshot, current.draft, result.chapter) }
                 .onSuccess { persisted ->
-                    _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, isDraftDirty = false, streamPreview = "", result = null, message = "正文、版本和长期记忆已保存；正在做 Agent 复盘") }
+                    _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, isDraftDirty = false, streamPreview = "", result = null, message = "正文与版本已保存；结构化事实将先进入 Candidate，正在做 Agent 复盘") }
                     refreshWorkspace()
                     var working = persisted
                     if (FullBookEditorEngine.shouldAudit(working.snapshot, working.draft.chapterNumber)) {
