@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.MenuBook
@@ -27,6 +28,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,12 +53,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Reference DNA selector.
- *
- * Important UX rule: this is the page users actually manage references from, so install/refresh
- * and user-report deletion must happen here instead of being hidden inside a report detail dialog.
- */
 @Composable
 internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -71,8 +67,6 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
         scope.launch {
             loading = true
             reports = withContext(Dispatchers.IO) {
-                // Self-heal every time the real picker is opened. This avoids relying only on
-                // Application.onCreate() and guarantees packaged built-ins are revalidated.
                 BuiltInReferenceLibraryInstaller.install(context)
                 store.listReports()
             }
@@ -136,7 +130,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
             }
 
             Text(
-                "每轮对话会按当前问题主动检索已选 DNA；正式建书后继续绑定到场景、正文与主编。内置参考锁定，用户自己蒸馏的报告可直接在列表中删除。",
+                "现在每份参考都可以直接打开蒸馏数据库，查看人物、规则、能力、副本、事件、谜团、Style 与全部可检索 DNA。",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -149,7 +143,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
             ) {
                 Icon(Icons.Rounded.Tune, null)
                 Spacer(Modifier.width(6.dp))
-                Text(if (loading) "正在刷新……" else "选择参考 DNA")
+                Text(if (loading) "正在刷新……" else "选择 / 查看参考 DNA")
             }
         }
     }
@@ -193,6 +187,7 @@ private fun ReferenceTemplatePickerDialog(
     onDismiss: () -> Unit,
 ) {
     var deleteTarget by remember { mutableStateOf<ReferenceDistillationReport?>(null) }
+    var browseTarget by remember { mutableStateOf<ReferenceDistillationReport?>(null) }
     val builtIns = reports.filter { it.taskId.startsWith("builtin:") }
     val userReports = reports.filterNot { it.taskId.startsWith("builtin:") }
 
@@ -201,8 +196,8 @@ private fun ReferenceTemplatePickerDialog(
         shape = RoundedCornerShape(28.dp),
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("选择参考 DNA · 共 ${reports.size} 本")
-                Text("内置 ${builtIns.size} 本 · 我的蒸馏 ${userReports.size} 本", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Reference DNA · 共 ${reports.size} 本")
+                Text("内置 ${builtIns.size} 本 · 我的蒸馏 ${userReports.size} 本 · 可先查看数据再选择", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         text = {
@@ -210,21 +205,33 @@ private fun ReferenceTemplatePickerDialog(
                 if (reports.isEmpty()) {
                     Text("没有找到参考 DNA。")
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (builtIns.isNotEmpty()) {
                             item { Text("内置参考", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
                             items(builtIns, key = { it.taskId }) { report ->
-                                TemplateReportCard(report, report.taskId in selectedIds, store, false, onToggle = { value ->
-                                    onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
-                                }, onDelete = {})
+                                TemplateReportCard(
+                                    report = report,
+                                    checked = report.taskId in selectedIds,
+                                    store = store,
+                                    deletable = false,
+                                    onToggle = { value -> onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId) },
+                                    onView = { browseTarget = report },
+                                    onDelete = {},
+                                )
                             }
                         }
                         if (userReports.isNotEmpty()) {
                             item { Text("我的蒸馏", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
                             items(userReports, key = { it.taskId }) { report ->
-                                TemplateReportCard(report, report.taskId in selectedIds, store, true, onToggle = { value ->
-                                    onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
-                                }, onDelete = { deleteTarget = report })
+                                TemplateReportCard(
+                                    report = report,
+                                    checked = report.taskId in selectedIds,
+                                    store = store,
+                                    deletable = true,
+                                    onToggle = { value -> onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId) },
+                                    onView = { browseTarget = report },
+                                    onDelete = { deleteTarget = report },
+                                )
                             }
                         }
                     }
@@ -234,6 +241,10 @@ private fun ReferenceTemplatePickerDialog(
         confirmButton = { Button(onClick = onDismiss, shape = RoundedCornerShape(14.dp)) { Text("完成") } },
         dismissButton = { TextButton(onClick = { onSelectedIds(emptyList()) }) { Text("清空选择") } },
     )
+
+    browseTarget?.let { report ->
+        ReferenceDistillationDataBrowserDialog(report = report, store = store, onDismiss = { browseTarget = null })
+    }
 
     deleteTarget?.let { report ->
         AlertDialog(
@@ -258,6 +269,7 @@ private fun TemplateReportCard(
     store: ReferenceDistillationReportStore,
     deletable: Boolean,
     onToggle: (Boolean) -> Unit,
+    onView: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val searchable = store.retainedItemCount(report)
@@ -285,13 +297,21 @@ private fun TemplateReportCard(
                     }
                 }
             }
+
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 counts["STORY"]?.takeIf { it > 0 }?.let { MiniDnaBadge(Icons.Rounded.MenuBook, "Story $it") }
                 counts["STYLE"]?.takeIf { it > 0 }?.let { MiniDnaBadge(Icons.Rounded.AutoAwesome, "Style $it") }
                 MiniDnaBadge(Icons.Rounded.Search, if (report.retrievalItems.isNotEmpty()) "V2" else "旧版")
             }
+
             if (report.summary.isNotBlank()) {
                 Text(report.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            OutlinedButton(onClick = onView, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Icon(Icons.Rounded.DataObject, null)
+                Spacer(Modifier.width(6.dp))
+                Text("查看蒸馏数据 · $searchable 条")
             }
         }
     }
