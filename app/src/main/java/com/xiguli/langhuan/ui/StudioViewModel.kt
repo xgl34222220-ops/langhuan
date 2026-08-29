@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.xiguli.langhuan.LanghuanApplication
 import com.xiguli.langhuan.data.DemoStoryRepository
 import com.xiguli.langhuan.data.ExportFormat
 import com.xiguli.langhuan.data.NewStoryRequest
@@ -33,20 +34,19 @@ import com.xiguli.langhuan.engine.AutonomousStoryPlanner
 import com.xiguli.langhuan.engine.AgentReview
 import com.xiguli.langhuan.engine.AppChapterRunStore
 import com.xiguli.langhuan.engine.ChapterRunCoordinator
+import com.xiguli.langhuan.engine.ChapterRunRuntimeState
+import com.xiguli.langhuan.engine.ChapterRuntimeTaskKind
 import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
 import com.xiguli.langhuan.engine.ChapterPlanSuggestion
-import com.xiguli.langhuan.engine.DemoAiGateway
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.FullBookEditorEngine
 import com.xiguli.langhuan.engine.NovelAgentEngine
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.ProviderDiscovery
 import com.xiguli.langhuan.engine.RunEvent
-import com.xiguli.langhuan.engine.RunStage
-import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
 import java.util.UUID
@@ -161,6 +161,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         AppChapterRunStore(repository, projects),
         PersistentChapterRunCheckpointStore(application),
     )
+    private val runtime = (application as LanghuanApplication).chapterRunRuntime
     private val backups = ProjectBackupManager(application)
     private val detector = ProviderAutoDetector()
     private val _state = MutableStateFlow(
@@ -169,6 +170,15 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     val state: StateFlow<StudioUiState> = _state.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            runtime.state.collect { run ->
+                val before = _state.value
+                syncRuntimeState(run)
+                if (!run.active && run.draft != null && run.matches(before.snapshot.novel.id, before.draft.chapterNumber)) {
+                    refreshWorkspace()
+                }
+            }
+        }
         viewModelScope.launch {
             repository.seedIfNeeded(demo)
             val preferredId = projects.activeStoryId() ?: demo.snapshot.novel.id
@@ -179,7 +189,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 )
             projects.setActiveStoryId(loaded.snapshot.novel.id)
             _state.update { it.copy(snapshot = loaded.snapshot, draft = loaded.draft) }
-            restoreDurableRun(loaded.snapshot, loaded.draft)
+            restoreOrAttachRun(loaded.snapshot, loaded.draft)
             refreshWorkspace()
         }
         viewModelScope.launch {
@@ -223,13 +233,13 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     error = null,
                 )
             }
-            restoreDurableRun(loaded.snapshot, loaded.draft)
+            restoreOrAttachRun(loaded.snapshot, loaded.draft)
             refreshWorkspace()
         }
     }
 
     fun createStory(title: String, genre: String, premise: String, theme: String, targetWords: Int) {
-        if (_state.value.isCreatingStory) return
+        if (_state.value.isCreatingStory || runtime.state.value.active) return
         viewModelScope.launch {
             _state.update { it.copy(isCreatingStory = true, error = null) }
             runCatching {
@@ -277,7 +287,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                                 error = null,
                             )
                         }
-                        restoreDurableRun(persisted.snapshot, persisted.draft)
+                        restoreOrAttachRun(persisted.snapshot, persisted.draft)
                         refreshWorkspace()
                     }
                 }.onFailure { error ->
@@ -610,12 +620,13 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setDraftContent(value: String) {
+        if (runtime.state.value.active) return
         _state.update { it.copy(draft = it.draft.copy(content = value), isDraftDirty = true, error = null) }
     }
 
     fun saveDraftVersion() {
         val current = _state.value
-        if (current.isSaving || !current.isDraftDirty) return
+        if (current.isSaving || !current.isDraftDirty || runtime.state.value.active) return
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching { repository.saveDraft(current.snapshot, current.draft) }
@@ -674,35 +685,8 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(error = "当前章节还没有正文，无法复盘") }
             return
         }
-        viewModelScope.launch {
-            val gateway = configuredGateway()
-            if (gateway == null) {
-                _state.update { it.copy(error = "Agent 复盘需要先配置 AI 服务") }
-                return@launch
-            }
-            _state.update { it.copy(isAgentReviewing = true, error = null, agentReview = null) }
-            runCatching {
-                chapterRuns.reviewSavedChapter(
-                    snapshot = current.snapshot,
-                    draft = current.draft,
-                    gateway = gateway,
-                    onRunEvent = ::emitRun,
-                )
-            }.onSuccess { reviewed ->
-                _state.update {
-                    it.copy(
-                        snapshot = reviewed.persisted.snapshot,
-                        draft = reviewed.persisted.draft,
-                        isAgentReviewing = false,
-                        agentReview = reviewed.review,
-                        message = "Agent 复盘完成；${reviewed.stagedCount} 条事实已进入 Candidate${if (reviewed.autoConfirmedCount > 0) "，${reviewed.autoConfirmedCount} 条低风险状态自动确认" else ""}",
-                    )
-                }
-                refreshWorkspace()
-            }.onFailure { error ->
-                _state.update { it.copy(isAgentReviewing = false, error = error.message ?: "Agent 章节复盘失败") }
-            }
-        }
+        _state.update { it.copy(isAgentReviewing = true, error = null, agentReview = null) }
+        runtime.review(current.snapshot, current.draft)
     }
 
     fun runFullBookAudit() {
@@ -824,7 +808,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun importDocument(uri: Uri) {
-        if (_state.value.isImporting) return
+        if (_state.value.isImporting || runtime.state.value.active) return
         viewModelScope.launch {
             _state.update { it.copy(isImporting = true, error = null) }
             runCatching {
@@ -860,14 +844,6 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 _state.update { it.copy(isExporting = false, message = if (format == ExportFormat.PROJECT) "项目备份完成（不含 API Key）" else "${format.name} 导出完成") }
             }.onFailure { error -> _state.update { it.copy(isExporting = false, error = error.message ?: "导出失败") } }
         }
-    }
-
-    private fun emitRun(event: RunEvent) {
-        _state.update { state -> state.copy(runEvents = (state.runEvents + event).takeLast(96)) }
-    }
-
-    private fun emitRun(stage: RunStage, status: RunStatus, detail: String = "") {
-        emitRun(RunEvent(stage = stage, status = status, detail = detail))
     }
 
     fun clearMessage() = _state.update { it.copy(message = null, error = null) }
@@ -945,84 +921,42 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun generateChapter() {
-        if (_state.value.isGenerating) return
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    isGenerating = true,
-                    streamPreview = "",
-                    error = null,
-                    runEvents = emptyList(),
-                )
-            }
-            val current = _state.value
-            val gateway = configuredGateway() ?: DemoAiGateway()
-            runCatching {
-                chapterRuns.generate(
-                    snapshot = current.snapshot,
-                    draft = current.draft,
-                    gateway = gateway,
-                    targetWords = 2_500,
-                    onDelta = { preview ->
-                        _state.update { state -> state.copy(streamPreview = preview) }
-                    },
-                    onRunEvent = ::emitRun,
-                )
-            }.onSuccess { result ->
-                _state.update { it.copy(isGenerating = false, streamPreview = result.chapter.content, result = result) }
-            }.onFailure { error ->
-                emitRun(RunStage.READY_TO_COMMIT, RunStatus.FAILED, error.message ?: "生成失败")
-                _state.update { it.copy(isGenerating = false, streamPreview = "", error = error.message ?: "生成失败") }
-            }
+        val current = _state.value
+        if (busy(current)) return
+        _state.update {
+            it.copy(
+                isGenerating = true,
+                streamPreview = "",
+                error = null,
+                runEvents = emptyList(),
+                result = null,
+                agentReview = null,
+            )
         }
+        runtime.generate(
+            snapshot = current.snapshot,
+            draft = current.draft,
+            targetWords = 2_500,
+            allowDemoFallback = true,
+        )
     }
 
     fun commitResult() {
         val current = _state.value
         val result = current.result ?: return
-        if (!result.canCommit || current.isSaving) return
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, error = null) }
-            runCatching {
-                chapterRuns.commit(
-                    snapshot = current.snapshot,
-                    draft = current.draft,
-                    result = result,
-                    gateway = configuredGateway(),
-                    onRunEvent = ::emitRun,
-                )
-            }.onSuccess { outcome ->
-                _state.update {
-                    it.copy(
-                        snapshot = outcome.persisted.snapshot,
-                        draft = outcome.persisted.draft,
-                        isSaving = false,
-                        isAgentReviewing = false,
-                        isAutonomousPlanning = false,
-                        isDraftDirty = false,
-                        streamPreview = "",
-                        result = null,
-                        agentReview = outcome.review,
-                        message = outcome.summary(),
-                    )
-                }
-                refreshWorkspace()
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        isSaving = false,
-                        isAgentReviewing = false,
-                        isAutonomousPlanning = false,
-                        error = error.message ?: "保存章节失败",
-                    )
-                }
-            }
-        }
+        if (!result.canCommit || busy(current)) return
+        _state.update { it.copy(isSaving = true, error = null) }
+        runtime.commit(
+            snapshot = current.snapshot,
+            draft = current.draft,
+            result = result,
+            allowNoAi = true,
+        )
     }
 
     fun dismissResult() {
         val current = _state.value
-        chapterRuns.abandon(current.snapshot, current.draft)
+        runtime.abandon(current.snapshot, current.draft)
         _state.update { it.copy(result = null, streamPreview = "", runEvents = emptyList()) }
     }
 
@@ -1037,6 +971,34 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun syncRuntimeState(run: ChapterRunRuntimeState) {
+        val current = _state.value
+        if (!run.matches(current.snapshot.novel.id, current.draft.chapterNumber)) return
+        _state.update { state ->
+            state.copy(
+                snapshot = run.snapshot ?: state.snapshot,
+                draft = run.draft ?: state.draft,
+                streamPreview = run.preview,
+                runEvents = run.events,
+                result = run.result,
+                agentReview = run.review,
+                isGenerating = run.active && run.taskKind == ChapterRuntimeTaskKind.GENERATE,
+                isSaving = run.active && run.taskKind == ChapterRuntimeTaskKind.COMMIT,
+                isAgentReviewing = run.active && run.taskKind == ChapterRuntimeTaskKind.REVIEW,
+                isAutonomousPlanning = false,
+                isDraftDirty = if (!run.active && run.taskKind == ChapterRuntimeTaskKind.COMMIT && run.draft != null) false else state.isDraftDirty,
+                message = run.message ?: state.message,
+                error = run.error ?: state.error,
+            )
+        }
+    }
+
+    private fun restoreOrAttachRun(snapshot: StorySnapshot, draft: ChapterDraft) {
+        val live = runtime.state.value
+        val hasRuntimeState = live.matches(snapshot.novel.id, draft.chapterNumber) &&
+            (live.active || live.result != null || live.review != null || live.message != null || live.error != null)
+        if (hasRuntimeState) syncRuntimeState(live) else restoreDurableRun(snapshot, draft)
+    }
 
     private fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
         val recovery = chapterRuns.recover(snapshot, draft) ?: return
@@ -1072,7 +1034,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun busy(state: StudioUiState): Boolean =
-        state.isGenerating || state.isSaving || state.isPlanning || state.isRewriting || state.isAgentReviewing || state.isAuditing || state.isAutonomousPlanning || state.isImporting || state.isExporting || state.isRestoringVersion
+        runtime.state.value.active || state.isGenerating || state.isSaving || state.isPlanning || state.isRewriting || state.isAgentReviewing || state.isAuditing || state.isAutonomousPlanning || state.isImporting || state.isExporting || state.isRestoringVersion
 
     private fun effectiveOutline(snapshot: StorySnapshot): List<OutlineNode> = (if (snapshot.outline.isEmpty()) snapshot.activeOutline else snapshot.outline).distinctBy { it.id }
 
