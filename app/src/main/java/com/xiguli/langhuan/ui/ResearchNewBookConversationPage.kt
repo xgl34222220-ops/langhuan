@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -40,6 +41,9 @@ fun ResearchNewBookConversationPage(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    var followConversationTail by remember { mutableStateOf(true) }
+    var initialTailPositioned by remember { mutableStateOf(false) }
     val context = LocalContext.current.applicationContext
     val researchPrefs = remember(context) { context.getSharedPreferences("creation_research", 0) }
     var webResearchEnabled by remember { mutableStateOf(researchPrefs.getBoolean("web_research_enabled", false)) }
@@ -59,6 +63,33 @@ fun ResearchNewBookConversationPage(
     var topMenuExpanded by remember { mutableStateOf(false) }
     val attachmentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         viewModel.addConversationAttachments(uris)
+    }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress && initialTailPositioned) {
+            // User touch/drag takes priority over automatic streaming follow.
+            followConversationTail = false
+        } else if (!listState.isScrollInProgress && initialTailPositioned) {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            followConversationTail = layout.totalItemsCount == 0 || lastVisible >= layout.totalItemsCount - 2
+        }
+    }
+
+    LaunchedEffect(
+        state.messages.size,
+        state.streamingReply.length,
+        state.proposal != null,
+        state.foundationStage,
+        state.blueprintDirty,
+    ) {
+        withFrameNanos { }
+        val lastIndex = listState.layoutInfo.totalItemsCount - 1
+        if (lastIndex >= 0 && (!initialTailPositioned || followConversationTail)) {
+            listState.scrollToItem(lastIndex)
+            initialTailPositioned = true
+            followConversationTail = true
+        }
     }
 
     LaunchedEffect(state.createdStoryId) {
@@ -307,6 +338,7 @@ fun ResearchNewBookConversationPage(
         },
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -344,6 +376,34 @@ fun ResearchNewBookConversationPage(
                             Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(if (state.proposal == null) "整理方案" else "同步方案")
+                        }
+                    }
+                    if (state.messages.any { it.role == "user" }) {
+                        FilledTonalButton(
+                            onClick = {
+                                when {
+                                    state.foundation != null && !state.blueprintDirty -> scope.launch {
+                                        withFrameNanos { }
+                                        val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                                        if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
+                                    }
+                                    else -> {
+                                        retryFoundation = true
+                                        viewModel.generateFoundation(false)
+                                    }
+                                }
+                            },
+                            enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
+                        ) {
+                            Icon(Icons.Rounded.AccountTree, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                when {
+                                    state.foundation == null -> "建书蓝图"
+                                    state.blueprintDirty -> "同步蓝图"
+                                    else -> "查看蓝图"
+                                }
+                            )
                         }
                     }
                 }
