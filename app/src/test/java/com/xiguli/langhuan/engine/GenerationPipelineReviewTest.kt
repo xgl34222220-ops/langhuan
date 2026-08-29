@@ -38,13 +38,15 @@ class GenerationPipelineReviewTest {
     }
 
     @Test
-    fun `hard rejected first draft is rewritten and second pass can commit`() = runBlocking {
+    fun `hard rejected first draft is minimally revised and second pass can commit`() = runBlocking {
         val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite, ReviewScript.Pass))
         val result = GenerationPipeline(gateway).generate(request())
 
         assertEquals(SECOND_PROSE, result.chapter.content)
         assertEquals(2, gateway.reviewCalls)
         assertEquals(2, gateway.proseCalls)
+        assertTrue(gateway.lastRewritePrompt?.system?.contains("最小修改") == true)
+        assertTrue(gateway.lastRewritePrompt?.user?.contains("【上一稿｜尽量保留】") == true)
         assertFalse(result.issues.any { it.code == "EDITOR_REVIEW_FAILED" })
     }
 
@@ -59,6 +61,14 @@ class GenerationPipelineReviewTest {
         assertFalse(result.canCommit)
     }
 
+    @Test
+    fun `prose prompt forbids inventing minute precision beyond canon`() {
+        val bundle = PromptAssembler().buildProse(request())
+        assertTrue(bundle.system.contains("时间表达不得擅自提高精度"))
+        assertTrue(bundle.system.contains("17:09"))
+        assertTrue(bundle.system.contains("11:00-17:00 六小时空白"))
+    }
+
     private enum class ReviewScript {
         Pass,
         AdviceRewrite,
@@ -70,10 +80,13 @@ class GenerationPipelineReviewTest {
     ) : AiGateway {
         var reviewCalls = 0
         var proseCalls = 0
+        var lastRewritePrompt: PromptBundle? = null
 
         override suspend fun generateText(prompt: PromptBundle): String {
             proseCalls++
-            return if (prompt.user.contains("【上一稿】")) SECOND_PROSE else FIRST_PROSE
+            val rewrite = prompt.user.contains("【上一稿｜尽量保留】")
+            if (rewrite) lastRewritePrompt = prompt
+            return if (rewrite) SECOND_PROSE else FIRST_PROSE
         }
 
         override suspend fun generate(prompt: PromptBundle): GeneratedChapter {

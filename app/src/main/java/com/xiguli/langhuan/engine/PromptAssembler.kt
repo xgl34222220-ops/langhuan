@@ -26,10 +26,6 @@ class PromptAssembler(
     private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
     private val contextBuilder: GenerationContextBuilder = GenerationContextBuilder(chronologyGuard),
 ) {
-    /**
-     * Pure prose prompt. Context Builder 2.0 keeps execution/canon/state/style/history isolated,
-     * so RAG history cannot crowd out or silently override the current chapter contract.
-     */
     fun buildProse(
         request: GenerationRequest,
         retrievedContext: List<RetrievedContextItem> = emptyList(),
@@ -57,11 +53,12 @@ class PromptAssembler(
                 10. 现实场景必须可信。普通人不能无理由获取保密档案、进入受限场所、让工作人员违反常识或制度来服务剧情；如必须做到，正文中先建立可信渠道和代价。
                 11. 恐怖/异常优先使用安静而具体的现实错位，不要机械叠加水雾、敲门、血字、怪声等模板惊吓。异常越少越要精准。
                 12. 严格遵守人物已知信息、地点、时间轴和场景耗时；不得瞬移、无因跳时、无因改变关系/能力/性格。
-                13. 本章结尾必须由本章已有因果自然推出一个新的问题、选择或威胁，形成钩子，但不能靠提前揭底制造刺激。
-                14. 文风服从 C 层，但任何写法偏好都不能修改 S/A/B 的事实和边界。避免AI腔：少用排比式解释、总结句、同义复述和连续“不是A，是B”句型。
-                15. D 层只允许按需取材。不要因为召回了某段旧剧情就重复讲述，更不要把 RAG 中的旧状态当成当前状态。
-                16. 目标字数是节奏参考，不为凑字重复信息，也不要用清单填充篇幅。
-                17. 只输出小说正文。不要 Markdown 标题、不要前言、不要后记、不要说明。
+                13. 时间表达不得擅自提高精度：如果 S/A/B 只给“上午/下午/傍晚/稍后/约X分钟”等模糊时段，正文也只能使用同级别模糊表达，禁止自行发明 17:09、18:07、“六小时零七分”这类精确钟点或精确时长。只有 S/A/B 明确给出具体钟点/分钟时才可引用，而且必须逐字服从锁定值。若 Canon 明确写“11:00-17:00 六小时空白”，正文不得把空白延长到 17:00 之后；可以写“到五点”“六小时”“过了几分钟才注意到”等不改变事实的表达。
+                14. 本章结尾必须由本章已有因果自然推出一个新的问题、选择或威胁，形成钩子，但不能靠提前揭底制造刺激。
+                15. 文风服从 C 层，但任何写法偏好都不能修改 S/A/B 的事实和边界。避免AI腔：少用排比式解释、总结句、同义复述和连续“不是A，是B”句型。
+                16. D 层只允许按需取材。不要因为召回了某段旧剧情就重复讲述，更不要把 RAG 中的旧状态当成当前状态。
+                17. 目标字数是节奏参考，不为凑字重复信息，也不要用清单填充篇幅。
+                18. 只输出小说正文。不要 Markdown 标题、不要前言、不要后记、不要说明。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
@@ -89,7 +86,6 @@ class PromptAssembler(
         )
     }
 
-    /** Reviewer is allowed to see later chapter beats solely to detect premature reveals. */
     fun buildQualityReview(request: GenerationRequest, prose: String): PromptBundle {
         val snapshot = request.snapshot
         val current = request.chapter.chapterNumber.coerceAtLeast(1)
@@ -158,13 +154,19 @@ class PromptAssembler(
     ): PromptBundle {
         val base = buildProse(request, retrievedContext)
         return base.copy(
-            system = base.system + "\n\n这是第二稿。必须根据主编意见从头重写整章，不要在旧稿后追加修补，不要解释修改过程。章节合同与信息边界仍为最高优先级。",
-            user = base.user + "\n\n【上一稿】\n$prose\n\n【主编退回意见】\n$instructions\n\n请从头给出完整新正文。",
+            system = base.system + """
+
+                这是修订稿。以“最小修改”为第一原则，不要为了修一个局部冲突从头改写整章剧情。
+                - 若主编指出的是时间数字、地点名、物品名、单句事实等局部硬冲突，只修改冲突句及其必要上下文，其余已成立的正文必须原样保留。
+                - 只有主编明确指出结构、人物动机或章节合同整体失效时，才允许大范围重写。
+                - 必须返回完整正文，不能只返回修改片段、说明、diff 或省略号。
+                - 不要解释修改过程。章节合同、Canon、信息边界和时间锁仍为最高优先级。
+            """.trimIndent(),
+            user = base.user + "\n\n【上一稿｜尽量保留】\n$prose\n\n【主编退回意见】\n$instructions\n\n请只做解决硬冲突所需的最小修改，然后返回完整新正文。",
             jsonMode = false,
         )
     }
 
-    /** Metadata is extracted after prose is frozen, so it can never leak into the visible chapter. */
     fun buildMetadata(request: GenerationRequest, prose: String): PromptBundle {
         val snapshot = request.snapshot
         val chronology = chronologyGuard.promptText(snapshot, request.chapter.scenePlan)
