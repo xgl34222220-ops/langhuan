@@ -240,7 +240,7 @@ class UniversalAiGateway(
                 ?.get("delta")?.let { it as? JsonObject }?.string("content")
                 ?: root["choices"].asObjects().firstOrNull()
                     ?.get("message")?.let { it as? JsonObject }?.string("content")
-            appendDelta(buffer, delta, onDelta)
+            appendDelta(buffer, delta, onDelta, prompt.jsonMode)
         }
         return buffer.toString().ifBlank { error("流式响应为空") }
     }
@@ -306,7 +306,7 @@ class UniversalAiGateway(
             if (data.isBlank() || data == "[DONE]") return@streamHttp
             val root = runCatching { WireJson.parseToJsonElement(data).jsonObject }.getOrNull() ?: return@streamHttp
             val delta = (root["delta"] as? JsonObject)?.string("text")
-            appendDelta(buffer, delta, onDelta)
+            appendDelta(buffer, delta, onDelta, prompt.jsonMode)
         }
         return buffer.toString().ifBlank { error("Claude 流式响应为空") }
     }
@@ -372,7 +372,7 @@ class UniversalAiGateway(
             val delta = root["candidates"].asObjects().firstOrNull()
                 ?.get("content")?.let { it as? JsonObject }?.get("parts").asObjects()
                 .orEmpty().joinToString("") { it.string("text").orEmpty() }
-            appendDelta(buffer, delta, onDelta)
+            appendDelta(buffer, delta, onDelta, prompt.jsonMode)
         }
         return buffer.toString().ifBlank { error("Gemini 流式响应为空") }
     }
@@ -425,7 +425,7 @@ class UniversalAiGateway(
         streamHttp(ollamaChatEndpoint(config.baseUrl), emptyMap(), ollamaBody(prompt, stream = true).toString()) { line ->
             val root = runCatching { WireJson.parseToJsonElement(line.trim()).jsonObject }.getOrNull() ?: return@streamHttp
             val delta = (root["message"] as? JsonObject)?.string("content")
-            appendDelta(buffer, delta, onDelta)
+            appendDelta(buffer, delta, onDelta, prompt.jsonMode)
         }
         return buffer.toString().ifBlank { error("Ollama 流式响应为空") }
     }
@@ -454,10 +454,17 @@ class UniversalAiGateway(
         put("options", buildJsonObject { put("temperature", config.temperature) })
     }
 
-    private fun appendDelta(buffer: StringBuilder, delta: String?, onDelta: (String) -> Unit) {
+    private fun appendDelta(
+        buffer: StringBuilder,
+        delta: String?,
+        onDelta: (String) -> Unit,
+        structuredJson: Boolean,
+    ) {
         if (delta.isNullOrEmpty()) return
         buffer.append(delta)
-        onDelta(chapterContentPreview(buffer.toString()))
+        // Novel prose and normal chat are plain text: show the actual cumulative text immediately.
+        // Legacy structured streaming still extracts the JSON content field for a readable preview.
+        onDelta(if (structuredJson) chapterContentPreview(buffer.toString()) else buffer.toString())
     }
 
     private fun extractText(protocol: ApiProtocol, body: String): String {
