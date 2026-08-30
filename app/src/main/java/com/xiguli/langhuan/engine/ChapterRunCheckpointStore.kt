@@ -29,6 +29,8 @@ enum class RunResumePolicy {
 /** Model outputs already completed inside GenerationPipeline. */
 @Serializable
 data class GenerationStageCheckpoint(
+    val logicPlanAttempted: Boolean = false,
+    val logicPlanText: String = "",
     val draftProse: String = "",
     val novelizationAttempted: Boolean = false,
     val postNovelizationProse: String = "",
