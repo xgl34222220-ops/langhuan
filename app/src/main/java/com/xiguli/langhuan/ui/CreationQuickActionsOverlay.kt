@@ -18,9 +18,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
- * 建书会谈的常驻快捷操作。
+ * 建书会谈常驻快捷操作。
  *
- * 参考 DNA / 整理方案 / 建书蓝图不再依赖聊天列表顶部，用户聊到任何位置都能直接操作。
+ * 这块只负责“随时可达”，不再做一整块高阴影大卡片。三个动作各自表达状态：
+ * - 参考：始终是中性的入口；
+ * - 方案：没有方案时强调，已有方案后显示“更新方案”；
+ * - 蓝图：未生成/已过期时强调，已同步时退回“查看蓝图”。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,56 +34,72 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
 
     var showReferenceSheet by remember { mutableStateOf(false) }
     var showBlueprintSheet by remember { mutableStateOf(false) }
-    val disabled = state.isBusy || state.isLoadingAttachments
+    val blocked = state.isLoadingAttachments
+    val proposalBusy = state.isBusy && state.busyLabel.contains("方案")
+    val blueprintBusy = state.isBusy && (
+        state.busyLabel.contains("蓝图") ||
+            state.busyLabel.contains("分阶段") ||
+            state.busyLabel.contains("章纲") ||
+            state.busyLabel.contains("伏笔")
+        )
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        Surface(
+        Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(start = 12.dp, end = 12.dp, bottom = 108.dp),
-            shape = RoundedCornerShape(24.dp),
-            tonalElevation = 8.dp,
-            shadowElevation = 8.dp,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                .padding(horizontal = 18.dp, bottom = 108.dp)
+                .widthIn(max = 430.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                QuickActionButton(
-                    modifier = Modifier.weight(1f),
-                    icon = { Icon(Icons.Rounded.AutoStories, null, Modifier.size(18.dp)) },
-                    text = if (state.selectedReferenceTemplateIds.isEmpty()) "参考 DNA" else "参考 ${state.selectedReferenceTemplateIds.size}本",
-                    enabled = !disabled,
-                    onClick = { showReferenceSheet = true },
-                )
-                QuickActionButton(
-                    modifier = Modifier.weight(1f),
-                    icon = { Icon(if (state.proposal == null) Icons.Rounded.AutoAwesome else Icons.Rounded.Sync, null, Modifier.size(18.dp)) },
-                    text = if (state.proposal == null) "整理方案" else "同步方案",
-                    enabled = !disabled,
-                    onClick = viewModel::syncConversationProposal,
-                )
-                QuickActionButton(
-                    modifier = Modifier.weight(1f),
-                    icon = { Icon(Icons.Rounded.AccountTree, null, Modifier.size(18.dp)) },
-                    text = when {
-                        state.foundation == null -> "建书蓝图"
-                        state.blueprintDirty -> "同步蓝图"
-                        else -> "查看蓝图"
-                    },
-                    enabled = !disabled,
-                    onClick = {
-                        when {
-                            state.foundation == null -> viewModel.generateFoundation(false)
-                            state.blueprintDirty -> viewModel.generateFoundation(false)
-                            else -> showBlueprintSheet = true
-                        }
-                    },
-                )
-            }
+            CreationDockAction(
+                modifier = Modifier.weight(1f),
+                icon = { Icon(Icons.Rounded.AutoStories, null, Modifier.size(17.dp)) },
+                text = if (state.selectedReferenceTemplateIds.isEmpty()) "参考" else "参考·${state.selectedReferenceTemplateIds.size}",
+                enabled = !state.isBusy && !blocked,
+                emphasized = false,
+                onClick = { showReferenceSheet = true },
+            )
+            CreationDockAction(
+                modifier = Modifier.weight(1f),
+                icon = {
+                    if (proposalBusy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Icon(if (state.proposal == null) Icons.Rounded.AutoAwesome else Icons.Rounded.Sync, null, Modifier.size(17.dp))
+                },
+                text = when {
+                    proposalBusy -> "整理中"
+                    state.proposal == null -> "整理方案"
+                    else -> "更新方案"
+                },
+                enabled = !state.isBusy && !blocked,
+                emphasized = state.proposal == null,
+                onClick = viewModel::syncConversationProposal,
+            )
+            CreationDockAction(
+                modifier = Modifier.weight(1f),
+                icon = {
+                    if (blueprintBusy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Icon(
+                        if (state.foundation != null && !state.blueprintDirty) Icons.Rounded.CheckCircle else Icons.Rounded.AccountTree,
+                        null,
+                        Modifier.size(17.dp),
+                    )
+                },
+                text = when {
+                    blueprintBusy -> "生成中"
+                    state.foundation == null -> "建书蓝图"
+                    state.blueprintDirty -> "更新蓝图"
+                    else -> "查看蓝图"
+                },
+                enabled = !state.isBusy && !blocked,
+                emphasized = state.foundation == null || state.blueprintDirty,
+                onClick = {
+                    when {
+                        state.foundation == null -> viewModel.generateFoundation(false)
+                        state.blueprintDirty -> viewModel.generateFoundation(false)
+                        else -> showBlueprintSheet = true
+                    }
+                },
+            )
         }
     }
 
@@ -90,12 +109,32 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
             dragHandle = { BottomSheetDefaults.DragHandle() },
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 30.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("参考 DNA", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Icon(
+                            Icons.Rounded.AutoStories,
+                            null,
+                            modifier = Modifier.padding(10.dp).size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                        Text("参考 DNA", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (state.selectedReferenceTemplateIds.isEmpty()) "当前没有绑定参考" else "当前已选 ${state.selectedReferenceTemplateIds.size} 本，可随时调整",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 Text(
-                    "随时增删参考，不需要回到聊天顶部。选中的参考会继续参与方案、蓝图和后续写作。",
+                    "参考只提供检索和创作迁移，不会替代当前作品已经确认的设定。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -115,13 +154,38 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
                     modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 30.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("建书蓝图", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text(foundation.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("${foundation.genre} · ${foundation.targetWords / 10_000} 万字", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (state.blueprintDirty) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Icon(
+                                if (state.blueprintDirty) Icons.Rounded.Sync else Icons.Rounded.CheckCircle,
+                                null,
+                                modifier = Modifier.padding(10.dp).size(20.dp),
+                                tint = if (state.blueprintDirty) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                            Text("建书蓝图", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (state.blueprintDirty) "聊天里有新要求，蓝图待更新" else "蓝图已与当前会谈同步",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(foundation.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("${foundation.genre} · ${foundation.targetWords / 10_000} 万字", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
                             Text("故事承诺", fontWeight = FontWeight.SemiBold)
-                            Text(foundation.storyPromise)
+                            Text(foundation.storyPromise, style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 "核心角色 ${foundation.characters.size} 人 · ${foundation.volumes.size} 卷 · 伏笔 ${foundation.foreshadowing.size} 条 · 圣经 ${foundation.bible.size} 条",
                                 style = MaterialTheme.typography.bodySmall,
@@ -129,6 +193,7 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
                             )
                         }
                     }
+
                     if (state.blueprintDirty) {
                         Button(
                             onClick = {
@@ -136,20 +201,23 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
                                 viewModel.generateFoundation(false)
                             },
                             modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Icon(Icons.Rounded.Sync, null)
                             Spacer(Modifier.width(7.dp))
-                            Text("同步当前聊天到蓝图")
+                            Text("把当前聊天更新到蓝图")
                         }
                     }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = {
                                 showBlueprintSheet = false
                                 viewModel.generateFoundation(true)
                             },
-                            enabled = !disabled,
+                            enabled = !state.isBusy && !blocked,
                             modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Icon(Icons.Rounded.Refresh, null)
                             Spacer(Modifier.width(5.dp))
@@ -160,8 +228,9 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
                                 showBlueprintSheet = false
                                 viewModel.createCurrentFoundation()
                             },
-                            enabled = !disabled && !state.blueprintDirty,
+                            enabled = !state.isBusy && !blocked && !state.blueprintDirty,
                             modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Icon(Icons.Rounded.CheckCircle, null)
                             Spacer(Modifier.width(5.dp))
@@ -175,22 +244,41 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
 }
 
 @Composable
-private fun QuickActionButton(
+private fun CreationDockAction(
     modifier: Modifier,
     icon: @Composable () -> Unit,
     text: String,
     enabled: Boolean,
+    emphasized: Boolean,
     onClick: () -> Unit,
 ) {
-    FilledTonalButton(
+    val container = when {
+        emphasized -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val content = when {
+        emphasized -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(46.dp),
-        shape = RoundedCornerShape(16.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp),
+        modifier = modifier.height(40.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = container,
+        contentColor = content,
+        tonalElevation = if (emphasized) 2.dp else 1.dp,
+        shadowElevation = 1.dp,
     ) {
-        icon()
-        Spacer(Modifier.width(5.dp))
-        Text(text, maxLines = 1, style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 7.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon()
+            Spacer(Modifier.width(5.dp))
+            Text(text, maxLines = 1, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
