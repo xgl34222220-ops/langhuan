@@ -98,6 +98,7 @@ class NovelAgentEngine(
            - NORMAL 事件的故事日不得比已有主时间线更早；没有明确跳时场景时不得凭空增加多天。
            - FLASHBACK 只记录真正切入过去叙事的事件，且不会推进当前主时间钟。
            - 每个有实质剧情推进的章节至少给 1 条、最多 4 条 TIMELINE，按正文发生顺序排列。
+           - evidence 必须摘录正文中可逐字定位的 10-30 字原句；不要改写、概括或引用章纲。只有正文证据与场景时间锁完全一致时，App 才会自动承接到下一章。
         6. FORESHADOW_NEW：subject=伏笔标题；after=细节||预期回收||建议回收起始章||建议回收结束章。只有明显需要未来兑现的信息才建立伏笔。
         7. FORESHADOW_UPDATE：subject=已有伏笔 id；after=PLANTED/DEVELOPING/RESOLVED/ABANDONED||本次变化说明。
         8. CONSISTENCY / OUTLINE_GAP / PACING / ARC：subject=问题标题；before=现状；after=建议；evidence=依据。这些只做诊断，不写入事实记忆。
