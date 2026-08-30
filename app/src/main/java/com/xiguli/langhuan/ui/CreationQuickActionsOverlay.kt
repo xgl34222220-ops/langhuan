@@ -46,7 +46,7 @@ internal fun CreationQuickActionsOverlay(viewModel: NewBookConversationViewModel
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 18.dp, bottom = 108.dp)
+                .padding(start = 18.dp, end = 18.dp, bottom = 108.dp)
                 .widthIn(max = 430.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
