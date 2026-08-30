@@ -95,7 +95,7 @@ class NovelizationEngineTest {
             objective = "让主角确认现实记录正在否认一个他明确记得的人。",
             scenePlan = emptyList(),
         ),
-        targetWords = 2_000,
+        targetWords = 100,
     )
 
     private companion object {

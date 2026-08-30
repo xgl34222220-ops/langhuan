@@ -474,7 +474,7 @@ class ChapterRunCoordinator(
 internal fun chapterRunFingerprint(snapshot: StorySnapshot, draft: ChapterDraft): String = buildString {
     append(snapshot.novel.id).append('|').append(draft.chapterNumber).append('|').append(draft.version).append('|')
     append(draft.title).append('|').append(draft.objective).append('|')
-    draft.scenePlan.sortedBy { it.order }.forEach { append(it.order).append(':').append(it.viewpoint).append(':').append(it.location).append(':').append(it.purpose).append(':').append(it.conflict).append(':').append(it.outcome).append('|') }
+    draft.scenePlan.sortedBy { it.order }.forEach { append(it.order).append(':').append(it.viewpoint).append(':').append(it.participants.sorted()).append(':').append(it.location).append(':').append(it.purpose).append(':').append(it.conflict).append(':').append(it.outcome).append('|') }
     snapshot.activeOutline.forEach { append(it.id).append(':').append(it.objective).append(':').append(it.turningPoint).append(':').append(it.locked).append('|') }
     snapshot.knowledgeLedger.sortedBy { it.id }.forEach { append(it.id).append(':').append(it.readerState).append(':').append(it.revealPolicy).append(':').append(it.knownBy.sorted()).append('|') }
     snapshot.characters.sortedBy { it.id }.forEach { append(it.id).append(':').append(it.location).append(':').append(it.emotionalState).append(':').append(it.goal).append(':').append(it.lastUpdatedChapter).append('|') }
@@ -483,7 +483,7 @@ internal fun chapterRunFingerprint(snapshot: StorySnapshot, draft: ChapterDraft)
 internal fun buildChapterRunRagQuery(snapshot: StorySnapshot, draft: ChapterDraft): String = buildString {
     append(draft.title).append(' ').append(draft.objective).append(' ')
     draft.scenePlan.sortedBy { it.order }.forEach { scene ->
-        append(scene.viewpoint).append(' ').append(scene.location).append(' ').append(scene.purpose).append(' ').append(scene.conflict).append(' ').append(scene.outcome).append(' ')
+        append(scene.viewpoint).append(' ').append(scene.participants.joinToString(" ")).append(' ').append(scene.location).append(' ').append(scene.purpose).append(' ').append(scene.conflict).append(' ').append(scene.outcome).append(' ')
     }
     snapshot.activeOutline.forEach { outline ->
         append(outline.objective).append(' ').append(outline.turningPoint).append(' ').append(outline.mustInclude.joinToString(" ")).append(' ')

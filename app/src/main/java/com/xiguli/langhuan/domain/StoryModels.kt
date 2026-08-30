@@ -244,6 +244,8 @@ data class ScenePlan(
     val purpose: String,
     val conflict: String,
     val outcome: String,
+    /** 本场实际参与人物。旧项目为空；viewpoint 始终会被视为参与者。 */
+    val participants: List<String> = emptyList(),
     /** 该场景发生在故事第几天。0 表示旧计划未锁定。 */
     val storyDay: Int = 0,
     /** 场景发生时段。 */

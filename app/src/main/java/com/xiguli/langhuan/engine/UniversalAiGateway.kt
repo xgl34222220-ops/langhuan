@@ -258,7 +258,13 @@ class UniversalAiGateway(
     private fun openAiBody(prompt: PromptBundle, stream: Boolean, azure: Boolean): JsonObject = buildJsonObject {
         val turns = prompt.messages.ifEmpty { listOf(PromptMessage("user", prompt.user)) }
         put("model", config.model)
-        put("temperature", config.temperature)
+        put("temperature", effectiveTemperature(prompt))
+        val outputTokens = outputTokenBudget(prompt)
+        if (Regex("(^|[-_/])(o1|o3|o4)([-_/]|$)|gpt-5", RegexOption.IGNORE_CASE).containsMatchIn(config.model)) {
+            put("max_completion_tokens", outputTokens)
+        } else {
+            put("max_tokens", outputTokens)
+        }
         put("stream", stream)
         put("messages", buildJsonArray {
             add(buildJsonObject { put("role", "system"); put("content", prompt.system) })
@@ -324,8 +330,8 @@ class UniversalAiGateway(
     private fun anthropicBody(prompt: PromptBundle, stream: Boolean): JsonObject = buildJsonObject {
         val turns = prompt.messages.ifEmpty { listOf(PromptMessage("user", prompt.user)) }
         put("model", config.model)
-        put("max_tokens", 8192)
-        put("temperature", config.temperature)
+        put("max_tokens", outputTokenBudget(prompt))
+        put("temperature", effectiveTemperature(prompt))
         put("stream", stream)
         put("system", prompt.system)
         put("messages", buildJsonArray {
@@ -414,7 +420,8 @@ class UniversalAiGateway(
             }
         })
         put("generationConfig", buildJsonObject {
-            put("temperature", config.temperature)
+            put("temperature", effectiveTemperature(prompt))
+            put("maxOutputTokens", outputTokenBudget(prompt))
             if (prompt.jsonMode) put("responseMimeType", "application/json")
         })
     }
@@ -461,7 +468,28 @@ class UniversalAiGateway(
                 })
             }
         })
-        put("options", buildJsonObject { put("temperature", config.temperature) })
+        put("options", buildJsonObject {
+            put("temperature", effectiveTemperature(prompt))
+            put("num_predict", outputTokenBudget(prompt))
+        })
+    }
+
+    private fun effectiveTemperature(prompt: PromptBundle): Double = when (AiPromptTaskClassifier.classify(prompt)) {
+        AiTaskType.FACT_EXTRACTION,
+        AiTaskType.AGENT_EXTRACTION,
+        AiTaskType.EDITOR_REVIEW,
+        AiTaskType.EXECUTION_AUDIT,
+        AiTaskType.FULL_BOOK_EDITOR -> minOf(config.temperature, 0.28)
+        AiTaskType.SCENE_DIRECTOR,
+        AiTaskType.AUTONOMOUS_PLANNER -> minOf(config.temperature, 0.48)
+        else -> config.temperature
+    }
+
+    private fun outputTokenBudget(prompt: PromptBundle): Int = when (AiPromptTaskClassifier.classify(prompt)) {
+        AiTaskType.PROSE_AUTHOR,
+        AiTaskType.NOVELIZATION,
+        AiTaskType.EDITOR_REWRITE -> 12_288
+        else -> 8_192
     }
 
     private fun appendDelta(

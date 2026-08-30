@@ -46,6 +46,8 @@ class GenerationContextBuilderTest {
         val pack = GenerationContextBuilder().build(request())
         assertFalse(pack.style.contains(GenerationContextBuilder.CREATION_FACT_LEDGER))
         assertTrue(pack.style.contains("克制悬疑"))
+        assertTrue(pack.canon.contains("最终梦主其实是陆清璃"))
+        assertTrue(pack.canon.contains("用户确认基线"))
     }
 
     private fun request(): GenerationRequest {

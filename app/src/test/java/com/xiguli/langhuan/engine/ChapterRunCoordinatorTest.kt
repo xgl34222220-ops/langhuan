@@ -31,7 +31,7 @@ class ChapterRunCoordinatorTest {
             snapshot = store.snapshot,
             draft = store.draft,
             gateway = gateway,
-            targetWords = 2_000,
+            targetWords = 100,
             onDelta = { previews += it },
             onRunEvent = { events += it },
         )

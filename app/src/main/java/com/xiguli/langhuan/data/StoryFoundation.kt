@@ -257,7 +257,7 @@ class StoryFoundationApplier(context: Context) {
             )
         }
 
-        val characters = foundation.characters.take(16).map { item ->
+        val characters = foundation.characters.take(32).map { item ->
             CharacterState(
                 id = "character-${UUID.randomUUID()}",
                 novelId = novelId,

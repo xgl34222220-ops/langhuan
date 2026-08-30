@@ -50,6 +50,17 @@ class GenerationPipelineReviewTest {
     }
 
     @Test
+    fun `hard conflict with prose evidence and authority evidence triggers rewrite`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.VerifiedHardRewrite, ReviewScript.Pass))
+        val result = GenerationPipeline(gateway).generate(request())
+
+        assertEquals(SECOND_PROSE, result.chapter.content)
+        assertEquals(2, gateway.reviewCalls)
+        assertEquals(2, gateway.proseCalls)
+        assertTrue(result.canCommit)
+    }
+
+    @Test
     fun `repeated ai hard claims cannot create editor blocking`() = runBlocking {
         val gateway = ScriptedGateway(mutableListOf(ReviewScript.HardRewrite))
         val result = GenerationPipeline(gateway).generate(request())
@@ -84,7 +95,7 @@ class GenerationPipelineReviewTest {
         assertFalse(result.canCommit)
     }
 
-    private enum class ReviewScript { Pass, AdviceRewrite, HardRewrite, LogicRewrite }
+    private enum class ReviewScript { Pass, AdviceRewrite, HardRewrite, VerifiedHardRewrite, LogicRewrite }
 
     private class ScriptedGateway(
         private val verdicts: MutableList<ReviewScript>,
@@ -115,6 +126,11 @@ class GenerationPipelineReviewTest {
                         title = "REWRITE",
                         content = "【结构】【硬冲突】锚点=本章必须确认来客身份不一致｜正文证据=正文没有完成该确认｜修法=在本章场景内补足明确确认\n【人物】通过\n【文字】通过\n【连续性】通过",
                         summary = "结构席声称发现硬冲突",
+                    )
+                    ReviewScript.VerifiedHardRewrite -> GeneratedChapter(
+                        title = "REWRITE",
+                        content = "【连续性】【硬冲突】正文证据=人物没有任何依据却确认了答案｜权威依据=章节合同要求本章只确认身份错位｜最小修法=删除越权结论并恢复基于照片行动",
+                        summary = "正文与章节合同存在有双向证据的直接矛盾",
                     )
                     ReviewScript.LogicRewrite -> GeneratedChapter(
                         title = "REWRITE",
@@ -157,7 +173,7 @@ class GenerationPipelineReviewTest {
             objective = "让主角确认门外来客与记忆中的身份不一致。",
             scenePlan = emptyList(),
         ),
-        targetWords = 2_000,
+        targetWords = 100,
     )
 
     private companion object {

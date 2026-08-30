@@ -94,7 +94,7 @@ class GenerationStreamingRunTest {
             objective = "让主角确认来客身份有问题，并基于眼前证据做出选择。",
             scenePlan = emptyList(),
         ),
-        targetWords = 2_000,
+        targetWords = 100,
     )
 
     private companion object {

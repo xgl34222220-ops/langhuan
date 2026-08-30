@@ -365,6 +365,7 @@ object AiPromptTaskClassifier {
         val user = prompt.user
         return when {
             "小说化重构编辑" in system -> AiTaskType.NOVELIZATION
+            "章节逻辑导演" in system -> AiTaskType.SCENE_DIRECTOR
             "对抗式章节主编委员会" in system || "严苛的中文长篇小说章节主编" in system -> AiTaskType.EDITOR_REVIEW
             "章节事实提取器" in system -> AiTaskType.FACT_EXTRACTION
             "正文作者" in system && ("第二稿" in system || "主编退回意见" in user) -> AiTaskType.EDITOR_REWRITE

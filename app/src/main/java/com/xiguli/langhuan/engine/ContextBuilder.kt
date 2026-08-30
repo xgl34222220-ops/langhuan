@@ -92,11 +92,17 @@ class GenerationContextBuilder(
         trace += ContextTraceEntry(ContextLayer.S_EXECUTION, "章节合同/章纲/场景计划", "当前章节不可丢失的执行约束")
         val execution = fitItems(executionItems, 8_000)
 
+        val creationLedger = snapshot.bible.firstOrNull { it.name == CREATION_FACT_LEDGER }
         val lockedBible = snapshot.bible
             .filter { it.category != BibleCategory.STYLE }
             .filter { it.locked || it.category == BibleCategory.FORBIDDEN }
             .filterNot { it.name == CREATION_FACT_LEDGER }
             .sortedWith(compareBy({ if (it.category == BibleCategory.FORBIDDEN || it.category == BibleCategory.RULE) 0 else 1 }, { it.name }))
+        val criticalBible = lockedBible
+            .filter { it.category == BibleCategory.FORBIDDEN || it.category == BibleCategory.RULE }
+            .map { "[${it.category}] ${it.name}：${it.content}" }
+        val supportingBible = lockedBible
+            .filterNot { it.category == BibleCategory.FORBIDDEN || it.category == BibleCategory.RULE }
             .map { "[${it.category}] ${it.name}：${it.content}" }
         val direction = snapshot.activeOutline
             .filter { it.level != OutlineLevel.CHAPTER }
@@ -106,15 +112,31 @@ class GenerationContextBuilder(
                 "[$level] ${node.title}｜阶段目标=${node.objective}｜长期冲突=${node.conflict}"
             }
         val canonItems = buildList {
-            if (lockedBible.isNotEmpty()) add("锁定设定：\n${lockedBible.joinToString("\n") { "- $it" }}")
-            if (direction.isNotEmpty()) add("长期方向（仅防跑偏，不可提前兑现）：\n${direction.joinToString("\n") { "- $it" }}")
             add("信息边界：\n${ChapterContractGuard.renderKnowledge(snapshot, chapterNumber)}")
             add("时间轴锁：\n${chronologyGuard.promptText(snapshot, chapter.scenePlan)}")
+            if (criticalBible.isNotEmpty()) add("规则与禁用设定：\n${criticalBible.joinToString("\n") { "- $it" }.take(2_800)}")
+            creationLedger?.content?.takeIf(String::isNotBlank)?.let { ledger ->
+                val query = buildString {
+                    append(chapter.title).append(' ').append(chapter.objective).append(' ')
+                    chapter.scenePlan.forEach { scene ->
+                        append(scene.viewpoint).append(' ')
+                        append(scene.participants.joinToString(" ")).append(' ')
+                        append(scene.location).append(' ').append(scene.purpose).append(' ')
+                        append(scene.conflict).append(' ').append(scene.outcome).append(' ')
+                    }
+                }
+                add("建书会谈确认事实（用户确认基线，未被后续明确修改前必须遵守）：\n${relevantLedgerExcerpt(ledger, query, 3_200)}")
+            }
+            if (direction.isNotEmpty()) add("长期方向（仅防跑偏，不可提前兑现）：\n${direction.joinToString("\n") { "- $it" }.take(1_400)}")
+            if (supportingBible.isNotEmpty()) add("其它锁定设定：\n${supportingBible.joinToString("\n") { "- $it" }.take(2_000)}")
         }
         trace += ContextTraceEntry(ContextLayer.A_CANON, "锁定设定/信息边界/主时间钟", "硬约束始终完整优先于历史召回")
         val canon = fitItems(canonItems, 10_000)
 
-        val sceneParticipants = chapter.scenePlan.map { it.viewpoint }.filter(String::isNotBlank).toSet()
+        val sceneParticipants = chapter.scenePlan
+            .flatMap { listOf(it.viewpoint) + it.participants }
+            .filter(String::isNotBlank)
+            .toSet()
         val characters = snapshot.characters
             .sortedWith(compareBy({ if (it.name in sceneParticipants) 0 else 1 }, { -it.lastUpdatedChapter }))
             .map { character ->
@@ -202,6 +224,32 @@ class GenerationContextBuilder(
             if (piece.length < item.length) break
         }
         return out.toString().trim()
+    }
+
+    private fun relevantLedgerExcerpt(source: String, query: String, maxChars: Int = 4_800): String {
+        val blocks = source.split(Regex("\\n\\s*\\n|(?=^#{1,6}\\s)", RegexOption.MULTILINE))
+            .map(String::trim)
+            .filter(String::isNotBlank)
+        if (blocks.isEmpty()) return source.take(maxChars)
+        val terms = ledgerTerms(query)
+        val ranked = blocks.mapIndexed { index, block ->
+            val blockTerms = ledgerTerms(block)
+            val overlap = terms.count(blockTerms::contains)
+            val hardBoost = if (Regex("必须|禁止|不得|不能|终局|真相|规则|人物|关系|分卷").containsMatchIn(block)) 3 else 0
+            Triple(block, overlap * 10 + hardBoost, index)
+        }.sortedWith(compareByDescending<Triple<String, Int, Int>> { it.second }.thenBy { it.third })
+        val selected = (blocks.take(2) + ranked.filter { it.second > 0 }.map { it.first })
+            .distinct()
+        return fitItems(selected, maxChars)
+    }
+
+    private fun ledgerTerms(value: String): Set<String> {
+        val compact = value.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
+        if (compact.length < 2) return emptySet()
+        return buildSet {
+            compact.windowed(2).forEach(::add)
+            if (compact.length >= 3) compact.windowed(3).forEach(::add)
+        }
     }
 
     companion object {
