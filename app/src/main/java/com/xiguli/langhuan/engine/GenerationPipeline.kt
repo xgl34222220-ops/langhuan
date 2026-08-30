@@ -5,6 +5,18 @@ import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.domain.GenerationRequest
 import com.xiguli.langhuan.domain.GenerationResult
 import com.xiguli.langhuan.domain.IssueSeverity
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+
+data class GenerationTimeouts(
+    val logicPlanMs: Long = 35_000,
+    val proseMs: Long = 240_000,
+    val novelizationMs: Long = 180_000,
+    val reviewMs: Long = 60_000,
+    val rewriteMs: Long = 240_000,
+    val metadataMs: Long = 60_000,
+)
 
 class GenerationPipeline(
     private val aiGateway: AiGateway,
@@ -13,6 +25,7 @@ class GenerationPipeline(
     private val adversarialEditor: AdversarialChapterEditor = AdversarialChapterEditor(),
     private val novelizationEngine: NovelizationEngine = NovelizationEngine(),
     private val logicPlanner: ChapterLogicPlanner = ChapterLogicPlanner(),
+    private val timeouts: GenerationTimeouts = GenerationTimeouts(),
 ) {
     suspend fun generate(
         request: GenerationRequest,
@@ -56,11 +69,17 @@ class GenerationPipeline(
                 emit(RunStage.LOGIC_PLAN, RunStatus.SKIPPED, "旧断点已有正文；本轮用章节合同和场景计划补建逻辑骨架，不重复正文调用")
                 fallback
             }
+            request.chapter.scenePlan.isNotEmpty() -> {
+                val fallback = logicPlanner.fallback(request)
+                persist(checkpoint.copy(logicPlanAttempted = true, logicPlanText = fallback))
+                emit(RunStage.LOGIC_PLAN, RunStatus.SKIPPED, "已有场景计划，直接生成确定性因果骨架；省去一次 AI 请求")
+                fallback
+            }
             else -> {
-                emit(RunStage.LOGIC_PLAN, RunStatus.RUNNING, "先锁人物动机、行动依据、场景因果与章末必然性，再允许正文作者开写")
-                val output = runCatching {
+                emit(RunStage.LOGIC_PLAN, RunStatus.RUNNING, "缺少场景计划，最多等待 35 秒补建因果骨架")
+                val output = optionalStage(timeouts.logicPlanMs) {
                     aiGateway.generate(logicPlanner.buildPrompt(request, retrievedContext))
-                }.getOrNull()
+                }
                 val rendered = logicPlanner.render(request, output)
                 val useful = output != null && (
                     output.content.isNotBlank() || output.summary.isNotBlank() || output.stateChanges.isNotEmpty()
@@ -72,7 +91,7 @@ class GenerationPipeline(
                     if (useful) {
                         "写前因果骨架已锁定：关键行动必须有动机/依据，下一场必须承接上一场结果"
                     } else {
-                        "逻辑规划模型未返回可用结构；已使用章节合同 + 场景计划生成确定性因果骨架，禁止正文自由跳步"
+                        "逻辑规划超时或未返回可用结构；已立即使用本地因果骨架继续，不再卡住正文"
                     },
                 )
                 rendered
@@ -98,11 +117,13 @@ class GenerationPipeline(
             emit(RunStage.DRAFT, RunStatus.SUCCESS, "从持久化断点恢复初稿 ${restored.length} 字；未重复请求模型")
             restored
         } else {
-            emit(RunStage.DRAFT, RunStatus.RUNNING, "S/A/B/C/D + 写前因果骨架已锁定，模型开始返回正文")
+            emit(RunStage.DRAFT, RunStatus.RUNNING, "S/A/B/C/D + 写前因果骨架已锁定；正文阶段最长等待 4 分钟")
             val generated = cleanVisibleProse(
-                aiGateway.generateTextStreaming(promptAssembler.buildProse(plannedRequest, retrievedContext)) { partial ->
-                    val visible = cleanVisibleProse(partial)
-                    if (visible.isNotBlank()) onDelta(visible)
+                requiredStage("正文生成", timeouts.proseMs) {
+                    aiGateway.generateTextStreaming(promptAssembler.buildProse(plannedRequest, retrievedContext)) { partial ->
+                        val visible = cleanVisibleProse(partial)
+                        if (visible.isNotBlank()) onDelta(visible)
+                    }
                 }
             )
             require(generated.isNotBlank()) { "AI 没有返回可用正文" }
@@ -133,7 +154,7 @@ class GenerationPipeline(
             } else {
                 emit(RunStage.NOVELIZATION, RunStatus.RUNNING, initialQuality.problems.take(3).joinToString("；"))
                 onDelta("")
-                val novelized = runCatching {
+                val novelized = optionalStage(timeouts.novelizationMs) {
                     cleanVisibleProse(
                         aiGateway.generateTextStreaming(
                             novelizationEngine.buildRewrite(plannedRequest, draftProse, initialQuality, retrievedContext)
@@ -142,7 +163,7 @@ class GenerationPipeline(
                             if (visible.isNotBlank()) onDelta(visible)
                         }
                     )
-                }.getOrNull().orEmpty()
+                }.orEmpty()
                 novelizationSucceeded = novelized.isNotBlank()
                 prose = novelized.ifBlank { draftProse }
                 persist(
@@ -176,9 +197,9 @@ class GenerationPipeline(
             checkpoint.firstReview
         } else {
             emit(RunStage.EDITOR_REVIEW_1, RunStatus.RUNNING, "结构 / 人物 / 文字 / 连续性四席审稿，并核对写前因果骨架")
-            val reviewed = runCatching {
+            val reviewed = optionalStage(timeouts.reviewMs) {
                 aiGateway.generate(adversarialEditor.buildReview(plannedRequest, preEditorProse, round = 1))
-            }.getOrNull()
+            }
             persist(checkpoint.copy(firstReviewAttempted = true, firstReview = reviewed))
             reviewed
         }
@@ -217,7 +238,7 @@ class GenerationPipeline(
             } else {
                 emit(RunStage.EDITOR_REWRITE, RunStatus.RUNNING, "按主编定位的问题重写整章；因果骨架保持不变")
                 onDelta("")
-                val value = runCatching {
+                val value = optionalStage(timeouts.rewriteMs) {
                     cleanVisibleProse(
                         aiGateway.generateTextStreaming(
                             promptAssembler.buildRewrite(plannedRequest, preEditorProse, instructions, retrievedContext)
@@ -226,7 +247,7 @@ class GenerationPipeline(
                             if (visible.isNotBlank()) onDelta(visible)
                         }
                     )
-                }.getOrNull().orEmpty()
+                }.orEmpty()
                 persist(checkpoint.copy(editorRewriteAttempted = true, editorRewriteProse = value))
                 value
             }
@@ -257,9 +278,9 @@ class GenerationPipeline(
                     checkpoint.secondReview
                 } else {
                     emit(RunStage.EDITOR_REVIEW_2, RunStatus.RUNNING, "修订稿重新核对因果骨架；不会无限循环改写")
-                    val reviewed = runCatching {
+                    val reviewed = optionalStage(timeouts.reviewMs) {
                         aiGateway.generate(adversarialEditor.buildReview(plannedRequest, prose, round = 2))
-                    }.getOrNull()
+                    }
                     persist(checkpoint.copy(secondReviewAttempted = true, secondReview = reviewed))
                     reviewed
                 }
@@ -307,9 +328,11 @@ class GenerationPipeline(
             metadata = requireNotNull(checkpoint.metadata)
             metadataSucceeded = checkpoint.metadataSucceeded
         } else {
-            val metadataResult = runCatching { aiGateway.generate(promptAssembler.buildMetadata(request, prose)) }
-            metadataSucceeded = metadataResult.isSuccess
-            metadata = metadataResult.getOrElse {
+            val metadataResult = optionalStage(timeouts.metadataMs) {
+                aiGateway.generate(promptAssembler.buildMetadata(request, prose))
+            }
+            metadataSucceeded = metadataResult != null
+            metadata = metadataResult ?: run {
                 GeneratedChapter(
                     title = request.chapter.title,
                     content = "",
@@ -394,6 +417,27 @@ class GenerationPipeline(
             issues = issues,
             modelAttributions = checkpoint.modelAttributions,
         )
+    }
+
+    private suspend fun <T> requiredStage(label: String, timeoutMs: Long, block: suspend () -> T): T = try {
+        withTimeout(timeoutMs) { block() }
+    } catch (_: TimeoutCancellationException) {
+        throw IllegalStateException("$label 超过 ${timeoutLabel(timeoutMs)}仍未完成，已自动停止；已返回内容和断点会保留。请重试或切换更稳定的模型/中转站。")
+    }
+
+    private suspend fun <T> optionalStage(timeoutMs: Long, block: suspend () -> T): T? = try {
+        withTimeout(timeoutMs) { block() }
+    } catch (_: TimeoutCancellationException) {
+        null
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun timeoutLabel(timeoutMs: Long): String = when {
+        timeoutMs % 60_000L == 0L -> "${timeoutMs / 60_000L} 分钟"
+        else -> "${timeoutMs / 1_000L} 秒"
     }
 
     private fun cleanVisibleProse(text: String): String {

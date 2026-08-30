@@ -22,7 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * The paid request is owned by ChapterRunRuntime rather than an Activity/ViewModel. Removing or
  * recreating a screen therefore does not cancel the task. This service only raises process priority
- * and exposes a user-visible stop action; it deliberately has no App-side timer or deadline.
+ * and exposes a user-visible stop action. Runtime and transport deadlines prevent a dead provider
+ * connection from leaving the app permanently stuck in an active state.
  */
 data class ChapterRunKeepAliveState(
     val active: Boolean = false,
@@ -90,7 +91,7 @@ class ChapterRunForegroundService : Service() {
             novelId = intent?.getStringExtra(EXTRA_NOVEL_ID).orEmpty(),
             chapterNumber = intent?.getIntExtra(EXTRA_CHAPTER_NUMBER, 0) ?: 0,
             title = intent?.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "琅嬛正在执行章节任务" },
-            detail = intent?.getStringExtra(EXTRA_DETAIL).orEmpty().ifBlank { "长任务正在后台执行；没有 App 侧超时" },
+            detail = intent?.getStringExtra(EXTRA_DETAIL).orEmpty().ifBlank { "长任务正在后台执行；可随时停止，超时会自动结束" },
             canStop = intent?.getBooleanExtra(EXTRA_CAN_STOP, false) ?: false,
         )
         showNotification(state)

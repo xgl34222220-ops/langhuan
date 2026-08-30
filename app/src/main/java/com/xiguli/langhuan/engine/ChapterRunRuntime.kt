@@ -13,12 +13,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 enum class ChapterRuntimeTaskKind { IDLE, GENERATE, COMMIT, REVIEW }
 
@@ -134,15 +136,21 @@ class ChapterRunRuntime(application: Application) {
             providerLabel = if (dnaSummary.count > 0) "$providerLabel · DNA ${dnaSummary.count}本" else providerLabel,
             queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
-        showForeground(command, if (dnaSummary.count > 0) "正在生成正文 · ${dnaSummary.label}" else "正在生成正文 · 无 App 侧超时", canStop = true)
+        showForeground(command, if (dnaSummary.count > 0) "正在生成正文 · ${dnaSummary.label} · 最长 8 分钟" else "正在生成正文 · 最长 8 分钟，可随时停止", canStop = true)
         try {
-            val result = coordinator.generate(
-                snapshot = command.snapshot, draft = command.draft, gateway = gateway, targetWords = command.targetWords,
-                extraInstruction = command.extraInstruction, forceNew = command.forceNew,
-                onDelta = { preview -> _state.update { it.copy(preview = preview, updatedAt = System.currentTimeMillis()) } },
-                onRunEvent = { event -> emit(command, event, true) },
-            )
+            val result = withTimeout(GENERATION_DEADLINE_MS) {
+                coordinator.generate(
+                    snapshot = command.snapshot, draft = command.draft, gateway = gateway, targetWords = command.targetWords,
+                    extraInstruction = command.extraInstruction, forceNew = command.forceNew,
+                    onDelta = { preview -> _state.update { it.copy(preview = preview, updatedAt = System.currentTimeMillis()) } },
+                    onRunEvent = { event -> emit(command, event, true) },
+                )
+            }
             _state.update { it.copy(active = false, preview = result.chapter.content, result = result, message = if (result.canCommit) "正文已生成并通过阻断级检查" else "正文已生成，但存在阻断级一致性问题", error = null, updatedAt = System.currentTimeMillis()) }
+        } catch (_: TimeoutCancellationException) {
+            val message = "整章生成超过 8 分钟，已自动停止；已返回内容和断点仍保留。请重试或切换更稳定的模型/中转站。"
+            emitLocalFailure(command, RunStage.READY_TO_COMMIT, message)
+            _state.update { it.copy(active = false, error = message, updatedAt = System.currentTimeMillis()) }
         } catch (cancelled: CancellationException) {
             _state.update { it.copy(active = false, message = "已停止本次生成；断点已保留，已收到内容不会自动二次请求", error = null, updatedAt = System.currentTimeMillis()) }
         } catch (error: Throwable) {
@@ -236,3 +244,5 @@ class ChapterRunRuntime(application: Application) {
         }
     }
 }
+
+private const val GENERATION_DEADLINE_MS = 8 * 60_000L
