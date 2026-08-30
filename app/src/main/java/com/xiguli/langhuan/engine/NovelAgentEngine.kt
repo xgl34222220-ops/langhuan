@@ -122,7 +122,7 @@ class NovelAgentEngine(
                 "第${it.chapter}章#${it.orderInChapter} $clock ${if (it.isFlashback) "[FLASHBACK]" else "[NORMAL]"} ${it.location}：${it.summary}"
             }
         val scenes = chapter.scenePlan.sortedBy { it.order }.joinToString("\n") {
-            "场景${it.order}｜故事第${it.storyDay.takeIf { day -> day > 0 } ?: 0}天·${it.timeOfDay.ifBlank { "未锁定" }}｜距上一场=${it.elapsedFromPrevious.ifBlank { "未标注" }}｜${if (it.isFlashback) "FLASHBACK" else "NORMAL"}｜${it.location}｜${it.outcome}"
+            "场景${it.order}｜故事第${it.storyDay.takeIf { day -> day > 0 } ?: 0}天·${it.timeOfDay.ifBlank { "未锁定" }}｜距上一场=${it.elapsedFromPrevious.ifBlank { "未标注" }}｜${if (it.isFlashback) "FLASHBACK" else "NORMAL"}｜${it.location}｜参与=${(listOf(it.viewpoint) + it.participants).filter(String::isNotBlank).distinct().joinToString("、")}｜${it.outcome}"
         }
         val chronology = chronologyGuard.promptText(snapshot, chapter.scenePlan)
         val contract = ChapterContractGuard.renderContract(snapshot, chapter)

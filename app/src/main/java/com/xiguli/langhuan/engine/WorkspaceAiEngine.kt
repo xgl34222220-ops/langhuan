@@ -53,7 +53,7 @@ class WorkspaceAiEngine(
                 - title = 下一章标题。
                 - content = 下一章唯一主目标，必须具体可验证。
                 - summary = “主要冲突 || 章末转折”，必须用两个竖线分隔。
-                - stateChanges = 场景计划。每项 subject=视角人物，field=地点，before=场景目的，after=场景冲突，evidence 必须为“故事日序号||时段||距上一场经过多久||NORMAL或FLASHBACK||场景结果”。
+                - stateChanges = 场景计划。每项 subject=视角人物，field=地点，before=场景目的，after=场景冲突，evidence 必须为“故事日序号||时段||距上一场经过多久||NORMAL或FLASHBACK||场景结果||参与人物（顿号分隔）”。
                 - touchedForeshadowingIds = 建议本章触及的伏笔 id。
                 至少规划 2 个、最多 6 个场景。不要返回小说正文。
 
@@ -103,7 +103,7 @@ class WorkspaceAiEngine(
         val summaryParts = output.summary.split("||", limit = 2).map { it.trim() }
         var lastMainDay = frame.anchorDay
         val scenes = output.stateChanges.take(6).mapIndexed { index, item ->
-            val parts = item.evidence.split("||", limit = 5).map { it.trim() }
+            val parts = item.evidence.split("||", limit = 6).map { it.trim() }
             val encoded = parts.size >= 5
             val requestedDay = if (encoded) parts.getOrNull(0)?.toIntOrNull() ?: lastMainDay else lastMainDay
             val flashback = encoded && parts.getOrNull(3).equals("FLASHBACK", ignoreCase = true) && frame.allowsFlashback
@@ -121,6 +121,10 @@ class WorkspaceAiEngine(
                 purpose = item.before.ifBlank { "推动本章目标" },
                 conflict = item.after.ifBlank { "目标受到阻碍" },
                 outcome = if (encoded) parts.getOrNull(4).orEmpty().ifBlank { "形成新的信息或选择" } else item.evidence.ifBlank { "形成新的信息或选择" },
+                participants = buildList {
+                    add(item.subject.trim())
+                    if (encoded) addAll(splitPeople(parts.getOrNull(5).orEmpty()))
+                }.filter(String::isNotBlank).distinct(),
                 storyDay = day,
                 timeOfDay = if (encoded) parts.getOrNull(1).orEmpty().ifBlank { if (index == 0) frame.anchorTimeOfDay else "稍后" } else if (index == 0) frame.anchorTimeOfDay else "稍后",
                 elapsedFromPrevious = if (encoded) parts.getOrNull(2).orEmpty().ifBlank { if (index == 0) "紧接上一章" else "约10-30分钟" } else if (index == 0) "紧接上一章" else "约10-30分钟",
@@ -160,6 +164,12 @@ class WorkspaceAiEngine(
             scenes = scenes,
         )
     }
+
+    private fun splitPeople(value: String): List<String> = value
+        .split('、', ',', '，', ';', '；')
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
 
     suspend fun rewriteSelection(
         snapshot: StorySnapshot,

@@ -167,7 +167,10 @@ class ReferenceDistillationReportStore(private val context: Context) {
         val perReportBudget = (remaining / reports.size).coerceAtLeast(1_100)
         val blocks = reports.mapIndexed { index, report ->
             val candidates = allItems(report).filter { allowedKinds == null || it.kind in allowedKinds }
-            val ranked = rankItems(candidates, terms, query).take(maxItemsPerReport)
+            val ranked = rankItems(candidates, terms, query)
+                .filter { it.second >= MIN_ACTIVE_RETRIEVAL_SCORE }
+                .take(maxItemsPerReport)
+                .map { it.first }
             buildString {
                 appendLine("--- ${index + 1}. 《${report.title}》 · 命中 ${ranked.size} 条 / 可检索 ${candidates.size} 条 ---")
                 ranked.forEach { item ->
@@ -175,7 +178,6 @@ class ReferenceDistillationReportStore(private val context: Context) {
                     if (item.evidence.isNotBlank()) append(" [${item.evidence.take(100)}]")
                     appendLine()
                 }
-                if (ranked.isEmpty() && report.summary.isNotBlank()) appendLine("STYLE_OVERVIEW: ${report.summary.take(420)}")
             }.take(perReportBudget)
         }
         return (header + blocks.joinToString("\n")).take(maxChars)
@@ -194,7 +196,9 @@ class ReferenceDistillationReportStore(private val context: Context) {
         reports.forEach { report ->
             val candidates = allItems(report).filter { allowedKinds == null || it.kind in allowedKinds }
             available += candidates.size
-            matched += rankItems(candidates, terms, query).take(maxItemsPerReport).size
+            matched += rankItems(candidates, terms, query)
+                .count { it.second >= MIN_ACTIVE_RETRIEVAL_SCORE }
+                .coerceAtMost(maxItemsPerReport)
         }
         return ReferenceDnaUsage(reports.size, matched, available, reports.map { it.title })
     }
@@ -242,11 +246,10 @@ class ReferenceDistillationReportStore(private val context: Context) {
         appendLine()
     }
 
-    private fun rankItems(candidates: List<ReferenceDistillationReportItem>, terms: Set<String>, rawQuery: String): List<ReferenceDistillationReportItem> = candidates
+    private fun rankItems(candidates: List<ReferenceDistillationReportItem>, terms: Set<String>, rawQuery: String): List<Pair<ReferenceDistillationReportItem, Int>> = candidates
         .map { it to scoreItem(it, terms, rawQuery) }
         .sortedWith(compareByDescending<Pair<ReferenceDistillationReportItem, Int>> { it.second }.thenBy { kindPriority(it.first.kind) }.thenBy { it.first.dimension })
-        .map { it.first }
-        .distinctBy(::itemKey)
+        .distinctBy { itemKey(it.first) }
 
     private fun fromStateChange(change: StateChange): ReferenceDistillationReportItem? {
         val kind = normalizeKind(change.subject.trim().uppercase()) ?: return null
@@ -403,6 +406,7 @@ class ReferenceDistillationReportStore(private val context: Context) {
     private companion object {
         const val MAX_FINAL_ITEMS = 96
         const val MAX_RETRIEVAL_ITEMS = 960
+        const val MIN_ACTIVE_RETRIEVAL_SCORE = 13
         val TRANSFER_KINDS = setOf("KEEP", "TRANSFORM", "AVOID")
     }
 }

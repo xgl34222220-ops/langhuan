@@ -22,6 +22,26 @@ class ConsistencyGate(
             issues += blocking("MISSING_OBJECTIVE", "本章没有明确目标", "先补全章纲目标再生成")
         }
 
+        val visibleLength = storyLength(text)
+        val hardMinimum = maxOf(480, (request.targetWords * 0.48).toInt())
+        val expectedMinimum = maxOf(700, (request.targetWords * 0.72).toInt())
+        when {
+            request.targetWords < 800 -> Unit
+            visibleLength < hardMinimum -> issues += blocking(
+                code = "CHAPTER_SEVERELY_UNDERSIZED",
+                message = "正文只有约${visibleLength}字，远未完成约${request.targetWords}字的章节任务",
+                repair = "保持本章目标和因果骨架不变，补足完整场景、人物反应、冲突过程和结果；禁止用解释或重复信息凑字。",
+                evidence = "最低可交付约${hardMinimum}字",
+            )
+            visibleLength < expectedMinimum -> issues += ConsistencyIssue(
+                severity = IssueSeverity.WARNING,
+                code = "CHAPTER_UNDERSIZED",
+                message = "正文约${visibleLength}字，明显低于约${request.targetWords}字的目标",
+                evidence = "建议至少达到约${expectedMinimum}字",
+                repairInstruction = "检查是否缺少场景发展、人物选择、冲突代价或章末结果，不要机械扩写。",
+            )
+        }
+
         issues += chronologyGuard.inspect(request, output)
         issues += NarrativeRuleGuard.inspect(text)
         issues += ChapterContractGuard.inspect(request, output)
@@ -102,4 +122,8 @@ class ConsistencyGate(
         repair: String,
         evidence: String = "",
     ) = ConsistencyIssue(IssueSeverity.BLOCKING, code, message, evidence, repair)
+
+    private fun storyLength(value: String): Int = value.count { char ->
+        !char.isWhitespace() && char !in setOf('`', '#', '*', '_')
+    }
 }

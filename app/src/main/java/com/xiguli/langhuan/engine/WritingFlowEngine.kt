@@ -71,8 +71,8 @@ class WritingFlowEngine(
                     - summary = 一句话说明本章最终应完成的情绪/剧情落点，并写清本章结束时的故事日和时段。
                     - stateChanges = 场景计划；每项：
                       subject=视角人物；field=地点；before=场景目的；after=场景冲突；
-                      evidence 必须严格编码为“故事日序号||时段||距上一场经过多久||NORMAL或FLASHBACK||场景结果”。
-                      例如：2||深夜||约20分钟||NORMAL||主角确认门外有人监视。
+                      evidence 必须严格编码为“故事日序号||时段||距上一场经过多久||NORMAL或FLASHBACK||场景结果||参与人物（顿号分隔）”。
+                      例如：2||深夜||约20分钟||NORMAL||主角确认门外有人监视||周衍、陆清璃。
                     - touchedForeshadowingIds = 本章建议明确触及的既有伏笔 id。
 
                     章节合同硬规则：
@@ -146,7 +146,7 @@ class WritingFlowEngine(
 
         var lastMainDay = frame.anchorDay
         val scenes = output.stateChanges.take(6).mapIndexed { index, change ->
-            val parts = change.evidence.split("||", limit = 5).map { it.trim() }
+            val parts = change.evidence.split("||", limit = 6).map { it.trim() }
             val encoded = parts.size >= 5
             val requestedDay = if (encoded) parts.getOrNull(0)?.toIntOrNull() ?: lastMainDay else lastMainDay
             val requestedFlashback = encoded && parts.getOrNull(3).equals("FLASHBACK", ignoreCase = true)
@@ -165,6 +165,10 @@ class WritingFlowEngine(
                 purpose = change.before.trim().ifBlank { "推进本章目标" },
                 conflict = change.after.trim().ifBlank { "目标受到具体阻碍" },
                 outcome = if (encoded) parts.getOrNull(4).orEmpty().ifBlank { "形成新的信息、代价或选择" } else change.evidence.trim().ifBlank { "形成新的信息、代价或选择" },
+                participants = buildList {
+                    add(change.subject.trim())
+                    if (encoded) addAll(splitNames(parts.getOrNull(5).orEmpty()))
+                }.filter(String::isNotBlank).distinct(),
                 storyDay = normalizedDay,
                 timeOfDay = if (encoded) parts.getOrNull(1).orEmpty().ifBlank { if (index == 0) frame.anchorTimeOfDay else "稍后" } else if (index == 0) frame.anchorTimeOfDay else "稍后",
                 elapsedFromPrevious = if (encoded) parts.getOrNull(2).orEmpty().ifBlank { if (index == 0) "紧接上一章" else "约10-30分钟" } else if (index == 0) "紧接上一章" else "约10-30分钟",
@@ -203,4 +207,10 @@ class WritingFlowEngine(
             scenes = scenes,
         )
     }
+
+    private fun splitNames(value: String): List<String> = value
+        .split('、', ',', '，', ';', '；')
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
 }

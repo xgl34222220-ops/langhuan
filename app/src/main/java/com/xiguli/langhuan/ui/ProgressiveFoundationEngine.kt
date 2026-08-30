@@ -110,37 +110,32 @@ internal class ProgressiveFoundationEngine(
             onStage("1/3 · 已恢复核心蓝图断点")
         }
 
-        if (safeResume < 2 || firstVolumeChapterCount(working) < 8) {
-            var chapterCount = firstVolumeChapterCount(working)
-            if (chapterCount < 5) {
-                onStage("2/3 · 正在生成第一卷第 1–5 章……")
-                requestOptional(
-                    stage = "2/3 第1–5章",
-                    prompt = chapterPrompt(working, locks, referenceContext, 1, 5, emptyList()),
-                )?.let { working = mergeChapters(working, it) }
-                chapterCount = firstVolumeChapterCount(working)
-                if (chapterCount > 0) onCheckpoint(1, working)
+        if (safeResume < 2 || !chapterBlueprintUsable(working)) {
+            working.volumes.sortedBy { it.order }.forEach { volume ->
+                var chapterCount = working.volumes.firstOrNull { it.order == volume.order }?.chapters?.size ?: 0
+                CHAPTER_BATCHES.forEach { range ->
+                    if (chapterCount >= range.last) return@forEach
+                    onStage("2/3 · 正在生成第${volume.order}卷《${volume.title}》第 ${range.first}–${range.last} 章……")
+                    requestOptional(
+                        stage = "2/3 第${volume.order}卷第${range.first}-${range.last}章",
+                        prompt = chapterPrompt(
+                            foundation = working,
+                            locks = locks,
+                            referenceContext = referenceContext,
+                            volumeOrder = volume.order,
+                            start = range.first,
+                            end = range.last,
+                            prior = working.volumes.firstOrNull { it.order == volume.order }?.chapters.orEmpty(),
+                        ),
+                    )?.let { working = mergeChapters(working, it) }
+                    chapterCount = working.volumes.firstOrNull { it.order == volume.order }?.chapters?.size ?: 0
+                    if (chapterCount > 0) onCheckpoint(1, working)
+                }
             }
 
-            if (chapterCount < 8) {
-                onStage("2/3 · 正在生成第一卷第 6–10 章……")
-                requestOptional(
-                    stage = "2/3 第6–10章",
-                    prompt = chapterPrompt(
-                        working,
-                        locks,
-                        referenceContext,
-                        6,
-                        10,
-                        working.volumes.firstOrNull { it.order == 1 }?.chapters.orEmpty(),
-                    ),
-                )?.let { working = mergeChapters(working, it) }
-                chapterCount = firstVolumeChapterCount(working)
-            }
-
-            if (chapterCount >= 5) onCheckpoint(2, working)
+            if (chapterBlueprintUsable(working)) onCheckpoint(2, working)
         } else {
-            onStage("2/3 · 已恢复第一卷章纲断点")
+            onStage("2/3 · 已恢复完整分卷章纲断点")
         }
 
         onStage("3/3 · 正在按原设整理伏笔计划……")
@@ -150,7 +145,7 @@ internal class ProgressiveFoundationEngine(
                 system = FORESHADOW_SYSTEM,
                 user = buildString {
                     appendHardLocks(locks)
-                    appendLine("【核心蓝图 + 当前第一卷章纲】")
+                    appendLine("【核心蓝图 + 当前完整分卷章纲】")
                     appendLine(compactFoundation(working, includeChapters = true))
                     if (referenceContext.isNotBlank()) {
                         appendLine()
@@ -183,16 +178,20 @@ internal class ProgressiveFoundationEngine(
         foundation: StoryFoundation,
         locks: BlueprintLocks,
         referenceContext: String,
+        volumeOrder: Int,
         start: Int,
         end: Int,
         prior: List<FoundationChapter>,
     ): PromptBundle = PromptBundle(
         system = """
-            你是“琅嬛”的第一卷章纲设计师。只生成第一卷第 $start–$end 章。
+            你是“琅嬛”的可执行章纲设计师。只生成第${volumeOrder}卷第 $start–$end 章。
             不得修改书名、人物、世界规则、卷数、卷名或用户附件中的既定剧情节点。
             如果附件明确写了“前 N 章现实线”“第 N 章进入某副本/事件”等安排，必须严格保持章节位置和事件顺序。
-            输出 GeneratedChapter JSON：title="FIRST_VOLUME_${start}_${end}"；content=""；summary=本批节奏摘要；touchedForeshadowingIds=[]。
-            stateChanges 只允许 CHAPTER:1:序号，序号覆盖 $start 到 $end：field=章名；before=本章目标；after=本章冲突；evidence=章末转折。
+            输出 GeneratedChapter JSON：title="VOLUME_${volumeOrder}_${start}_${end}"；content=""；summary=本批因果链与节奏摘要；touchedForeshadowingIds=[]。
+            stateChanges 只允许 CHAPTER:${volumeOrder}:序号，序号覆盖 $start 到 $end：
+            - field=章名；before=本章唯一目标；after=本章核心冲突；
+            - evidence 必须编码为“章末转折||必须发生（顿号分隔）||绝不能发生（顿号分隔）||本章允许揭露（顿号分隔）||必须继续保密（顿号分隔）||章末钩子||连续性风险（顿号分隔）”。
+            每章至少给 2 条“必须发生”、1 条“绝不能发生”和明确章末钩子。相邻章节必须形成结果→新条件→下一目标的因果链，不能是一组互不相干的点子。
         """.trimIndent(),
         user = buildString {
             appendHardLocks(locks)
@@ -368,7 +367,7 @@ internal class ProgressiveFoundationEngine(
             masterConflict = master?.after?.trim().orEmpty().ifBlank { base.masterConflict },
             masterTurningPoint = master?.evidence?.trim().orEmpty().ifBlank { base.masterTurningPoint },
             bible = (base.bible + aiBible).distinctBy { it.category to it.name }.take(32),
-            characters = characters.take(16),
+            characters = characters.take(32),
             volumes = volumes.sortedBy { it.order }.take(10),
         )
     }
@@ -402,21 +401,35 @@ internal class ProgressiveFoundationEngine(
     private fun mergeChapters(foundation: StoryFoundation, output: GeneratedChapter): StoryFoundation {
         val incoming = output.stateChanges.mapNotNull { change ->
             val (volume, order) = chapterNumbers(subject(change)) ?: return@mapNotNull null
-            if (volume != 1 || order !in 1..20) return@mapNotNull null
-            FoundationChapter(
+            if (foundation.volumes.none { it.order == volume } || order !in 1..20) return@mapNotNull null
+            val evidence = change.evidence.split("||", limit = 7).map(String::trim)
+            val turningPoint = evidence.getOrNull(0).orEmpty()
+            volume to FoundationChapter(
                 order = order,
                 title = change.field.trim().ifBlank { "第${order}章" },
                 objective = change.before.trim().ifBlank { "按用户原设推进本章目标" },
                 conflict = change.after.trim().ifBlank { "本章目标遭遇具体阻力" },
-                turningPoint = change.evidence.trim().ifBlank { "章末改变下一章条件" },
+                turningPoint = turningPoint.ifBlank { "章末改变下一章条件" },
+                mustHappen = split(evidence.getOrNull(1).orEmpty()).ifEmpty {
+                    listOf(change.before.trim().ifBlank { "完成本章唯一目标" }, turningPoint.ifBlank { "形成不可逆推进" })
+                },
+                mustNotHappen = split(evidence.getOrNull(2).orEmpty()).ifEmpty {
+                    listOf("提前兑现后续章节转折或长期谜底")
+                },
+                reveals = split(evidence.getOrNull(3).orEmpty()),
+                secretsPreserved = split(evidence.getOrNull(4).orEmpty()),
+                hookOut = evidence.getOrNull(5).orEmpty().ifBlank { turningPoint.ifBlank { "由本章结果逼出下一章必须处理的新问题" } },
+                continuityRisks = split(evidence.getOrNull(6).orEmpty()),
             )
         }
         if (incoming.isEmpty()) return foundation
-        val existing = foundation.volumes.firstOrNull { it.order == 1 }?.chapters.orEmpty()
-        val chapters = (existing + incoming).distinctBy { it.order }.sortedBy { it.order }.take(20)
+        val byVolume = incoming.groupBy({ it.first }, { it.second })
         return foundation.copy(
             volumes = foundation.volumes.map { volume ->
-                if (volume.order == 1) volume.copy(chapters = chapters) else volume
+                val additions = byVolume[volume.order].orEmpty()
+                if (additions.isEmpty()) volume else volume.copy(
+                    chapters = (volume.chapters + additions).distinctBy { it.order }.sortedBy { it.order }.take(20)
+                )
             }
         )
     }
@@ -442,8 +455,16 @@ internal class ProgressiveFoundationEngine(
         )
     }
 
-    private fun firstVolumeChapterCount(foundation: StoryFoundation): Int =
-        foundation.volumes.firstOrNull { it.order == 1 }?.chapters?.size ?: 0
+    private fun chapterBlueprintUsable(foundation: StoryFoundation): Boolean =
+        foundation.volumes.isNotEmpty() && foundation.volumes.all { volume ->
+            val chapters = volume.chapters.sortedBy { it.order }
+            chapters.size >= MIN_CHAPTERS_PER_VOLUME &&
+                chapters.take(MIN_CHAPTERS_PER_VOLUME).map { it.order } == (1..MIN_CHAPTERS_PER_VOLUME).toList() &&
+                chapters.take(MIN_CHAPTERS_PER_VOLUME).all { chapter ->
+                    chapter.objective.isNotBlank() && chapter.conflict.isNotBlank() && chapter.turningPoint.isNotBlank() &&
+                        chapter.mustHappen.isNotEmpty() && chapter.mustNotHappen.isNotEmpty() && chapter.hookOut.isNotBlank()
+                }
+        }
 
     private fun StringBuilder.appendHardLocks(locks: BlueprintLocks) {
         if (locks.source.isBlank()) return
@@ -768,6 +789,8 @@ internal class ProgressiveFoundationEngine(
     private companion object {
         const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
         const val MAX_LOCKED_SECTION_CHARS = 5_000
+        const val MIN_CHAPTERS_PER_VOLUME = 10
+        val CHAPTER_BATCHES = listOf(1..5, 6..10)
         val META_SUBJECTS = setOf("META", "BOOK_META", "BOOKMETA", "书籍信息", "元信息")
         val STYLE_SUBJECTS = setOf("STYLE", "STYLE_GUIDE", "STYLEGUIDE", "风格", "叙事风格")
         val MASTER_SUBJECTS = setOf("MASTER", "MASTER_OUTLINE", "MASTEROUTLINE", "OUTLINE", "总纲", "总纲大纲")
@@ -787,6 +810,7 @@ internal class ProgressiveFoundationEngine(
             你是“琅嬛”的人物与完整分卷整理器。用户上传作品设定是硬约束。
             只输出 CHAR 和 VOLUME，不重写世界规则或总纲。
             CHAR 只允许明确命名的人物。身份类别、群体、组织、职业或规则术语（例如“老客”“管理局”“玩家”“守夜人”等）绝不能因为剧情重要就自动变成核心人物。
+            附件或会谈中明确命名、且对任一卷持续有作用的人物必须逐一输出，不能只保留主角。群像作品要保留主要配角、对立角色、关键关系人物及其各自目标、秘密、物品和关系。
             如果用户附件明确了卷数，VOLUME 必须逐卷完整输出，不能限制在2-4卷，最多支持10卷；禁止删卷、并卷、改卷序。
             输出 GeneratedChapter JSON：title="CAST_AND_VOLUMES"；content=""；summary=人物/分卷关系；touchedForeshadowingIds=[]。
             CHAR：field=角色名；before=性格/行为倾向；after=长期目标；evidence=地点||身体||情绪||秘密||物品||关系。

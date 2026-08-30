@@ -41,6 +41,11 @@ class AdversarialChapterEditor(
                 - 【动机断裂】：重要人物的关键行为与当前目标、性格、关系或已知信息明显脱节，正文没有给推动因素。
                 - 【因果断裂】：上一场的行动/冲突无法推出结果，或下一场完全没有承接上一场产生的新信息、代价、选择或威胁。
                 - 【连续性断裂】：地点、时间、人物状态、能力或关系发生明显跳变，正文没有过渡。
+                - 【目标未完成】：正文写了不少内容，但本章唯一目标、必须发生项或章末结果实际没有发生。
+                - 【叙事断裂】：场景之间缺少可追踪的时间、地点、行动或信息承接，读者无法判断事情如何发展到下一步。
+                - 【场景散乱】：多个场景各说各话，没有围绕本章唯一目标形成递进，删除任一场也不影响结果。
+                - 【人物失真】：关键人物的说话、选择或反应与其当前目标、关系、认知和稳定行为模式直接矛盾。
+                - 【信息倾倒】：大量设定、名单、规则或推理结论没有通过当前场景中的行动与后果发生，正文实质是资料说明。
 
                 标记格式必须是：
                 `【逻辑断裂】正文证据=...｜缺失前提=...｜最小修法=...`
@@ -48,7 +53,7 @@ class AdversarialChapterEditor(
                 必须引用待审正文里的具体事件作为“正文证据”；不能只说“感觉不自然”。证据不足一律降级为【建议】。
 
                 另外，正文与 S/A/B 权威上下文有可逐字核对的直接矛盾时，可以继续写【硬冲突】；
-                但【硬冲突】仍由 App 的本地 Gate 决定是否阻断，不能因为模型自己声称硬冲突就强制重写。
+                格式必须是 `【硬冲突】正文证据=...｜权威依据=...｜最小修法=...`。正文证据和权威依据缺少任一项都只能降级为【建议】。
 
                 输出 GeneratedChapter JSON：
                 - title 只能 PASS 或 REWRITE；只有至少存在一个上述四种“可重写逻辑问题”标记时才能 REWRITE。
@@ -88,7 +93,8 @@ class AdversarialChapterEditor(
     fun requestsRewrite(review: GeneratedChapter?): Boolean {
         if (!review?.title.orEmpty().trim().equals("REWRITE", ignoreCase = true)) return false
         val body = review?.content.orEmpty()
-        return LOGIC_REWRITE_MARKERS.any(body::contains)
+        val verifiedHardConflict = HARD_CONFLICT_MARKER in body && "正文证据=" in body && "权威依据=" in body
+        return verifiedHardConflict || LOGIC_REWRITE_MARKERS.any(body::contains)
     }
 
     fun instructions(review: GeneratedChapter?, deterministicProblems: List<String>): String = buildString {
@@ -105,6 +111,11 @@ class AdversarialChapterEditor(
             "【动机断裂】",
             "【因果断裂】",
             "【连续性断裂】",
+            "【目标未完成】",
+            "【叙事断裂】",
+            "【场景散乱】",
+            "【人物失真】",
+            "【信息倾倒】",
         )
     }
 }
