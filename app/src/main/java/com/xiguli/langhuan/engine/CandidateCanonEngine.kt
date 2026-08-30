@@ -166,14 +166,17 @@ object CandidateCanonEngine {
                 } else CandidateFactRisk.MEDIUM to false
             }
             CandidateFactKind.KNOWLEDGE_GAIN -> {
-                val boundaryExists = snapshot.knowledgeLedger.any { boundary ->
-                    boundary.id.equals(action.after.trim(), true) || boundary.title.equals(action.after.trim(), true) ||
-                        boundary.triggerTerms.any { term -> term.isNotBlank() && action.after.contains(term, true) }
-                }
-                if (!boundaryExists) notes += "没有匹配到已确认的信息边界，禁止自动创建真相"
-                CandidateFactRisk.MEDIUM to false
+                val validation = validateKnowledgeGain(snapshot, draft, action, proof)
+                notes += validation.note
+                if (validation.autoApprovable) CandidateFactRisk.LOW to true
+                else CandidateFactRisk.MEDIUM to false
             }
-            CandidateFactKind.TIMELINE -> CandidateFactRisk.MEDIUM to false
+            CandidateFactKind.TIMELINE -> {
+                val validation = validateTimeline(snapshot, draft, action, proof)
+                notes += validation.note
+                if (validation.autoApprovable) CandidateFactRisk.LOW to true
+                else CandidateFactRisk.MEDIUM to false
+            }
             CandidateFactKind.RELATION -> CandidateFactRisk.MEDIUM to false
             CandidateFactKind.CHARACTER_NEW,
             CandidateFactKind.FORESHADOW_NEW -> CandidateFactRisk.HIGH to false
@@ -283,6 +286,96 @@ object CandidateCanonEngine {
         return needle.windowed(size = minOf(14, needle.length), step = 3, partialWindows = false)
             .any { it.length >= 10 && haystack.contains(it) }
     }
+
+    /**
+     * Timeline is safe to auto-confirm only when the Agent copied direct prose evidence and its structured
+     * clock is already locked by this chapter's scene plan. Free-form Agent time guesses remain Candidate.
+     */
+    private fun validateTimeline(
+        snapshot: StorySnapshot,
+        draft: ChapterDraft,
+        action: AgentAction,
+        proof: Boolean,
+    ): LocalValidation {
+        if (!proof) return LocalValidation(false, "时间线缺少可逐字复核的正文证据，等待作者确认")
+        val parts = action.after.split("||").map(String::trim)
+        if (parts.size < 8) return LocalValidation(false, "时间线不是完整的 8 段结构，禁止自动写入主时间钟")
+        val day = parts[0].toIntOrNull()?.takeIf { it > 0 }
+            ?: return LocalValidation(false, "时间线没有有效故事日序号")
+        val timeOfDay = parts[1]
+        val flashback = parts[3].equals("FLASHBACK", ignoreCase = true)
+        if (!flashback && !parts[3].equals("NORMAL", ignoreCase = true)) {
+            return LocalValidation(false, "时间线没有明确 NORMAL/FLASHBACK 类型")
+        }
+        val location = parts[4]
+        val participants = splitCandidateList(parts[5])
+        val summary = parts[6]
+        if (timeOfDay.isBlank() || location.isBlank() || participants.isEmpty() || summary.isBlank()) {
+            return LocalValidation(false, "时间线缺少时段、地点、参与人物或事件摘要")
+        }
+
+        val matchingScene = draft.scenePlan.firstOrNull { scene ->
+            scene.storyDay > 0 && scene.storyDay == day && scene.isFlashback == flashback &&
+                scene.location.equals(location, ignoreCase = true) &&
+                (scene.timeOfDay.isBlank() || scene.timeOfDay.equals(timeOfDay, ignoreCase = true))
+        } ?: return LocalValidation(false, "时间线与本章已锁定的场景日序、时段、地点或闪回类型不一致")
+
+        val plannedPeople = (listOf(matchingScene.viewpoint) + matchingScene.participants)
+            .filter(String::isNotBlank)
+        if (participants.any { person -> plannedPeople.none { it.equals(person, ignoreCase = true) } }) {
+            return LocalValidation(false, "时间线出现了场景计划未登记的参与人物")
+        }
+        val latestMainDay = snapshot.recentTimeline
+            .filterNot { it.isFlashback }
+            .map { it.storyDay }
+            .filter { it > 0 }
+            .maxOrNull() ?: 0
+        if (!flashback && latestMainDay > 0 && day < latestMainDay) {
+            return LocalValidation(false, "NORMAL 时间线倒退到已确认主时间钟之前")
+        }
+        return LocalValidation(true, "正文证据与场景时间锁一致，可自动承接到下一章")
+    }
+
+    /** Only a FULL reveal explicitly authorized by this chapter contract can change a character's knowledge automatically. */
+    private fun validateKnowledgeGain(
+        snapshot: StorySnapshot,
+        draft: ChapterDraft,
+        action: AgentAction,
+        proof: Boolean,
+    ): LocalValidation {
+        val characterExists = snapshot.characters.any { it.name.equals(action.subject.trim(), ignoreCase = true) }
+        if (!characterExists) return LocalValidation(false, "获得信息的人物尚未存在于 Canon")
+        val boundary = snapshot.knowledgeLedger.firstOrNull { it.matchesCandidateKnowledge(action.after) }
+            ?: return LocalValidation(false, "没有匹配到已确认的信息边界，禁止自动创建真相")
+        if (!proof) return LocalValidation(false, "人物获知事实缺少可逐字复核的正文证据")
+        val chapterNumber = draft.chapterNumber.coerceAtLeast(1)
+        if (boundary.revealPolicy != KnowledgeRevealPolicy.FULL ||
+            (boundary.earliestFullRevealChapter > 0 && chapterNumber < boundary.earliestFullRevealChapter)
+        ) {
+            return LocalValidation(false, "该信息边界本章尚未授权人物完整获知")
+        }
+        val contract = ChapterContractGuard.resolve(snapshot, draft)
+        val authorized = contract.reveals.any { reveal -> boundary.matchesCandidateKnowledge(reveal) }
+        if (!authorized) return LocalValidation(false, "章节合同没有明确授权揭露该信息")
+        return LocalValidation(true, "正文证据、信息边界与章节合同三方一致，可自动更新人物认知")
+    }
+
+    private fun KnowledgeBoundary.matchesCandidateKnowledge(value: String): Boolean {
+        if (value.isBlank()) return false
+        return id.equals(value.trim(), ignoreCase = true) || title.equals(value.trim(), ignoreCase = true) ||
+            value.contains(title, ignoreCase = true) ||
+            triggerTerms.any { term ->
+                term.isNotBlank() && (value.contains(term, ignoreCase = true) || term.contains(value, ignoreCase = true))
+            } || (truth.isNotBlank() && (value.contains(truth, ignoreCase = true) || truth.contains(value, ignoreCase = true)))
+    }
+
+    private fun splitCandidateList(value: String): List<String> = value
+        .split('、', ',', '，', ';', '；')
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
+
+    private data class LocalValidation(val autoApprovable: Boolean, val note: String)
 
     private fun normalize(value: String): String = value.lowercase()
         .replace(Regex("[\\s，。！？、；：,.!?;:\\-—_()（）《》\"“”'‘’]"), "")
