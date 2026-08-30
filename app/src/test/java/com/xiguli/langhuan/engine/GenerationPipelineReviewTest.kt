@@ -60,7 +60,31 @@ class GenerationPipelineReviewTest {
         assertTrue(result.canCommit)
     }
 
-    private enum class ReviewScript { Pass, AdviceRewrite, HardRewrite }
+    @Test
+    fun `explicit causal break triggers one rewrite and can pass second review`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.LogicRewrite, ReviewScript.Pass))
+        val result = GenerationPipeline(gateway).generate(request())
+
+        assertEquals(SECOND_PROSE, result.chapter.content)
+        assertEquals(2, gateway.reviewCalls)
+        assertEquals(2, gateway.proseCalls)
+        assertFalse(result.issues.any { it.code == "EDITOR_REVIEW_FAILED" })
+        assertTrue(result.canCommit)
+    }
+
+    @Test
+    fun `repeated causal break blocks commit after one rewrite`() = runBlocking {
+        val gateway = ScriptedGateway(mutableListOf(ReviewScript.LogicRewrite, ReviewScript.LogicRewrite))
+        val result = GenerationPipeline(gateway).generate(request())
+
+        assertEquals(SECOND_PROSE, result.chapter.content)
+        assertEquals(2, gateway.reviewCalls)
+        assertEquals(2, gateway.proseCalls)
+        assertTrue(result.issues.any { it.code == "EDITOR_REVIEW_FAILED" && it.severity == IssueSeverity.BLOCKING })
+        assertFalse(result.canCommit)
+    }
+
+    private enum class ReviewScript { Pass, AdviceRewrite, HardRewrite, LogicRewrite }
 
     private class ScriptedGateway(
         private val verdicts: MutableList<ReviewScript>,
@@ -91,6 +115,11 @@ class GenerationPipelineReviewTest {
                         title = "REWRITE",
                         content = "【结构】【硬冲突】锚点=本章必须确认来客身份不一致｜正文证据=正文没有完成该确认｜修法=在本章场景内补足明确确认\n【人物】通过\n【文字】通过\n【连续性】通过",
                         summary = "结构席声称发现硬冲突",
+                    )
+                    ReviewScript.LogicRewrite -> GeneratedChapter(
+                        title = "REWRITE",
+                        content = "【结构】【因果断裂】正文证据=人物没有任何新依据却直接确认结论｜缺失前提=需要先得到能支持判断的证据｜最小修法=让已有线索先改变人物判断再行动\n【人物】通过\n【文字】通过\n【连续性】通过",
+                        summary = "存在可定位的因果断裂",
                     )
                 }
             } else {

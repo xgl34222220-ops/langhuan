@@ -12,6 +12,7 @@ enum class RunStage(val label: String) {
     BLUEPRINT_STAGE_3("蓝图 3/3 · 伏笔与校验"),
     CREATE_BOOK("正式建书"),
     CONTEXT("构建写作上下文"),
+    LOGIC_PLAN("写前逻辑骨架"),
     DRAFT("流式正文初稿"),
     NOVELIZATION("小说化重构"),
     EDITOR_REVIEW_1("四视角主编"),
