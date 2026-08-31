@@ -142,6 +142,13 @@ interface MemoryChunkDao {
     @Query("SELECT * FROM memory_chunks WHERE novelId = :novelId ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun recent(novelId: String, limit: Int): List<MemoryChunkEntity>
 
+    @Query(
+        "SELECT * FROM memory_chunks WHERE novelId = :novelId AND sourceType LIKE 'ORIGINAL_%' " +
+            "AND chapterNumber IS NOT NULL AND chapterNumber <= :maxChapter " +
+            "ORDER BY chapterNumber DESC, updatedAt DESC LIMIT :limit"
+    )
+    suspend fun originalCanonBefore(novelId: String, maxChapter: Int, limit: Int): List<MemoryChunkEntity>
+
     @Upsert
     suspend fun upsertAll(items: List<MemoryChunkEntity>)
 
@@ -151,7 +158,13 @@ interface MemoryChunkDao {
     @Query("DELETE FROM memory_chunks WHERE novelId = :novelId")
     suspend fun deleteForNovel(novelId: String)
 
-    @Query("DELETE FROM memory_chunks WHERE novelId = :novelId AND sourceType != 'CHAPTER'")
+    @Query("DELETE FROM memory_chunks WHERE novelId = :novelId AND sourceType LIKE 'ORIGINAL_%'")
+    suspend fun deleteOriginalCanonForNovel(novelId: String)
+
+    @Query(
+        "DELETE FROM memory_chunks WHERE novelId = :novelId " +
+            "AND sourceType != 'CHAPTER' AND sourceType NOT LIKE 'ORIGINAL_%'"
+    )
     suspend fun deleteStructuredForNovel(novelId: String)
 }
 
