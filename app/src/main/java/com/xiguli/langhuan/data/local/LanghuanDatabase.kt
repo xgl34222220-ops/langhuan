@@ -163,6 +163,12 @@ interface MemoryChunkDao {
 
     @Query(
         "DELETE FROM memory_chunks WHERE novelId = :novelId " +
+            "AND sourceId LIKE 'original-canon:%' AND sourceType NOT LIKE 'ORIGINAL_%'"
+    )
+    suspend fun deleteLegacyOriginalCanonStructured(novelId: String)
+
+    @Query(
+        "DELETE FROM memory_chunks WHERE novelId = :novelId " +
             "AND sourceType != 'CHAPTER' AND sourceType NOT LIKE 'ORIGINAL_%'"
     )
     suspend fun deleteStructuredForNovel(novelId: String)
