@@ -12,6 +12,7 @@ import com.xiguli.langhuan.domain.OutlineLevel
  */
 class AdversarialChapterEditor(
     private val contextBuilder: GenerationContextBuilder = GenerationContextBuilder(),
+    private val eraTechnologyGuard: EraTechnologyGuard = EraTechnologyGuard(),
 ) {
     fun buildReview(request: GenerationRequest, prose: String, round: Int): PromptBundle {
         val snapshot = request.snapshot
@@ -36,7 +37,7 @@ class AdversarialChapterEditor(
                 - 【建议】：节奏、表达、线索密度、场景组织、可读性等优化项。只有建议时 title 必须 PASS。
                 - 【可重写逻辑问题】：正文中能直接定位、并会让读者觉得“这一步为什么会发生”的明确断裂。只有这类问题才允许 title=REWRITE。
 
-                可重写逻辑问题只允许使用以下四个标记：
+                可重写问题只允许使用以下标记：
                 - 【逻辑断裂】：关键行动/结论缺少必要前提或依据，正文没有建立它为什么成立。
                 - 【动机断裂】：重要人物的关键行为与当前目标、性格、关系或已知信息明显脱节，正文没有给推动因素。
                 - 【因果断裂】：上一场的行动/冲突无法推出结果，或下一场完全没有承接上一场产生的新信息、代价、选择或威胁。
@@ -46,6 +47,7 @@ class AdversarialChapterEditor(
                 - 【场景散乱】：多个场景各说各话，没有围绕本章唯一目标形成递进，删除任一场也不影响结果。
                 - 【人物失真】：关键人物的说话、选择或反应与其当前目标、关系、认知和稳定行为模式直接矛盾。
                 - 【信息倾倒】：大量设定、名单、规则或推理结论没有通过当前场景中的行动与后果发生，正文实质是资料说明。
+                - 【时代技术冲突】：故事年代、技术存在时间、设备能力、社会普及度或人物使用理由互相冲突。例如现代私人场景无理由依赖座机，或座机出现锁屏、头像、App/微信通知等手机行为。
 
                 标记格式必须是：
                 `【逻辑断裂】正文证据=...｜缺失前提=...｜最小修法=...`
@@ -56,7 +58,7 @@ class AdversarialChapterEditor(
                 格式必须是 `【硬冲突】正文证据=...｜权威依据=...｜最小修法=...`。正文证据和权威依据缺少任一项都只能降级为【建议】。
 
                 输出 GeneratedChapter JSON：
-                - title 只能 PASS 或 REWRITE；只有至少存在一个上述四种“可重写逻辑问题”标记时才能 REWRITE。
+                - title 只能 PASS 或 REWRITE；只有至少存在一个上述可重写问题标记时才能 REWRITE。
                 - content 四行，分别以【结构】【人物】【文字】【连续性】开头；每行可包含一个或多个标记/建议。
                 - summary 一句话总结；stateChanges=[]；touchedForeshadowingIds=[]。
                 - 不新增设定，不把后续章纲当当前 Canon，不因文风偏好要求无关整章重写。
@@ -73,6 +75,9 @@ class AdversarialChapterEditor(
 
                 【A·Canon 与硬边界｜权威】
                 ${context.canon}
+
+                【A·时代与技术锁｜权威】
+                ${eraTechnologyGuard.promptText(snapshot)}
 
                 【B·当前剧情状态｜权威】
                 ${context.state}
@@ -116,6 +121,7 @@ class AdversarialChapterEditor(
             "【场景散乱】",
             "【人物失真】",
             "【信息倾倒】",
+            "【时代技术冲突】",
         )
     }
 }
