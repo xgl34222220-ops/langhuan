@@ -192,9 +192,17 @@ class PersistentStoryRepository(context: Context) {
         currentChapter: Int,
         limit: Int = 10,
     ): List<RetrievedContextItem> {
-        val candidates = memoryDao.recent(novelId, 1_600)
+        // 普通热记忆与原著证据分开取。大型导入书可能有数万条 ORIGINAL_* chunk，
+        // 如果只按 updatedAt 取最近 1600 条，早期章节会被未来章节挤出候选集。
+        val normal = memoryDao.recent(novelId, 1_600)
             .asSequence()
+            .filterNot { it.sourceType.startsWith("ORIGINAL_") }
             .filterNot { it.text.contains(GenerationContextBuilder.CREATION_FACT_LEDGER) }
+        val original = if (currentChapter > 1) {
+            memoryDao.originalCanonBefore(novelId, currentChapter - 1, 2_400).asSequence()
+        } else emptySequence()
+        val candidates = (normal + original)
+            .distinctBy { it.id }
             .map {
                 MemoryCandidate(
                     text = it.text,
