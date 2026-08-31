@@ -20,7 +20,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
-import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.domain.BibleCategory
 import com.xiguli.langhuan.domain.BibleEntry
 import com.xiguli.langhuan.domain.ChapterDraft
@@ -174,7 +173,6 @@ class OriginalCanonArchiveStoreV1(private val application: Application) {
 
 class OriginalCanonExtractionViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PersistentStoryRepository(application)
-    private val projects = StoryProjectManager(application)
     private val store = OriginalCanonArchiveStoreV1(application)
     private val _state = MutableStateFlow(OriginalCanonUiStateV1())
     val state: StateFlow<OriginalCanonUiStateV1> = _state.asStateFlow()
@@ -247,7 +245,7 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
                     notice = if (stopRequested) {
                         "已暂停；下次继续会从缓存断点接着抽，不会重跑已完成片段"
                     } else {
-                        "全书抽取完成，可写入人物 / 世界 / 时间线设定"
+                        "全书抽取完成，可启用章节边界原著知识库"
                     },
                 )
             }.onFailure { error ->
@@ -275,43 +273,21 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
         viewModelScope.launch {
             _state.update { it.copy(applying = true, error = null, notice = null) }
             runCatching {
-                val archive = store.load(novelId) ?: error("还没有可写入的原著抽取结果")
-                require(archive.digests.isNotEmpty()) { "还没有可写入的原著抽取结果" }
-                val loaded = projects.loadStory(novelId) ?: error("找不到当前小说")
-                val snapshot = loaded.snapshot
-                val chapterSummaries = buildChapterSummaries(archive)
-                val clusters = clusterEntities(archive.digests.flatMap { it.entities })
-                val extractedBible = buildBibleEntries(novelId, clusters)
-                val manualCharacters = snapshot.characters.filterNot { it.id.startsWith(EXTRACTED_PREFIX) }
-                val extractedCharacters = buildCharacters(novelId, manualCharacters, clusters, archive)
-                val extractedTimeline = buildTimeline(novelId, archive)
-                val manualBible = snapshot.bible.filterNot { it.id.startsWith(EXTRACTED_PREFIX) }
-                val summaries = chapterSummaries.entries.sortedBy { it.key }
-                val recent = summaries.takeLast(36).map { (chapter, summary) -> "第${chapter}章：$summary" }
-                val earlier = summaries.dropLast(36)
-                    .joinToString("\n") { (chapter, summary) -> "第${chapter}章：$summary" }
-                    .takeLast(20_000)
-                val updated = snapshot.copy(
-                    bible = manualBible + extractedBible,
-                    characters = extractedCharacters,
-                    recentTimeline = extractedTimeline.takeLast(240),
-                    recentSummaries = recent,
-                    longTermSummary = if (earlier.isBlank()) snapshot.longTermSummary else earlier,
-                )
-                projects.saveStructure(updated, loaded.draft)
-                val applied = archive.copy(appliedAt = System.currentTimeMillis())
-                store.save(applied)
-                applied
+                val archive = store.load(novelId) ?: error("还没有可启用的原著抽取结果")
+                require(archive.digests.isNotEmpty()) { "还没有可启用的原著抽取结果" }
+                // 不再把整本书的人物/Bible/时间线直接写入 StorySnapshot。
+                // appliedAt 是索引协调器的启用开关；真正进入 Prompt 的事实必须经过章节边界检索。
+                archive.copy(appliedAt = System.currentTimeMillis()).also(store::save)
             }.onSuccess {
                 _state.update {
                     it.copy(
                         applying = false,
-                        notice = "已写入 Canon：全书摘要、人物、世界设定与时间线已更新；完整证据索引仍保留在原著库",
+                        notice = "原著知识库已启用：写作与故事只会按当前章节检索可见事实，未来章节不会提前进入上下文",
                     )
                 }
                 onApplied()
             }.onFailure { error ->
-                _state.update { it.copy(applying = false, error = error.message ?: "写入设定失败") }
+                _state.update { it.copy(applying = false, error = error.message ?: "启用原著知识库失败") }
             }
         }
     }
@@ -397,7 +373,7 @@ fun OriginalCanonExtractionDialogV1(
                             Text("• 事件时间线、参与者、结果与原文章节证据")
                             Text("• 人物此时已经知道的事实，以及角色关系变化")
                             Text(
-                                "完整索引单独保存在原著库；写入 Canon 时只把适合长期上下文的压缩结果写进小说状态，避免每轮 AI 把整本书全部塞进 Prompt。",
+                                "完整索引单独保存在原著库。启用后按目标章节和当前剧情按需召回：写第 N 章只能读取 N 之前的原著证据；从第 N 章进入故事只能读取截至第 N 章的事实。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -450,14 +426,14 @@ fun OriginalCanonExtractionDialogV1(
                     ) {
                         if (state.applying) {
                             CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp)); Text("正在整理并写入 Canon")
+                            Spacer(Modifier.width(8.dp)); Text("正在启用章节边界索引")
                         } else {
                             Icon(Icons.Rounded.DoneAll, null); Spacer(Modifier.width(7.dp))
-                            Text(if (state.complete) "写入人物 / 世界 / 时间线" else "把已完成部分写入 Canon")
+                            Text("启用原著知识库")
                         }
                     }
 
-                    if (!aiReady) Text("需要先配置可用 AI 服务才能开始抽取；已有本地缓存仍可写入。", color = MaterialTheme.colorScheme.error)
+                    if (!aiReady) Text("需要先配置可用 AI 服务才能开始抽取；已有本地缓存仍可启用。", color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(28.dp))
                 }
             }
