@@ -29,7 +29,7 @@ private enum class RootRouteV3 {
  * V3 根交互：用单一路由状态替换旧版一堆 showXxx Boolean 互相排斥的覆盖层。
  *
  * 页面关系固定为：
- * 书架 -> 作品工作台 -> 阅读 / 写作 / AI助手 / 长篇监控 / 任务 / 封面工作室。
+ * 书架 -> 作品空间 -> 阅读 / 创作 / 故事 / 设定。
  * Skills 是全局写作方法配置；AI 设置是全局页；关闭子页面始终回到调用它的上一级。
  */
 @Composable
@@ -140,7 +140,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.BOOK -> {
                     if (libraryState.openedBook != null) {
-                        ReaderFirstLibraryV3(
+                        BookExperienceV4(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
