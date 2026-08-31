@@ -109,11 +109,12 @@ fun BookExperienceV4(
                     onAgent = onOpenAgent,
                     onRunCenter = onOpenRunCenter,
                 )
-                BookTabV4.STORY -> StoryPlayPanelV1(
+                BookTabV4.STORY -> StoryPlayPanelV2(
                     book = book,
                     libraryState = state,
                     aiReady = studioState.provider.ready,
                     onAiSetup = onOpenAiSetup,
+                    onAdopted = { viewModel.openBook(book.id) },
                 )
                 BookTabV4.SETTING -> SettingTabV4(
                     book = book,
