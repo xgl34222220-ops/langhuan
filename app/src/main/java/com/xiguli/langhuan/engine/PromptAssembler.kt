@@ -25,6 +25,7 @@ data class PromptAttachment(
 class PromptAssembler(
     private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
     private val contextBuilder: GenerationContextBuilder = GenerationContextBuilder(chronologyGuard),
+    private val eraTechnologyGuard: EraTechnologyGuard = EraTechnologyGuard(),
 ) {
     /**
      * Pure prose prompt. Context Builder 2.0 keeps execution/canon/state/style/history isolated,
@@ -62,6 +63,7 @@ class PromptAssembler(
                 15. D 层只允许按需取材。不要因为召回了某段旧剧情就重复讲述，更不要把 RAG 中的旧状态当成当前状态。
                 16. 目标字数是节奏参考，不为凑字重复信息，也不要用清单填充篇幅。
                 17. 只输出小说正文。不要 Markdown 标题、不要前言、不要后记、不要说明。
+                18. 严格执行【A·时代与技术锁】。年代、设备能力、社会普及度和人物使用理由必须同时成立；不得把手机界面词套给座机，也不得在现代场景无理由用旧式设备制造悬疑。
             """.trimIndent(),
             user = """
                 小说：${snapshot.novel.title}
@@ -73,6 +75,9 @@ class PromptAssembler(
 
                 【A·Canon 与硬边界】
                 ${context.canon}
+
+                【A·时代与技术锁】
+                ${eraTechnologyGuard.promptText(snapshot)}
 
                 【B·当前剧情状态】
                 ${context.state}
@@ -126,6 +131,7 @@ class PromptAssembler(
                 10. 未完成本章唯一目标，或结尾钩子与本章因果无关。
                 11. 时间地点不连续、与锁定设定冲突，或人物出场/离场状态无因跳变。
                 12. 正文不是纯小说文本，包含创作说明或面向用户的解释。
+                13. 年代、技术存在时间、设备能力、社会普及度或使用场景不匹配；尤其是现代私人场景无理由使用座机，或把手机 UI/通知方式写给座机。
             """.trimIndent(),
             user = """
                 【本章】第${request.chapter.chapterNumber}章 ${request.chapter.title}
@@ -140,6 +146,9 @@ class PromptAssembler(
 
                 【信息边界账本】
                 $knowledgeText
+
+                【时代与技术锁】
+                ${eraTechnologyGuard.promptText(snapshot)}
 
                 【后续章纲｜只用于检查本章是否提前抢戏】
                 $future

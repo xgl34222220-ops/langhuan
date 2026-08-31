@@ -8,6 +8,7 @@ import com.xiguli.langhuan.domain.IssueSeverity
 
 class ConsistencyGate(
     private val chronologyGuard: ChronologyGuard = ChronologyGuard(),
+    private val eraTechnologyGuard: EraTechnologyGuard = EraTechnologyGuard(),
 ) {
     fun inspect(request: GenerationRequest, output: GeneratedChapter): List<ConsistencyIssue> {
         val issues = mutableListOf<ConsistencyIssue>()
@@ -43,6 +44,7 @@ class ConsistencyGate(
         }
 
         issues += chronologyGuard.inspect(request, output)
+        issues += eraTechnologyGuard.inspect(request, output)
         issues += NarrativeRuleGuard.inspect(text)
         issues += ChapterContractGuard.inspect(request, output)
         issues += RevealBudgetGuard.inspect(request, text)

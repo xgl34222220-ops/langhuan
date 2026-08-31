@@ -25,6 +25,7 @@ class GenerationPipeline(
     private val adversarialEditor: AdversarialChapterEditor = AdversarialChapterEditor(),
     private val novelizationEngine: NovelizationEngine = NovelizationEngine(),
     private val logicPlanner: ChapterLogicPlanner = ChapterLogicPlanner(),
+    private val eraTechnologyGuard: EraTechnologyGuard = EraTechnologyGuard(),
     private val timeouts: GenerationTimeouts = GenerationTimeouts(),
 ) {
     suspend fun generate(
@@ -205,6 +206,7 @@ class GenerationPipeline(
         }
         val firstDeterministic = buildList {
             addAll(obviousProseProblems(preEditorProse))
+            addAll(eraTechnologyGuard.deterministicProblems(plannedRequest, preEditorProse))
             if (quality.requiresNovelization) addAll(quality.problems)
         }.distinct()
         val firstRejected = adversarialEditor.requestsRewrite(firstReview) || firstDeterministic.isNotEmpty()
@@ -286,6 +288,7 @@ class GenerationPipeline(
                 }
                 val secondDeterministic = buildList {
                     addAll(obviousProseProblems(prose))
+                    addAll(eraTechnologyGuard.deterministicProblems(plannedRequest, prose))
                     if (quality.requiresNovelization) addAll(quality.problems)
                 }.distinct()
                 val secondRejected = adversarialEditor.requestsRewrite(secondReview) || secondDeterministic.isNotEmpty()
@@ -362,7 +365,7 @@ class GenerationPipeline(
         )
 
         val finalQuality = novelizationEngine.analyze(prose)
-        emit(RunStage.CONSISTENCY, RunStatus.RUNNING, "检查章节合同、信息边界、时间线、小说化质量、因果审稿与主编结果")
+        emit(RunStage.CONSISTENCY, RunStatus.RUNNING, "检查章节合同、信息边界、时间线、时代技术、小说化质量、因果审稿与主编结果")
         val issues = buildList {
             addAll(consistencyGate.inspect(request, chapter))
             editorBlockingIssue?.let(::add)
