@@ -41,15 +41,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable
-enum class CanonEntityTypeV1 {
-    CHARACTER,
-    FACTION,
-    LOCATION,
-    ITEM,
-    RULE,
-    WORLD,
-    STYLE,
-}
+enum class CanonEntityTypeV1 { CHARACTER, FACTION, LOCATION, ITEM, RULE, WORLD, STYLE }
 
 @Serializable
 data class CanonEntityObservationV1(
@@ -129,6 +121,7 @@ data class OriginalCanonUiStateV1(
     val eventCount: Int = 0,
     val knowledgeCount: Int = 0,
     val relationCount: Int = 0,
+    val previewLines: List<String> = emptyList(),
     val currentLabel: String = "",
     val busy: Boolean = false,
     val applying: Boolean = false,
@@ -154,9 +147,7 @@ class OriginalCanonArchiveStoreV1(private val application: Application) {
     fun load(novelId: String): OriginalCanonArchiveV1? {
         val file = fileFor(novelId)
         if (!file.exists()) return null
-        return runCatching {
-            json.decodeFromString(OriginalCanonArchiveV1.serializer(), file.readText())
-        }.getOrNull()
+        return runCatching { json.decodeFromString(OriginalCanonArchiveV1.serializer(), file.readText()) }.getOrNull()
     }
 
     fun save(archive: OriginalCanonArchiveV1) {
@@ -191,18 +182,18 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
 
     fun open(book: ReaderBookUi, chapters: List<ChapterDraft>) {
         val units = buildSourceUnits(chapters)
-        val existing = store.load(book.id)
-        val valid = retainValidDigests(existing?.digests.orEmpty(), units)
+        val old = store.load(book.id)
+        val valid = retainValidDigests(old?.digests.orEmpty(), units)
         val archive = OriginalCanonArchiveV1(
             novelId = book.id,
             title = book.title,
             totalChapters = chapters.count { it.content.isNotBlank() },
             totalCharacters = chapters.sumOf { it.content.length },
             digests = valid,
-            updatedAt = existing?.updatedAt ?: 0L,
-            appliedAt = existing?.appliedAt ?: 0L,
+            updatedAt = old?.updatedAt ?: 0L,
+            appliedAt = old?.appliedAt ?: 0L,
         )
-        if (existing != null && valid.size != existing.digests.size) store.save(archive)
+        if (old != null && valid.size != old.digests.size) store.save(archive)
         _state.value = archive.toUi(units.size)
     }
 
@@ -216,21 +207,13 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
                 val units = buildSourceUnits(chapters)
                 require(units.isNotEmpty()) { "这本书还没有可抽取的正文" }
                 val old = store.load(book.id)
-                val digests = retainValidDigests(old?.digests.orEmpty(), units).associateBy { "${it.chapterNumber}:${it.partIndex}" }.toMutableMap()
-                val pending = units.filter { unit ->
-                    val cached = digests[unit.key]
-                    cached == null || cached.fingerprint != unit.fingerprint
-                }
+                val digests = retainValidDigests(old?.digests.orEmpty(), units)
+                    .associateBy { "${it.chapterNumber}:${it.partIndex}" }
+                    .toMutableMap()
+                val pending = units.filter { unit -> digests[unit.key]?.fingerprint != unit.fingerprint }
+
                 if (pending.isEmpty()) {
-                    val ready = OriginalCanonArchiveV1(
-                        novelId = book.id,
-                        title = book.title,
-                        totalChapters = chapters.count { it.content.isNotBlank() },
-                        totalCharacters = chapters.sumOf { it.content.length },
-                        digests = digests.values.sortedWith(compareBy({ it.chapterNumber }, { it.partIndex })),
-                        updatedAt = System.currentTimeMillis(),
-                        appliedAt = old?.appliedAt ?: 0L,
-                    )
+                    val ready = makeArchive(book, chapters, digests.values.toList(), old?.appliedAt ?: 0L)
                     store.save(ready)
                     _state.value = ready.toUi(units.size).copy(notice = "全书正文没有变化，缓存仍然有效")
                     return@runCatching
@@ -246,23 +229,10 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
                             currentLabel = "抽取第 ${first.chapterNumber} 章${if (first.chapterNumber != last.chapterNumber) " ～ 第 ${last.chapterNumber} 章" else ""} · 批次 ${batchIndex + 1}/${batches.size}",
                         )
                     }
-                    val output = gateway.generate(
-                        PromptBundle(
-                            system = extractionSystemPrompt(),
-                            user = buildBatchPrompt(book, batch),
-                        )
-                    )
+                    val output = gateway.generate(PromptBundle(extractionSystemPrompt(), buildBatchPrompt(book, batch)))
                     val parsed = parseBatch(output.content, batch)
                     parsed.forEach { digest -> digests["${digest.chapterNumber}:${digest.partIndex}"] = digest }
-                    val archive = OriginalCanonArchiveV1(
-                        novelId = book.id,
-                        title = book.title,
-                        totalChapters = chapters.count { it.content.isNotBlank() },
-                        totalCharacters = chapters.sumOf { it.content.length },
-                        digests = digests.values.sortedWith(compareBy({ it.chapterNumber }, { it.partIndex })),
-                        updatedAt = System.currentTimeMillis(),
-                        appliedAt = old?.appliedAt ?: 0L,
-                    )
+                    val archive = makeArchive(book, chapters, digests.values.toList(), old?.appliedAt ?: 0L)
                     store.save(archive)
                     _state.value = archive.toUi(units.size).copy(
                         busy = true,
@@ -271,20 +241,17 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
                 }
 
                 val finalArchive = store.load(book.id) ?: error("抽取结果没有写入本地缓存")
-                val stopped = stopRequested
                 _state.value = finalArchive.toUi(units.size).copy(
                     busy = false,
                     currentLabel = "",
-                    notice = if (stopped) "已暂停；下次继续时会从缓存断点接着抽，不会重跑已完成片段" else "全书抽取完成，可写入人物 / 世界 / 时间线设定",
+                    notice = if (stopRequested) {
+                        "已暂停；下次继续会从缓存断点接着抽，不会重跑已完成片段"
+                    } else {
+                        "全书抽取完成，可写入人物 / 世界 / 时间线设定"
+                    },
                 )
             }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        busy = false,
-                        currentLabel = "",
-                        error = error.message ?: "原著设定抽取失败",
-                    )
-                }
+                _state.update { it.copy(busy = false, currentLabel = "", error = error.message ?: "原著设定抽取失败") }
             }
         }
     }
@@ -315,16 +282,17 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
                 val chapterSummaries = buildChapterSummaries(archive)
                 val clusters = clusterEntities(archive.digests.flatMap { it.entities })
                 val extractedBible = buildBibleEntries(novelId, clusters)
-                val extractedCharacters = buildCharacters(novelId, snapshot.characters, clusters, archive)
+                val manualCharacters = snapshot.characters.filterNot { it.id.startsWith(EXTRACTED_PREFIX) }
+                val extractedCharacters = buildCharacters(novelId, manualCharacters, clusters, archive)
                 val extractedTimeline = buildTimeline(novelId, archive)
-                val existingManualBible = snapshot.bible.filterNot { it.id.startsWith(EXTRACTED_PREFIX) }
-                val summariesOrdered = chapterSummaries.entries.sortedBy { it.key }
-                val recent = summariesOrdered.takeLast(36).map { (chapter, summary) -> "第${chapter}章：$summary" }
-                val earlier = summariesOrdered.dropLast(36)
+                val manualBible = snapshot.bible.filterNot { it.id.startsWith(EXTRACTED_PREFIX) }
+                val summaries = chapterSummaries.entries.sortedBy { it.key }
+                val recent = summaries.takeLast(36).map { (chapter, summary) -> "第${chapter}章：$summary" }
+                val earlier = summaries.dropLast(36)
                     .joinToString("\n") { (chapter, summary) -> "第${chapter}章：$summary" }
                     .takeLast(20_000)
                 val updated = snapshot.copy(
-                    bible = existingManualBible + extractedBible,
+                    bible = manualBible + extractedBible,
                     characters = extractedCharacters,
                     recentTimeline = extractedTimeline.takeLast(240),
                     recentSummaries = recent,
@@ -334,7 +302,7 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
                 val applied = archive.copy(appliedAt = System.currentTimeMillis())
                 store.save(applied)
                 applied
-            }.onSuccess { archive ->
+            }.onSuccess {
                 _state.update {
                     it.copy(
                         applying = false,
@@ -347,8 +315,6 @@ class OriginalCanonExtractionViewModel(application: Application) : AndroidViewMo
             }
         }
     }
-
-    fun clearMessage() = _state.update { it.copy(notice = null, error = null) }
 
     private suspend fun activeGateway(): UniversalAiGateway {
         val providers = repository.observeProviders().first()
@@ -370,30 +336,22 @@ fun OriginalCanonExtractionDialogV1(
     val vm: OriginalCanonExtractionViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     var confirmReset by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
 
-    LaunchedEffect(book.id, chapters.size, chapters.sumOf { it.content.length }) {
-        vm.open(book, chapters)
-    }
+    LaunchedEffect(book.id, chapters.size, chapters.sumOf { it.content.length }) { vm.open(book, chapters) }
 
-    Dialog(
-        onDismissRequest = { if (!state.applying) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    Dialog(onDismissRequest = { if (!state.applying) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onDismiss, enabled = !state.applying) { Icon(Icons.Rounded.Close, "关闭") }
                     Column(Modifier.weight(1f)) {
                         Text("从原著抽设定", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(book.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    IconButton(
-                        onClick = { confirmReset = true },
-                        enabled = !state.busy && !state.applying,
-                    ) { Icon(Icons.Rounded.RestartAlt, "清空缓存重来") }
+                    IconButton({ confirmReset = true }, enabled = !state.busy && !state.applying) {
+                        Icon(Icons.Rounded.RestartAlt, "清空缓存重来")
+                    }
                 }
 
                 Column(
@@ -408,14 +366,13 @@ fun OriginalCanonExtractionDialogV1(
                                 Text("真正按全书正文抽取，不做开头 + 随机章节抽样", fontWeight = FontWeight.Bold)
                             }
                             Text(
-                                "正文会按章节拆成可控片段，逐批读取全部内容；每批结果立刻缓存。中途退出或失败后可以继续，正文没变化的片段不会重复消耗模型。",
-                                style = MaterialTheme.typography.bodyMedium,
+                                "正文按章节拆成可控片段，逐批读取全部内容；每批结果立刻缓存。中途退出、模型报错或正文局部修改后，都只处理缺失/变化部分。",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
 
-                    val fraction = if (state.totalUnits <= 0) 0f else state.processedUnits.toFloat() / state.totalUnits.toFloat()
+                    val fraction = if (state.totalUnits <= 0) 0f else state.processedUnits.toFloat() / state.totalUnits
                     Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -424,13 +381,11 @@ fun OriginalCanonExtractionDialogV1(
                             }
                             LinearProgressIndicator(progress = { fraction.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                             Text(
-                                "${state.totalChapters} 章 · ${state.totalCharacters} 字 · 已发现 ${state.entityCount} 个实体 / ${state.eventCount} 条事件 / ${state.relationCount} 条关系 / ${state.knowledgeCount} 条人物知情事实",
+                                "${state.totalChapters} 章 · ${state.totalCharacters} 字 · ${state.entityCount} 实体 / ${state.eventCount} 事件 / ${state.relationCount} 关系 / ${state.knowledgeCount} 人物知情事实",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (state.currentLabel.isNotBlank()) {
-                                Text(state.currentLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                            }
+                            if (state.currentLabel.isNotBlank()) Text(state.currentLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
 
@@ -440,35 +395,39 @@ fun OriginalCanonExtractionDialogV1(
                             Text("• 每章 / 每片段摘要，形成完整章节索引")
                             Text("• 人物、势力、地点、物品、规则、世界观、文风")
                             Text("• 事件时间线、参与者、结果与原文章节证据")
-                            Text("• 人物在某章已经明确知道的事实，以及角色关系变化")
+                            Text("• 人物此时已经知道的事实，以及角色关系变化")
                             Text(
-                                "完整索引单独保存在原著库；写入 Canon 时只把适合长期上下文的压缩结果写入小说状态，避免每轮 AI 把整本书全部塞进 Prompt。",
+                                "完整索引单独保存在原著库；写入 Canon 时只把适合长期上下文的压缩结果写进小说状态，避免每轮 AI 把整本书全部塞进 Prompt。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
 
-                    state.error?.let {
-                        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.errorContainer) {
-                            Text(it, Modifier.fillMaxWidth().padding(13.dp), color = MaterialTheme.colorScheme.onErrorContainer)
-                        }
-                    }
-                    state.notice?.let {
-                        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-                            Text(it, Modifier.fillMaxWidth().padding(13.dp), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    if (state.previewLines.isNotEmpty()) {
+                        Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("已抽取数据预览", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    TextButton({ showPreview = !showPreview }) { Text(if (showPreview) "收起" else "展开") }
+                                }
+                                if (showPreview) {
+                                    state.previewLines.forEach { line ->
+                                        Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                } else {
+                                    Text("不是只显示一句 DNA：抽取完成后可以直接看到最近的章节摘要样本。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                         }
                     }
 
+                    state.error?.let { MessageSurfaceV1(it, true) }
+                    state.notice?.let { MessageSurfaceV1(it, false) }
+
                     if (state.busy) {
-                        OutlinedButton(
-                            onClick = vm::requestStop,
-                            Modifier.fillMaxWidth().height(54.dp),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            Icon(Icons.Rounded.Stop, null)
-                            Spacer(Modifier.width(7.dp))
-                            Text("当前批次完成后暂停")
+                        OutlinedButton(vm::requestStop, Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) {
+                            Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(7.dp)); Text("当前批次完成后暂停")
                         }
                     } else {
                         Button(
@@ -491,18 +450,14 @@ fun OriginalCanonExtractionDialogV1(
                     ) {
                         if (state.applying) {
                             CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("正在整理并写入 Canon")
+                            Spacer(Modifier.width(8.dp)); Text("正在整理并写入 Canon")
                         } else {
-                            Icon(Icons.Rounded.DoneAll, null)
-                            Spacer(Modifier.width(7.dp))
+                            Icon(Icons.Rounded.DoneAll, null); Spacer(Modifier.width(7.dp))
                             Text(if (state.complete) "写入人物 / 世界 / 时间线" else "把已完成部分写入 Canon")
                         }
                     }
 
-                    if (!aiReady) {
-                        Text("需要先配置可用 AI 服务才能开始抽取。已经完成的本地缓存仍可查看或写入。", color = MaterialTheme.colorScheme.error)
-                    }
+                    if (!aiReady) Text("需要先配置可用 AI 服务才能开始抽取；已有本地缓存仍可写入。", color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(28.dp))
                 }
             }
@@ -516,18 +471,47 @@ fun OriginalCanonExtractionDialogV1(
             title = { Text("清空原著抽取缓存？") },
             text = { Text("只删除 AI 抽取索引，不删除小说正文。之后重新开始会再次读取全书并产生模型消耗。") },
             confirmButton = {
-                Button(onClick = {
-                    confirmReset = false
-                    vm.clearCache(book, chapters)
-                }) { Text("清空") }
+                Button({ confirmReset = false; vm.clearCache(book, chapters) }) { Text("清空") }
             },
             dismissButton = { TextButton({ confirmReset = false }) { Text("取消") } },
         )
     }
 }
 
+@Composable
+private fun MessageSurfaceV1(text: String, error: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Text(
+            text,
+            Modifier.fillMaxWidth().padding(13.dp),
+            color = if (error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
+}
+
+private fun makeArchive(
+    book: ReaderBookUi,
+    chapters: List<ChapterDraft>,
+    digests: List<CanonSourceDigestV1>,
+    appliedAt: Long,
+): OriginalCanonArchiveV1 = OriginalCanonArchiveV1(
+    novelId = book.id,
+    title = book.title,
+    totalChapters = chapters.count { it.content.isNotBlank() },
+    totalCharacters = chapters.sumOf { it.content.length },
+    digests = digests.sortedWith(compareBy({ it.chapterNumber }, { it.partIndex })),
+    updatedAt = System.currentTimeMillis(),
+    appliedAt = appliedAt,
+)
+
 private fun OriginalCanonArchiveV1.toUi(totalUnits: Int): OriginalCanonUiStateV1 {
     val processed = digests.size.coerceAtMost(totalUnits)
+    val previews = digests.sortedWith(compareBy({ it.chapterNumber }, { it.partIndex }))
+        .takeLast(8)
+        .map { "第${it.chapterNumber}章${if (it.partCount > 1) " · ${it.partIndex}/${it.partCount}" else ""}：${it.summary.take(160)}" }
     return OriginalCanonUiStateV1(
         novelId = novelId,
         totalChapters = totalChapters,
@@ -538,45 +522,42 @@ private fun OriginalCanonArchiveV1.toUi(totalUnits: Int): OriginalCanonUiStateV1
         eventCount = digests.sumOf { it.events.size },
         knowledgeCount = digests.sumOf { it.knowledge.size },
         relationCount = digests.sumOf { it.relations.size },
+        previewLines = previews,
         complete = totalUnits > 0 && processed == totalUnits,
     )
 }
 
-private fun buildSourceUnits(chapters: List<ChapterDraft>): List<CanonSourceUnitV1> {
-    return chapters.sortedBy { it.chapterNumber }.flatMap { chapter ->
+private fun buildSourceUnits(chapters: List<ChapterDraft>): List<CanonSourceUnitV1> = chapters
+    .sortedBy { it.chapterNumber }
+    .flatMap { chapter ->
         val text = chapter.content.trim()
         if (text.isBlank()) return@flatMap emptyList()
         val parts = text.chunked(SOURCE_PART_CHARS)
         parts.mapIndexed { index, part ->
             CanonSourceUnitV1(
-                chapterNumber = chapter.chapterNumber,
-                chapterTitle = chapter.title.ifBlank { "第${chapter.chapterNumber}章" },
-                partIndex = index + 1,
-                partCount = parts.size,
-                text = part,
-                fingerprint = sha256("${chapter.chapterNumber}|${index + 1}|$part"),
+                chapter.chapterNumber,
+                chapter.title.ifBlank { "第${chapter.chapterNumber}章" },
+                index + 1,
+                parts.size,
+                part,
+                sha256("${chapter.chapterNumber}|${index + 1}|$part"),
             )
         }
     }
-}
 
-private fun retainValidDigests(
-    digests: List<CanonSourceDigestV1>,
-    units: List<CanonSourceUnitV1>,
-): List<CanonSourceDigestV1> {
+private fun retainValidDigests(digests: List<CanonSourceDigestV1>, units: List<CanonSourceUnitV1>): List<CanonSourceDigestV1> {
     val unitMap = units.associateBy { it.key }
     return digests.filter { digest ->
-        val unit = unitMap["${digest.chapterNumber}:${digest.partIndex}"]
-        unit != null && unit.fingerprint == digest.fingerprint
+        unitMap["${digest.chapterNumber}:${digest.partIndex}"]?.fingerprint == digest.fingerprint
     }
 }
 
 private fun makeBatches(units: List<CanonSourceUnitV1>): List<List<CanonSourceUnitV1>> {
-    val result = mutableListOf<MutableList<CanonSourceUnitV1>>()
+    val batches = mutableListOf<MutableList<CanonSourceUnitV1>>()
     var current = mutableListOf<CanonSourceUnitV1>()
     var chars = 0
     fun flush() {
-        if (current.isNotEmpty()) result += current
+        if (current.isNotEmpty()) batches += current
         current = mutableListOf()
         chars = 0
     }
@@ -586,12 +567,12 @@ private fun makeBatches(units: List<CanonSourceUnitV1>): List<List<CanonSourceUn
         chars += unit.text.length
     }
     flush()
-    return result
+    return batches
 }
 
 private fun extractionSystemPrompt(): String = """
-    你是“琅嬛原著 Canon 抽取器”。任务不是续写，而是把用户合法导入的小说正文整理成可检索、可校验、可追溯的结构化事实。
-    只依据本批提供的原文，不得用你训练数据里对同名作品的记忆补齐，不得猜测未出现内容。
+    你是“琅嬛原著 Canon 抽取器”。任务不是续写，而是把用户导入的小说正文整理成可检索、可校验、可追溯的结构化事实。
+    只依据本批提供的原文，不得用训练数据对同名作品的记忆补齐，不得猜测未出现内容。
     每个事实必须绑定章号和片段号；evidence 只写不超过 70 字的证据提示/短释义，不要大段复述原文。
     人物“知道某事实”只有原文明示、亲眼见到、亲耳听到或本段明确推断成立时才记 KNOWLEDGE；旁白知道不等于角色知道。
     关系只在原文能明确支持时记录，不要把同场出现自动当成朋友/敌人。
@@ -630,25 +611,21 @@ private fun parseBatch(content: String, units: List<CanonSourceUnitV1>): List<Ca
         when {
             line.startsWith("UNIT|") -> {
                 val p = line.split('|', limit = 4)
-                if (p.size == 4) summaries["${p[1].toIntOrNull()}:${p[2].toIntOrNull()}"] = cleanField(p[3])
+                if (p.size == 4) {
+                    val chapter = p[1].toIntOrNull()
+                    val part = p[2].toIntOrNull()
+                    if (chapter != null && part != null) summaries["$chapter:$part"] = cleanField(p[3])
+                }
             }
             line.startsWith("ENTITY|") -> {
-                val p = line.split('|', limit = 9)
-                if (p.size == 9) {
+                val p = line.split('|', limit = 8)
+                if (p.size == 8) {
                     val chapter = p[1].toIntOrNull() ?: return@forEach
                     val part = p[2].toIntOrNull() ?: return@forEach
                     val type = runCatching { CanonEntityTypeV1.valueOf(p[3].trim().uppercase()) }.getOrNull() ?: return@forEach
                     val name = cleanField(p[4])
                     if (name.isBlank()) return@forEach
-                    entities += CanonEntityObservationV1(
-                        chapterNumber = chapter,
-                        partIndex = part,
-                        type = type,
-                        name = name,
-                        aliases = splitList(p[5]),
-                        description = cleanField(p[6]),
-                        evidence = cleanField(p[7] + if (p[8].isNotBlank()) " / ${p[8]}" else "").take(180),
-                    )
+                    entities += CanonEntityObservationV1(chapter, part, type, name, splitList(p[5]), cleanField(p[6]), cleanField(p[7]).take(180))
                 }
             }
             line.startsWith("EVENT|") -> {
@@ -656,16 +633,7 @@ private fun parseBatch(content: String, units: List<CanonSourceUnitV1>): List<Ca
                 if (p.size == 9) {
                     val chapter = p[1].toIntOrNull() ?: return@forEach
                     val part = p[2].toIntOrNull() ?: return@forEach
-                    events += CanonEventObservationV1(
-                        chapterNumber = chapter,
-                        partIndex = part,
-                        storyTime = cleanField(p[3]),
-                        location = cleanField(p[4]),
-                        participants = splitList(p[5]),
-                        summary = cleanField(p[6]),
-                        consequences = splitList(p[7]),
-                        evidence = cleanField(p[8]).take(180),
-                    )
+                    events += CanonEventObservationV1(chapter, part, cleanField(p[3]), cleanField(p[4]), splitList(p[5]), cleanField(p[6]), splitList(p[7]), cleanField(p[8]).take(180))
                 }
             }
             line.startsWith("KNOWLEDGE|") -> {
@@ -675,9 +643,7 @@ private fun parseBatch(content: String, units: List<CanonSourceUnitV1>): List<Ca
                     val part = p[2].toIntOrNull() ?: return@forEach
                     val character = cleanField(p[3])
                     val fact = cleanField(p[4])
-                    if (character.isNotBlank() && fact.isNotBlank()) {
-                        knowledge += CanonKnowledgeObservationV1(chapter, part, character, fact, cleanField(p[5]).take(180))
-                    }
+                    if (character.isNotBlank() && fact.isNotBlank()) knowledge += CanonKnowledgeObservationV1(chapter, part, character, fact, cleanField(p[5]).take(180))
                 }
             }
             line.startsWith("RELATION|") -> {
@@ -688,29 +654,26 @@ private fun parseBatch(content: String, units: List<CanonSourceUnitV1>): List<Ca
                     val from = cleanField(p[3])
                     val to = cleanField(p[4])
                     val label = cleanField(p[5])
-                    if (from.isNotBlank() && to.isNotBlank() && label.isNotBlank()) {
-                        relations += CanonRelationObservationV1(chapter, part, from, to, label, cleanField(p[6]), cleanField(p[7]).take(180))
-                    }
+                    if (from.isNotBlank() && to.isNotBlank() && label.isNotBlank()) relations += CanonRelationObservationV1(chapter, part, from, to, label, cleanField(p[6]), cleanField(p[7]).take(180))
                 }
             }
         }
     }
 
     return units.map { unit ->
-        val key = unit.key
-        val summary = summaries[key]?.takeIf { it.isNotBlank() }
+        val summary = summaries[unit.key]?.takeIf { it.isNotBlank() }
             ?: error("AI 返回缺少第 ${unit.chapterNumber} 章片段 ${unit.partIndex} 的 UNIT 摘要，本批未写入缓存，可直接重试")
         CanonSourceDigestV1(
-            chapterNumber = unit.chapterNumber,
-            chapterTitle = unit.chapterTitle,
-            partIndex = unit.partIndex,
-            partCount = unit.partCount,
-            fingerprint = unit.fingerprint,
-            summary = summary,
-            entities = entities.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
-            events = events.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
-            knowledge = knowledge.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
-            relations = relations.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
+            unit.chapterNumber,
+            unit.chapterTitle,
+            unit.partIndex,
+            unit.partCount,
+            unit.fingerprint,
+            summary,
+            entities.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
+            events.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
+            knowledge.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
+            relations.filter { it.chapterNumber == unit.chapterNumber && it.partIndex == unit.partIndex },
         )
     }
 }
@@ -741,40 +704,35 @@ private fun clusterEntities(observations: List<CanonEntityObservationV1>): List<
     return clusters.sortedByDescending { it.observations.size }
 }
 
-private fun buildBibleEntries(novelId: String, clusters: List<EntityClusterV1>): List<BibleEntry> {
-    return clusters.filter { it.type != CanonEntityTypeV1.CHARACTER }
-        .take(700)
-        .map { cluster ->
-            val category = when (cluster.type) {
-                CanonEntityTypeV1.FACTION -> BibleCategory.FACTION
-                CanonEntityTypeV1.LOCATION -> BibleCategory.LOCATION
-                CanonEntityTypeV1.ITEM -> BibleCategory.ITEM
-                CanonEntityTypeV1.RULE -> BibleCategory.RULE
-                CanonEntityTypeV1.WORLD -> BibleCategory.WORLD
-                CanonEntityTypeV1.STYLE -> BibleCategory.STYLE
-                CanonEntityTypeV1.CHARACTER -> BibleCategory.CHARACTER
-            }
-            val observations = cluster.observations.sortedWith(compareBy({ it.chapterNumber }, { it.partIndex }))
-            val latestEvidence = observations.takeLast(14).joinToString("\n") { obs ->
-                buildString {
-                    append("第${obs.chapterNumber}章：").append(obs.description)
-                    if (obs.evidence.isNotBlank()) append("；证据提示：").append(obs.evidence)
-                }
-            }
-            BibleEntry(
-                id = "$EXTRACTED_PREFIX${cluster.type.name.lowercase()}:${stableId(cluster.name)}",
-                novelId = novelId,
-                category = category,
-                name = cluster.name,
-                content = buildString {
-                    append(latestEvidence)
-                    if (observations.size > 14) append("\n（完整索引共 ${observations.size} 处原文章节记录，保存在原著库）")
-                },
-                aliases = cluster.names.filterNot { normalizeName(it) == normalizeName(cluster.name) }.distinct().take(20),
-                locked = true,
-            )
+private fun buildBibleEntries(novelId: String, clusters: List<EntityClusterV1>): List<BibleEntry> = clusters
+    .take(700)
+    .map { cluster ->
+        val category = when (cluster.type) {
+            CanonEntityTypeV1.CHARACTER -> BibleCategory.CHARACTER
+            CanonEntityTypeV1.FACTION -> BibleCategory.FACTION
+            CanonEntityTypeV1.LOCATION -> BibleCategory.LOCATION
+            CanonEntityTypeV1.ITEM -> BibleCategory.ITEM
+            CanonEntityTypeV1.RULE -> BibleCategory.RULE
+            CanonEntityTypeV1.WORLD -> BibleCategory.WORLD
+            CanonEntityTypeV1.STYLE -> BibleCategory.STYLE
         }
-}
+        val obs = cluster.observations.sortedWith(compareBy({ it.chapterNumber }, { it.partIndex }))
+        val recentEvidence = obs.takeLast(14).joinToString("\n") { item ->
+            buildString {
+                append("第${item.chapterNumber}章：").append(item.description)
+                if (item.evidence.isNotBlank()) append("；证据提示：").append(item.evidence)
+            }
+        }
+        BibleEntry(
+            id = "$EXTRACTED_PREFIX${cluster.type.name.lowercase()}:${stableId(cluster.name)}",
+            novelId = novelId,
+            category = category,
+            name = cluster.name,
+            content = recentEvidence + if (obs.size > 14) "\n（完整索引共 ${obs.size} 处章节记录，保存在原著库）" else "",
+            aliases = cluster.names.filterNot { normalizeName(it) == normalizeName(cluster.name) }.distinct().take(20),
+            locked = true,
+        )
+    }
 
 private fun buildCharacters(
     novelId: String,
@@ -783,41 +741,34 @@ private fun buildCharacters(
     archive: OriginalCanonArchiveV1,
 ): List<CharacterState> {
     val result = existing.toMutableList()
-    val characterClusters = clusters.filter { it.type == CanonEntityTypeV1.CHARACTER }.take(240)
-    val allEvents = archive.digests.flatMap { it.events }
-    val allKnowledge = archive.digests.flatMap { it.knowledge }
-    val allRelations = archive.digests.flatMap { it.relations }
+    val events = archive.digests.flatMap { it.events }
+    val knowledge = archive.digests.flatMap { it.knowledge }
+    val relations = archive.digests.flatMap { it.relations }
 
-    characterClusters.forEach { cluster ->
+    clusters.filter { it.type == CanonEntityTypeV1.CHARACTER }.take(240).forEach { cluster ->
         val names = cluster.names.map(::normalizeName).toSet() + normalizeName(cluster.name)
         val index = result.indexOfFirst { normalizeName(it.name) in names }
         val old = result.getOrNull(index)
         val lastChapter = cluster.observations.maxOfOrNull { it.chapterNumber } ?: 1
-        val lastLocation = allEvents
-            .filter { event -> event.participants.any { normalizeName(it) in names } && event.location.isNotBlank() }
+        val location = events
+            .filter { e -> e.location.isNotBlank() && e.participants.any { normalizeName(it) in names } }
             .maxWithOrNull(compareBy<CanonEventObservationV1>({ it.chapterNumber }, { it.partIndex }))
             ?.location.orEmpty()
-        val known = allKnowledge
-            .filter { normalizeName(it.character) in names }
-            .sortedBy { it.chapterNumber }
-            .map { it.fact }
-            .distinct()
-            .takeLast(80)
-        val relationNotes = allRelations
-            .filter { normalizeName(it.from) in names }
+        val knownFacts = knowledge.filter { normalizeName(it.character) in names }
+            .sortedBy { it.chapterNumber }.map { it.fact }.distinct().takeLast(80)
+        val relationNotes = relations.filter { normalizeName(it.from) in names }
             .groupBy { it.to }
             .mapValues { (_, values) ->
                 values.maxWithOrNull(compareBy<CanonRelationObservationV1>({ it.chapterNumber }, { it.partIndex }))
                     ?.let { "${it.label}${if (it.value.isNotBlank()) "：${it.value}" else ""}" }.orEmpty()
-            }
-            .filterValues { it.isNotBlank() }
+            }.filterValues { it.isNotBlank() }
         val description = cluster.observations.takeLast(8).joinToString("；") { it.description }.take(1200)
 
         val next = if (old != null) {
             old.copy(
-                location = old.location.ifBlank { lastLocation },
+                location = old.location.ifBlank { location },
                 goal = old.goal.ifBlank { description },
-                knownSecrets = (old.knownSecrets + known).distinct().takeLast(120),
+                knownSecrets = (old.knownSecrets + knownFacts).distinct().takeLast(120),
                 relationshipNotes = old.relationshipNotes + relationNotes,
                 lastUpdatedChapter = max(old.lastUpdatedChapter, lastChapter),
             )
@@ -827,11 +778,11 @@ private fun buildCharacters(
                 novelId = novelId,
                 name = cluster.name,
                 personality = emptyList(),
-                location = lastLocation,
+                location = location,
                 physicalState = "",
                 emotionalState = "",
                 goal = description,
-                knownSecrets = known,
+                knownSecrets = knownFacts,
                 possessions = emptyList(),
                 relationshipNotes = relationNotes,
                 lastUpdatedChapter = lastChapter,
@@ -842,38 +793,30 @@ private fun buildCharacters(
     return result
 }
 
-private fun buildTimeline(novelId: String, archive: OriginalCanonArchiveV1): List<TimelineEvent> {
-    return archive.digests.flatMap { it.events }
-        .sortedWith(compareBy({ it.chapterNumber }, { it.partIndex }))
-        .mapIndexed { index, event ->
-            TimelineEvent(
-                id = "$EXTRACTED_PREFIX" + "event:${event.chapterNumber}:${event.partIndex}:${index}",
-                novelId = novelId,
-                chapter = event.chapterNumber,
-                storyTime = event.storyTime,
-                location = event.location,
-                participants = event.participants,
-                summary = event.summary + if (event.evidence.isNotBlank()) "【证据提示：${event.evidence}】" else "",
-                consequences = event.consequences,
-                orderInChapter = event.partIndex,
-            )
-        }
-}
+private fun buildTimeline(novelId: String, archive: OriginalCanonArchiveV1): List<TimelineEvent> = archive.digests
+    .flatMap { it.events }
+    .sortedWith(compareBy({ it.chapterNumber }, { it.partIndex }))
+    .mapIndexed { index, event ->
+        TimelineEvent(
+            id = "$EXTRACTED_PREFIX" + "event:${event.chapterNumber}:${event.partIndex}:$index",
+            novelId = novelId,
+            chapter = event.chapterNumber,
+            storyTime = event.storyTime,
+            location = event.location,
+            participants = event.participants,
+            summary = event.summary + if (event.evidence.isNotBlank()) "【证据提示：${event.evidence}】" else "",
+            consequences = event.consequences,
+            orderInChapter = event.partIndex,
+        )
+    }
 
 private fun buildChapterSummaries(archive: OriginalCanonArchiveV1): Map<Int, String> = archive.digests
     .groupBy { it.chapterNumber }
     .mapValues { (_, parts) ->
-        parts.sortedBy { it.partIndex }
-            .joinToString(" ") { it.summary }
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(2_400)
+        parts.sortedBy { it.partIndex }.joinToString(" ") { it.summary }.replace(Regex("\\s+"), " ").trim().take(2_400)
     }
 
-private fun cleanField(value: String): String = value
-    .replace('|', '／')
-    .replace(Regex("\\s+"), " ")
-    .trim()
+private fun cleanField(value: String): String = value.replace('|', '／').replace(Regex("\\s+"), " ").trim()
 
 private fun splitList(value: String): List<String> = value
     .split(',', '，', '、', ';', '；')
@@ -881,17 +824,11 @@ private fun splitList(value: String): List<String> = value
     .filter { it.isNotBlank() && it != "无" && it != "未知" }
     .distinct()
 
-private fun normalizeName(value: String): String = value
-    .lowercase()
-    .replace(Regex("[\\s·•._—-]"), "")
-    .trim()
-
+private fun normalizeName(value: String): String = value.lowercase().replace(Regex("[\\s·•._—-]"), "").trim()
 private fun stableId(value: String): String = sha256(value).take(16)
-
-private fun sha256(value: String): String {
-    val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-    return bytes.joinToString("") { "%02x".format(it) }
-}
+private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+    .digest(value.toByteArray(Charsets.UTF_8))
+    .joinToString("") { "%02x".format(it) }
 
 private const val SOURCE_PART_CHARS = 7_800
 private const val BATCH_CHAR_BUDGET = 24_000
