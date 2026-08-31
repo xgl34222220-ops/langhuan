@@ -23,6 +23,7 @@ fun WritingFlowPage(
     novelId: String,
     viewModel: WritingFlowViewModel,
     onClose: () -> Unit,
+    onEditChapter: (novelId: String, chapterNumber: Int) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -237,8 +238,31 @@ fun WritingFlowPage(
 
             if (state.chapterCommitted && state.review == null && !state.isReviewing) {
                 item {
-                    FilledTonalButton(onClick = viewModel::reviewCommittedChapter, enabled = !state.busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
-                        Icon(Icons.Rounded.Memory, null); Spacer(Modifier.width(7.dp)); Text("整理本章记忆")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onEditChapter(draft.novelId, draft.chapterNumber) },
+                            enabled = !state.busy,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(18.dp),
+                        ) {
+                            Icon(Icons.Rounded.Edit, null); Spacer(Modifier.width(6.dp)); Text("继续修改")
+                        }
+                        FilledTonalButton(onClick = viewModel::reviewCommittedChapter, enabled = !state.busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp)) {
+                            Icon(Icons.Rounded.Memory, null); Spacer(Modifier.width(7.dp)); Text("整理记忆")
+                        }
+                    }
+                }
+            }
+
+            if (state.chapterCommitted && state.review != null) {
+                item {
+                    OutlinedButton(
+                        onClick = { onEditChapter(draft.novelId, draft.chapterNumber) },
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Icon(Icons.Rounded.Edit, null); Spacer(Modifier.width(7.dp)); Text("返回修改本章（确认后仍可反复修改）")
                     }
                 }
             }

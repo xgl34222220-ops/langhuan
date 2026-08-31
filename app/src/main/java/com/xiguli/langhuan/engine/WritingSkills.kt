@@ -106,6 +106,33 @@ object WritingSkillCatalog {
             ),
             author = "conorbronsdon",
         ),
+        WritingSkillDefinition(
+            id = "sepia-fiction",
+            name = "Sepia 叙事去 AI 化",
+            description = "从叙事结构、段落推进和表面文风三层诊断 AI 痕迹；先修结构，再做最小文字修改。",
+            version = "0.4.0-adapted",
+            license = "MIT",
+            sourceUrl = "https://github.com/Nanako0129/sepia",
+            sourceRevision = "94f6dc2fc1eaff50570e735f2ae397eedbd49782",
+            supportedTasks = setOf(
+                AiTaskType.SCENE_DIRECTOR,
+                AiTaskType.PROSE_AUTHOR,
+                AiTaskType.NOVELIZATION,
+                AiTaskType.EDITOR_REVIEW,
+                AiTaskType.EDITOR_REWRITE,
+                AiTaskType.AUTONOMOUS_PLANNER,
+                AiTaskType.FULL_BOOK_EDITOR,
+            ),
+            defaultTasks = setOf(
+                AiTaskType.SCENE_DIRECTOR,
+                AiTaskType.PROSE_AUTHOR,
+                AiTaskType.NOVELIZATION,
+                AiTaskType.EDITOR_REVIEW,
+                AiTaskType.EDITOR_REWRITE,
+                AiTaskType.FULL_BOOK_EDITOR,
+            ),
+            author = "Nanako Tsai",
+        ),
     )
 
     fun defaultBinding(skill: WritingSkillDefinition): WritingSkillBinding = WritingSkillBinding(
@@ -119,6 +146,7 @@ object WritingSkillCatalog {
         return when (skill.id) {
             "story-long-write" -> storyLongWriteGuidance(task)
             "avoid-ai-writing" -> avoidAiWritingGuidance(task)
+            "sepia-fiction" -> sepiaFictionGuidance(task)
             else -> ""
         }
     }
@@ -161,6 +189,32 @@ object WritingSkillCatalog {
             AiTaskType.NOVELIZATION -> "小说化阶段优先处理信息清单、功能动作堆叠、解释性结论和泛化恐怖意象。"
             AiTaskType.EDITOR_REVIEW -> "审稿阶段把 AI 腔问题定位到具体段落，并区分‘明显损伤叙事’与‘作者可能有意的重复/节奏’。"
             AiTaskType.EDITOR_REWRITE -> "修订阶段只改命中片段；不要把整章抛光成统一、无棱角的模型腔。"
+            else -> ""
+        }
+        return "$common\n$taskSpecific".trim()
+    }
+
+    private fun sepiaFictionGuidance(task: AiTaskType): String {
+        val common = """
+            来源适配：Nanako0129/sepia v0.4.0（MIT）。这是叙事校准方法，不是作者身份检测器。
+            - 修订顺序固定为“叙事结构 → 段落/信息推进 → 词句表面”。结构问题不能靠同义改写掩盖；先列出具体缺陷，再做最小必要修改。
+            - 不要把所有规则同时套满。只选择当前章节真正命中的 3-5 项，允许普通句、未被解释的细节和适度粗粝感；过度抛光本身也是模板。
+            - 逻辑必须成立，但“成立”不等于每个节拍都整齐服务单一主线。可以保留一个有生活质感的摩擦、旁支或未闭合细节，前提是不制造剧情漏洞、不违反章节合同。
+            - 主题默认由事件、选择和后果暗示；删除旁白替读者总结的人生道理、成长结论和对符号的解释。
+            - 情绪使用对白、行为、回避、误判、沉默、明确感受和身体反应的混合；身体感受只留在真正峰值，禁止全章反复“心头一紧/呼吸一滞”。
+            - 揭示尽量后置并分层；不要在场景刚开始就解释异常、人物动机或主题。章末优先落在外部行动、代价、未完成选择或新威胁，不默认用“终于理解/接受自己”收束。
+            - 段落长度、关键句位置和问答节拍要自然变化；禁止连续使用“提出问题→立即回答→总结意义”的同一模板。
+            - 现实作品、地点、品牌和技术细节只能来自已确认 Canon、可靠研究或正文原有事实；绝不为了增加“人味”发明具体信息。
+            - 尊重作者画像与人物对白。自然、有个人习惯的段落不动；优先替换或删除，新增只用于真实且必要的具体性。
+        """.trimIndent()
+        val taskSpecific = when (task) {
+            AiTaskType.SCENE_DIRECTOR -> "章纲导演：先检查主题是否被直接讲明、转折是否是该故事独有、信息是否过早给完；只选 3-5 个本章校准动作，不机械加支线。"
+            AiTaskType.PROSE_AUTHOR -> "正文作者：先保证人物为什么这么做在场景中成立，再避免单轨过度整齐、主题解说、同一种情绪写法和公式化成长收尾。"
+            AiTaskType.NOVELIZATION -> "小说化重构：先完整诊断再修改；保留事实、事件顺序、对白个性和粗粝处，只处理真正命中的结构/推进/表面指纹。"
+            AiTaskType.EDITOR_REVIEW -> "主编审稿：分别给出【叙事结构】【段落推进】【表面文风】证据；单个常见词不算问题，只有成簇重复或结构性模式才允许退稿。"
+            AiTaskType.EDITOR_REWRITE -> "主编修订：从最深层命中项开始，优先替换/删除；禁止把整章统一抛光成另一种模型模板。"
+            AiTaskType.AUTONOMOUS_PLANNER -> "自治规划：跨章检查单轨因果、支线缺失、揭示前置、结局总由主角成长解决等长期结构指纹，并保持适度而非反向拉满。"
+            AiTaskType.FULL_BOOK_EDITOR -> "全书主编：按章节抽样比较主题显性度、情绪模式、段落节拍、转折同质化与结尾模式；报告趋势，不因单章风格选择下结论。"
             else -> ""
         }
         return "$common\n$taskSpecific".trim()

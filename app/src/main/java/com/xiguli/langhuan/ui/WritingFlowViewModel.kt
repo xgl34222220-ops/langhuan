@@ -233,6 +233,14 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
 
     fun clearNotice() = _state.update { it.copy(message = null, error = null) }
 
+    /** The chapter editor persists through a separate store; force the next writing-page entry to reload it. */
+    fun invalidateAfterExternalEdit(novelId: String) {
+        val current = _state.value
+        if (current.novelId == novelId && !current.busy && !runtime.state.value.active) {
+            _state.value = WritingFlowUiState()
+        }
+    }
+
     private fun syncRuntimeState(run: ChapterRunRuntimeState) {
         val current = _state.value; val draft = current.draft ?: return
         if (!run.matches(current.novelId, draft.chapterNumber)) return

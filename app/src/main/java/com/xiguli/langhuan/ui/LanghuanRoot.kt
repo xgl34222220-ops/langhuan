@@ -319,6 +319,12 @@ fun LanghuanRoot(viewModel: StudioViewModel) {
                             reloadWorkspaceAfterOverlay()
                         }
                     },
+                    onEditChapter = { storyId, chapter ->
+                        editorStoryId = storyId
+                        editorChapter = chapter
+                        showWritingFlow = false
+                        showEditor = true
+                    },
                 )
             }
         }
