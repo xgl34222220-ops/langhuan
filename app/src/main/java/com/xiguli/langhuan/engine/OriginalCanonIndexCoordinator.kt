@@ -167,7 +167,9 @@ object OriginalCanonIndexCoordinator {
                 }
             }
         }
-        chunks.chunked(350).forEach(memoryDao::upsertAll)
+        for (batch in chunks.chunked(350)) {
+            memoryDao.upsertAll(batch)
+        }
         normalizeLegacySnapshot(context, archive.novelId)
     }
 
