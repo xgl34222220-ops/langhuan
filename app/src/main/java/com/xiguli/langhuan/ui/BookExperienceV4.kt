@@ -28,10 +28,6 @@ private enum class BookTabV4(val label: String) {
     SETTING("设定"),
 }
 
-/**
- * 一本文学作品的统一空间：看、写、进入故事和管理设定都从这里进入。
- * 第一阶段先复用既有阅读/写作/AI 能力，后续故事引擎直接接在 STORY 页，不再继续增加平行入口。
- */
 @Composable
 fun BookExperienceV4(
     viewModel: LibraryExperienceViewModel,
@@ -77,11 +73,7 @@ fun BookExperienceV4(
                     IconButton({ onOpenCoverStudio(book.id) }) { Icon(Icons.Rounded.Image, "封面") }
                     IconButton(onOpenAiSetup) { Icon(Icons.Rounded.MoreVert, "更多") }
                 }
-                ScrollableTabRow(
-                    selectedTabIndex = tab.ordinal,
-                    edgePadding = 12.dp,
-                    divider = {},
-                ) {
+                ScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 10.dp, divider = {}) {
                     BookTabV4.entries.forEach { item ->
                         Tab(
                             selected = tab == item,
@@ -117,12 +109,10 @@ fun BookExperienceV4(
                     onAgent = onOpenAgent,
                     onRunCenter = onOpenRunCenter,
                 )
-                BookTabV4.STORY -> StoryTabV4(
+                BookTabV4.STORY -> StoryPlayPanelV1(
                     book = book,
-                    state = state,
+                    libraryState = state,
                     aiReady = studioState.provider.ready,
-                    onEnter = onOpenAgent,
-                    onVariables = onOpenIntelligence,
                     onAiSetup = onOpenAiSetup,
                 )
                 BookTabV4.SETTING -> SettingTabV4(
@@ -276,59 +266,15 @@ private fun WritingTabV4(
             }
         }
         item {
-            ActionCardV4(Icons.Rounded.EditNote, current?.let { "编辑第 ${it.chapterNumber} 章" } ?: "编辑章节", "直接修改正文，确认过的章节也可以继续修改。", current != null) {
-                current?.let { onEdit(it.chapterNumber) }
-            }
+            ActionCardV4(
+                Icons.Rounded.EditNote,
+                current?.let { "编辑第 ${it.chapterNumber} 章" } ?: "编辑章节",
+                "直接修改正文，确认过的章节也可以继续修改。",
+                current != null,
+            ) { current?.let { onEdit(it.chapterNumber) } }
         }
         item { ActionCardV4(Icons.Rounded.SmartToy, "AI 助手", "讨论剧情、人物、章节走向和修改方案。", true, onAgent) }
         item { ActionCardV4(Icons.Rounded.TaskAlt, "后台任务", "查看正在生成、等待或失败的长篇任务。", true, onRunCenter) }
-    }
-}
-
-@Composable
-private fun StoryTabV4(
-    book: ReaderBookUi,
-    state: LibraryExperienceState,
-    aiReady: Boolean,
-    onEnter: () -> Unit,
-    onVariables: () -> Unit,
-    onAiSetup: () -> Unit,
-) {
-    val chapter = state.readingChapter ?: state.chapters.firstOrNull { it.chapterNumber == book.currentChapter } ?: state.chapters.lastOrNull()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 18.dp, 16.dp, 100.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Text("进入故事", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("从小说某一章进入，用自己的选择改变后续；原正文保持不动。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        item {
-            Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)) {
-                Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                    Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
-                    Spacer(Modifier.height(12.dp))
-                    Text(chapter?.let { "从第 ${it.chapterNumber} 章开始" } ?: "从作品开头开始", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("下一阶段会在这里落地世界快照、角色身份、选择分支和独立存档。", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(16.dp))
-                    Button(
-                        onClick = if (aiReady) onEnter else onAiSetup,
-                        modifier = Modifier.fillMaxWidth().height(54.dp),
-                        shape = RoundedCornerShape(18.dp),
-                    ) {
-                        Icon(if (aiReady) Icons.Rounded.PlayArrow else Icons.Rounded.Settings, null)
-                        Spacer(Modifier.width(7.dp))
-                        Text(if (aiReady) "进入故事" else "先配置 AI")
-                    }
-                }
-            }
-        }
-        item { ActionCardV4(Icons.Rounded.Tune, "故事变量与人物状态", "人物、时间线、伏笔和当前状态从这里统一查看。", true, onVariables) }
-        item {
-            Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
-                Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Text("原则", fontWeight = FontWeight.Bold)
-                    Text("原著/正文永远不被演绎覆盖；故事模式只写入自己的分支存档。", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
     }
 }
 
@@ -350,7 +296,15 @@ private fun SettingTabV4(
         item { ActionCardV4(Icons.Rounded.Hub, "人物 / 世界 / 时间线", "查看长期事实、人物状态、伏笔与故事一致性。", true, onIntelligence) }
         item { ActionCardV4(Icons.Rounded.SmartToy, "AI 助手", "围绕本书继续讨论和整理设定。", true, onAgent) }
         item { ActionCardV4(Icons.Rounded.Image, "封面工作室", "生成、预览、采用和恢复作品封面。", true, onCover) }
-        item { ActionCardV4(Icons.Rounded.CloudDone, if (aiReady) aiLabel.ifBlank { "AI 已连接" } else "配置 AI / 中转站", if (aiReady) "切换模型或修改当前服务。" else "添加兼容 OpenAI 风格接口的模型服务。", true, onAiSetup) }
+        item {
+            ActionCardV4(
+                Icons.Rounded.CloudDone,
+                if (aiReady) aiLabel.ifBlank { "AI 已连接" } else "配置 AI / 中转站",
+                if (aiReady) "切换模型或修改当前服务。" else "添加兼容 OpenAI 风格接口的模型服务。",
+                true,
+                onAiSetup,
+            )
+        }
     }
 }
 
