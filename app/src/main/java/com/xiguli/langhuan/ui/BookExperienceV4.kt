@@ -44,6 +44,7 @@ fun BookExperienceV4(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val book = state.openedBook ?: return
     var tab by remember(book.id) { mutableStateOf(BookTabV4.DIRECTORY) }
+    var showOriginalCanon by remember(book.id) { mutableStateOf(false) }
 
     LaunchedEffect(tab, book.id, state.readingChapter?.id) {
         if (tab == BookTabV4.READER && state.readingChapter == null) {
@@ -121,12 +122,23 @@ fun BookExperienceV4(
                     aiReady = studioState.provider.ready,
                     aiLabel = studioState.provider.activeProviderLabel,
                     onIntelligence = onOpenIntelligence,
+                    onExtractCanon = { showOriginalCanon = true },
                     onAgent = onOpenAgent,
                     onAiSetup = onOpenAiSetup,
                     onCover = { onOpenCoverStudio(book.id) },
                 )
             }
         }
+    }
+
+    if (showOriginalCanon) {
+        OriginalCanonExtractionDialogV1(
+            book = book,
+            chapters = state.chapters,
+            aiReady = studioState.provider.ready,
+            onDismiss = { showOriginalCanon = false },
+            onApplied = { viewModel.openBook(book.id) },
+        )
     }
 }
 
@@ -285,6 +297,7 @@ private fun SettingTabV4(
     aiReady: Boolean,
     aiLabel: String,
     onIntelligence: () -> Unit,
+    onExtractCanon: () -> Unit,
     onAgent: () -> Unit,
     onAiSetup: () -> Unit,
     onCover: () -> Unit,
@@ -295,6 +308,15 @@ private fun SettingTabV4(
             Text("《${book.title}》的人物、世界、记忆和 AI 配置。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { ActionCardV4(Icons.Rounded.Hub, "人物 / 世界 / 时间线", "查看长期事实、人物状态、伏笔与故事一致性。", true, onIntelligence) }
+        item {
+            ActionCardV4(
+                Icons.Rounded.MenuBook,
+                "从原著抽设定",
+                "逐章读取全书正文，建立人物、地点、规则、事件、关系和证据索引；支持断点继续。",
+                true,
+                onExtractCanon,
+            )
+        }
         item { ActionCardV4(Icons.Rounded.SmartToy, "AI 助手", "围绕本书继续讨论和整理设定。", true, onAgent) }
         item { ActionCardV4(Icons.Rounded.Image, "封面工作室", "生成、预览、采用和恢复作品封面。", true, onCover) }
         item {
