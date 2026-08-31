@@ -94,7 +94,7 @@ fun StoryPlayPanelV2(
     onAiSetup: () -> Unit,
     onAdopted: () -> Unit,
 ) {
-    val storyVm: StoryPlayViewModel = viewModel()
+    val storyVm: StoryPlayV3ViewModel = viewModel()
     val storyState by storyVm.state.collectAsStateWithLifecycle()
     val adoptionVm: StoryDraftAdoptionViewModel = viewModel()
     val adoptionState by adoptionVm.state.collectAsStateWithLifecycle()
@@ -106,7 +106,7 @@ fun StoryPlayPanelV2(
     }
 
     Box(Modifier.fillMaxSize()) {
-        StoryPlayPanelV1(
+        StoryPlayPanelV3(
             book = book,
             libraryState = libraryState,
             aiReady = aiReady,
