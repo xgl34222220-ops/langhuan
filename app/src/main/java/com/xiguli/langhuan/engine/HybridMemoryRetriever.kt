@@ -7,6 +7,11 @@ import kotlin.math.sqrt
  *
  * 不引入本地大模型：把中英文词元、中文 2/3-gram 哈希到固定维度向量，
  * 用余弦相似度 + 精确词元 + 来源权重 + 章节距离进行排序。
+ *
+ * 章节边界是硬过滤，不参与打分：
+ * - 普通记忆只允许 currentChapter 及之前；
+ * - ORIGINAL_* 原著证据严格只允许 currentChapter 之前，防止“写第301章时偷看第301章原文”。
+ * Story Runtime 若要让“从第300章进入故事”看到第300章事实，可用 currentChapter=301 调用。
  */
 data class MemoryCandidate(
     val text: String,
@@ -38,6 +43,11 @@ class HybridMemoryRetriever(
         val now = System.currentTimeMillis()
 
         return candidates.asSequence()
+            .filter { candidate ->
+                val chapter = candidate.chapterNumber ?: return@filter true
+                if (candidate.sourceType.startsWith("ORIGINAL_")) chapter < currentChapter
+                else chapter <= currentChapter
+            }
             .map { candidate ->
                 val vectorScore = cosine(queryVector, vectorize(candidate.text))
                 val candidateTerms = terms(candidate.text)
@@ -45,6 +55,11 @@ class HybridMemoryRetriever(
                     queryTerms.count { it in candidateTerms }.toDouble() / queryTerms.size
                 }
                 val sourceBoost = when (candidate.sourceType) {
+                    "ORIGINAL_KNOWLEDGE" -> 1.0
+                    "ORIGINAL_RELATION" -> 0.99
+                    "ORIGINAL_ENTITY" -> 0.98
+                    "ORIGINAL_EVENT" -> 0.97
+                    "ORIGINAL_SUMMARY" -> 0.95
                     "BIBLE" -> 1.0
                     "CHARACTER" -> 0.94
                     "GROWTH" -> 0.93
@@ -65,6 +80,7 @@ class HybridMemoryRetriever(
                 val score = vectorScore * 0.59 + exactScore * 0.22 +
                     sourceBoost * 0.10 + chapterBoost * 0.06 + freshness * 0.03
                 val reasons = buildList {
+                    if (candidate.sourceType.startsWith("ORIGINAL_")) add("原著章节边界内证据")
                     if (vectorScore >= 0.28) add("语义相关")
                     if (exactScore >= 0.12) add("关键词命中")
                     if (sourceBoost >= 0.90) add("高优先级结构化记忆")

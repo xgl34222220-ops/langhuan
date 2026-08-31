@@ -106,7 +106,7 @@ fun StoryPlayPanelV2(
     }
 
     Box(Modifier.fillMaxSize()) {
-        StoryPlayPanelV3(
+        StoryPlayPanelV4(
             book = book,
             libraryState = libraryState,
             aiReady = aiReady,
