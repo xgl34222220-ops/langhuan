@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.engine.OriginalCanonIndexCoordinator
 import com.xiguli.langhuan.ui.LanghuanRootV3
 import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.theme.LanghuanTheme
@@ -12,6 +13,7 @@ import com.xiguli.langhuan.ui.theme.LanghuanTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OriginalCanonIndexCoordinator.start(applicationContext)
         enableEdgeToEdge()
         setContent {
             LanghuanTheme {
