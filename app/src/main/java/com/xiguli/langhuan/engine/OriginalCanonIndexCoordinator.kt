@@ -66,6 +66,9 @@ object OriginalCanonIndexCoordinator {
         val db = LanghuanDatabase.get(context)
         val memoryDao = db.memoryChunkDao()
         memoryDao.deleteOriginalCanonForNovel(archive.novelId)
+        // 清掉 PR #28 第一版“整本注入”产生的普通 BIBLE / CHARACTER / TIMELINE 记忆，
+        // 否则这些无章节边界的旧 chunk 仍可能绕过 ORIGINAL_* 硬过滤。
+        memoryDao.deleteLegacyOriginalCanonStructured(archive.novelId)
 
         if (archive.appliedAt <= 0L || archive.digests.isEmpty()) return
 
@@ -169,7 +172,7 @@ object OriginalCanonIndexCoordinator {
     }
 
     /**
-     * 0.28.0-alpha 的第一版“写入 Canon”曾把全书抽取结果直接塞进 StorySnapshot。
+     * PR #28 第一版“写入 Canon”曾把全书抽取结果直接塞进 StorySnapshot。
      * 启用章节有界 RAG 后把这些自动注入项清掉，避免第 300 章看到第 800 章的设定。
      */
     private suspend fun normalizeLegacySnapshot(context: Context, novelId: String) {
