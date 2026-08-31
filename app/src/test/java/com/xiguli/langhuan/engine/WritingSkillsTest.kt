@@ -52,6 +52,35 @@ class WritingSkillsTest {
         assertFalse(AiTaskType.SCENE_DIRECTOR in binding.tasks)
     }
 
+    @Test
+    fun sepiaSkillKeepsAttributionAndUsesTheThreePassMethod() {
+        val sepia = WritingSkillCatalog.all.first { it.id == "sepia-fiction" }
+
+        assertEquals("MIT", sepia.license)
+        assertEquals("Nanako Tsai", sepia.author)
+        assertEquals("https://github.com/Nanako0129/sepia", sepia.sourceUrl)
+        assertEquals("94f6dc2fc1eaff50570e735f2ae397eedbd49782", sepia.sourceRevision)
+
+        val guidance = WritingSkillCatalog.guidance(sepia, AiTaskType.EDITOR_REVIEW)
+        assertTrue(guidance.contains("叙事结构"))
+        assertTrue(guidance.contains("段落/信息推进"))
+        assertTrue(guidance.contains("词句表面"))
+        assertTrue(guidance.contains("3-5"))
+        assertTrue(guidance.contains("绝不为了增加“人味”发明具体信息"))
+    }
+
+    @Test
+    fun sepiaIsEnabledForWritingAndEditingButNotAutonomousPlanningByDefault() {
+        val sepia = WritingSkillCatalog.all.first { it.id == "sepia-fiction" }
+        val binding = WritingSkillCatalog.defaultBinding(sepia)
+
+        assertTrue(AiTaskType.PROSE_AUTHOR in binding.tasks)
+        assertTrue(AiTaskType.EDITOR_REVIEW in binding.tasks)
+        assertTrue(AiTaskType.FULL_BOOK_EDITOR in binding.tasks)
+        assertTrue(AiTaskType.AUTONOMOUS_PLANNER in sepia.supportedTasks)
+        assertFalse(AiTaskType.AUTONOMOUS_PLANNER in binding.tasks)
+    }
+
     private class CapturingGateway : AiGateway {
         var lastPrompt: PromptBundle? = null
 

@@ -16,6 +16,7 @@ private enum class RootRouteV3 {
     BOOK,
     CREATION,
     WRITING,
+    EDITOR,
     AGENT,
     INTELLIGENCE,
     RUN_CENTER,
@@ -38,6 +39,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     val libraryState by libraryVm.state.collectAsStateWithLifecycle()
     val creationVm: NewBookConversationViewModel = viewModel()
     val writingVm: WritingFlowViewModel = viewModel()
+    val editorVm: ChapterEditorViewModel = viewModel()
     val runCenterVm: RunCenterViewModel = viewModel()
     val runCenterState by runCenterVm.state.collectAsStateWithLifecycle()
     val skillVm: WritingSkillViewModel = viewModel()
@@ -46,7 +48,10 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     var route by remember { mutableStateOf(RootRouteV3.SHELF) }
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV3.SHELF) }
     var returnAfterSkills by remember { mutableStateOf(RootRouteV3.SHELF) }
+    var returnAfterEditor by remember { mutableStateOf(RootRouteV3.BOOK) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
+    var editorStoryId by remember { mutableStateOf<String?>(null) }
+    var editorChapter by remember { mutableStateOf<Int?>(null) }
     var coverStoryId by remember { mutableStateOf<String?>(null) }
 
     @Suppress("UNUSED_VARIABLE")
@@ -147,6 +152,12 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                                 studioVm.selectStory(id)
                                 route = RootRouteV3.WRITING
                             },
+                            onOpenEditor = { id, chapter ->
+                                editorStoryId = id
+                                editorChapter = chapter
+                                returnAfterEditor = RootRouteV3.BOOK
+                                route = RootRouteV3.EDITOR
+                            },
                             onOpenAgent = { route = RootRouteV3.AGENT },
                             onOpenIntelligence = { route = RootRouteV3.INTELLIGENCE },
                             onOpenRunCenter = { route = RootRouteV3.RUN_CENTER },
@@ -182,6 +193,26 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         onClose = {
                             libraryVm.openBook(id)
                             route = RootRouteV3.BOOK
+                        },
+                        onEditChapter = { storyId, chapter ->
+                            editorStoryId = storyId
+                            editorChapter = chapter
+                            returnAfterEditor = RootRouteV3.WRITING
+                            route = RootRouteV3.EDITOR
+                        },
+                    )
+                }
+
+                RootRouteV3.EDITOR -> {
+                    val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
+                    ChapterEditorPage(
+                        novelId = id,
+                        initialChapter = editorChapter,
+                        viewModel = editorVm,
+                        onClose = {
+                            writingVm.invalidateAfterExternalEdit(id)
+                            libraryVm.openBook(id)
+                            route = returnAfterEditor
                         },
                     )
                 }

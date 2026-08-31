@@ -148,6 +148,7 @@ fun ReaderFirstLibraryV3(
     studioState: StudioUiState,
     onBackToShelf: () -> Unit,
     onEnterWriting: (String) -> Unit,
+    onOpenEditor: (String, Int) -> Unit,
     onOpenAgent: () -> Unit,
     onOpenIntelligence: () -> Unit,
     onOpenRunCenter: () -> Unit,
@@ -164,6 +165,7 @@ fun ReaderFirstLibraryV3(
             onBack = viewModel::closeReader,
             onOpenChapter = viewModel::openReader,
             onWrite = { onEnterWriting(book.id) },
+            onEdit = { onOpenEditor(book.id, state.readingChapter?.chapterNumber ?: book.currentChapter) },
         )
         return
     }
@@ -366,6 +368,9 @@ fun ReaderFirstLibraryV3(
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
+                            IconButton(onClick = { onOpenEditor(book.id, chapter.chapterNumber) }) {
+                                Icon(Icons.Rounded.Edit, "修改第${chapter.chapterNumber}章")
+                            }
                             Icon(Icons.Rounded.ChevronRight, null)
                         }
                     }
@@ -488,6 +493,7 @@ private fun ReaderV3(
     onBack: () -> Unit,
     onOpenChapter: (Int) -> Unit,
     onWrite: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     val chapter = state.readingChapter ?: return
     val chapters = state.chapters.sortedBy { it.chapterNumber }
@@ -506,7 +512,8 @@ private fun ReaderV3(
                 Text("《${book.title}》 · 第${chapter.chapterNumber}章", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Text(chapter.title.ifBlank { "第${chapter.chapterNumber}章" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onWrite) { Icon(Icons.Rounded.EditNote, "继续创作") }
+            IconButton(onEdit) { Icon(Icons.Rounded.Edit, "修改当前章节") }
+            IconButton(onWrite) { Icon(Icons.Rounded.AutoAwesome, "继续创作") }
         }
         HorizontalDivider()
         Column(
