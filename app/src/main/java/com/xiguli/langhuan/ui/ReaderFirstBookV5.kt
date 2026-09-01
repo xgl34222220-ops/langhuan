@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,7 +81,8 @@ fun ReaderFirstBookV5(
             SmallFloatingActionButton(
                 onClick = { route = ReaderBookRouteV5.READER },
                 modifier = Modifier.statusBarsPadding().padding(14.dp).align(Alignment.TopStart),
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+                shape = RoundedCornerShape(18.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .95f),
             ) { Icon(Icons.Rounded.ArrowBack, "返回阅读") }
         }
     }
@@ -103,7 +105,7 @@ private fun ReaderBookOverviewV5(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             Row(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onBack) { Icon(Icons.Rounded.ArrowBack, "返回书架") }
@@ -116,25 +118,38 @@ private fun ReaderBookOverviewV5(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
+            val coverShape = RoundedCornerShape(18.dp)
             CoverPreviewV3(
                 book.coverPath,
                 book.title,
-                Modifier.width(168.dp).height(240.dp).clip(RoundedCornerShape(18.dp)),
+                Modifier
+                    .width(168.dp)
+                    .height(240.dp)
+                    .shadow(12.dp, coverShape, clip = false)
+                    .clip(coverShape),
             )
-            Spacer(Modifier.height(24.dp))
-            Text(book.title, fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(26.dp))
+            Text(
+                book.title,
+                fontSize = 27.sp,
+                lineHeight = 33.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.height(6.dp))
             Text(
-                if (book.genre == "导入作品") "本地书籍 · ${state.chapters.size} 章 · ${overviewWordsV5(book.currentWords)}" else "${book.genre} · ${state.chapters.size} 章 · ${overviewWordsV5(book.currentWords)}",
+                if (book.genre == "导入作品") "本地书籍 · ${state.chapters.size} 章 · ${overviewWordsV5(book.currentWords)}"
+                else "${book.genre} · ${state.chapters.size} 章 · ${overviewWordsV5(book.currentWords)}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(24.dp))
 
             Button(
                 onClick = onContinue,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(28.dp),
                 enabled = state.chapters.isNotEmpty(),
             ) {
                 Icon(Icons.Rounded.MenuBook, null)
@@ -144,8 +159,8 @@ private fun ReaderBookOverviewV5(
             Spacer(Modifier.height(10.dp))
             OutlinedButton(
                 onClick = onStory,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = RoundedCornerShape(28.dp),
                 enabled = state.chapters.isNotEmpty(),
             ) {
                 Icon(Icons.Rounded.AutoAwesome, null)
@@ -153,7 +168,7 @@ private fun ReaderBookOverviewV5(
                 Text("进入故事")
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(30.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ReaderQuickActionV5(Icons.Rounded.FormatListBulleted, "目录", Modifier.weight(1f)) { showDirectory = true }
                 ReaderQuickActionV5(Icons.Rounded.EditNote, "创作", Modifier.weight(1f), onWriting)
@@ -161,7 +176,7 @@ private fun ReaderBookOverviewV5(
             }
 
             if (book.premise.isNotBlank() && book.premise != "从外部稿件导入，待补充核心命题与完整大纲。") {
-                Spacer(Modifier.height(30.dp))
+                Spacer(Modifier.height(32.dp))
                 Column(Modifier.fillMaxWidth()) {
                     Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
@@ -178,17 +193,27 @@ private fun ReaderBookOverviewV5(
                 Text("最近章节", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 state.chapters.take(6).forEach { chapter ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { onChapter(chapter.chapterNumber) }.padding(vertical = 13.dp),
+                        Modifier.fillMaxWidth().clickable { onChapter(chapter.chapterNumber) }.padding(vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("${chapter.chapterNumber}", modifier = Modifier.width(34.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text(chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "${chapter.chapterNumber}",
+                            modifier = Modifier.width(36.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" },
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
                 }
             }
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(44.dp))
         }
     }
 
@@ -207,10 +232,17 @@ private fun ReaderQuickActionV5(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    Surface(modifier.clickable(onClick = onClick), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 15.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(7.dp))
             Text(label, style = MaterialTheme.typography.labelLarge)
         }
     }
@@ -250,9 +282,17 @@ private fun ImmersiveReaderV5(
     ) {
         SelectionContainer {
             Column(
-                Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = sidePadding.dp).padding(top = 58.dp, bottom = 96.dp),
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scroll)
+                    .padding(horizontal = sidePadding.dp)
+                    .padding(top = 64.dp, bottom = 118.dp),
             ) {
-                Text("第 ${chapter.chapterNumber} 章", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    "第 ${chapter.chapterNumber} 章",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
                 Text(
                     chapter.title.ifBlank { "未命名章节" },
                     modifier = Modifier.padding(top = 8.dp),
@@ -260,13 +300,13 @@ private fun ImmersiveReaderV5(
                     lineHeight = (fontSize + 13).sp,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(Modifier.height(26.dp))
+                Spacer(Modifier.height(28.dp))
                 Text(
                     chapter.content.ifBlank { "这一章没有正文。" },
                     fontSize = fontSize.sp,
                     lineHeight = (fontSize * lineFactor).sp,
                 )
-                Spacer(Modifier.height(36.dp))
+                Spacer(Modifier.height(40.dp))
                 Text(
                     "— 第 ${chapter.chapterNumber} 章完 —",
                     modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -278,16 +318,27 @@ private fun ImmersiveReaderV5(
 
         if (chrome) {
             Surface(
-                Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = .97f),
-                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(26.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .95f),
+                tonalElevation = 3.dp,
             ) {
                 Row(
-                    Modifier.statusBarsPadding().padding(horizontal = 4.dp, vertical = 2.dp),
+                    Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
-                    Text(book.title, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                    Text(
+                        book.title,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
                     IconButton({ showDirectory = true }) { Icon(Icons.Rounded.FormatListBulleted, "目录") }
                     IconButton({ showSettings = true }) { Icon(Icons.Rounded.TextFields, "阅读设置") }
                     IconButton({ onEdit(chapter.chapterNumber) }) { Icon(Icons.Rounded.EditNote, "编辑") }
@@ -295,17 +346,28 @@ private fun ImmersiveReaderV5(
             }
 
             Surface(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = .98f),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, bottom = 8.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .96f),
                 tonalElevation = 4.dp,
             ) {
-                Column(Modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     LinearProgressIndicator(
                         progress = { if (ordered.isEmpty()) 0f else ((index + 1f) / ordered.size).coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth().height(2.dp).clip(RoundedCornerShape(99.dp)),
                     )
-                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onPrevious, enabled = index > 0) { Icon(Icons.Rounded.ChevronLeft, null); Text("上一章") }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onPrevious, enabled = index > 0) {
+                            Icon(Icons.Rounded.ChevronLeft, null)
+                            Text("上一章")
+                        }
                         Text(
                             "${chapter.chapterNumber} / ${ordered.size}",
                             modifier = Modifier.weight(1f),
@@ -313,9 +375,16 @@ private fun ImmersiveReaderV5(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        TextButton(onNext, enabled = index >= 0 && index < ordered.lastIndex) { Text("下一章"); Icon(Icons.Rounded.ChevronRight, null) }
+                        TextButton(onNext, enabled = index >= 0 && index < ordered.lastIndex) {
+                            Text("下一章")
+                            Icon(Icons.Rounded.ChevronRight, null)
+                        }
                     }
-                    Button(onStory, Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
+                    Button(
+                        onClick = onStory,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(24.dp),
+                    ) {
                         Icon(Icons.Rounded.AutoAwesome, null)
                         Spacer(Modifier.width(7.dp))
                         Text("从这一章进入故事")
@@ -332,12 +401,19 @@ private fun ImmersiveReaderV5(
 
     if (showSettings) {
         ModalBottomSheet(onDismissRequest = { showSettings = false }) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp)) {
+            Column(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp),
+            ) {
                 Text("阅读设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("字号", modifier = Modifier.padding(top = 20.dp), fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("A", fontSize = 15.sp)
-                    Slider(fontSize, { fontSize = it }, valueRange = 15f..28f, modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
+                    Slider(
+                        fontSize,
+                        { fontSize = it },
+                        valueRange = 15f..28f,
+                        modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                    )
                     Text("A", fontSize = 25.sp)
                 }
                 Text("行距", modifier = Modifier.padding(top = 8.dp), fontWeight = FontWeight.Medium)
@@ -359,7 +435,10 @@ private fun ChapterDirectorySheetV5(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column(Modifier.weight(1f)) {
                     Text("目录", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text("${state.chapters.size} 章", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -370,11 +449,15 @@ private fun ChapterDirectorySheetV5(
                 Modifier.fillMaxWidth().heightIn(max = 620.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                items(state.chapters.sortedBy { it.chapterNumber }.size) { i ->
-                    val chapter = state.chapters.sortedBy { it.chapterNumber }[i]
+                val ordered = state.chapters.sortedBy { it.chapterNumber }
+                items(ordered.size) { i ->
+                    val chapter = ordered[i]
                     val selected = chapter.id == state.readingChapter?.id
                     Row(
-                        Modifier.fillMaxWidth().clickable { onChapter(chapter.chapterNumber) }.padding(horizontal = 22.dp, vertical = 14.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onChapter(chapter.chapterNumber) }
+                            .padding(horizontal = 22.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -391,7 +474,14 @@ private fun ChapterDirectorySheetV5(
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                         )
-                        if (selected) Icon(Icons.Rounded.RadioButtonChecked, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        if (selected) {
+                            Icon(
+                                Icons.Rounded.RadioButtonChecked,
+                                null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -399,4 +489,5 @@ private fun ChapterDirectorySheetV5(
     }
 }
 
-private fun overviewWordsV5(words: Int): String = if (words >= 10_000) "%.1f 万字".format(words / 10_000f) else "$words 字"
+private fun overviewWordsV5(words: Int): String =
+    if (words >= 10_000) "%.1f 万字".format(words / 10_000f) else "$words 字"
