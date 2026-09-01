@@ -157,13 +157,11 @@ internal fun parseStoryCanonRoleCandidatesV1(rawJson: String, anchorChapter: Int
                     found.firstChapter = minOf(found.firstChapter, digest.chapterNumber)
                     found.lastChapter = maxOf(found.lastChapter, digest.chapterNumber)
                     found.mentions += 1
-                    // 优先更短、通常更接近标准称呼的名字；别名仍完整保留。
                     if (entity.name.isNotBlank() && entity.name.length < found.name.length) found.name = entity.name.trim()
                 }
             }
     }
 
-    // 某些抽取批次可能只产生 KNOWLEDGE 没产生 CHARACTER；仍给角色选择器补一个候选。
     visible.flatMap { digest -> digest.knowledge.map { digest.chapterNumber to it } }.forEach { (chapter, item) ->
         if (item.character.isBlank()) return@forEach
         val key = normalizeStoryRoleNameV1(item.character)
@@ -297,9 +295,6 @@ private enum class StoryRoleModeV1(val label: String) {
     CANON("原著角色"), SELF("作为自己"), CUSTOM("原创角色")
 }
 
-/**
- * V6 只负责身份选择，底下继续复用 V2 → V4 → V3 的故事、原著边界和草稿采用链路。
- */
 @Composable
 fun StoryPlayPanelV6(
     book: ReaderBookUi,
@@ -364,22 +359,13 @@ fun StoryPlayPanelV6(
                     forbiddenKnowledge = "严格禁止知道第${anchorChapter + 1}章及之后的原著信息；未在截至第${anchorChapter}章知识账本中出现的秘密视为未知。",
                 )
                 storyVm.updateProfile(profile)
-                // 给 Runtime 再种一份结构化账本，DM 可按角色精确隔离，而不只依赖角色卡长文本。
+                // 只自动写入明确的 KNOWLEDGE。关系观察用于角色预览，但不等于玩家角色主观知道该关系。
                 visibleFacts.takeLast(MAX_RUNTIME_FACTS_V1).forEach { fact ->
                     storyVm.addKnowledge(
                         character = candidate.name,
                         fact = fact.fact,
                         source = "原著第${fact.chapter}章${fact.evidence.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}",
                         kind = StoryKnowledgeKindV3.KNOWN,
-                    )
-                }
-                candidate.relationships.takeLast(MAX_RUNTIME_RELATIONS_V1).forEach { relation ->
-                    storyVm.addRelationship(
-                        from = relation.from,
-                        to = relation.to,
-                        label = relation.label,
-                        value = relation.value,
-                        evidence = "原著第${relation.chapter}章${relation.evidence.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}",
                     )
                 }
                 showBinding = false
@@ -566,4 +552,3 @@ private fun StoryRoleBindingDialogV1(
 
 private const val MAX_PROFILE_FACTS_V1 = 32
 private const val MAX_RUNTIME_FACTS_V1 = 18
-private const val MAX_RUNTIME_RELATIONS_V1 = 12
