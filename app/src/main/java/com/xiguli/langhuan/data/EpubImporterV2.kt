@@ -204,7 +204,7 @@ object EpubImporterV2 {
 
         val html = bytes.toString(Charsets.UTF_8)
         return Regex(
-            """(?is)<a\\b[^>]*href\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>"""
+            """(?is)<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>"""
         ).findAll(html).mapNotNull { match ->
             navEntry(navPath, match.groupValues[1], match.groupValues[2].stripTags().decodeHtmlEntities())
         }.toList()
@@ -224,11 +224,11 @@ object EpubImporterV2 {
         }
 
         val xml = bytes.toString(Charsets.UTF_8)
-        return Regex("""(?is)<navPoint\\b.*?</navPoint>""").findAll(xml).mapNotNull { point ->
+        return Regex("""(?is)<navPoint\b.*?</navPoint>""").findAll(xml).mapNotNull { point ->
             val block = point.value
-            val src = Regex("""(?is)<content\\b[^>]*src\\s*=\\s*[\"']([^\"']+)[\"']""")
+            val src = Regex("""(?is)<content\b[^>]*src\s*=\s*["']([^"']+)["']""")
                 .find(block)?.groupValues?.getOrNull(1).orEmpty()
-            val label = Regex("""(?is)<navLabel\\b.*?<text\\b[^>]*>(.*?)</text>.*?</navLabel>""")
+            val label = Regex("""(?is)<navLabel\b.*?<text\b[^>]*>(.*?)</text>.*?</navLabel>""")
                 .find(block)?.groupValues?.getOrNull(1).orEmpty().stripTags().decodeHtmlEntities()
             navEntry(ncxPath, src, label)
         }.toList()
@@ -307,7 +307,7 @@ object EpubImporterV2 {
                     }?.takeIf { it.isNotBlank() }
             } ?: run {
                 val html = bytes.toString(Charsets.UTF_8)
-                Regex("""(?is)<(?:img|image)\\b[^>]*(?:src|(?:xlink:)?href)\\s*=\\s*[\"']([^\"']+)[\"']""")
+                Regex("""(?is)<(?:img|image)\b[^>]*(?:src|(?:xlink:)?href)\s*=\s*["']([^"']+)["']""")
                     .find(html)?.groupValues?.getOrNull(1)
             }
             if (!rawImage.isNullOrBlank()) {
@@ -336,7 +336,8 @@ object EpubImporterV2 {
             manifest.values.filter { item ->
                 item.mediaType.contains("xhtml") || item.mediaType == "text/html" ||
                     item.href.endsWith(".xhtml", true) || item.href.endsWith(".html", true)
-            }.sortedBy { naturalOrderKey(it.href) }
+            }.filterNot { "nav" in it.properties }
+                .sortedBy { naturalOrderKey(it.href) }
         }
 
         val chapters = mutableListOf<ImportedChapter>()
@@ -381,10 +382,14 @@ object EpubImporterV2 {
 
         if (chapters.isNotEmpty()) return chapters
 
+        val navigationResources = manifest.values
+            .filter { "nav" in it.properties || it.mediaType == "application/x-dtbncx+xml" }
+            .map { resolvePath(opfPath, it.href) }
+            .toSet()
         return archive.entries
             .filter { (path, _) ->
                 (path.endsWith(".xhtml", true) || path.endsWith(".html", true)) &&
-                    navigation.none { nav -> nav.path.equals(path, true) && nav.label.equals("目录", true) }
+                    navigationResources.none { it.equals(path, true) }
             }
             .sortedBy { naturalOrderKey(it.key) }
             .mapNotNull { (path, content) ->
@@ -393,7 +398,7 @@ object EpubImporterV2 {
                 if (text.isBlank()) null else ImportedChapter(
                     title = navigation.firstOrNull { it.path.equals(path, true) }?.label
                         ?: extractDocumentTitle(html)
-                        ?: "第1章",
+                        ?: "第${path.hashCode().toUInt().toString(16)}章",
                     content = text,
                 )
             }
@@ -409,33 +414,30 @@ object EpubImporterV2 {
     private fun findAnchor(html: String, fragment: String): MatchResult? {
         if (fragment.isBlank()) return null
         val escaped = Regex.escape(fragment)
-        val regex = Regex(
-            """(?is)<[^>]+(?:id|name)\\s*=\\s*[\"']$escaped[\"'][^>]*>"""
-        )
-        return regex.find(html)
+        return Regex("""(?is)<[^>]+(?:id|name)\s*=\s*["']$escaped["'][^>]*>""").find(html)
     }
 
     private fun extractDocumentTitle(html: String): String? {
         val heading = Regex(
-            """(?is)<h[1-3]\\b[^>]*>(.*?)</h[1-3]>"""
+            """(?is)<h[1-3]\b[^>]*>(.*?)</h[1-3]>"""
         ).find(html)?.groupValues?.getOrNull(1)
             ?.stripTags()?.decodeHtmlEntities()?.cleanInlineText().orEmpty()
         if (heading.isNotBlank()) return heading
 
-        val title = Regex("""(?is)<title\\b[^>]*>(.*?)</title>""")
+        val title = Regex("""(?is)<title\b[^>]*>(.*?)</title>""")
             .find(html)?.groupValues?.getOrNull(1)
             ?.stripTags()?.decodeHtmlEntities()?.cleanInlineText().orEmpty()
         return title.takeIf { it.isNotBlank() }
     }
 
     private fun htmlToText(html: String): String {
-        var body = Regex("""(?is)<body\\b[^>]*>(.*?)</body>""")
+        var body = Regex("""(?is)<body\b[^>]*>(.*?)</body>""")
             .find(html)?.groupValues?.getOrNull(1) ?: html
         body = body
-            .replace(Regex("""(?is)<(?:script|style|head|nav|svg)\\b[^>]*>.*?</(?:script|style|head|nav|svg)>"""), "")
-            .replace(Regex("""(?i)<br\\s*/?>"""), "\n")
+            .replace(Regex("""(?is)<(?:script|style|head|nav|svg)\b[^>]*>.*?</(?:script|style|head|nav|svg)>"""), "")
+            .replace(Regex("""(?i)<br\s*/?>"""), "\n")
             .replace(Regex("""(?i)</(?:p|div|section|article|blockquote|li|h[1-6]|tr)>"""), "\n\n")
-            .replace(Regex("""(?i)<li\\b[^>]*>"""), "")
+            .replace(Regex("""(?i)<li\b[^>]*>"""), "")
             .stripTags()
             .decodeHtmlEntities()
             .replace('\u00A0', ' ')
@@ -465,7 +467,7 @@ object EpubImporterV2 {
 
     private fun looksLikeChapterLabel(label: String): Boolean {
         val value = label.cleanInlineText()
-        return Regex("""(?i)^(第.{1,12}[章回节卷]|chapter\\s*\\d+|ch\\.?\\s*\\d+)""").containsMatchIn(value)
+        return Regex("""(?i)^(第.{1,12}[章回节卷]|chapter\s*\d+|ch\.?\s*\d+)""").containsMatchIn(value)
     }
 
     private fun parseXml(bytes: ByteArray): Document? = runCatching {
