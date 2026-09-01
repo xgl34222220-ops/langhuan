@@ -142,7 +142,7 @@ class NpcOffscreenViewModelV1(application: Application) : AndroidViewModel(appli
                         emotion = npc.emotion,
                         goal = npc.currentGoal,
                         returnCue = when (npc.presence) {
-                            NpcPresenceV1.PRESENT -> OffscreenReturnCueV1.RETURN_NOW
+                            NpcPresenceV1.PRESENT -> OffscreenReturnCueV1.STAY_AWAY
                             NpcPresenceV1.NEARBY -> OffscreenReturnCueV1.NEARBY
                             NpcPresenceV1.AWAY -> OffscreenReturnCueV1.STAY_AWAY
                         },
@@ -507,14 +507,17 @@ internal fun desiredPresenceAfterOffscreenV1(
     previous: NpcPresenceV1,
     actor: NpcOffscreenActorV1,
     playerLocation: String,
-): NpcPresenceV1 = when (actor.returnCue) {
-    OffscreenReturnCueV1.STAY_AWAY -> if (previous == NpcPresenceV1.PRESENT) NpcPresenceV1.PRESENT else NpcPresenceV1.AWAY
-    OffscreenReturnCueV1.NEARBY -> if (previous == NpcPresenceV1.PRESENT) NpcPresenceV1.PRESENT else NpcPresenceV1.NEARBY
-    OffscreenReturnCueV1.RETURN_NOW -> {
-        val actorLoc = normalizeOffscreenLocationV1(actor.location)
-        val playerLoc = normalizeOffscreenLocationV1(playerLocation)
-        if (actorLoc.isNotBlank() && playerLoc.isNotBlank() && actorLoc == playerLoc) NpcPresenceV1.PRESENT
-        else NpcPresenceV1.NEARBY
+): NpcPresenceV1 {
+    if (previous == NpcPresenceV1.PRESENT) return NpcPresenceV1.PRESENT
+    return when (actor.returnCue) {
+        OffscreenReturnCueV1.STAY_AWAY -> NpcPresenceV1.AWAY
+        OffscreenReturnCueV1.NEARBY -> NpcPresenceV1.NEARBY
+        OffscreenReturnCueV1.RETURN_NOW -> {
+            val actorLoc = normalizeOffscreenLocationV1(actor.location)
+            val playerLoc = normalizeOffscreenLocationV1(playerLocation)
+            if (actorLoc.isNotBlank() && playerLoc.isNotBlank() && actorLoc == playerLoc) NpcPresenceV1.PRESENT
+            else NpcPresenceV1.NEARBY
+        }
     }
 }
 
@@ -630,7 +633,6 @@ fun StoryPlayPanelV10(
     LaunchedEffect(off.syncToken, memory.busy, life.busy, storyState.busy) {
         val offState = offScene ?: return@LaunchedEffect
         val lifeState = lifeScene ?: return@LaunchedEffect
-        val memoryState = memoryScene ?: return@LaunchedEffect
         val runtime = storyState.runtime
         if (memory.busy || life.busy || storyState.busy) return@LaunchedEffect
 
