@@ -127,7 +127,7 @@ object EpubOriginalTocV1 {
         )
     }
 
-    internal fun assignLeafChapters(raw: List<RawNodeV1>, chapterCount: Int): List<EpubTocNodeV1> {
+    private fun assignLeafChapters(raw: List<RawNodeV1>, chapterCount: Int): List<EpubTocNodeV1> {
         var next = 1
         fun map(node: RawNodeV1): EpubTocNodeV1 {
             val mappedChildren = node.children.map(::map)
