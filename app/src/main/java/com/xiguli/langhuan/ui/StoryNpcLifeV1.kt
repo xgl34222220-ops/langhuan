@@ -87,7 +87,7 @@ data class NpcLifeUiStateV1(
     val syncToken: Long = 0L,
 )
 
-private data class NpcLifeChangeV1(
+internal data class NpcLifeChangeV1(
     val name: String,
     val field: String,
     val value: String,
