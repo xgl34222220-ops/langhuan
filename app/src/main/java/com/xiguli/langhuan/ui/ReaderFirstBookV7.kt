@@ -12,7 +12,7 @@ fun ReaderFirstBookV7(
     onOpenEditor: (String, Int) -> Unit,
     onOpenAiSetup: () -> Unit,
 ) {
-    ReaderFirstBookV9(
+    ReaderFirstBookV10(
         viewModel = viewModel,
         studioState = studioState,
         onBackToShelf = onBackToShelf,

@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.EpubImportedCoverV2
 import com.xiguli.langhuan.data.EpubImporterV2
+import com.xiguli.langhuan.data.EpubOriginalTocV1
 import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.data.StoryProjectManager
 import java.io.File
@@ -53,8 +54,7 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                     val normalized = normalizeBookBytesV1(fileName, bytes)
                     val isEpub = fileName.endsWith(".epub", ignoreCase = true)
                     val epubResult = if (isEpub) EpubImporterV2.import(fileName, normalized) else null
-                    val manuscript = epubResult?.manuscript
-                        ?: StoryExchange.`import`(fileName, normalized)
+                    val manuscript = epubResult?.manuscript ?: StoryExchange.`import`(fileName, normalized)
                     require(manuscript.chapters.any { it.content.isNotBlank() }) { "没有识别到可阅读正文" }
 
                     var created = projects.createImportedStory(manuscript)
@@ -70,13 +70,18 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                     }
 
                     val id = created.snapshot.novel.id
+                    if (isEpub) {
+                        val toc = EpubOriginalTocV1.extract(normalized, manuscript.chapters.size)
+                        EpubOriginalTocV1.save(app, id, toc)
+                    }
+
                     app.getSharedPreferences("local_book_meta_v1", Application.MODE_PRIVATE)
                         .edit()
                         .putString("name_$id", fileName)
                         .putLong("size_$id", bytes.size.toLong())
                         .putString("format_$id", localBookFormatV1(fileName))
                         .putString("author_$id", epubResult?.author.orEmpty())
-                        .putString("epub_parser_$id", if (isEpub) "spine-nav-v2" else "")
+                        .putString("epub_parser_$id", if (isEpub) "spine-nav-v3-tree" else "")
                         .putLong("imported_$id", System.currentTimeMillis())
                         .apply()
                     created
