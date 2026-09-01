@@ -2,9 +2,7 @@ package com.xiguli.langhuan.ui
 
 import androidx.compose.runtime.Composable
 
-/**
- * Compatibility entry kept for the current root route. The implementation now lives in V8.
- */
+/** Compatibility entry kept for the current root route. */
 @Composable
 fun ReaderFirstBookV7(
     viewModel: LibraryExperienceViewModel,
@@ -14,7 +12,7 @@ fun ReaderFirstBookV7(
     onOpenEditor: (String, Int) -> Unit,
     onOpenAiSetup: () -> Unit,
 ) {
-    ReaderFirstBookV8(
+    ReaderFirstBookV9(
         viewModel = viewModel,
         studioState = studioState,
         onBackToShelf = onBackToShelf,
