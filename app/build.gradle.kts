@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 75
-        versionName = "0.28.0-alpha06"
+        versionCode = 76
+        versionName = "0.28.0-alpha07"
     }
 
     buildFeatures { compose = true }
@@ -67,6 +67,9 @@ dependencies {
     implementation(libs.material.kolor)
     implementation(libs.haze)
     implementation(libs.haze.materials)
+    implementation(libs.miuix.ui)
+    implementation(libs.miuix.preference)
+    implementation(libs.miuix.icons)
     implementation(libs.miuix.blur)
     implementation(libs.miuix.squircle)
     testImplementation(libs.junit4)
