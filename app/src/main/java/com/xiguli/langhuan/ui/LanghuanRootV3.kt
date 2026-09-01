@@ -129,19 +129,14 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    ReaderShelfV5(
+                    ReaderShelfV6(
                         state = libraryState,
                         importState = localImportState,
                         onOpenBook = ::openBook,
                         onImportLocal = {
-                            localBookLauncher.launch(
-                                arrayOf(
-                                    "text/plain",
-                                    "text/markdown",
-                                    "application/epub+zip",
-                                    "application/octet-stream",
-                                )
-                            )
+                            // Android 文档提供器经常把 txt/epub 标成 application/octet-stream，
+                            // 所以这里直接允许选择任意文件，真正格式校验交给导入器。
+                            localBookLauncher.launch(arrayOf("*/*"))
                         },
                         onCreate = {
                             if (studioState.provider.ready) route = RootRouteV3.CREATION
@@ -155,7 +150,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.BOOK -> {
                     if (libraryState.openedBook != null) {
-                        ReaderFirstBookV5(
+                        ReaderFirstBookV6(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
