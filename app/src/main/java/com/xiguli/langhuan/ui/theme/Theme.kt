@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
+import top.yukonga.miuix.kmp.theme.MiuixTheme as RealMiuixTheme
+import top.yukonga.miuix.kmp.theme.darkColorScheme as miuixDarkColorScheme
+import top.yukonga.miuix.kmp.theme.lightColorScheme as miuixLightColorScheme
 
 @Immutable
 data class LanghuanAppearance(
@@ -116,11 +119,49 @@ fun LanghuanTheme(
             textPrimary = scheme.onSurface,
             textSecondary = scheme.onSurfaceVariant,
         )
-        CompositionLocalProvider(
-            LocalMiuixTokens provides tokens,
-            LocalLanghuanAppearance provides appearance,
-            content = content,
-        )
+        val realMiuixColors = if (dark) {
+            miuixDarkColorScheme(
+                primary = scheme.primary,
+                onPrimary = scheme.onPrimary,
+                error = scheme.error,
+                onError = scheme.onError,
+                background = tokens.pageBackground,
+                onBackground = scheme.onSurface,
+                surface = tokens.pageBackground,
+                onSurface = scheme.onSurface,
+                surfaceVariant = tokens.cardBackground,
+                onSurfaceSecondary = scheme.onSurfaceVariant,
+                surfaceContainer = tokens.cardBackground,
+                onSurfaceContainer = scheme.onSurface,
+                surfaceContainerHigh = tokens.elevatedCardBackground,
+                onSurfaceContainerHigh = scheme.onSurfaceVariant,
+                outline = scheme.outlineVariant,
+            )
+        } else {
+            miuixLightColorScheme(
+                primary = scheme.primary,
+                onPrimary = scheme.onPrimary,
+                error = scheme.error,
+                onError = scheme.onError,
+                background = tokens.pageBackground,
+                onBackground = scheme.onSurface,
+                surface = tokens.pageBackground,
+                onSurface = scheme.onSurface,
+                surfaceVariant = tokens.cardBackground,
+                onSurfaceSecondary = scheme.onSurfaceVariant,
+                surfaceContainer = tokens.cardBackground,
+                onSurfaceContainer = scheme.onSurface,
+                surfaceContainerHigh = tokens.elevatedCardBackground,
+                onSurfaceContainerHigh = scheme.onSurfaceVariant,
+                outline = scheme.outlineVariant,
+            )
+        }
+        RealMiuixTheme(colors = realMiuixColors) {
+            CompositionLocalProvider(
+                LocalMiuixTokens provides tokens,
+                LocalLanghuanAppearance provides appearance,
+                content = content,
+            )
+        }
     }
 }
-

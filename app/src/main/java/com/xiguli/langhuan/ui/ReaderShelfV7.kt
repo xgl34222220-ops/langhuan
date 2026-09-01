@@ -20,13 +20,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import top.yukonga.miuix.kmp.basic.Button as MiuixButton
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
+import top.yukonga.miuix.kmp.basic.TopAppBar as MiuixTopAppBar
 
 /**
- * 参考成熟本地阅读器的信息密度重做：正在阅读 + 全部图书，导入是一级动作，AI 退到更多。
+ * 真实 Miuix 书架：页面骨架、顶部栏、卡片和主按钮直接使用 Miuix 组件，
+ * 阅读内容仍保留现有成熟逻辑，避免为了换皮破坏书架/阅读数据。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -42,6 +48,7 @@ fun ReaderShelfV7(
     onSkills: () -> Unit,
 ) {
     val context = LocalContext.current
+    val tokens = LocalMiuixTokens.current
     val progressPrefs = remember { context.getSharedPreferences("reader_progress_v1", Context.MODE_PRIVATE) }
     var query by rememberSaveable { mutableStateOf("") }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
@@ -56,19 +63,28 @@ fun ReaderShelfV7(
     }
     val reading = books.firstOrNull()
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.surface,
+    MiuixScaffold(
+        containerColor = tokens.pageBackground,
         topBar = {
-            Column(Modifier.statusBarsPadding()) {
-                Row(
-                    Modifier.fillMaxWidth().height(58.dp).padding(start = 20.dp, end = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("琅嬛", modifier = Modifier.weight(1f), fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                    IconButton({ searchVisible = !searchVisible }) { Icon(Icons.Rounded.Search, "搜索") }
-                    IconButton(onImportLocal) { Icon(Icons.Rounded.Add, "导入小说") }
+            MiuixTopAppBar(
+                title = "琅嬛",
+                largeTitle = "琅嬛",
+                subtitle = when {
+                    importState.busy -> "正在导入 ${importState.currentFileName}"
+                    books.isEmpty() -> "阅读 · 创作 · 进入故事"
+                    else -> "${books.size} 本书 · 阅读与创作"
+                },
+                actions = {
+                    MiuixIconButton(onClick = { searchVisible = !searchVisible }) {
+                        Icon(Icons.Rounded.Search, "搜索", tint = tokens.textPrimary)
+                    }
+                    MiuixIconButton(onClick = onImportLocal) {
+                        Icon(Icons.Rounded.Add, "导入小说", tint = tokens.textPrimary)
+                    }
                     Box {
-                        IconButton({ showMore = true }) { Icon(Icons.Rounded.MoreVert, "更多") }
+                        MiuixIconButton(onClick = { showMore = true }) {
+                            Icon(Icons.Rounded.MoreVert, "更多", tint = tokens.textPrimary)
+                        }
                         DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
                             DropdownMenuItem(
                                 text = { Text("AI 新建小说") },
@@ -93,35 +109,53 @@ fun ReaderShelfV7(
                             )
                         }
                     }
-                }
-                if (searchVisible) {
-                    TextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
-                        placeholder = { Text("搜索书名") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                        trailingIcon = {
-                            if (query.isNotBlank()) IconButton({ query = "" }) { Icon(Icons.Rounded.Close, "清空") }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        ),
-                    )
-                }
-                if (importState.busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
-            }
+                },
+                bottomContent = {
+                    Column {
+                        if (searchVisible) {
+                            TextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                                placeholder = { Text("搜索书名或分类") },
+                                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                                trailingIcon = {
+                                    if (query.isNotBlank()) IconButton({ query = "" }) { Icon(Icons.Rounded.Close, "清空") }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(18.dp),
+                                colors = TextFieldDefaults.colors(
+                                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                                    focusedContainerColor = tokens.cardBackground,
+                                    unfocusedContainerColor = tokens.cardBackground,
+                                ),
+                            )
+                        }
+                        if (importState.busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+                    }
+                },
+            )
         },
     ) { inner ->
         when {
             importState.busy -> Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(strokeWidth = 2.5.dp)
-                    Text("正在导入 ${importState.currentFileName}", modifier = Modifier.padding(top = 16.dp))
-                    Text("解析完成后会直接打开阅读", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                MiuixCard(cornerRadius = 22.dp, insideMargin = PaddingValues(horizontal = 28.dp, vertical = 24.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                        Column(Modifier.padding(start = 16.dp)) {
+                            Text("正在整理这本书", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                importState.currentFileName,
+                                modifier = Modifier.padding(top = 4.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text("封面、目录和正文会一起读取", modifier = Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                        }
+                    }
                 }
             }
             books.isEmpty() -> EmptyReaderShelfV7(Modifier.padding(inner), query, onImportLocal, onCreate)
@@ -135,7 +169,7 @@ fun ReaderShelfV7(
                 reading?.let { book ->
                     item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                         Column {
-                            Text("正在阅读", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("继续阅读", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
                             FeaturedReadingV7(
                                 book = book,
                                 chapter = progressPrefs.getInt("chapter_${book.id}", book.currentChapter.coerceAtLeast(1)),
@@ -143,11 +177,11 @@ fun ReaderShelfV7(
                                 onLongClick = { selectedBook = book },
                             )
                             Row(
-                                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 2.dp),
+                                Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text("全部图书", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Text("${books.size} 本", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("全部图书", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
+                                Text("${books.size} 本", style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                             }
                         }
                     }
@@ -162,13 +196,14 @@ fun ReaderShelfV7(
                         CoverPreviewV3(
                             book.coverPath,
                             book.title,
-                            Modifier.fillMaxWidth().aspectRatio(.69f).clip(RoundedCornerShape(7.dp)),
+                            Modifier.fillMaxWidth().aspectRatio(.69f).clip(RoundedCornerShape(10.dp)),
                         )
                         Text(
                             book.title,
-                            modifier = Modifier.padding(top = 8.dp),
+                            modifier = Modifier.padding(top = 9.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
+                            color = tokens.textPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -176,7 +211,7 @@ fun ReaderShelfV7(
                             "第 ${progressPrefs.getInt("chapter_${book.id}", book.currentChapter.coerceAtLeast(1))} 章",
                             modifier = Modifier.padding(top = 2.dp),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = tokens.textSecondary,
                         )
                     }
                 }
@@ -194,7 +229,7 @@ fun ReaderShelfV7(
                         Text(if (last > 0L) "最近阅读 ${formatShelfTimeV7(last)}" else "本地书籍")
                     },
                     leadingContent = {
-                        CoverPreviewV3(book.coverPath, book.title, Modifier.width(42.dp).height(60.dp).clip(RoundedCornerShape(5.dp)))
+                        CoverPreviewV3(book.coverPath, book.title, Modifier.width(42.dp).height(60.dp).clip(RoundedCornerShape(6.dp)))
                     },
                 )
                 ListItem(
@@ -213,49 +248,66 @@ fun ReaderShelfV7(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FeaturedReadingV7(book: ReaderBookUi, chapter: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        verticalAlignment = Alignment.CenterVertically,
+    val tokens = LocalMiuixTokens.current
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        cornerRadius = 20.dp,
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
+        onClick = onClick,
+        onLongPress = onLongClick,
+        showIndication = true,
     ) {
-        CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(102.dp).clip(RoundedCornerShape(7.dp)))
-        Column(Modifier.padding(start = 16.dp).weight(1f)) {
-            Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("读到第 $chapter 章", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                if (book.genre == "导入作品") "本地导入" else book.genre,
-                modifier = Modifier.padding(top = 4.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(102.dp).clip(RoundedCornerShape(9.dp)))
+            Column(Modifier.padding(start = 16.dp).weight(1f)) {
+                Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("读到第 $chapter 章", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                Text(
+                    if (book.genre == "导入作品") "本地导入" else book.genre,
+                    modifier = Modifier.padding(top = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.textSecondary,
+                )
+            }
+            Icon(Icons.Rounded.ChevronRight, null, tint = tokens.textSecondary)
         }
-        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun EmptyReaderShelfV7(modifier: Modifier, query: String, onImportLocal: () -> Unit, onCreate: () -> Unit) {
+    val tokens = LocalMiuixTokens.current
     Column(
-        modifier.fillMaxSize().padding(horizontal = 34.dp),
+        modifier.fillMaxSize().padding(horizontal = 30.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(Icons.Rounded.MenuBook, null, Modifier.size(46.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(if (query.isBlank()) "书架还是空的" else "没有找到这本书", modifier = Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text(
-            if (query.isBlank()) "从手机导入 TXT、EPUB 或 Markdown，导入后直接开始阅读。" else "换个关键词试试。",
-            modifier = Modifier.padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (query.isBlank()) {
-            Button(onImportLocal, Modifier.fillMaxWidth().padding(top = 24.dp), shape = RoundedCornerShape(12.dp)) {
-                Icon(Icons.Rounded.FolderOpen, null)
-                Spacer(Modifier.width(8.dp))
-                Text("导入本地小说")
+        MiuixCard(cornerRadius = 26.dp, insideMargin = PaddingValues(26.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Rounded.MenuBook, null, Modifier.size(44.dp), tint = tokens.textSecondary)
+                Text(
+                    if (query.isBlank()) "把第一本书放进琅嬛" else "没有找到这本书",
+                    modifier = Modifier.padding(top = 16.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tokens.textPrimary,
+                )
+                Text(
+                    if (query.isBlank()) "TXT、EPUB、Markdown 都可以。EPUB 会读取原书封面和目录。" else "换个关键词试试。",
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = tokens.textSecondary,
+                )
+                if (query.isBlank()) {
+                    MiuixButton(onClick = onImportLocal, modifier = Modifier.fillMaxWidth().padding(top = 24.dp), cornerRadius = 18.dp) {
+                        Icon(Icons.Rounded.FolderOpen, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("导入本地小说")
+                    }
+                    TextButton(onCreate) { Text("AI 新建小说") }
+                }
             }
-            TextButton(onCreate) { Text("AI 新建小说") }
         }
     }
 }
