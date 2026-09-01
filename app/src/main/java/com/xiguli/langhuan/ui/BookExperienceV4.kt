@@ -110,7 +110,7 @@ fun BookExperienceV4(
                     onAgent = onOpenAgent,
                     onRunCenter = onOpenRunCenter,
                 )
-                BookTabV4.STORY -> StoryPlayPanelV15(
+                BookTabV4.STORY -> StoryPlayPanelV16(
                     book = book,
                     libraryState = state,
                     aiReady = studioState.provider.ready,
