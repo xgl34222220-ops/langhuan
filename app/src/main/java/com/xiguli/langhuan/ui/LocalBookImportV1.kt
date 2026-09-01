@@ -49,7 +49,16 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                     val normalized = normalizeBookBytesV1(fileName, bytes)
                     val manuscript = StoryExchange.`import`(fileName, normalized)
                     require(manuscript.chapters.any { it.content.isNotBlank() }) { "没有识别到可阅读正文" }
-                    projects.createImportedStory(manuscript)
+                    val created = projects.createImportedStory(manuscript)
+                    val id = created.snapshot.novel.id
+                    app.getSharedPreferences("local_book_meta_v1", Application.MODE_PRIVATE)
+                        .edit()
+                        .putString("name_$id", fileName)
+                        .putLong("size_$id", bytes.size.toLong())
+                        .putString("format_$id", localBookFormatV1(fileName))
+                        .putLong("imported_$id", System.currentTimeMillis())
+                        .apply()
+                    created
                 }
             }.onSuccess { created ->
                 _state.update {
@@ -87,6 +96,13 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
     companion object {
         private const val MAX_LOCAL_BOOK_BYTES = 96 * 1024 * 1024
     }
+}
+
+private fun localBookFormatV1(fileName: String): String = when (fileName.substringAfterLast('.', "").lowercase()) {
+    "epub" -> "EPUB"
+    "md", "markdown" -> "Markdown"
+    "txt" -> "TXT"
+    else -> "本地文本"
 }
 
 internal fun normalizeBookBytesV1(fileName: String, bytes: ByteArray): ByteArray {
