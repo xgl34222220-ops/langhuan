@@ -4,8 +4,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -26,17 +29,15 @@ private enum class RootRouteV3 {
 }
 
 /**
- * V3 根交互：用单一路由状态替换旧版一堆 showXxx Boolean 互相排斥的覆盖层。
- *
- * 页面关系固定为：
- * 书架 -> 作品空间 -> 阅读 / 创作 / 故事 / 设定。
- * Skills 是全局写作方法配置；AI 设置是全局页；关闭子页面始终回到调用它的上一级。
+ * Reader-first 根交互：书架和阅读是第一层，AI 创作与故事能力作为自然延伸。
  */
 @Composable
 fun LanghuanRootV3(studioVm: StudioViewModel) {
     val studioState by studioVm.state.collectAsStateWithLifecycle()
     val libraryVm: LibraryExperienceViewModel = viewModel()
     val libraryState by libraryVm.state.collectAsStateWithLifecycle()
+    val localImportVm: LocalBookImportViewModelV1 = viewModel()
+    val localImportState by localImportVm.state.collectAsStateWithLifecycle()
     val creationVm: NewBookConversationViewModel = viewModel()
     val writingVm: WritingFlowViewModel = viewModel()
     val editorVm: ChapterEditorViewModel = viewModel()
@@ -57,8 +58,8 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     @Suppress("UNUSED_VARIABLE")
     val keepCoverGuardAlive = coverGuard
 
-    val referenceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) studioVm.enqueueReferenceDistillation(uri)
+    val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) localImportVm.importUri(uri)
     }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) studioVm.exportProjectBackup(uri)
@@ -69,6 +70,16 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
     LaunchedEffect(libraryState.openedBook?.id) {
         libraryState.openedBook?.id?.let { id -> studioVm.selectStory(id) }
+    }
+
+    LaunchedEffect(localImportState.importedBookId, libraryState.stories) {
+        val id = localImportState.importedBookId ?: return@LaunchedEffect
+        if (libraryState.stories.any { it.id == id }) {
+            libraryVm.openBook(id)
+            studioVm.selectStory(id)
+            localImportVm.consumeImportedBook()
+            route = RootRouteV3.BOOK
+        }
     }
 
     LaunchedEffect(route, libraryState.openedBook?.id, coverStoryId) {
@@ -118,19 +129,23 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    ShelfV4(
+                    ReaderShelfV5(
                         state = libraryState,
-                        aiReady = studioState.provider.ready,
-                        aiLabel = studioState.provider.activeProviderLabel,
+                        importState = localImportState,
                         onOpenBook = ::openBook,
+                        onImportLocal = {
+                            localBookLauncher.launch(
+                                arrayOf(
+                                    "text/plain",
+                                    "text/markdown",
+                                    "application/epub+zip",
+                                    "application/octet-stream",
+                                )
+                            )
+                        },
                         onCreate = {
                             if (studioState.provider.ready) route = RootRouteV3.CREATION
                             else openAiSetup(RootRouteV3.CREATION)
-                        },
-                        onReference = {
-                            referenceLauncher.launch(
-                                arrayOf("text/plain", "text/markdown", "application/epub+zip", "application/octet-stream")
-                            )
                         },
                         onAiSetup = { openAiSetup(RootRouteV3.SHELF) },
                         onRunCenter = { route = RootRouteV3.RUN_CENTER },
@@ -140,7 +155,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.BOOK -> {
                     if (libraryState.openedBook != null) {
-                        BookExperienceV4(
+                        ReaderFirstBookV5(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
@@ -158,14 +173,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                                 returnAfterEditor = RootRouteV3.BOOK
                                 route = RootRouteV3.EDITOR
                             },
-                            onOpenAgent = { route = RootRouteV3.AGENT },
-                            onOpenIntelligence = { route = RootRouteV3.INTELLIGENCE },
-                            onOpenRunCenter = { route = RootRouteV3.RUN_CENTER },
                             onOpenAiSetup = { openAiSetup(RootRouteV3.BOOK) },
-                            onOpenCoverStudio = { id ->
-                                coverStoryId = id
-                                route = RootRouteV3.COVER_STUDIO
-                            },
                         )
                     }
                 }
@@ -276,5 +284,14 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 CreationQuickActionsOverlay(creationVm)
             }
         }
+    }
+
+    localImportState.error?.let { error ->
+        AlertDialog(
+            onDismissRequest = localImportVm::clearFeedback,
+            title = { Text("导入失败") },
+            text = { Text(error) },
+            confirmButton = { TextButton(onClick = localImportVm::clearFeedback) { Text("知道了") } },
+        )
     }
 }
