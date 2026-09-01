@@ -5,8 +5,11 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.xiguli.langhuan.data.EpubImportedCoverV2
+import com.xiguli.langhuan.data.EpubImporterV2
 import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.data.StoryProjectManager
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -46,16 +49,34 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                         ?: error("无法读取这个文件")
                     require(bytes.isNotEmpty()) { "文件是空的" }
                     require(bytes.size <= MAX_LOCAL_BOOK_BYTES) { "文件过大，目前单本最大支持 96 MB" }
+
                     val normalized = normalizeBookBytesV1(fileName, bytes)
-                    val manuscript = StoryExchange.`import`(fileName, normalized)
+                    val isEpub = fileName.endsWith(".epub", ignoreCase = true)
+                    val epubResult = if (isEpub) EpubImporterV2.import(fileName, normalized) else null
+                    val manuscript = epubResult?.manuscript
+                        ?: StoryExchange.`import`(fileName, normalized)
                     require(manuscript.chapters.any { it.content.isNotBlank() }) { "没有识别到可阅读正文" }
-                    val created = projects.createImportedStory(manuscript)
+
+                    var created = projects.createImportedStory(manuscript)
+                    val cover = epubResult?.cover
+                    if (cover != null && cover.bytes.isNotEmpty()) {
+                        val coverPath = persistImportedCoverV2(app, created.snapshot.novel.id, cover)
+                        if (coverPath.isNotBlank()) {
+                            val updatedSnapshot = created.snapshot.copy(
+                                novel = created.snapshot.novel.copy(coverPath = coverPath),
+                            )
+                            created = projects.saveStructure(updatedSnapshot, created.draft)
+                        }
+                    }
+
                     val id = created.snapshot.novel.id
                     app.getSharedPreferences("local_book_meta_v1", Application.MODE_PRIVATE)
                         .edit()
                         .putString("name_$id", fileName)
                         .putLong("size_$id", bytes.size.toLong())
                         .putString("format_$id", localBookFormatV1(fileName))
+                        .putString("author_$id", epubResult?.author.orEmpty())
+                        .putString("epub_parser_$id", if (isEpub) "spine-nav-v2" else "")
                         .putLong("imported_$id", System.currentTimeMillis())
                         .apply()
                     created
@@ -95,6 +116,31 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
 
     companion object {
         private const val MAX_LOCAL_BOOK_BYTES = 96 * 1024 * 1024
+    }
+}
+
+private fun persistImportedCoverV2(
+    application: Application,
+    novelId: String,
+    cover: EpubImportedCoverV2,
+): String {
+    val extension = importedCoverExtensionV2(cover)
+    val directory = File(application.filesDir, "covers").apply { mkdirs() }
+    val file = File(directory, "$novelId-imported.$extension")
+    return runCatching {
+        file.writeBytes(cover.bytes)
+        file.absolutePath
+    }.getOrDefault("")
+}
+
+private fun importedCoverExtensionV2(cover: EpubImportedCoverV2): String {
+    val fromName = cover.fileName.substringAfterLast('.', "").lowercase()
+    if (fromName in setOf("jpg", "jpeg", "png", "webp", "gif")) return fromName
+    return when (cover.mediaType.lowercase()) {
+        "image/png" -> "png"
+        "image/webp" -> "webp"
+        "image/gif" -> "gif"
+        else -> "jpg"
     }
 }
 
