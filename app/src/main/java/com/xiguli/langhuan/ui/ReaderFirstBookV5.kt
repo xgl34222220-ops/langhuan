@@ -350,7 +350,7 @@ private fun ImmersiveReaderV5(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, bottom = 8.dp),
+                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
                 shape = RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .96f),
                 tonalElevation = 4.dp,
