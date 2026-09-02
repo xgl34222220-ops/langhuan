@@ -5,7 +5,7 @@ import androidx.compose.runtime.Composable
 /**
  * Startup-safe production reader entry.
  *
- * Real Miuix reader experiments remain isolated from startup. Production now uses the stable
+ * Experimental compatibility readers remain isolated from startup. Production uses the stable
  * Material3-only V9 reader with floating chrome and the same visual language as the rebuilt shelf.
  */
 @Composable
