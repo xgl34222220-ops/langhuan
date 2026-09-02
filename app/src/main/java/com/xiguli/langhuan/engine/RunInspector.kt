@@ -11,6 +11,7 @@ enum class RunStage(val label: String) {
     BLUEPRINT_STAGE_2("蓝图 2/3 · 分卷与章纲"),
     BLUEPRINT_STAGE_3("蓝图 3/3 · 伏笔与校验"),
     CREATE_BOOK("正式建书"),
+    SKILL_PLAN("Skill OS 执行计划"),
     CONTEXT("构建写作上下文"),
     LOGIC_PLAN("写前逻辑骨架"),
     DRAFT("流式正文初稿"),
@@ -26,6 +27,7 @@ enum class RunStage(val label: String) {
     EXECUTION_AUDIT("计划 vs 实际审计"),
     CANDIDATE("Candidate 事实提取"),
     AUTONOMOUS_REPLAN("自治局部重规划"),
+    SKILL_AUDIT("Skill OS 执行回执"),
     COMPLETE("本轮流程完成"),
 }
 
