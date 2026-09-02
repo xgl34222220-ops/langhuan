@@ -140,7 +140,7 @@ class ChapterRunRuntime(application: Application) {
             runtimePlan = runtimePlan,
             queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
-        val gateway = referenceAwareGateway(command, baseGateway, canStop = true)
+        val gateway = generationReferenceAwareGateway(command, baseGateway, canStop = true)
         emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.GENERATION)), true)
         showForeground(command, if (dnaSummary.count > 0) "正在生成正文 · ${dnaSummary.label} · 最长 8 分钟" else "正在生成正文 · 最长 8 分钟，可随时停止", canStop = true)
         try {
@@ -201,7 +201,8 @@ class ChapterRunRuntime(application: Application) {
             runtimePlan = runtimePlan, runtimeAudit = previous?.runtimeAudit,
             queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
-        val gateway = resolved?.second?.let { referenceAwareGateway(command, it, canStop = false) }
+        // Post-commit editor tasks may still consume DNA, but they must not masquerade as generation-phase DNA evidence.
+        val gateway = resolved?.second?.let { ReferenceDnaAwareAiGateway(app, command.novelId, it) }
         emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.POST_COMMIT)), false)
         showForeground(command, "正在保存正文并执行章节后处理", false)
         try {
@@ -237,7 +238,8 @@ class ChapterRunRuntime(application: Application) {
             snapshot = command.snapshot, draft = command.draft, providerLabel = resolved.first, preview = previous?.preview.orEmpty(), events = previous?.events.orEmpty(),
             result = previous?.result, runtimePlan = runtimePlan, queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
-        val gateway = referenceAwareGateway(command, resolved.second, canStop = false)
+        // Manual review has its own Agent receipt; DNA use inside the editor prompt is intentionally not attributed to generation.
+        val gateway = ReferenceDnaAwareAiGateway(app, command.novelId, resolved.second)
         emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.MANUAL_REVIEW)), false)
         showForeground(command, "正在进行 Agent 章节复盘", false)
         try {
@@ -291,7 +293,7 @@ class ChapterRunRuntime(application: Application) {
         showForeground(command, detail, canStop)
     }
 
-    private fun referenceAwareGateway(command: RuntimeCommand, delegate: AiGateway, canStop: Boolean): AiGateway =
+    private fun generationReferenceAwareGateway(command: RuntimeCommand.Generate, delegate: AiGateway, canStop: Boolean): AiGateway =
         ReferenceDnaAwareAiGateway(app, command.novelId, delegate) { evidence ->
             emit(
                 command,
