@@ -1,17 +1,17 @@
 package com.xiguli.langhuan.engine
 
 /**
- * Novel Skill OS V6 author-command router.
+ * Novel Skill OS V6/V7 author-command router.
  *
- * This is intentionally deterministic and conservative: a project discussion must not become
- * a mutation just because it contains a character name or the word "改" in a hypothetical
- * sentence. Only explicit scene/prose execution cues cross the mutation boundary.
+ * This is intentionally deterministic and conservative. V7 adds a Canon proposal boundary:
+ * explicit project-fact mutations may create a preview, but never write facts immediately.
  */
 enum class WorkspaceNaturalAction(
     val label: String,
     val mutatesWorkingDraft: Boolean,
 ) {
     DISCUSS("讨论分析", false),
+    CANON_PROPOSAL("Canon 变更提案", false),
     SCENE_PLAN("场景重排", true),
     PROSE("正文生成/重写", true),
     REVIEW("连续性审校", false),
@@ -22,6 +22,7 @@ data class WorkspaceNaturalPlan(
     val actions: List<WorkspaceNaturalAction>,
     val reasons: List<String> = emptyList(),
 ) {
+    val requestsCanonProposal: Boolean get() = WorkspaceNaturalAction.CANON_PROPOSAL in actions
     val hasSceneMutation: Boolean get() = WorkspaceNaturalAction.SCENE_PLAN in actions
     val hasProseMutation: Boolean get() = WorkspaceNaturalAction.PROSE in actions
     val requestsReview: Boolean get() = WorkspaceNaturalAction.REVIEW in actions
@@ -35,6 +36,7 @@ data class WorkspaceNaturalPlan(
     val executionGuidance: String
         get() = buildString {
             append("本轮总控：$summary")
+            if (requestsCanonProposal) append("；只生成影响分析和差异预览，确认前不写 StorySnapshot")
             if (hasSceneMutation) append("；先在 working ScenePlan 中调整，不直接写 Canon")
             if (hasProseMutation) append("；正文走现有章节 Runtime")
             if (requestsReview && hasProseMutation) append("；生成后由现有 Consistency Gate 做硬检查")
@@ -70,6 +72,24 @@ object WorkspaceNaturalLanguageRouter {
             "删除", "加入", "增加", "补上", "换成", "写得", "写成", "续写", "继续写", "开始写", "安排到",
         )
 
+        val canonCue = containsAny(
+            text,
+            "核心设定", "世界设定", "世界观", "世界规则", "小说圣经", "故事圣经", "canon", "Bible",
+            "人物设定", "角色设定", "人物状态", "角色状态", "主角设定", "能力设定", "能力规则",
+            "时间线", "伏笔", "信息边界", "秘密真相", "总纲", "卷纲", "主题", "故事简介", "小说简介",
+        )
+        val canonMutation = canonCue && explicitMutation && !sceneCue
+
+        // V7 safety boundary: once an explicit Canon-level edit is detected, stop downstream
+        // prose/scene execution. The author must see and confirm the diff before anything uses it.
+        if (canonMutation) {
+            return WorkspaceNaturalPlan(
+                original = text,
+                actions = listOf(WorkspaceNaturalAction.CANON_PROPOSAL),
+                reasons = listOf("检测到项目事实/蓝图级修改；进入提案→影响分析→确认写入边界"),
+            )
+        }
+
         val directProseCommand = containsAny(
             text,
             "重写这章", "重写本章", "重写正文", "续写正文", "继续写这章", "继续写本章", "开始写这一章", "开始写本章",
@@ -100,7 +120,7 @@ object WorkspaceNaturalLanguageRouter {
 
         if (actions.isEmpty()) {
             actions += WorkspaceNaturalAction.DISCUSS
-            reasons += if (questionLike) "问题/讨论语气，不跨越项目写入边界" else "没有足够明确的场景或正文执行信号"
+            reasons += if (questionLike) "问题/讨论语气，不跨越项目写入边界" else "没有足够明确的场景、正文或 Canon 执行信号"
         }
 
         return WorkspaceNaturalPlan(text, actions.distinct(), reasons)
