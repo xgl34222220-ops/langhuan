@@ -3,11 +3,8 @@ package com.xiguli.langhuan.ui
 import androidx.compose.runtime.Composable
 
 /**
- * Startup-safe compatibility entry.
- *
- * The real Miuix shelf remains in the repository for later runtime validation,
- * but the production route temporarily uses the Material-only V6 shelf so the
- * app can start without touching Miuix UI classes.
+ * Startup-safe shelf entry. The production shelf stays on the Material3-only compatibility path
+ * while exposing the full library actions, including book deletion.
  */
 @Composable
 fun ReaderShelfV7(
@@ -26,6 +23,7 @@ fun ReaderShelfV7(
         importState = importState,
         onOpenBook = onOpenBook,
         onImportLocal = onImportLocal,
+        onDeleteBook = onDeleteBook,
         onCreate = onCreate,
         onAiSetup = onAiSetup,
         onRunCenter = onRunCenter,
