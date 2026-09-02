@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.local.StartupDatabaseStatus
 import com.xiguli.langhuan.data.local.StartupDatabaseGate
+import com.xiguli.langhuan.engine.PostStartupInitializer
 import com.xiguli.langhuan.ui.LanghuanRootV3
 import com.xiguli.langhuan.ui.StudioViewModel
 
@@ -33,9 +34,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            // Safe4 intentionally starts on plain Material3. No reference installer, original-canon
-            // watcher, Room-backed ViewModel, MaterialKolor theme, Miuix or blur is touched until
-            // the database gate has completed successfully.
+            // Keep the proven safe4 launcher path unchanged: plain Material3 first, no heavy
+            // data/UI initialization until Room has passed the startup gate.
             MaterialTheme {
                 StartupDatabaseRoot()
             }
@@ -69,6 +69,8 @@ private fun StartupDatabaseRoot() {
         LauncherState.Checking -> LauncherCheckingScreen()
         is LauncherState.Failed -> LauncherFailureScreen(state.status)
         is LauncherState.Ready -> {
+            // Noncritical reference-library/index work starts only after launcher health is proven.
+            LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
             val studioViewModel: StudioViewModel = viewModel()
             LanghuanRootV3(studioViewModel)
         }
