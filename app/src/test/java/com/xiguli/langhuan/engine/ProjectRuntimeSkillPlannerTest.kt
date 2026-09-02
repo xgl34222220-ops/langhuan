@@ -47,14 +47,19 @@ class ProjectRuntimeSkillPlannerTest {
     fun `audit distinguishes executed and intentionally skipped engines`() {
         val plan = ProjectRuntimeSkillPlanner.build(snapshot(), draft(), referenceDnaCount = 2)
         val events = listOf(
-            RunEvent(RunStage.CONTEXT, RunStatus.SUCCESS, "D 层无额外命中"),
-            RunEvent(RunStage.DRAFT, RunStatus.SUCCESS, "初稿完成"),
-            RunEvent(RunStage.EDITOR_REVIEW_1, RunStatus.SUCCESS, "四席通过"),
-            RunEvent(RunStage.CONSISTENCY, RunStatus.SUCCESS, "BLOCKING=0"),
-            RunEvent(RunStage.FULL_BOOK_AUDIT, RunStatus.SKIPPED, "未到周期巡检点"),
-            RunEvent(RunStage.EXECUTION_AUDIT, RunStatus.SUCCESS, "执行完成度 92 分"),
-            RunEvent(RunStage.CANDIDATE, RunStatus.SUCCESS, "2 条 Candidate"),
-            RunEvent(RunStage.AUTONOMOUS_REPLAN, RunStatus.SKIPPED, "无需重规划"),
+            RunEvent(RunStage.CONTEXT_PACK, RunStatus.SUCCESS, "输入快照已锁定", 900L),
+            RunEvent(RunStage.CHARACTER_STATE, RunStatus.SUCCESS, "读取 1 名人物状态", 920L),
+            RunEvent(RunStage.HYBRID_RAG, RunStatus.RUNNING, "开始检索", 1_000L),
+            RunEvent(RunStage.HYBRID_RAG, RunStatus.SUCCESS, "检索已执行 · 召回 2 条", 1_260L),
+            RunEvent(RunStage.REFERENCE_DNA, RunStatus.SUCCESS, "PROSE_AUTHOR · PROSE · 实际注入 640 字", 1_300L),
+            RunEvent(RunStage.DRAFT, RunStatus.SUCCESS, "初稿完成", 2_000L),
+            RunEvent(RunStage.EDITOR_REVIEW_1, RunStatus.SUCCESS, "四席通过", 2_200L),
+            RunEvent(RunStage.CONSISTENCY, RunStatus.RUNNING, "开始一致性检查", 2_300L),
+            RunEvent(RunStage.CONSISTENCY, RunStatus.SUCCESS, "BLOCKING=0", 2_430L),
+            RunEvent(RunStage.FULL_BOOK_AUDIT, RunStatus.SKIPPED, "未到周期巡检点", 2_500L),
+            RunEvent(RunStage.EXECUTION_AUDIT, RunStatus.SUCCESS, "执行完成度 92 分", 2_600L),
+            RunEvent(RunStage.CANDIDATE, RunStatus.SUCCESS, "2 条 Candidate", 2_700L),
+            RunEvent(RunStage.AUTONOMOUS_REPLAN, RunStatus.SKIPPED, "无需重规划", 2_800L),
         )
 
         val audit = ProjectRuntimeSkillPlanner.audit(
@@ -68,6 +73,72 @@ class ProjectRuntimeSkillPlannerTest {
         assertEquals(0, audit.failedCount)
         assertEquals(0, audit.pendingCount)
         assertEquals(RunStatus.SUCCESS, audit.runStatus)
+
+        val rag = audit.receipts.single { it.step.capability == ProjectRuntimeCapability.HYBRID_RAG }
+        assertEquals(260L, rag.durationMs)
+        assertTrue(rag.dataInputs.isNotEmpty())
+        assertTrue(rag.outputSummary.contains("召回 2 条"))
+        assertEquals(2, rag.evidenceTrail.size)
+    }
+
+    @Test
+    fun `reference dna is never inferred from prose execution`() {
+        val plan = ProjectRuntimeSkillPlanner.build(snapshot(), draft(), referenceDnaCount = 2)
+        val draftOnly = listOf(
+            RunEvent(RunStage.DRAFT, RunStatus.RUNNING, "开始正文", 1_000L),
+            RunEvent(RunStage.DRAFT, RunStatus.SUCCESS, "初稿完成", 2_000L),
+        )
+
+        val finalized = ProjectRuntimeSkillPlanner.audit(
+            plan,
+            draftOnly,
+            setOf(ProjectRuntimePhase.GENERATION),
+            finalize = true,
+        )
+        val dnaWithoutProof = finalized.receipts.single { it.step.capability == ProjectRuntimeCapability.REFERENCE_DNA }
+        assertEquals(ProjectRuntimeReceiptState.SKIPPED, dnaWithoutProof.state)
+        assertTrue(dnaWithoutProof.dataInputs.isEmpty())
+
+        val live = ProjectRuntimeSkillPlanner.audit(
+            plan,
+            draftOnly,
+            setOf(ProjectRuntimePhase.GENERATION),
+            finalize = false,
+        )
+        assertEquals(
+            ProjectRuntimeReceiptState.PENDING,
+            live.receipts.single { it.step.capability == ProjectRuntimeCapability.REFERENCE_DNA }.state,
+        )
+
+        val withExactProof = ProjectRuntimeSkillPlanner.audit(
+            plan,
+            draftOnly + RunEvent(RunStage.REFERENCE_DNA, RunStatus.SUCCESS, "PROSE_AUTHOR · PROSE · 实际注入 512 字", 2_100L),
+            setOf(ProjectRuntimePhase.GENERATION),
+        )
+        val dnaExecuted = withExactProof.receipts.single { it.step.capability == ProjectRuntimeCapability.REFERENCE_DNA }
+        assertEquals(ProjectRuntimeReceiptState.EXECUTED, dnaExecuted.state)
+        assertTrue(dnaExecuted.dataInputs.isNotEmpty())
+        assertTrue(dnaExecuted.outputSummary.contains("实际注入 512 字"))
+    }
+
+    @Test
+    fun `new running attempt does not reuse an old success receipt`() {
+        val plan = ProjectRuntimeSkillPlanner.build(snapshot(), draft(), referenceDnaCount = 0)
+        val events = listOf(
+            RunEvent(RunStage.HYBRID_RAG, RunStatus.RUNNING, "第一次", 1_000L),
+            RunEvent(RunStage.HYBRID_RAG, RunStatus.SUCCESS, "第一次完成", 1_100L),
+            RunEvent(RunStage.HYBRID_RAG, RunStatus.RUNNING, "第二次", 2_000L),
+        )
+
+        val audit = ProjectRuntimeSkillPlanner.audit(
+            plan,
+            events,
+            setOf(ProjectRuntimePhase.GENERATION),
+            finalize = false,
+        )
+        val rag = audit.receipts.single { it.step.capability == ProjectRuntimeCapability.HYBRID_RAG }
+        assertEquals(ProjectRuntimeReceiptState.PENDING, rag.state)
+        assertTrue(rag.dataInputs.isEmpty())
     }
 
     @Test
