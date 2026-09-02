@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "id": "story-long-write",
+  "name": "长篇网文写作",
+  "description": "长篇写作方法：约束锁、情绪目标、章内推进、悬疑/反转、章尾钩子与按需上下文。",
+  "version": "1.0.0-adapted",
+  "author": "zenstory-ai",
+  "license": "MIT",
+  "sourceUrl": "https://github.com/zenstory-ai/oh-story-claudecode/tree/main/skills/story-long-write",
+  "sourceRevision": "70c294b20ce89440e70edb766b0446d3057bc077",
+  "updateUrl": "https://raw.githubusercontent.com/xgl34222220-ops/langhuan/main/skills/builtin/story-long-write.json",
+  "supportedTasks": ["SCENE_DIRECTOR", "PROSE_AUTHOR", "NOVELIZATION", "EDITOR_REVIEW", "EDITOR_REWRITE", "AUTONOMOUS_PLANNER", "FULL_BOOK_EDITOR"],
+  "defaultTasks": ["SCENE_DIRECTOR", "PROSE_AUTHOR", "EDITOR_REVIEW", "EDITOR_REWRITE", "AUTONOMOUS_PLANNER"],
+  "guidance": "来源适配：oh-story-claudecode / story-long-write（MIT）。\n- 先锁定本次任务的用户明确要求、必须发生、禁止发生、时间锚、人物进出状态与停笔点，再考虑任何写作技法。\n- 技法只属于 C 层。S/A/B、Canon、Chapter Contract、人物认知边界、时间线与用户明确决定拥有更高优先级；发生冲突时立刻放弃 Skill 建议。\n- 每个场景必须有明确的情绪目标和剧情功能，至少推进信息、关系、选择、代价、威胁中的一项；不要写只负责填字数的场景。\n- 只加载/使用本任务真正需要的信息。不要为了展示世界观完整而把设定、人物、规则、伏笔集中解释给读者。\n- 章尾钩子必须由本章已有因果推出新的问题、选择或威胁，禁止靠提前揭露未来答案制造刺激。\n- 悬疑/惊悚优先递进信息差：一次异常只推进一层认知，未到回收期的线索只保持存在感，不解释谜底。\n- 参考作品只能抽取结构、情绪、节奏和功能位，禁止复刻独特角色、专名、具体桥段或连续表达。",
+  "taskGuidance": {
+    "SCENE_DIRECTOR": "章纲导演额外要求：先写清主角本章目标、阻力、关键选择、代价、信息增量和章末新债，再编排场景顺序。",
+    "PROSE_AUTHOR": "正文作者额外要求：把规则和推理写进人物行动、观察、对话和后果，不把后台资料改写成正文报告。",
+    "NOVELIZATION": "小说化额外要求：保留事实与事件顺序，只把说明/清单转换成可感知的场景、动作、阻碍、反应和选择。",
+    "EDITOR_REVIEW": "主编审稿额外要求：检查场景是否真正兑现情绪目标、章内推进与读者契约，而不是只看语句通顺。",
+    "EDITOR_REWRITE": "主编修订额外要求：只修审稿命中的问题，不借重写机会增加新设定、提前伏笔答案或改变角色立场。",
+    "AUTONOMOUS_PLANNER": "自治规划额外要求：滚动计划必须保留未来空间，优先安排承诺兑现、人物选择与新债，不把终局答案提前塞进近期章节。",
+    "FULL_BOOK_EDITOR": "全书主编额外要求：关注情绪模块重复、钩子同质化、人物功能位固化和长期承诺拖欠。"
+  }
+}
