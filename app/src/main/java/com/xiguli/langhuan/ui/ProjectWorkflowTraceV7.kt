@@ -4,16 +4,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.domain.CandidateFactStatus
 import com.xiguli.langhuan.engine.NovelCapability
+import com.xiguli.langhuan.engine.NovelIntent
 import com.xiguli.langhuan.engine.NovelWorkflowArtifact
 import com.xiguli.langhuan.engine.NovelWorkflowHistoryEntry
 import com.xiguli.langhuan.engine.NovelWorkflowState
@@ -182,7 +181,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                 }
 
                 item {
-                    TraceSectionV7(title = "真实 Runtime") {
+                    TraceSectionV7(title = "真实执行状态") {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (runtime.active) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                             else Icon(runtime.icon, null, Modifier.size(19.dp), tint = runtime.color())
@@ -230,8 +229,9 @@ internal fun ProjectWorkflowTraceSheetV7(
                             }
                             val intent = workflow?.capabilities?.routeIntent.orEmpty()
                             if (intent.isNotBlank()) {
+                                val intentLabel = NovelIntent.entries.firstOrNull { it.name == intent }?.label ?: intent
                                 Text(
-                                    "route: $intent",
+                                    "当前意图：$intentLabel",
                                     modifier = Modifier.padding(top = 7.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = LocalMiuixTokens.current.textSecondary,
@@ -287,7 +287,7 @@ internal fun ProjectWorkflowTraceSheetV7(
 private fun TraceSectionV7(
     title: String,
     danger: Boolean = false,
-    content: @Composable Column.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().squircleClip(20.dp),
@@ -408,8 +408,8 @@ private fun runtimeTraceV7(flow: WritingFlowUiState): RuntimeTraceV7 {
         flow.result?.canCommit == true && !flow.chapterCommitted -> RuntimeTraceV7("正文待确认", "$chapter · 已通过阻断级检查，可正式保存后进入审校", false, Icons.Rounded.HourglassTop, RuntimeToneV7.NORMAL)
         flow.review != null -> RuntimeTraceV7("审校已完成", "$chapter · 检查 Candidate 后即可关闭本章 Canon Gate", false, Icons.Rounded.CheckCircle, RuntimeToneV7.SUCCESS)
         flow.chapterCommitted -> RuntimeTraceV7("正文已保存", "$chapter · 等待审校 / Candidate 处理", false, Icons.Rounded.CheckCircle, RuntimeToneV7.SUCCESS)
-        flow.ready -> RuntimeTraceV7("Runtime 空闲", "$chapter · 等待下一次真实执行动作", false, Icons.Rounded.History, RuntimeToneV7.IDLE)
-        else -> RuntimeTraceV7("Runtime 未载入", "正在等待章节工作台状态", false, Icons.Rounded.History, RuntimeToneV7.IDLE)
+        flow.ready -> RuntimeTraceV7("执行空闲", "$chapter · 等待下一次真实执行动作", false, Icons.Rounded.History, RuntimeToneV7.IDLE)
+        else -> RuntimeTraceV7("执行状态未载入", "正在等待章节工作台状态", false, Icons.Rounded.History, RuntimeToneV7.IDLE)
     }
 }
 
