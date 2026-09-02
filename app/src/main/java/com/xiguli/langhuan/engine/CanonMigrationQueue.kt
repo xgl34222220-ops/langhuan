@@ -91,14 +91,15 @@ object CanonMigrationPlanner {
         )
     }
 
-    private fun actionFor(impact: CanonChangeImpact): CanonMigrationAction = when (impact.scope) {
-        "蓝图" -> CanonMigrationAction.REPLAN_OUTLINE
-        "人物" -> CanonMigrationAction.RECONCILE_CHARACTER
-        "时间线" -> CanonMigrationAction.REPAIR_TIMELINE
-        "伏笔" -> CanonMigrationAction.REWORK_FORESHADOW
-        "信息边界" -> CanonMigrationAction.RECONCILE_KNOWLEDGE
-        "章节" -> CanonMigrationAction.REWRITE_CHAPTER
-        "长期记忆" -> CanonMigrationAction.REFRESH_MEMORY
+    private fun actionFor(impact: CanonChangeImpact): CanonMigrationAction = when {
+        impact.scope == "蓝图" && impact.chapterNumber != null -> CanonMigrationAction.REWRITE_CHAPTER
+        impact.scope == "蓝图" -> CanonMigrationAction.REPLAN_OUTLINE
+        impact.scope == "人物" -> CanonMigrationAction.RECONCILE_CHARACTER
+        impact.scope == "时间线" -> CanonMigrationAction.REPAIR_TIMELINE
+        impact.scope == "伏笔" -> CanonMigrationAction.REWORK_FORESHADOW
+        impact.scope == "信息边界" -> CanonMigrationAction.RECONCILE_KNOWLEDGE
+        impact.scope == "章节" -> CanonMigrationAction.REWRITE_CHAPTER
+        impact.scope == "长期记忆" -> CanonMigrationAction.REFRESH_MEMORY
         else -> CanonMigrationAction.REVIEW_STRUCTURE
     }
 
@@ -111,7 +112,7 @@ object CanonMigrationPlanner {
         append("\n现在只处理受影响项【${impact.scope} · ${impact.label}】：${impact.detail}。")
         append("\n执行动作：${action.label}。")
         when (action) {
-            CanonMigrationAction.REWRITE_CHAPTER -> append("\n只修与新 Canon 冲突的场景/正文，不借机全面改写；修订后必须重新走连续性检查。")
+            CanonMigrationAction.REWRITE_CHAPTER -> append("\n只修与新 Canon 冲突的章纲、场景或正文，不借机全面改写；修订后必须重新走连续性检查。")
             CanonMigrationAction.REPLAN_OUTLINE -> append("\n优先调整因果、目标、冲突和转折；不要为了适配新设定提前泄露后续答案。")
             CanonMigrationAction.RECONCILE_CHARACTER -> append("\n只校准人物位置、状态、目标、关系或知识边界中被新 Canon 影响的部分，避免 OOC。")
             CanonMigrationAction.REPAIR_TIMELINE -> append("\n保持已经确认的事件顺序；只修时间锚、地点或事件描述中与新 Canon 的矛盾。")
