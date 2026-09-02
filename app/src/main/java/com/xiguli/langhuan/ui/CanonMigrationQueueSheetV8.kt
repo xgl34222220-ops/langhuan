@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.engine.CanonChangeRisk
 import com.xiguli.langhuan.engine.CanonMigrationAction
 import com.xiguli.langhuan.engine.CanonMigrationExecutionItem
@@ -50,12 +51,15 @@ internal fun CanonMigrationQueueSheetV8(
     state: CanonChangeProposalUiState,
     onGenerateRepairProposal: (CanonMigrationTask) -> Unit,
     onOpenChapter: (Int) -> Unit,
-    onExecuteSafe: () -> Unit,
     onDone: (String) -> Unit,
     onSkip: (String) -> Unit,
     onClearResolved: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Same ViewModelStoreOwner as WritingWorkspaceV6, therefore this resolves the already-created
+    // project-scoped instance instead of creating a second migration state owner.
+    val migrationVm: CanonChangeProposalViewModel = viewModel()
+    val executeSafe = migrationVm::executeReadySafeMigrations
     val queue = state.migrationQueue
     val plan = state.migrationPlan
     val pending = queue?.pending.orEmpty()
@@ -147,7 +151,7 @@ internal fun CanonMigrationQueueSheetV8(
                     item = next,
                     onGenerateRepairProposal = { onGenerateRepairProposal(next.task) },
                     onOpenChapter = { next.task.chapterNumber?.let(onOpenChapter) },
-                    onExecuteSafe = onExecuteSafe,
+                    onExecuteSafe = executeSafe,
                 )
             }
 
@@ -178,7 +182,7 @@ internal fun CanonMigrationQueueSheetV8(
                             item = item,
                             onGenerateRepairProposal = { onGenerateRepairProposal(task) },
                             onOpenChapter = { task.chapterNumber?.let(onOpenChapter) },
-                            onExecuteSafe = onExecuteSafe,
+                            onExecuteSafe = executeSafe,
                             onDone = { onDone(task.id) },
                             onSkip = { onSkip(task.id) },
                         )
