@@ -17,7 +17,7 @@ class FullShellV4RouteTest {
         assertTrue(router.contains("CreationChatV4("))
         assertTrue(router.contains("StoryPlayPanelV17("))
         assertTrue(router.contains("RootRouteV3.CREATION_RESEARCH"))
-        assertTrue(shelf.contains("\"书架\""))
+        assertTrue(shelf.contains("书架列表"))
         assertTrue(shelf.contains("AI 新建小说"))
         assertTrue(shelf.contains("移动书架"))
         assertTrue(shelf.contains("进入故事"))
