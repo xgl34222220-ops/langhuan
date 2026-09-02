@@ -57,20 +57,18 @@ object NovelSkillExecutionPlanner {
      * style Skills do not contaminate factual/design discussion.
      */
     fun primaryTask(route: NovelRouteDecision): AiTaskType? = when {
-        route.intent {
-            NovelIntent.CONTINUITY_REVIEW -> AiTaskType.EDITOR_REVIEW
-            NovelIntent.PROSE_REVISION -> AiTaskType.EDITOR_REWRITE
-            NovelIntent.STRUCTURE_PLANNING -> if (NovelCapability.SCENE_DIRECTOR in route.capabilities) {
-                AiTaskType.SCENE_DIRECTOR
-            } else {
-                AiTaskType.AUTONOMOUS_PLANNER
-            }
-            NovelIntent.STORY_DESIGN -> if (
-                NovelCapability.LONG_STRUCTURE in route.capabilities ||
-                NovelCapability.ENSEMBLE_CAST in route.capabilities
-            ) AiTaskType.AUTONOMOUS_PLANNER else null
-            else -> null
+        route.intent == NovelIntent.CONTINUITY_REVIEW -> AiTaskType.EDITOR_REVIEW
+        route.intent == NovelIntent.PROSE_REVISION -> AiTaskType.EDITOR_REWRITE
+        route.intent == NovelIntent.STRUCTURE_PLANNING -> if (NovelCapability.SCENE_DIRECTOR in route.capabilities) {
+            AiTaskType.SCENE_DIRECTOR
+        } else {
+            AiTaskType.AUTONOMOUS_PLANNER
         }
+        route.intent == NovelIntent.STORY_DESIGN && (
+            NovelCapability.LONG_STRUCTURE in route.capabilities ||
+                NovelCapability.ENSEMBLE_CAST in route.capabilities
+            ) -> AiTaskType.AUTONOMOUS_PLANNER
+        else -> null
     }
 
     fun build(
