@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material3.*
@@ -23,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.domain.CandidateFactStatus
 import com.xiguli.langhuan.domain.ScenePlan
+import com.xiguli.langhuan.engine.CanonMigrationTaskStatus
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
 import com.xiguli.langhuan.engine.WorkspaceNaturalLanguageRouter
 import com.xiguli.langhuan.engine.WorkspaceNaturalPlan
@@ -65,7 +67,10 @@ fun WritingWorkspaceV6(
     var pendingCompound by remember(novelId) { mutableStateOf<PendingCompoundV6?>(null) }
     var showHistory by remember { mutableStateOf(false) }
 
-    LaunchedEffect(novelId) { conversationVm.load(novelId) }
+    LaunchedEffect(novelId) {
+        conversationVm.load(novelId)
+        canonVm.loadMigrationQueue(novelId)
+    }
     LaunchedEffect(canon.appliedAt) {
         if (canon.appliedAt > 0L) {
             viewModel.invalidateAfterExternalEdit(novelId)
@@ -112,10 +117,12 @@ fun WritingWorkspaceV6(
             flow = flow,
             conversation = conversation,
             externalBusy = canon.active,
+            migrationCount = canon.pendingMigrationCount,
             input = input,
             lastPlan = lastPlan,
             onInput = { input = it },
             onHistory = { showHistory = true },
+            onMigrationQueue = canonVm::openMigrationQueue,
             onQuickAction = { action -> performQuickActionV6(action, flow, viewModel) },
             onSend = {
                 val clean = input.trim()
@@ -162,6 +169,19 @@ fun WritingWorkspaceV6(
             onDiscard = canonVm::discardPending,
             onDismiss = canonVm::discardPending,
         )
+    } else if (canon.migrationVisible) {
+        CanonMigrationQueueSheetV8(
+            state = canon,
+            onGenerateRepairProposal = canonVm::proposeMigrationRepair,
+            onOpenChapter = { chapterNumber ->
+                canonVm.closeMigrationQueue()
+                onEditChapter(novelId, chapterNumber)
+            },
+            onDone = { taskId -> canonVm.setMigrationStatus(taskId, CanonMigrationTaskStatus.DONE) },
+            onSkip = { taskId -> canonVm.setMigrationStatus(taskId, CanonMigrationTaskStatus.SKIPPED) },
+            onClearResolved = canonVm::clearResolvedMigration,
+            onDismiss = canonVm::closeMigrationQueue,
+        )
     }
 }
 
@@ -171,10 +191,12 @@ private fun WorkspaceNaturalControllerDockV6(
     flow: WritingFlowUiState,
     conversation: ProjectConversationUiState,
     externalBusy: Boolean,
+    migrationCount: Int,
     input: String,
     lastPlan: WorkspaceNaturalPlan?,
     onInput: (String) -> Unit,
     onHistory: () -> Unit,
+    onMigrationQueue: () -> Unit,
     onQuickAction: (WorkspaceQuickActionV6) -> Unit,
     onSend: () -> Unit,
 ) {
@@ -222,6 +244,23 @@ private fun WorkspaceNaturalControllerDockV6(
                     Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.History, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                         Text("会话", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                if (migrationCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(99.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .75f),
+                        modifier = Modifier.clickable(onClick = onMigrationQueue),
+                    ) {
+                        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Route, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.tertiary)
+                            Text(
+                                "修复队列 $migrationCount",
+                                modifier = Modifier.padding(start = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
                 lastPlan?.let { plan ->
