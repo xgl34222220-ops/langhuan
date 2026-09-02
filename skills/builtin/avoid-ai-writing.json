@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "id": "avoid-ai-writing",
+  "name": "去 AI 写作痕迹",
+  "description": "检测并压低模板句、报告腔、解释腔、机械排比、同义复述和过度总结。",
+  "version": "3.28.0-adapted",
+  "author": "conorbronsdon",
+  "license": "MIT",
+  "sourceUrl": "https://github.com/conorbronsdon/avoid-ai-writing",
+  "sourceRevision": "3bd64f19f41ae941d44e8261fe575624a2b1b8f6",
+  "updateUrl": "https://raw.githubusercontent.com/xgl34222220-ops/langhuan/main/skills/builtin/avoid-ai-writing.json",
+  "supportedTasks": ["PROSE_AUTHOR", "NOVELIZATION", "EDITOR_REVIEW", "EDITOR_REWRITE"],
+  "defaultTasks": ["NOVELIZATION", "EDITOR_REVIEW", "EDITOR_REWRITE"],
+  "guidance": "来源适配：conorbronsdon/avoid-ai-writing（MIT）。\n- 这是写作质量提示，不是 AI 检测器，不得把命中模式当作作者身份判断。\n- 删除报告腔、总结腔、空泛结论、机械排比、同义反复、连续‘不是 A 而是 B’、模板化升华和无必要的小标题/清单。\n- 已经自然、具体、有角色声音的段落不要为了去 AI 而整段重写；优先最小修改，保留作者已经形成的句法节奏和粗粝感。\n- 用具体动作、物件、空间关系、潜台词和后果替代抽象评价；不要把场景结论再解释一遍给读者。\n- 不得为了追求人味故意制造事实错误、语法破坏、角色 OOC 或与本书既定文风冲突的口语化。",
+  "taskGuidance": {
+    "PROSE_AUTHOR": "正文阶段只把这些规则当自检清单，不要在正文里谈论 AI、规则、检测或修改过程。",
+    "NOVELIZATION": "小说化阶段优先处理信息清单、功能动作堆叠、解释性结论和泛化恐怖意象。",
+    "EDITOR_REVIEW": "审稿阶段把 AI 腔问题定位到具体段落，并区分明显损伤叙事与作者可能有意的重复/节奏。",
+    "EDITOR_REWRITE": "修订阶段只改命中片段；不要把整章抛光成统一、无棱角的模型腔。"
+  }
+}

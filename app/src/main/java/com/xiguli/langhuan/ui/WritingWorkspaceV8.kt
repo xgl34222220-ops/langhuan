@@ -3,17 +3,19 @@ package com.xiguli.langhuan.ui
 import androidx.compose.runtime.Composable
 
 /**
- * Compatibility entry kept for existing navigation and tests.
- * The actual chapter experience now lives in Novel Skill OS V8 natural-language controller.
+ * Novel Skill OS V8 entry.
+ *
+ * The visible authoring surface remains the same single natural-language controller. V8 adds
+ * persistent Canon migration repair queues behind V7's confirmed-change workflow.
  */
 @Composable
-fun WritingFlowPage(
+fun WritingWorkspaceV8(
     novelId: String,
     viewModel: WritingFlowViewModel,
     onClose: () -> Unit,
     onEditChapter: (novelId: String, chapterNumber: Int) -> Unit,
 ) {
-    WritingWorkspaceV8(
+    WritingWorkspaceV6(
         novelId = novelId,
         viewModel = viewModel,
         onClose = onClose,
