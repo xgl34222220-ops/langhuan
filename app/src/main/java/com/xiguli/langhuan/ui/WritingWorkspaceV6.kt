@@ -64,6 +64,7 @@ fun WritingWorkspaceV6(
     var lastPlan by remember(novelId) { mutableStateOf<WorkspaceNaturalPlan?>(null) }
     var pendingCompound by remember(novelId) { mutableStateOf<PendingCompoundV6?>(null) }
     var showHistory by remember { mutableStateOf(false) }
+    var showTrace by remember { mutableStateOf(false) }
 
     LaunchedEffect(novelId) { conversationVm.load(novelId) }
     LaunchedEffect(canon.appliedAt) {
@@ -116,6 +117,7 @@ fun WritingWorkspaceV6(
             lastPlan = lastPlan,
             onInput = { input = it },
             onHistory = { showHistory = true },
+            onTrace = { showTrace = true },
             onQuickAction = { action -> performQuickActionV6(action, flow, viewModel) },
             onSend = {
                 val clean = input.trim()
@@ -155,6 +157,14 @@ fun WritingWorkspaceV6(
         )
     }
 
+    if (showTrace) {
+        ProjectWorkflowTraceSheetV7(
+            conversation = conversation,
+            flow = flow,
+            onDismiss = { showTrace = false },
+        )
+    }
+
     if (canon.isBusy || canon.isApplying || canon.proposal != null || canon.error != null) {
         CanonChangeProposalSheetV7(
             state = canon,
@@ -175,6 +185,7 @@ private fun WorkspaceNaturalControllerDockV6(
     lastPlan: WorkspaceNaturalPlan?,
     onInput: (String) -> Unit,
     onHistory: () -> Unit,
+    onTrace: () -> Unit,
     onQuickAction: (WorkspaceQuickActionV6) -> Unit,
     onSend: () -> Unit,
 ) {
@@ -224,6 +235,11 @@ private fun WorkspaceNaturalControllerDockV6(
                         Text("会话", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                 }
+                ProjectWorkflowTracePillV7(
+                    workflow = conversation.workflow,
+                    flow = flow,
+                    onClick = onTrace,
+                )
                 lastPlan?.let { plan ->
                     Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                         Text(
