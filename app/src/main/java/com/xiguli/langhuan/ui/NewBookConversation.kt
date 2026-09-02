@@ -11,6 +11,10 @@ import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.data.StoryFoundation
 import com.xiguli.langhuan.data.StoryFoundationApplier
 import com.xiguli.langhuan.engine.AiGateway
+import com.xiguli.langhuan.engine.NovelRouteDecision
+import com.xiguli.langhuan.engine.NovelRouteInput
+import com.xiguli.langhuan.engine.NovelRouteStatus
+import com.xiguli.langhuan.engine.NovelSkillRouter
 import com.xiguli.langhuan.engine.PromptAttachment
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.PromptMessage
@@ -59,8 +63,10 @@ private fun isQuestionLike(text: String): Boolean {
 private fun isReferenceFactQuestion(text: String): Boolean {
     val value = text.trim()
     if (!isQuestionLike(value)) return false
-    val referenceCue = listOf("模板", "参考", "原作", "蒸馏", "这本", "那本", "这部", "那部", "Story DNA", "DNA")
-        .any { value.contains(it, ignoreCase = true) }
+    val referenceCue = listOf(
+        "模板", "参考", "原作", "蒸馏", "这本", "那本", "这部", "那部", "Story DNA", "DNA",
+        "他们", "它们", "这几本", "这两本", "这些作品", "那些作品", "作品",
+    ).any { value.contains(it, ignoreCase = true) }
     val factCue = listOf("主角", "配角", "人物", "名字", "姓名", "能力", "世界观", "世界", "规则", "设定", "关系", "势力", "地点", "冲突", "谜团", "主题", "剧情", "结局")
         .any { value.contains(it, ignoreCase = true) }
     return referenceCue && factCue
@@ -117,6 +123,8 @@ data class NewBookConversationState(
     val selectedReferenceTemplateIds: List<String> = emptyList(),
     /** V2：向用户显示上一轮真正检索并送进模型的参考 DNA 数量。 */
     val lastReferenceUsage: String = "",
+    /** Novel Skill OS：仅记录本轮路由与执行状态，不属于项目事实，也不持久化进蓝图。 */
+    val lastRouteDecision: NovelRouteDecision? = null,
 )
 
 @Serializable
@@ -211,6 +219,16 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         val history = before.messages + CreationChatMessage("user", userText, before.pendingAttachments)
         val plainInstruction = userText.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
         val referenceQuestion = isReferenceFactQuestion(plainInstruction) && before.selectedReferenceTemplateIds.isNotEmpty()
+        val routeDecision = NovelSkillRouter.route(
+            NovelRouteInput(
+                message = plainInstruction,
+                attachmentPurposes = before.pendingAttachments.map(::attachmentPurpose),
+                hasConversationHistory = before.messages.any { it.role == "user" },
+                hasFoundation = before.foundation != null,
+                hasSelectedReferences = before.selectedReferenceTemplateIds.isNotEmpty(),
+                referenceFactQuestion = referenceQuestion,
+            )
+        )
         val allowedKinds = if (referenceQuestion) FACT_REFERENCE_KINDS else CREATIVE_REFERENCE_KINDS
         val referenceContext = referenceReportStore.searchContext(
             selectedTaskIds = before.selectedReferenceTemplateIds,
@@ -220,18 +238,21 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             allowedKinds = allowedKinds,
         )
         val usage = referenceReportStore.usage(before.selectedReferenceTemplateIds, plainInstruction, 18, allowedKinds)
+        val runDetail = listOf(routeDecision.compactSummary, usage.label).filter(String::isNotBlank).joinToString(" · ")
         _state.update {
             it.copy(
                 messages = history,
                 pendingAttachments = emptyList(),
                 isBusy = true,
                 busyLabel = when {
-                    before.selectedReferenceTemplateIds.isNotEmpty() -> "正在从所选参考 DNA 检索本轮相关内容……"
+                    before.selectedReferenceTemplateIds.isNotEmpty() -> "${routeDecision.intent.label} · 正在从所选参考 DNA 检索本轮相关内容……"
+                    routeDecision.capabilities.isNotEmpty() -> "${routeDecision.intent.label} · 已路由 ${routeDecision.capabilities.size} 个能力……"
                     else -> "AI 正在继续和你聊这本书……"
                 },
                 streamingReply = "",
                 lastReferenceUsage = usage.label,
-                runEvents = listOf(RunEvent(RunStage.CREATION_CHAT, RunStatus.RUNNING, usage.label.ifBlank { "模型正在流式回复" })),
+                lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.RUNNING),
+                runEvents = listOf(RunEvent(RunStage.CREATION_CHAT, RunStatus.RUNNING, runDetail.ifBlank { "模型正在流式回复" })),
                 error = null,
             )
         }
@@ -240,7 +261,15 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             val gateway = activeGateway()
             if (gateway == null) {
                 emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "未配置 AI 服务")
-                _state.update { it.copy(isBusy = false, busyLabel = "", streamingReply = "", error = "请先在设置里添加并启用一个 AI 服务") }
+                _state.update {
+                    it.copy(
+                        isBusy = false,
+                        busyLabel = "",
+                        streamingReply = "",
+                        lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.FAILED),
+                        error = "请先在设置里添加并启用一个 AI 服务",
+                    )
+                }
                 return@launch
             }
             runCatching {
@@ -248,10 +277,11 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     messages = history,
                     currentProposal = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders(),
                     referenceContext = referenceContext,
+                    routeDecision = routeDecision,
                     onDelta = { partial -> _state.update { it.copy(streamingReply = partial) } },
                 )
             }.onSuccess { turn ->
-                emitRun(RunStage.CREATION_CHAT, RunStatus.SUCCESS, usage.label.ifBlank { "回复完成" })
+                emitRun(RunStage.CREATION_CHAT, RunStatus.SUCCESS, runDetail.ifBlank { "回复完成" })
                 _state.update {
                     it.copy(
                         messages = it.messages + CreationChatMessage("assistant", turn.reply),
@@ -263,11 +293,20 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         busyLabel = "",
                         streamingReply = "",
                         lastReferenceUsage = usage.label,
+                        lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.SUCCESS),
                     )
                 }
             }.onFailure { error ->
-                emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, error.message.orEmpty())
-                _state.update { it.copy(isBusy = false, busyLabel = "", streamingReply = "", error = friendlyAiError(error, if (referenceQuestion) "模板事实读取失败" else "AI 构思失败")) }
+                emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "${routeDecision.intent.label} · ${error.message.orEmpty()}")
+                _state.update {
+                    it.copy(
+                        isBusy = false,
+                        busyLabel = "",
+                        streamingReply = "",
+                        lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.FAILED),
+                        error = friendlyAiError(error, if (referenceQuestion) "模板事实读取失败" else "AI 构思失败"),
+                    )
+                }
             }
         }
     }
@@ -463,9 +502,17 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
 private data class ConversationTurn(val reply: String, val proposal: NewBookProposal? = null)
 
 private class NewBookConversationEngine(private val gateway: AiGateway) {
-    suspend fun reply(messages: List<CreationChatMessage>, currentProposal: NewBookProposal? = null, referenceContext: String = "", onDelta: (String) -> Unit = {}): ConversationTurn {
+    suspend fun reply(
+        messages: List<CreationChatMessage>,
+        currentProposal: NewBookProposal? = null,
+        referenceContext: String = "",
+        routeDecision: NovelRouteDecision,
+        onDelta: (String) -> Unit = {},
+    ): ConversationTurn {
         val latest = messages.lastOrNull { it.role == "user" }?.text?.substringBefore(RESEARCH_CONTEXT_MARKER)?.trim().orEmpty()
         val hiddenContext = buildString {
+            appendLine(routeDecision.systemGuidance())
+            appendLine()
             currentProposal?.let { appendLine(proposalContext(it)); appendLine() }
             if (referenceContext.isNotBlank()) { appendLine(referenceContext); appendLine() }
         }
