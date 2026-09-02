@@ -1,6 +1,5 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,13 +46,6 @@ private enum class WorkspaceQuickActionV6(val label: String) {
     GENERATE("直接写这一章"),
 }
 
-/**
- * Novel Skill OS V6: one natural-language control surface.
- *
- * V4 remains the visual chapter canvas and V3 remains the runtime. V6 only owns dispatch:
- * discussion -> project conversation, scene mutation -> existing scene planner, prose mutation ->
- * existing chapter runtime, review -> editor-review model / existing consistency gate.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WritingWorkspaceV6(
@@ -73,8 +65,6 @@ fun WritingWorkspaceV6(
 
     LaunchedEffect(novelId) { conversationVm.load(novelId) }
 
-    // Scene + prose is a real sequential pipeline: wait for the existing scene planner to finish,
-    // then generate with the new working ScenePlan. No duplicate planner/runtime is introduced.
     LaunchedEffect(
         pendingCompound?.token,
         flow.isPlanningScenes,
@@ -87,9 +77,7 @@ fun WritingWorkspaceV6(
         val sceneSucceeded = flow.sceneConversation.size >= pending.sceneConversationSizeBefore + 2
         if (sceneSucceeded) {
             when {
-                pending.plan.hasProseMutation -> {
-                    viewModel.generate(pending.plan.original)
-                }
+                pending.plan.hasProseMutation -> viewModel.generate(pending.plan.original)
                 pending.plan.requestsReview -> {
                     conversationVm.sendWithTransientContext(
                         text = "检查刚才按这个要求调整后的场景有没有和当前项目事实、时间线或人物状态冲突：${pending.plan.original}",
@@ -111,9 +99,8 @@ fun WritingWorkspaceV6(
             onEditChapter = onEditChapter,
         )
 
-        // Opaque V6 dock intentionally covers V4's legacy mode switcher. The underlying V4
-        // composer is kept in code for compatibility, but users now get one natural-language box.
         WorkspaceNaturalControllerDockV6(
+            modifier = Modifier.align(Alignment.BottomCenter),
             flow = flow,
             conversation = conversation,
             input = input,
@@ -123,28 +110,23 @@ fun WritingWorkspaceV6(
             onQuickAction = { action -> performQuickActionV6(action, flow, viewModel) },
             onSend = {
                 val clean = input.trim()
-                if (clean.isBlank() || flow.busy || conversation.isBusy) return@WorkspaceNaturalControllerDockV6
-                val plan = WorkspaceNaturalLanguageRouter.route(clean)
-                input = ""
-                lastPlan = plan
-
-                when {
-                    plan.isDiscussionOnly || plan.isReviewOnly -> {
-                        conversationVm.send(clean)
-                    }
-                    plan.mutatesWorkingDraft -> {
-                        conversationVm.recordWorkspaceCommand(clean, plan.summary)
-                        when {
-                            plan.hasSceneMutation -> {
-                                pendingCompound = if (plan.hasProseMutation || plan.requestsReview) {
-                                    PendingCompoundV6(
-                                        plan = plan,
-                                        sceneConversationSizeBefore = flow.sceneConversation.size,
-                                    )
-                                } else null
-                                viewModel.planScenes(clean)
+                if (clean.isNotBlank() && !flow.busy && !conversation.isBusy) {
+                    val plan = WorkspaceNaturalLanguageRouter.route(clean)
+                    input = ""
+                    lastPlan = plan
+                    when {
+                        plan.isDiscussionOnly || plan.isReviewOnly -> conversationVm.send(clean)
+                        plan.mutatesWorkingDraft -> {
+                            conversationVm.recordWorkspaceCommand(clean, plan.summary)
+                            when {
+                                plan.hasSceneMutation -> {
+                                    pendingCompound = if (plan.hasProseMutation || plan.requestsReview) {
+                                        PendingCompoundV6(plan = plan, sceneConversationSizeBefore = flow.sceneConversation.size)
+                                    } else null
+                                    viewModel.planScenes(clean)
+                                }
+                                plan.hasProseMutation -> viewModel.generate(clean)
                             }
-                            plan.hasProseMutation -> viewModel.generate(clean)
                         }
                     }
                 }
@@ -163,6 +145,7 @@ fun WritingWorkspaceV6(
 
 @Composable
 private fun WorkspaceNaturalControllerDockV6(
+    modifier: Modifier = Modifier,
     flow: WritingFlowUiState,
     conversation: ProjectConversationUiState,
     input: String,
@@ -178,10 +161,7 @@ private fun WorkspaceNaturalControllerDockV6(
     val disabled = flow.busy || conversation.isBusy
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alignForV6Dock()
-            .navigationBarsPadding(),
+        modifier = modifier.fillMaxWidth().navigationBarsPadding(),
         color = MaterialTheme.colorScheme.background,
         tonalElevation = 5.dp,
         shadowElevation = 10.dp,
@@ -196,15 +176,10 @@ private fun WorkspaceNaturalControllerDockV6(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
                     Row(Modifier.padding(horizontal = 11.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (conversation.isBusy) {
-                            CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                        }
+                        if (conversation.isBusy) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Text(
-                            if (conversation.isBusy && latestAssistant.isBlank()) {
-                                conversation.routeSummary.ifBlank { "琅嬛正在结合当前项目分析…" }
-                            } else latestAssistant,
+                            if (conversation.isBusy && latestAssistant.isBlank()) conversation.routeSummary.ifBlank { "琅嬛正在结合当前项目分析…" } else latestAssistant,
                             modifier = Modifier.padding(start = 7.dp).weight(1f),
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 2,
@@ -293,13 +268,10 @@ private fun WorkspaceNaturalControllerDockV6(
     }
 }
 
-/** Marker modifier kept separate so the dock remains easy to identify in previews/tests. */
-private fun Modifier.alignForV6Dock(): Modifier = this
-
 private fun workspaceQuickActionV6(state: WritingFlowUiState): WorkspaceQuickActionV6? {
     val draft = state.draft ?: return null
     val result = state.result
-    val hasPendingResult = result?.chapter?.content?.isNotBlank() == true && result.chapter.content != draft.content
+    val hasPendingResult = result?.let { it.chapter.content.isNotBlank() && it.chapter.content != draft.content } == true
     val pendingCandidates = state.snapshot?.candidateFacts.orEmpty().count {
         it.sourceChapter == draft.chapterNumber && it.status == CandidateFactStatus.PENDING
     }
@@ -316,11 +288,7 @@ private fun workspaceQuickActionV6(state: WritingFlowUiState): WorkspaceQuickAct
     }
 }
 
-private fun performQuickActionV6(
-    action: WorkspaceQuickActionV6,
-    state: WritingFlowUiState,
-    viewModel: WritingFlowViewModel,
-) {
+private fun performQuickActionV6(action: WorkspaceQuickActionV6, state: WritingFlowUiState, viewModel: WritingFlowViewModel) {
     when (action) {
         WorkspaceQuickActionV6.STOP -> viewModel.cancelGeneration()
         WorkspaceQuickActionV6.REPAIR -> viewModel.repairAndRegenerate()
