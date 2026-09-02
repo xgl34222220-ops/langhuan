@@ -119,6 +119,12 @@ fun CreationChatV4(
                     )
                 }
 
+                state.lastRouteDecision?.let { route ->
+                    item {
+                        NovelRouteTraceCardV4(route)
+                    }
+                }
+
                 if (state.streamingReply.isNotBlank()) {
                     item {
                         CreationAssistantTextV4(state.streamingReply, streaming = true)
