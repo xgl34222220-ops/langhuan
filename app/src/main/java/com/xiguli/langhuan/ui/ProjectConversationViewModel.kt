@@ -8,6 +8,7 @@ import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.NovelRouteInput
 import com.xiguli.langhuan.engine.NovelSkillExecutionPlanner
 import com.xiguli.langhuan.engine.NovelSkillRouter
+import com.xiguli.langhuan.engine.NovelWorkflowBootstrap
 import com.xiguli.langhuan.engine.PersistentNovelWorkflowStateStore
 import com.xiguli.langhuan.engine.ProjectConversationMessage
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
@@ -56,7 +57,12 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
         viewModelScope.launch {
             _state.value = ProjectConversationUiState(novelId = novelId, isLoading = true)
             val messages = conversations.load(novelId)
-            val workflow = workflows.loadOrCreate(novelId)
+            val loaded = projects.loadStory(novelId)
+            val storedWorkflow = workflows.loadOrCreate(novelId)
+            val workflow = loaded?.snapshot?.let {
+                NovelWorkflowBootstrap.fromSnapshot(storedWorkflow, it)
+            } ?: storedWorkflow
+            if (workflow != storedWorkflow) workflows.save(workflow)
             _state.update {
                 it.copy(
                     messages = messages,
@@ -117,6 +123,12 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
             runCatching {
                 val loaded = projects.loadStory(novelId) ?: error("找不到当前小说项目")
                 val binding = references.summary(novelId)
+
+                // Old projects have confirmed StorySnapshot data but no V7 workflow metadata.
+                // Derive only a safe resume stage before interpreting a gate reply.
+                val storedWorkflow = workflows.loadOrCreate(novelId)
+                val bootstrappedWorkflow = NovelWorkflowBootstrap.fromSnapshot(storedWorkflow, loaded.snapshot)
+                if (bootstrappedWorkflow != storedWorkflow) workflows.save(bootstrappedWorkflow)
 
                 // A short approval/rework reply only affects the current workflow gate. Normal
                 // discussion is ignored by the gate router and remains read-only.
