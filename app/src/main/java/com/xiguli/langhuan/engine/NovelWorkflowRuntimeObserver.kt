@@ -107,7 +107,7 @@ object NovelWorkflowRuntimeSync {
         }
         val artifactId = "chapter-$chapter-draft-v${run.draft?.version ?: 1}"
         if (next.hasCurrentArtifact(artifactId)) return next
-        return NovelWorkflowStateMachine.submitArtifact(
+        next = NovelWorkflowStateMachine.submitArtifact(
             next,
             NovelWorkflowArtifact(
                 id = artifactId,
@@ -123,6 +123,16 @@ object NovelWorkflowRuntimeSync {
                 "第${chapter}章正文仍有阻断级问题，需要先修复；不要进入 Canon。"
             },
         )
+        return if (result.canCommit) {
+            next
+        } else {
+            next.copy(
+                stageStatus = NovelWorkflowStatus.NEEDS_REWORK,
+                pendingRequest = "第${chapter}章正文仍有阻断级问题，需要先修复；当前 Gate 不可确认，也不能进入 Canon。",
+                nextStage = NovelWorkflowStage.REVIEW,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
     }
 
     private fun syncCommit(state: NovelWorkflowState, run: ChapterRunRuntimeState): NovelWorkflowState {
