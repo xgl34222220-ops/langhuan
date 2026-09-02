@@ -57,8 +57,18 @@ fun CreationChatV4(
         else -> "自由聊天"
     }
 
-    LaunchedEffect(state.messages.size, state.streamingReply.length, state.pendingAttachments.size) {
-        val total = state.messages.size + if (state.streamingReply.isNotBlank()) 1 else 0
+    LaunchedEffect(
+        state.messages.size,
+        state.streamingReply.length,
+        state.pendingAttachments.size,
+        state.lastRouteDecision?.status,
+        state.isBusy,
+        state.error,
+    ) {
+        val total = state.messages.size +
+            (if (state.lastRouteDecision != null) 1 else 0) +
+            (if (state.streamingReply.isNotBlank() || state.isBusy) 1 else 0) +
+            (if (state.error != null) 1 else 0)
         if (total > 0) listState.animateScrollToItem(total - 1)
     }
 
