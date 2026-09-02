@@ -8,6 +8,7 @@ import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.NovelRouteInput
 import com.xiguli.langhuan.engine.NovelSkillExecutionPlanner
 import com.xiguli.langhuan.engine.NovelSkillRouter
+import com.xiguli.langhuan.engine.PersistentNovelWorkflowStateStore
 import com.xiguli.langhuan.engine.ProjectConversationMessage
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
 import com.xiguli.langhuan.engine.ProjectConversationStore
@@ -36,14 +37,15 @@ data class ProjectConversationUiState(
  * Project-phase continuation chat.
  *
  * This chat can read the current project and Reference DNA, but it deliberately cannot write
- * Canon, overwrite ScenePlan, or replace chapter text. V6 may route a review-only request to
- * the configured editor-review model, while all mutations still remain in the chapter runtime.
+ * Canon, overwrite ScenePlan, or replace chapter text. V7 also reads durable workflow state so
+ * the host can resume from the actual current gate without making the user manage the workflow.
  */
 class ProjectConversationViewModel(application: Application) : AndroidViewModel(application) {
     private val projects = StoryProjectManager(application)
     private val conversations = ProjectConversationStore(application)
     private val references = ReferenceDnaBindingStore(application)
     private val taskRouter = TaskModelRouter(application)
+    private val workflows = PersistentNovelWorkflowStateStore(application)
     private val _state = MutableStateFlow(ProjectConversationUiState())
     val state: StateFlow<ProjectConversationUiState> = _state.asStateFlow()
 
@@ -54,7 +56,14 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
         viewModelScope.launch {
             _state.value = ProjectConversationUiState(novelId = novelId, isLoading = true)
             val messages = conversations.load(novelId)
-            _state.update { it.copy(messages = messages, isLoading = false) }
+            val workflow = workflows.loadOrCreate(novelId)
+            _state.update {
+                it.copy(
+                    messages = messages,
+                    routeSummary = "工作流 · ${workflow.compactSummary()}",
+                    isLoading = false,
+                )
+            }
         }
     }
 
@@ -108,6 +117,11 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
             runCatching {
                 val loaded = projects.loadStory(novelId) ?: error("找不到当前小说项目")
                 val binding = references.summary(novelId)
+
+                // A short approval/rework reply only affects the current workflow gate. Normal
+                // discussion is ignored by the gate router and remains read-only.
+                workflows.applyGateReply(novelId, clean)
+
                 val route = NovelSkillRouter.route(
                     NovelRouteInput(
                         message = clean,
@@ -116,7 +130,10 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                         hasSelectedReferences = binding.count > 0,
                     )
                 )
-                _state.update { it.copy(routeSummary = route.compactSummary) }
+                val workflow = workflows.syncRoute(novelId, route)
+                _state.update {
+                    it.copy(routeSummary = "${route.compactSummary} · ${workflow.compactSummary()}")
+                }
                 val session = taskRouter.snapshot()
                 val routedTask = NovelSkillExecutionPlanner.primaryTask(route)
                 val routedGateway = routedTask?.let { session.selection(it).gateway } ?: session.defaultGateway
@@ -130,6 +147,7 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                         system = projectConversationSystem(
                             snapshot = loaded.snapshot,
                             routeGuidance = route.systemGuidance(),
+                            workflowGuidance = workflow.systemGuidance(),
                             transientContext = transientContext,
                         ),
                         user = clean,
@@ -172,6 +190,7 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
 private fun projectConversationSystem(
     snapshot: StorySnapshot,
     routeGuidance: String,
+    workflowGuidance: String,
     transientContext: String = "",
 ): String = buildString {
     appendLine("你是‘琅嬛’的项目期创作搭档。你正在延续这本书从建书阶段开始的同一条作者会话。")
@@ -180,6 +199,8 @@ private fun projectConversationSystem(
     appendLine("如果用户明确要改正文或场景，可以给出具体建议；真正执行由章节工作台和 V3 Runtime 完成，不要假装聊天已经保存。")
     appendLine("当前 StorySnapshot 中已确认事实优先级高于历史聊天里的旧想法。后续明确决定覆盖之前的讨论。")
     appendLine(routeGuidance)
+    appendLine()
+    appendLine(workflowGuidance)
     if (transientContext.isNotBlank()) {
         appendLine()
         appendLine("【本轮临时 working draft，仅用于检查，不得视为已保存 Canon】")
