@@ -22,9 +22,7 @@ class StoryGraphHealthTest {
     @Test
     fun `clean structured project starts healthy`() {
         val (snapshot, chapters) = fixture(currentChapter = 2)
-
-        val report = StoryGraphHealthAnalyzer.analyze(snapshot, chapters)
-
+        val report = StoryGraphHealthEngine.analyze(snapshot, chapters)
         assertEquals(100, report.score)
         assertEquals(0, report.highCount)
         assertTrue(report.nodes.any { it.id == "chapter:1" })
@@ -40,9 +38,7 @@ class StoryGraphHealthTest {
                 TimelineEvent("t2", "novel-1", 2, "清晨", "医院", emptyList(), "醒来", storyDay = 2, orderInChapter = 1),
             )
         )
-
-        val report = StoryGraphHealthAnalyzer.analyze(snapshot, chapters)
-
+        val report = StoryGraphHealthEngine.analyze(snapshot, chapters)
         assertTrue(report.issues.any { it.category == StoryHealthCategory.TIMELINE && it.severity == StoryHealthSeverity.HIGH && it.title.contains("倒退") })
     }
 
@@ -64,9 +60,7 @@ class StoryGraphHealthTest {
                 )
             )
         )
-
-        val report = StoryGraphHealthAnalyzer.analyze(snapshot, chapters)
-
+        val report = StoryGraphHealthEngine.analyze(snapshot, chapters)
         assertTrue(report.issues.any { it.category == StoryHealthCategory.FORESHADOW && it.severity == StoryHealthSeverity.HIGH && it.title.contains("超期") })
         assertTrue(report.score < 100)
     }
@@ -80,9 +74,7 @@ class StoryGraphHealthTest {
                 FactProvenance("p2", "novel-1", 2, "CHARACTER_GOAL", "周衍目标", before = "寻找妹妹", after = "隐瞒旧楼真相"),
             )
         )
-
-        val report = StoryGraphHealthAnalyzer.analyze(snapshot, chapters)
-
+        val report = StoryGraphHealthEngine.analyze(snapshot, chapters)
         assertTrue(report.edges.any { it.from == "fact:p1" && it.to == "fact:p2" && it.type == StoryGraphEdgeType.FACT_CHAIN })
         assertTrue(report.hotspots.any { it.node.id == "fact:p1" || it.node.id == "fact:p2" })
     }
@@ -103,9 +95,7 @@ class StoryGraphHealthTest {
             repairInstruction = "修复第2章",
         )
         val queue = CanonMigrationQueue("novel-1", listOf(task))
-
-        val report = StoryGraphHealthAnalyzer.analyze(snapshot, chapters, queue)
-
+        val report = StoryGraphHealthEngine.analyze(snapshot, chapters, queue)
         assertTrue(report.issues.any { it.category == StoryHealthCategory.WORKFLOW && it.severity == StoryHealthSeverity.HIGH })
         assertTrue(report.edges.any { it.from == "migration:m1" && it.to == "chapter:2" && it.type == StoryGraphEdgeType.REPAIR_TARGET })
     }
@@ -125,9 +115,7 @@ class StoryGraphHealthTest {
                 )
             )
         )
-
-        val report = StoryGraphHealthAnalyzer.analyze(snapshot, chapters)
-
+        val report = StoryGraphHealthEngine.analyze(snapshot, chapters)
         assertTrue(report.issues.any { it.category == StoryHealthCategory.KNOWLEDGE && it.severity == StoryHealthSeverity.HIGH && it.title.contains("过早") })
     }
 
