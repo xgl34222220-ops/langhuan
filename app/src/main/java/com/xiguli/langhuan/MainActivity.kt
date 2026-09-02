@@ -28,14 +28,14 @@ import com.xiguli.langhuan.data.local.StartupDatabaseGate
 import com.xiguli.langhuan.engine.PostStartupInitializer
 import com.xiguli.langhuan.ui.LanghuanRootV3
 import com.xiguli.langhuan.ui.StudioViewModel
+import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            // Keep the proven safe4 launcher path unchanged: plain Material3 first, no heavy
-            // data/UI initialization until Room has passed the startup gate.
+            // Keep the proven launcher path plain and dependency-light until Room is healthy.
             MaterialTheme {
                 StartupDatabaseRoot()
             }
@@ -69,10 +69,12 @@ private fun StartupDatabaseRoot() {
         LauncherState.Checking -> LauncherCheckingScreen()
         is LauncherState.Failed -> LauncherFailureScreen(state.status)
         is LauncherState.Ready -> {
-            // Noncritical reference-library/index work starts only after launcher health is proven.
-            LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
-            val studioViewModel: StudioViewModel = viewModel()
-            LanghuanRootV3(studioViewModel)
+            // Visual styling and noncritical background work begin only after startup is proven safe.
+            LanghuanStableTheme {
+                LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
+                val studioViewModel: StudioViewModel = viewModel()
+                LanghuanRootV3(studioViewModel)
+            }
         }
     }
 }
