@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.engine
 
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -112,9 +113,17 @@ class WritingSkillUpdateClient {
             val length = connection.contentLengthLong
             require(length < 0 || length <= MAX_BYTES) { "远程 Skill 超过 ${MAX_BYTES / 1024}KB，已拒绝" }
             connection.inputStream.buffered().use { input ->
-                val bytes = input.readNBytes(MAX_BYTES + 1)
-                require(bytes.size <= MAX_BYTES) { "远程 Skill 超过 ${MAX_BYTES / 1024}KB，已拒绝" }
-                return bytes.toString(Charsets.UTF_8)
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8 * 1024)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= MAX_BYTES) { "远程 Skill 超过 ${MAX_BYTES / 1024}KB，已拒绝" }
+                    output.write(buffer, 0, count)
+                }
+                return output.toString(Charsets.UTF_8.name())
             }
         } finally {
             connection.disconnect()
