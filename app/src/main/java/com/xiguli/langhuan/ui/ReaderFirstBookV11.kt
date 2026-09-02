@@ -66,12 +66,13 @@ fun ReaderFirstBookV11(
     onEnterWriting: (String) -> Unit,
     onOpenEditor: (String, Int) -> Unit,
     onOpenAiSetup: () -> Unit,
+    startOnInfo: Boolean = false,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val book = state.openedBook ?: return
     val context = LocalContext.current
     val isLocal = book.genre == "导入作品"
-    var route by remember(book.id) { mutableStateOf(if (isLocal) ReaderBookRouteV11.READER else ReaderBookRouteV11.INFO) }
+    var route by remember(book.id) { mutableStateOf(if (startOnInfo || !isLocal) ReaderBookRouteV11.INFO else ReaderBookRouteV11.READER) }
 
     LaunchedEffect(book.id, state.chapters.size) {
         if (state.chapters.isNotEmpty() && state.readingChapter == null) {
@@ -167,7 +168,7 @@ private fun ReaderPageV11(
     var fontSize by remember(book.id) { mutableFloatStateOf(prefs.getFloat("font_${book.id}", 19f)) }
     var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line_${book.id}", 1.82f)) }
     var sidePadding by remember(book.id) { mutableFloatStateOf(prefs.getFloat("padding_${book.id}", 24f)) }
-    var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme_${book.id}", "paper") ?: "paper") }
+    var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme_${book.id}", "system") ?: "system") }
     var fontKey by remember(book.id) { mutableStateOf(prefs.getString("family_${book.id}", "default") ?: "default") }
     var pageModeKey by remember(book.id) { mutableStateOf(prefs.getString("page_mode_${book.id}", ReaderPageModeV10.SCROLL.key) ?: ReaderPageModeV10.SCROLL.key) }
     var customBg by remember(book.id) { mutableStateOf(prefs.getString("custom_bg_${book.id}", "#FFF4F0E6") ?: "#FFF4F0E6") }
@@ -681,11 +682,14 @@ private fun InfoRowV11(label: String, value: String, divider: Boolean = true) {
     if (divider) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .32f))
 }
 
+@Composable
 private fun readerPaletteV11(theme: ReaderThemeV11, customBg: String, customFg: String): ReaderPaletteV11 {
     val customBackground = parseReaderHexColorV10(customBg) ?: Color(0xFFF4F0E6)
     val customForeground = parseReaderHexColorV10(customFg) ?: Color(0xFF302D28)
+    val scheme = MaterialTheme.colorScheme
     return when (theme) {
-        ReaderThemeV11.SYSTEM -> ReaderPaletteV11(Color(0xFFF8F8F6), Color(0xFF202020), Color(0xFF77746F), Color(0xFFF2F2EF))
+        // 「默认」跟随应用主题，因此浅色/深色和纸白配色都能到达阅读页。
+        ReaderThemeV11.SYSTEM -> ReaderPaletteV11(scheme.background, scheme.onBackground, scheme.onSurfaceVariant, scheme.surfaceContainer)
         ReaderThemeV11.PAPER -> ReaderPaletteV11(Color(0xFFF4F0E6), Color(0xFF302D28), Color(0xFF7B756C), Color(0xFFEDE8DB))
         ReaderThemeV11.WARM -> ReaderPaletteV11(Color(0xFFF3E5C9), Color(0xFF362D23), Color(0xFF7E6E5B), Color(0xFFEADAB9))
         ReaderThemeV11.GREEN -> ReaderPaletteV11(Color(0xFFE4ECE0), Color(0xFF283129), Color(0xFF657166), Color(0xFFD8E3D5))

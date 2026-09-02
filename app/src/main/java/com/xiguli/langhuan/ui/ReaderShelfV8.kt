@@ -55,6 +55,7 @@ fun ReaderShelfV8(
     importState: LocalBookImportUiStateV1,
     onOpenBook: (String) -> Unit,
     onOpenBookInfo: (String) -> Unit,
+    onOpenTavern: (String) -> Unit,
     onImportLocal: () -> Unit,
     onDeleteBook: (String) -> Unit,
     onCreate: () -> Unit,
@@ -277,6 +278,11 @@ fun ReaderShelfV8(
                     ShelfActionRowV8(Icons.Rounded.Info, "图书详情", "查看文件、章节、字数和导入信息") {
                         selectedBook = null
                         onOpenBookInfo(book.id)
+                    }
+                    HorizontalDivider(Modifier.padding(start = 54.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .32f))
+                    ShelfActionRowV8(Icons.Rounded.AutoAwesome, "进入酒馆", "让角色接管这本书的世界") {
+                        selectedBook = null
+                        onOpenTavern(book.id)
                     }
                     HorizontalDivider(Modifier.padding(start = 54.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .32f))
                     ShelfActionRowV8(Icons.Rounded.DeleteOutline, "删除图书", "只删除琅嬛记录，不删除手机原文件", danger = true) {
