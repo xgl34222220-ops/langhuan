@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,13 +41,10 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.snapshotFlow
-import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
 import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
-import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.basic.TopAppBar as MiuixTopAppBar
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 
 private enum class ReaderBookRouteV11 { INFO, READER, STORY }
@@ -165,10 +165,10 @@ private fun ReaderPageV11(
     var showInfo by remember { mutableStateOf(false) }
     var archive by remember(book.id) { mutableStateOf(ReaderReadingStoreV11.load(context, book.id)) }
 
-    var fontSize by remember(book.id) { mutableFloatStateOf(prefs.getFloat("font_${book.id}", 19f)) }
+    var fontSize by remember(book.id) { mutableFloatStateOf(prefs.getFloat("font_${book.id}", 21f)) }
     var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line_${book.id}", 1.82f)) }
     var sidePadding by remember(book.id) { mutableFloatStateOf(prefs.getFloat("padding_${book.id}", 24f)) }
-    var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme_${book.id}", "system") ?: "system") }
+    var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme_${book.id}", "paper") ?: "paper") }
     var fontKey by remember(book.id) { mutableStateOf(prefs.getString("family_${book.id}", "default") ?: "default") }
     var pageModeKey by remember(book.id) { mutableStateOf(prefs.getString("page_mode_${book.id}", ReaderPageModeV10.SCROLL.key) ?: ReaderPageModeV10.SCROLL.key) }
     var customBg by remember(book.id) { mutableStateOf(prefs.getString("custom_bg_${book.id}", "#FFF4F0E6") ?: "#FFF4F0E6") }
@@ -285,12 +285,18 @@ private fun ReaderPageV11(
 
         if (!chrome) {
             val pageText = if (pageMode == ReaderPageModeV10.SCROLL) "${index + 1} / ${ordered.size}" else "${pager.currentPage + 1}/${pages.size}"
-            Text(pageText, Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 14.dp, bottom = 8.dp), style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
+            Text(
+                SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 18.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.secondary.copy(alpha = .72f),
+            )
+            Text("$pageText  ${(currentProgressFraction() * 100).toInt()}%", Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 8.dp), style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
         }
         if (chrome) ReaderChromeV11(
             chapter = chapter, index = index, total = ordered.size, palette = palette, bookmarked = bookmarked,
             onBack = onBack, onPrev = { move(-1) }, onNext = { move(1) }, onBookmark = ::toggleBookmark,
-            onDirectory = { showDirectory = true }, onInfo = { showInfo = true }, onTools = { showTools = true }, onStory = onStory,
+            onDirectory = { showDirectory = true }, onInfo = { showInfo = true }, onTools = { showTools = true },
         )
     }
 
@@ -356,7 +362,6 @@ private fun BoxScope.ReaderChromeV11(
     onDirectory: () -> Unit,
     onInfo: () -> Unit,
     onTools: () -> Unit,
-    onStory: () -> Unit,
 ) {
     MiuixCard(
         modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 10.dp, vertical = 7.dp).fillMaxWidth(),
@@ -386,8 +391,7 @@ private fun BoxScope.ReaderChromeV11(
         Row(Modifier.fillMaxWidth().height(58.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             ReaderBottomActionV11(Icons.Rounded.Info, "详情", palette.foreground, onInfo)
             ReaderBottomActionV11(Icons.Rounded.FormatListBulleted, "目录", palette.foreground, onDirectory)
-            ReaderBottomActionV11(Icons.Rounded.AutoStories, "工具", palette.foreground, onTools)
-            ReaderBottomActionV11(Icons.Rounded.AutoAwesome, "故事", palette.foreground, onStory)
+            ReaderBottomActionV11(Icons.Rounded.MoreHoriz, "更多", palette.foreground, onTools)
         }
     }
 }
@@ -452,26 +456,39 @@ private fun ReaderToolsSheetV11(
         ReaderToolPageV11.HOME -> "阅读工具"
         ReaderToolPageV11.BOOKMARKS -> "书签"
         ReaderToolPageV11.NOTES -> "批注"
-        ReaderToolPageV11.DISPLAY -> "阅读显示"
+        ReaderToolPageV11.DISPLAY -> "日间主题"
         ReaderToolPageV11.FONTS -> "字体管理"
         ReaderToolPageV11.PRESETS -> "阅读方案"
     }
     OverlayBottomSheet(show = true, title = title, onDismissRequest = { if (page == ReaderToolPageV11.HOME) onDismiss() else page = ReaderToolPageV11.HOME }) {
         when (page) {
-            ReaderToolPageV11.HOME -> Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                MiuixCard(cornerRadius = 18.dp, insideMargin = PaddingValues(0.dp)) {
-                    ReaderToolRowV11(Icons.Rounded.Bookmark, "书签", "${archive.bookmarks.size} 个 · 当前 ${readerLocationLabelV11(chapter.chapterNumber, pageIndex, scrollY, pageMode)}") { page = ReaderToolPageV11.BOOKMARKS }
-                    ReaderDividerV11(); ReaderToolRowV11(Icons.Rounded.EditNote, "批注", "${archive.annotations.size} 条 · 记录想法和摘录") { page = ReaderToolPageV11.NOTES }
-                    ReaderDividerV11(); ReaderToolRowV11(Icons.Rounded.Tune, "阅读显示", "字号、行距、主题和翻页") { page = ReaderToolPageV11.DISPLAY }
-                    ReaderDividerV11(); ReaderToolRowV11(Icons.Rounded.TextFields, "字体管理", "导入、选择和删除 TTF / OTF") { page = ReaderToolPageV11.FONTS }
-                    ReaderDividerV11(); ReaderToolRowV11(Icons.Rounded.Style, "阅读方案", "保存整套阅读配置") { page = ReaderToolPageV11.PRESETS }
-                }
-                Spacer(Modifier.height(12.dp))
-                MiuixCard(cornerRadius = 18.dp, insideMargin = PaddingValues(0.dp)) {
-                    ReaderToolRowV11(Icons.Rounded.Search, "全文搜索", "在整本书中查找文字", onSearch)
-                    ReaderDividerV11(); ReaderToolRowV11(Icons.Rounded.AutoAwesome, "从本章进入故事", "当前章节作为原著知识边界", onStory)
-                    if (!isLocal) { ReaderDividerV11(); ReaderToolRowV11(Icons.Rounded.Edit, "编辑本章", "回到创作模式修改正文", onEdit) }
-                }
+            ReaderToolPageV11.HOME -> LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                contentPadding = PaddingValues(vertical = 4.dp, horizontal = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item { ReaderToolTileV11(Icons.Rounded.Checkroom, "主题") { page = ReaderToolPageV11.DISPLAY } }
+                item { ReaderToolTileV11(Icons.Rounded.TextFields, "字体") { page = ReaderToolPageV11.FONTS } }
+                item { ReaderToolTileV11(Icons.Rounded.FormatSize, "字号") { page = ReaderToolPageV11.DISPLAY } }
+                item { ReaderToolTileV11(Icons.Rounded.FormatLineSpacing, "行段") { page = ReaderToolPageV11.DISPLAY } }
+                item { ReaderToolTileV11(Icons.Rounded.LocationOn, "定位") { page = ReaderToolPageV11.BOOKMARKS } }
+                item { ReaderToolTileV11(Icons.Rounded.SwapVert, "上下翻页") { onPageMode(ReaderPageModeV10.SCROLL.key) } }
+                item { ReaderToolTileV11(Icons.Rounded.AutoStories, "仿真翻页") { onPageMode(ReaderPageModeV10.COVER.key) } }
+                item { ReaderToolTileV11(Icons.Rounded.Search, "全文搜索", onSearch) }
+                item { ReaderToolTileV11(Icons.Rounded.VolumeUp, "音量键翻页") { onPageMode(ReaderPageModeV10.PAGE.key) } }
+                item { ReaderToolTileV11(Icons.Rounded.LightMode, "屏幕常亮") { page = ReaderToolPageV11.PRESETS } }
+                item { ReaderToolTileV11(Icons.Rounded.Schedule, "时间电量") { page = ReaderToolPageV11.DISPLAY } }
+                item { ReaderToolTileV11(Icons.Rounded.Fullscreen, "沉浸式") { onDismiss() } }
+                item { ReaderToolTileV11(Icons.Rounded.TouchApp, "点击动画") { onPageMode(ReaderPageModeV10.PAGE.key) } }
+                item { ReaderToolTileV11(Icons.Rounded.BookmarkBorder, "下拉书签") { page = ReaderToolPageV11.BOOKMARKS } }
+                item { ReaderToolTileV11(Icons.Rounded.Anchor, "全屏下一页") { onPageMode(ReaderPageModeV10.COVER.key) } }
+                item { ReaderToolTileV11(Icons.Rounded.Wallpaper, "背景图遮罩") { page = ReaderToolPageV11.DISPLAY } }
+                item { ReaderToolTileV11(Icons.Rounded.EditNote, "批注") { page = ReaderToolPageV11.NOTES } }
+                item { ReaderToolTileV11(Icons.Rounded.Style, "阅读方案") { page = ReaderToolPageV11.PRESETS } }
+                item { ReaderToolTileV11(Icons.Rounded.AutoAwesome, "进入故事", onStory) }
+                if (!isLocal) item { ReaderToolTileV11(Icons.Rounded.Edit, "修改正文", onEdit) }
             }
             ReaderToolPageV11.BOOKMARKS -> Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                 MiuixButton(onClick = {
@@ -514,10 +531,19 @@ private fun ReaderToolsSheetV11(
                 }
             }
             ReaderToolPageV11.DISPLAY -> Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                Text("阅读主题", style = MaterialTheme.typography.labelLarge)
-                ReaderThemeV11.entries.forEach { t ->
-                    MiuixCard(Modifier.fillMaxWidth().padding(top = 8.dp), cornerRadius = 17.dp, insideMargin = PaddingValues(horizontal = 14.dp, vertical = 13.dp), onClick = { onTheme(t.key) }, showIndication = true) {
-                        Row(verticalAlignment = Alignment.CenterVertically) { Text(t.label, Modifier.weight(1f)); if (themeKey == t.key) Icon(Icons.Rounded.CheckCircle, "已选择", tint = MaterialTheme.colorScheme.primary) }
+                Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.Center) {
+                    Text("日间主题", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    Text("夜间主题", Modifier.padding(start = 42.dp), fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = tokens.textSecondary)
+                }
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    items(ReaderThemeV11.entries.size) { index ->
+                        val t = ReaderThemeV11.entries[index]
+                        ReaderThemeCardV11(t, selected = themeKey == t.key) { onTheme(t.key) }
                     }
                 }
                 if (themeKey == ReaderThemeV11.CUSTOM.key) {
@@ -582,6 +608,64 @@ private fun ReaderToolsSheetV11(
 }
 
 @Composable
+private fun ReaderToolTileV11(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    val tokens = LocalMiuixTokens.current
+    Column(
+        Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            Modifier.size(48.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, null, Modifier.size(24.dp), tint = tokens.textPrimary)
+        }
+        Text(
+            label,
+            Modifier.padding(top = 6.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ReaderThemeCardV11(theme: ReaderThemeV11, selected: Boolean, onClick: () -> Unit) {
+    val palette = readerPaletteV11(theme, "#FFF4F0E6", "#FF302D28")
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().height(164.dp),
+        cornerRadius = 5.dp,
+        insideMargin = PaddingValues(0.dp),
+        colors = MiuixCardDefaults.defaultColors(color = palette.background, contentColor = palette.foreground),
+        onClick = onClick,
+        showIndication = true,
+    ) {
+        Box(Modifier.fillMaxSize().padding(16.dp)) {
+            if (selected) {
+                Box(
+                    Modifier.align(Alignment.TopStart).size(28.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.Check, "已选择", Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onPrimary) }
+            }
+            Column(Modifier.align(Alignment.BottomStart)) {
+                Text(theme.label, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = palette.foreground)
+                Text("琅嬛阅读", Modifier.padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, color = palette.secondary)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ReaderToolRowV11(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, summary: String, onClick: () -> Unit) {
     val tokens = LocalMiuixTokens.current
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -612,13 +696,19 @@ private fun DirectorySheetV11(bookId: String, state: LibraryExperienceState, onD
     val original = remember(bookId) { EpubOriginalTocV1.load(context, bookId) }
     val originalEntries = remember(original, query, descending) { val flat = flattenTocV11(original).filter { query.isBlank() || it.title.contains(query, true) }; if (descending) flat.asReversed() else flat }
     val chapters = remember(state.chapters, query, descending) { val list = state.chapters.sortedBy { it.chapterNumber }.filter { query.isBlank() || it.title.contains(query, true) }; if (descending) list.asReversed() else list }
-    OverlayBottomSheet(show = true, title = if (original.isNotEmpty()) "原书目录 · ${state.chapters.size} 章" else "目录 · ${state.chapters.size} 章", onDismissRequest = onDismiss) {
+    OverlayBottomSheet(show = true, title = null, onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().height(54.dp), verticalAlignment = Alignment.CenterVertically) {
+                MiuixIconButton(onClick = onDismiss) { Icon(Icons.Rounded.ArrowBack, "返回") }
+                Text(state.openedBook?.title ?: "目录", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                MiuixIconButton(onClick = { }) { Icon(Icons.Rounded.BookmarkBorder, "书签") }
+                MiuixIconButton(onClick = { }) { Icon(Icons.Rounded.DarkMode, "夜间") }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text("搜索章节") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true, shape = RoundedCornerShape(18.dp), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, focusedContainerColor = tokens.cardBackground, unfocusedContainerColor = tokens.cardBackground))
                 MiuixIconButton(onClick = { descending = !descending }, modifier = Modifier.padding(start = 6.dp)) { Icon(if (descending) Icons.Rounded.South else Icons.Rounded.North, if (descending) "倒序" else "正序") }
             }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 590.dp).padding(top = 8.dp)) {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 540.dp).padding(top = 8.dp)) {
                 if (original.isNotEmpty()) items(originalEntries.size, key = { "toc_${it}_${originalEntries[it].title}" }) { i ->
                     val item = originalEntries[i]; val selected = item.chapterNumber == state.readingChapter?.chapterNumber
                     Row(Modifier.fillMaxWidth().then(if (item.chapterNumber != null) Modifier.clickable { onChapter(item.chapterNumber) } else Modifier).padding(start = (8 + item.depth * 18).dp, end = 8.dp, top = 11.dp, bottom = 11.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -630,6 +720,12 @@ private fun DirectorySheetV11(bookId: String, state: LibraryExperienceState, onD
                     val item = chapters[i]; val selected = item.id == state.readingChapter?.id
                     Row(Modifier.fillMaxWidth().clickable { onChapter(item.chapterNumber) }.padding(horizontal = 8.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) { Text(item.title.ifBlank { "第 ${item.chapterNumber} 章" }, Modifier.weight(1f), color = if (selected) MaterialTheme.colorScheme.primary else tokens.textPrimary, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis); if (selected) Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary) }
                 }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .32f))
+            Row(Modifier.fillMaxWidth().height(56.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                Text("详情", color = tokens.textSecondary, fontSize = 17.sp)
+                Text("目录", color = MaterialTheme.colorScheme.primary, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text("更多", color = tokens.textSecondary, fontSize = 17.sp)
             }
         }
     }
@@ -654,23 +750,82 @@ private fun BookInfoSheetV11(book: ReaderBookUi, state: LibraryExperienceState, 
     OverlayBottomSheet(show = true, title = null, onDismissRequest = onDismiss) { Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(104.dp).clip(RoundedCornerShape(10.dp))); Column(Modifier.padding(start = 16.dp).weight(1f)) { Text(book.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis); if (author.isNotBlank()) Text(author, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary); Text("${state.chapters.size} 章 · ${humanWordsV11(book.currentWords)}", Modifier.padding(top = 6.dp), color = tokens.textSecondary) } }; MiuixButton(onClick = { onDismiss(); onOpenFull() }, modifier = Modifier.fillMaxWidth().padding(top = 20.dp), cornerRadius = 18.dp) { Text("查看完整详情") } } }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReaderBookInfoPageV11(book: ReaderBookUi, state: LibraryExperienceState, isLocal: Boolean, onBack: () -> Unit, onRead: () -> Unit, onStory: () -> Unit, onWriting: () -> Unit, onAiSetup: () -> Unit) {
-    val context = LocalContext.current; val tokens = LocalMiuixTokens.current
+    val context = LocalContext.current
+    val tokens = LocalMiuixTokens.current
     val meta = remember { context.getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE) }
-    val fileName = meta.getString("name_${book.id}", book.title).orEmpty(); val fileSize = meta.getLong("size_${book.id}", 0L); val format = meta.getString("format_${book.id}", if (isLocal) "本地" else "创作").orEmpty(); val author = meta.getString("author_${book.id}", "").orEmpty(); val importedAt = meta.getLong("imported_${book.id}", 0L)
-    val progress = ReaderProgressStoreV11.load(context, book.id, book.currentChapter.coerceAtLeast(1)); val percent = if (state.chapters.isEmpty()) 0 else ((progress.chapterNumber.coerceIn(1, state.chapters.size).toFloat() / state.chapters.size) * 100f).roundToInt()
-    MiuixScaffold(containerColor = tokens.pageBackground, topBar = { MiuixTopAppBar(title = "图书详情", largeTitle = "图书详情", subtitle = if (isLocal) "本地书籍" else book.genre, navigationIcon = { MiuixIconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") } }, actions = { if (!isLocal) MiuixIconButton(onClick = onAiSetup) { Icon(Icons.Rounded.Tune, "AI 设置") } }) }) { inner ->
-        Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.Top) { CoverPreviewV3(book.coverPath, book.title, Modifier.width(108.dp).height(156.dp).clip(RoundedCornerShape(14.dp))); Column(Modifier.padding(start = 18.dp).weight(1f)) { Text(book.title, fontSize = 25.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary); if (author.isNotBlank()) Text(author, Modifier.padding(top = 7.dp), color = tokens.textSecondary); Text("${state.chapters.size} 章 · ${humanWordsV11(book.currentWords)}", Modifier.padding(top = 8.dp), color = tokens.textSecondary); Text("阅读 $percent% · 第 ${progress.chapterNumber} 章", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary) } }
-            MiuixButton(onClick = onRead, modifier = Modifier.fillMaxWidth().padding(top = 26.dp), cornerRadius = 18.dp) { Text("继续阅读 · 第 ${progress.chapterNumber} 章") }
-            MiuixButton(onClick = onStory, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), cornerRadius = 18.dp) { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text("从当前章节进入故事") }
-            Text("阅读信息", Modifier.padding(top = 28.dp, bottom = 10.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            MiuixCard(cornerRadius = 18.dp, insideMargin = PaddingValues(horizontal = 16.dp)) { InfoRowV11("阅读进度", "$percent%"); InfoRowV11("当前章节", "第 ${progress.chapterNumber} 章"); InfoRowV11("总章节", "${state.chapters.size} 章"); InfoRowV11("总字数", humanWordsV11(book.currentWords), false) }
-            if (isLocal) { Text("文件信息", Modifier.padding(top = 28.dp, bottom = 10.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); MiuixCard(cornerRadius = 18.dp, insideMargin = PaddingValues(horizontal = 16.dp)) { if (author.isNotBlank()) InfoRowV11("作者", author); InfoRowV11("文件名", fileName.ifBlank { book.title }); InfoRowV11("文件大小", if (fileSize > 0) humanBytesV11(fileSize) else "未知"); InfoRowV11("格式", format); InfoRowV11("导入时间", if (importedAt > 0) formatTimeV11(importedAt) else "旧版本导入", false) } }
-            if (book.premise.isNotBlank() && !book.premise.startsWith("从外部稿件导入")) { Text("简介", Modifier.padding(top = 28.dp, bottom = 10.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); Text(book.premise, lineHeight = 24.sp, color = tokens.textSecondary) }
-            if (!isLocal) TextButton(onClick = onWriting, modifier = Modifier.padding(top = 18.dp).align(Alignment.End)) { Text("打开创作工作台") }
-            Spacer(Modifier.height(40.dp))
+    val fileName = meta.getString("name_${book.id}", book.title).orEmpty()
+    val fileSize = meta.getLong("size_${book.id}", 0L)
+    val format = meta.getString("format_${book.id}", if (isLocal) "本地" else "创作").orEmpty()
+    val author = meta.getString("author_${book.id}", "").orEmpty()
+    val importedAt = meta.getLong("imported_${book.id}", 0L)
+    val progress = ReaderProgressStoreV11.load(context, book.id, book.currentChapter.coerceAtLeast(1))
+    val rawPercent = if (state.chapters.isEmpty()) 0f else progress.chapterNumber.coerceIn(1, state.chapters.size).toFloat() / state.chapters.size * 100f
+    var tab by rememberSaveable(book.id) { mutableIntStateOf(0) }
+
+    Scaffold(
+        containerColor = tokens.pageBackground,
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("图书详情", fontWeight = FontWeight.SemiBold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") } },
+                actions = { if (!isLocal) IconButton(onClick = onAiSetup) { Icon(Icons.Rounded.Tune, "AI 设置") } },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = tokens.pageBackground),
+            )
+        },
+    ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState())) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp), verticalAlignment = Alignment.Top) {
+                CoverPreviewV3(book.coverPath, book.title, Modifier.width(88.dp).height(128.dp).clip(RoundedCornerShape(4.dp)))
+                Column(Modifier.padding(start = 20.dp).weight(1f)) {
+                    Text("书名", color = tokens.textSecondary, style = MaterialTheme.typography.labelMedium)
+                    Text(book.title, Modifier.padding(top = 4.dp), fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("作者", Modifier.padding(top = 12.dp), color = tokens.textSecondary, style = MaterialTheme.typography.labelMedium)
+                    Text(author.ifBlank { "佚名" }, Modifier.padding(top = 3.dp), color = tokens.textPrimary)
+                }
+            }
+            TabRow(selectedTabIndex = tab, containerColor = tokens.pageBackground, divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f)) }) {
+                Tab(tab == 0, onClick = { tab = 0 }, text = { Text("详情", fontWeight = if (tab == 0) FontWeight.SemiBold else FontWeight.Normal) })
+                Tab(tab == 1, onClick = { tab = 1 }, text = { Text("封面", fontWeight = if (tab == 1) FontWeight.SemiBold else FontWeight.Normal) })
+            }
+            if (tab == 0) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 22.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                        Text(String.format(Locale.getDefault(), "%.1f", rawPercent), fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium, color = tokens.textPrimary)
+                        Text("%", Modifier.padding(start = 3.dp, bottom = 3.dp), color = tokens.textSecondary)
+                        Spacer(Modifier.weight(1f))
+                        Text("读到 ${progress.chapterNumber} / ${state.chapters.size} 章", color = tokens.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(state.chapters.getOrNull(progress.chapterNumber - 1)?.title ?: "第 ${progress.chapterNumber} 章", Modifier.padding(top = 8.dp, bottom = 14.dp), color = tokens.textSecondary)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .32f))
+                    InfoRowV11("文件名称", fileName.ifBlank { book.title })
+                    InfoRowV11("文件大小", if (fileSize > 0) humanBytesV11(fileSize) else "未知")
+                    InfoRowV11("文件格式", format.uppercase(Locale.getDefault()))
+                    InfoRowV11("全文字数", humanWordsV11(book.currentWords))
+                    InfoRowV11("总章节数", "${state.chapters.size} 章")
+                    InfoRowV11("所在书架", "正在阅读")
+                    InfoRowV11("同步状态", "本地保存")
+                    InfoRowV11("导入时间", if (importedAt > 0) formatTimeV11(importedAt) else "旧版本导入", false)
+                    if (book.premise.isNotBlank() && !book.premise.startsWith("从外部稿件导入")) {
+                        Text("简介", Modifier.padding(top = 26.dp), fontWeight = FontWeight.SemiBold)
+                        Text(book.premise, Modifier.padding(top = 10.dp), lineHeight = 24.sp, color = tokens.textSecondary)
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    CoverPreviewV3(book.coverPath, book.title, Modifier.width(210.dp).height(304.dp).clip(RoundedCornerShape(6.dp)))
+                    Text(book.title, Modifier.padding(top = 18.dp), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("封面会随图书保存在本机", Modifier.padding(top = 6.dp), color = tokens.textSecondary)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = onRead, Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(26.dp)) { Text("继续阅读") }
+                OutlinedButton(onClick = onStory, Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(26.dp)) { Text("进入故事") }
+            }
+            if (!isLocal) TextButton(onClick = onWriting, modifier = Modifier.fillMaxWidth()) { Text("打开创作工作台") }
+            Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
     }
 }
