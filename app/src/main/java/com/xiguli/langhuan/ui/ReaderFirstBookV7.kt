@@ -3,11 +3,10 @@ package com.xiguli.langhuan.ui
 import androidx.compose.runtime.Composable
 
 /**
- * Startup-safe compatibility entry.
+ * Startup-safe production reader entry.
  *
- * V8-V11 remain available on their implementation files, but production reading
- * temporarily uses the Material-only V6 reader until the Miuix runtime crash is
- * reproduced and fixed on-device.
+ * Real Miuix reader experiments remain isolated from startup. Production now uses the stable
+ * Material3-only V9 reader with floating chrome and the same visual language as the rebuilt shelf.
  */
 @Composable
 fun ReaderFirstBookV7(
@@ -18,7 +17,7 @@ fun ReaderFirstBookV7(
     onOpenEditor: (String, Int) -> Unit,
     onOpenAiSetup: () -> Unit,
 ) {
-    ReaderFirstBookV6(
+    ReaderFirstBookStableV9(
         viewModel = viewModel,
         studioState = studioState,
         onBackToShelf = onBackToShelf,
