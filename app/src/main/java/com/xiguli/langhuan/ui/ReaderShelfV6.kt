@@ -1,17 +1,18 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -20,24 +21,33 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 
 private enum class ShelfLayoutV6 { GRID, LIST }
+private enum class ShelfFilterV10(val label: String) { ALL("全部"), WRITING("创作"), LOCAL("本地") }
 
 /**
- * Reader-first shelf. Content stays visually flat; glass/layering is reserved for the floating
- * navigation surface so book covers remain the strongest visual element on the page.
+ * Startup-safe production shelf.
+ *
+ * This page intentionally avoids the default Material card/chip-heavy look. Covers and typography
+ * carry the hierarchy; Material is only used for stable primitives and menus after startup.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ReaderShelfV6(
     state: LibraryExperienceState,
     importState: LocalBookImportUiStateV1,
     onOpenBook: (String) -> Unit,
     onImportLocal: () -> Unit,
+    onDeleteBook: (String) -> Unit,
     onCreate: () -> Unit,
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
@@ -46,92 +56,197 @@ fun ReaderShelfV6(
     var query by rememberSaveable { mutableStateOf("") }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var layout by rememberSaveable { mutableStateOf(ShelfLayoutV6.GRID) }
+    var filter by rememberSaveable { mutableStateOf(ShelfFilterV10.ALL) }
+    var showPageMenu by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
-    var showViewMenu by remember { mutableStateOf(false) }
+    var actionBook by remember { mutableStateOf<ReaderBookUi?>(null) }
+    var deleteBook by remember { mutableStateOf<ReaderBookUi?>(null) }
 
-    val books = remember(state.stories, query) {
+    val books = remember(state.stories, query, filter) {
         val key = query.trim()
         state.stories
+            .asSequence()
             .sortedByDescending { it.updatedAt }
             .filter { book ->
-                key.isBlank() || book.title.contains(key, true) || book.genre.contains(key, true)
+                when (filter) {
+                    ShelfFilterV10.ALL -> true
+                    ShelfFilterV10.WRITING -> book.genre != "导入作品"
+                    ShelfFilterV10.LOCAL -> book.genre == "导入作品"
+                }
             }
+            .filter { book -> key.isBlank() || book.title.contains(key, true) || book.genre.contains(key, true) }
+            .toList()
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            ShelfTopBarV9(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            ShelfHeaderV10(
                 totalBooks = state.stories.size,
                 query = query,
                 searchVisible = searchVisible,
+                filter = filter,
                 layout = layout,
-                showViewMenu = showViewMenu,
-                onToggleSearch = { searchVisible = !searchVisible },
+                showPageMenu = showPageMenu,
                 onQueryChange = { query = it },
-                onClearQuery = { query = "" },
+                onToggleSearch = {
+                    searchVisible = !searchVisible
+                    if (!searchVisible) query = ""
+                },
                 onImportLocal = onImportLocal,
-                onShowViewMenu = { showViewMenu = true },
-                onDismissViewMenu = { showViewMenu = false },
+                onShowPageMenu = { showPageMenu = true },
+                onDismissPageMenu = { showPageMenu = false },
+                onFilterChange = { filter = it },
                 onLayoutChange = { layout = it },
             )
-        },
-        bottomBar = {
-            ShelfGlassDockV9(
-                showTools = showTools,
-                onShowTools = { showTools = true },
-                onDismissTools = { showTools = false },
-                onCreate = onCreate,
-                onAiSetup = onAiSetup,
-                onRunCenter = onRunCenter,
-                onSkills = onSkills,
-            )
-        },
-    ) { padding ->
-        when {
-            importState.busy -> ImportingBookStateV9(importState.currentFileName, Modifier.padding(padding))
-            books.isEmpty() -> EmptyShelfV9(
-                query = query,
-                modifier = Modifier.padding(padding),
-                onImportLocal = onImportLocal,
-                onCreate = onCreate,
-            )
-            layout == ShelfLayoutV6.GRID -> ShelfGridV9(
-                books = books,
-                query = query,
-                modifier = Modifier.padding(padding),
-                onOpenBook = onOpenBook,
-            )
-            else -> ShelfListV9(
-                books = books,
-                query = query,
-                modifier = Modifier.padding(padding),
-                onOpenBook = onOpenBook,
-            )
+
+            when {
+                importState.busy -> ImportingBookStateV10(importState.currentFileName, Modifier.weight(1f))
+                books.isEmpty() -> EmptyShelfV10(
+                    hasAnyBook = state.stories.isNotEmpty(),
+                    query = query,
+                    modifier = Modifier.weight(1f),
+                    onImportLocal = onImportLocal,
+                    onCreate = onCreate,
+                )
+                layout == ShelfLayoutV6.GRID -> ShelfGridV10(
+                    books = books,
+                    modifier = Modifier.weight(1f),
+                    onOpenBook = onOpenBook,
+                    onBookMenu = { actionBook = it },
+                )
+                else -> ShelfListV10(
+                    books = books,
+                    modifier = Modifier.weight(1f),
+                    onOpenBook = onOpenBook,
+                    onBookMenu = { actionBook = it },
+                )
+            }
         }
+
+        ShelfDockV10(
+            modifier = Modifier.align(Alignment.BottomCenter),
+            onCreate = onCreate,
+            onShowTools = { showTools = true },
+        )
+    }
+
+    if (showTools) {
+        ModalBottomSheet(onDismissRequest = { showTools = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+            ) {
+                Text("更多", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "AI、写作技能和后台任务",
+                    modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ShelfToolRowV10(Icons.Rounded.Tune, "AI 服务", "模型、中转站与默认服务") {
+                    showTools = false
+                    onAiSetup()
+                }
+                ShelfToolRowV10(Icons.Rounded.AutoStories, "写作 Skills", "章纲、导演、校验等能力") {
+                    showTools = false
+                    onSkills()
+                }
+                ShelfToolRowV10(Icons.Rounded.TaskAlt, "运行中心", "查看生成和后台任务") {
+                    showTools = false
+                    onRunCenter()
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+        }
+    }
+
+    actionBook?.let { book ->
+        ModalBottomSheet(onDismissRequest = { actionBook = null }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CoverPreviewV3(
+                        path = book.coverPath,
+                        title = book.title,
+                        modifier = Modifier.width(52.dp).height(74.dp).clip(RoundedCornerShape(9.dp)),
+                    )
+                    Column(Modifier.padding(start = 13.dp).weight(1f)) {
+                        Text(
+                            book.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            if (book.genre == "导入作品") "本地书籍 · 第 ${book.currentChapter} 章" else "${book.genre} · 第 ${book.currentChapter} 章",
+                            modifier = Modifier.padding(top = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                ShelfActionRowV10(Icons.Rounded.MenuBook, "打开 / 继续阅读") {
+                    actionBook = null
+                    onOpenBook(book.id)
+                }
+                ShelfActionRowV10(
+                    icon = Icons.Rounded.DeleteOutline,
+                    title = "删除小说",
+                    tint = MaterialTheme.colorScheme.error,
+                ) {
+                    actionBook = null
+                    deleteBook = book
+                }
+            }
+        }
+    }
+
+    deleteBook?.let { book ->
+        DeleteBookDialogV10(
+            book = book,
+            onDismiss = { deleteBook = null },
+            onConfirm = {
+                deleteBook = null
+                onDeleteBook(book.id)
+            },
+        )
     }
 }
 
 @Composable
-private fun ShelfTopBarV9(
+private fun ShelfHeaderV10(
     totalBooks: Int,
     query: String,
     searchVisible: Boolean,
+    filter: ShelfFilterV10,
     layout: ShelfLayoutV6,
-    showViewMenu: Boolean,
-    onToggleSearch: () -> Unit,
+    showPageMenu: Boolean,
     onQueryChange: (String) -> Unit,
-    onClearQuery: () -> Unit,
+    onToggleSearch: () -> Unit,
     onImportLocal: () -> Unit,
-    onShowViewMenu: () -> Unit,
-    onDismissViewMenu: () -> Unit,
+    onShowPageMenu: () -> Unit,
+    onDismissPageMenu: () -> Unit,
+    onFilterChange: (ShelfFilterV10) -> Unit,
     onLayoutChange: (ShelfLayoutV6) -> Unit,
 ) {
     Column(
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 10.dp, top = 10.dp),
+            .padding(start = 20.dp, end = 14.dp, top = 12.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -139,259 +254,285 @@ private fun ShelfTopBarV9(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "琅嬛",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
+                    "琅嬛",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = if (totalBooks == 0) "阅读与创作" else "$totalBooks 本书",
+                    "书架",
+                    modifier = Modifier.padding(top = 1.dp),
+                    fontSize = 30.sp,
+                    lineHeight = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    if (totalBooks == 0) "把阅读和创作放在同一个地方" else "$totalBooks 本书",
                     modifier = Modifier.padding(top = 1.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onToggleSearch) {
-                Icon(if (searchVisible) Icons.Rounded.Close else Icons.Rounded.Search, "搜索")
-            }
-            IconButton(onClick = onImportLocal) {
-                Icon(Icons.Rounded.Add, "导入小说")
-            }
+            ShelfRoundActionV10(
+                icon = if (searchVisible) Icons.Rounded.Close else Icons.Rounded.Search,
+                description = "搜索",
+                onClick = onToggleSearch,
+            )
+            Spacer(Modifier.width(6.dp))
+            ShelfRoundActionV10(Icons.Rounded.Add, "导入小说", onImportLocal)
+            Spacer(Modifier.width(6.dp))
             Box {
-                IconButton(onClick = onShowViewMenu) {
-                    Icon(Icons.Rounded.MoreHoriz, "显示选项")
-                }
-                DropdownMenu(expanded = showViewMenu, onDismissRequest = onDismissViewMenu) {
+                ShelfRoundActionV10(Icons.Rounded.MoreHoriz, "显示选项", onShowPageMenu)
+                DropdownMenu(expanded = showPageMenu, onDismissRequest = onDismissPageMenu) {
                     DropdownMenuItem(
                         text = { Text("网格书架") },
                         leadingIcon = { Icon(Icons.Rounded.GridView, null) },
-                        trailingIcon = if (layout == ShelfLayoutV6.GRID) {
-                            { Icon(Icons.Rounded.Check, null) }
-                        } else null,
-                        onClick = { onDismissViewMenu(); onLayoutChange(ShelfLayoutV6.GRID) },
+                        trailingIcon = if (layout == ShelfLayoutV6.GRID) {{ Icon(Icons.Rounded.Check, null) }} else null,
+                        onClick = { onDismissPageMenu(); onLayoutChange(ShelfLayoutV6.GRID) },
                     )
                     DropdownMenuItem(
                         text = { Text("列表书架") },
                         leadingIcon = { Icon(Icons.Rounded.ViewAgenda, null) },
-                        trailingIcon = if (layout == ShelfLayoutV6.LIST) {
-                            { Icon(Icons.Rounded.Check, null) }
-                        } else null,
-                        onClick = { onDismissViewMenu(); onLayoutChange(ShelfLayoutV6.LIST) },
+                        trailingIcon = if (layout == ShelfLayoutV6.LIST) {{ Icon(Icons.Rounded.Check, null) }} else null,
+                        onClick = { onDismissPageMenu(); onLayoutChange(ShelfLayoutV6.LIST) },
                     )
                 }
             }
         }
 
         if (searchVisible) {
-            TextField(
+            ShelfSearchFieldV10(
                 value = query,
                 onValueChange = onQueryChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 10.dp, top = 10.dp, bottom = 4.dp),
-                placeholder = { Text("搜索书名或类型") },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = onClearQuery) { Icon(Icons.Rounded.Cancel, "清空") }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(18.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .52f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .52f),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
+                modifier = Modifier.padding(top = 14.dp, end = 6.dp),
             )
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(top = if (searchVisible) 12.dp else 18.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ShelfFilterV10.entries.forEach { item ->
+                ShelfFilterTabV10(
+                    label = item.label,
+                    selected = filter == item,
+                    onClick = { onFilterChange(item) },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ShelfGridV9(
+private fun ShelfRoundActionV10(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f))
+            .combinedClickable(onClick = onClick, onLongClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, description, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
+private fun ShelfSearchFieldV10(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .46f))
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Search, null, modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.padding(start = 10.dp).weight(1f),
+            singleLine = true,
+            textStyle = TextStyle(
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.sp,
+            ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            decorationBox = { inner ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (value.isBlank()) {
+                        Text("搜索书名或类型", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    }
+                    inner()
+                }
+            },
+        )
+        if (value.isNotBlank()) {
+            Box(
+                Modifier.size(28.dp).clip(CircleShape).combinedClickable(
+                    onClick = { onValueChange("") },
+                    onLongClick = { onValueChange("") },
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Cancel, "清空", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShelfFilterTabV10(label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 3.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Box(
+            Modifier
+                .padding(top = 5.dp)
+                .width(if (selected) 18.dp else 0.dp)
+                .height(3.dp)
+                .clip(CircleShape)
+                .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent),
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ShelfGridV10(
     books: List<ReaderBookUi>,
-    query: String,
     modifier: Modifier,
     onOpenBook: (String) -> Unit,
+    onBookMenu: (ReaderBookUi) -> Unit,
 ) {
-    val recent = books.firstOrNull()
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 26.dp),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 112.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        if (query.isBlank() && recent != null) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                RecentReadingV9(recent, onOpenBook)
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                ShelfSectionV9("书架", "${books.size} 本")
-            }
-        } else {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                ShelfSectionV9("搜索结果", "${books.size} 本")
-            }
-        }
-
         items(books, key = { it.id }) { book ->
-            BookCoverItemV9(book, onOpenBook)
+            ShelfBookV10(book, onOpenBook, onBookMenu)
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RecentReadingV9(book: ReaderBookUi, onOpenBook: (String) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpenBook(book.id) }
-            .padding(top = 6.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CoverPreviewV3(
-            path = book.coverPath,
-            title = book.title,
-            modifier = Modifier
-                .width(82.dp)
-                .height(116.dp)
-                .clip(RoundedCornerShape(12.dp)),
-        )
-        Column(
-            Modifier
-                .padding(start = 16.dp)
-                .weight(1f),
-        ) {
-            Text(
-                "最近阅读",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                book.title,
-                modifier = Modifier.padding(top = 5.dp),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                if (book.genre == "导入作品") "第 ${book.currentChapter} 章" else "${book.genre} · 第 ${book.currentChapter} 章",
-                modifier = Modifier.padding(top = 5.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-            Surface(
-                modifier = Modifier.padding(top = 12.dp),
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Rounded.MenuBook,
-                        null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "继续阅读",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ShelfSectionV9(title: String, meta: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 0.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-        Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun BookCoverItemV9(book: ReaderBookUi, onOpenBook: (String) -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clickable { onOpenBook(book.id) },
-    ) {
-        CoverPreviewV3(
-            path = book.coverPath,
-            title = book.title,
+private fun ShelfBookV10(
+    book: ReaderBookUi,
+    onOpenBook: (String) -> Unit,
+    onBookMenu: (ReaderBookUi) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(.69f)
-                .clip(RoundedCornerShape(11.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        )
+                .shadow(5.dp, RoundedCornerShape(13.dp), clip = false)
+                .clip(RoundedCornerShape(13.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .combinedClickable(
+                    onClick = { onOpenBook(book.id) },
+                    onLongClick = { onBookMenu(book) },
+                ),
+        ) {
+            CoverPreviewV3(
+                path = book.coverPath,
+                title = book.title,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(7.dp)
+                    .size(29.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = .38f))
+                    .combinedClickable(
+                        onClick = { onBookMenu(book) },
+                        onLongClick = { onBookMenu(book) },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.MoreHoriz, "书籍菜单", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
         Text(
             book.title,
-            modifier = Modifier.padding(top = 7.dp),
+            modifier = Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            "第 ${book.currentChapter} 章",
-            modifier = Modifier.padding(top = 1.dp),
+            if (book.genre == "导入作品") "本地 · 第 ${book.currentChapter} 章" else "第 ${book.currentChapter} 章 · ${book.genre}",
+            modifier = Modifier.padding(top = 2.dp),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ShelfListV9(
+private fun ShelfListV10(
     books: List<ReaderBookUi>,
-    query: String,
     modifier: Modifier,
     onOpenBook: (String) -> Unit,
+    onBookMenu: (ReaderBookUi) -> Unit,
 ) {
     LazyColumn(
-        modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 26.dp),
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 14.dp, top = 6.dp, bottom = 112.dp),
     ) {
-        item {
-            ShelfSectionV9(if (query.isBlank()) "书架" else "搜索结果", "${books.size} 本")
-            Spacer(Modifier.height(6.dp))
-        }
         listItems(books, key = { it.id }) { book ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onOpenBook(book.id) }
-                    .padding(vertical = 10.dp),
+                    .clip(RoundedCornerShape(14.dp))
+                    .combinedClickable(
+                        onClick = { onOpenBook(book.id) },
+                        onLongClick = { onBookMenu(book) },
+                    )
+                    .padding(vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CoverPreviewV3(
                     book.coverPath,
                     book.title,
-                    Modifier.width(54.dp).height(76.dp).clip(RoundedCornerShape(9.dp)),
+                    Modifier.width(54.dp).height(78.dp).clip(RoundedCornerShape(9.dp)),
                 )
                 Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                    Text(
-                        book.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         if (book.genre == "导入作品") "本地书籍" else book.genre,
-                        modifier = Modifier.padding(top = 4.dp),
+                        modifier = Modifier.padding(top = 5.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -402,68 +543,17 @@ private fun ShelfListV9(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Icon(
-                    Icons.Rounded.ChevronRight,
-                    null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .65f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ShelfGlassDockV9(
-    showTools: Boolean,
-    onShowTools: () -> Unit,
-    onDismissTools: () -> Unit,
-    onCreate: () -> Unit,
-    onAiSetup: () -> Unit,
-    onRunCenter: () -> Unit,
-    onSkills: () -> Unit,
-) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 8.dp),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(30.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = .88f),
-            border = BorderStroke(
-                .5.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = .70f),
-            ),
-            shadowElevation = 5.dp,
-        ) {
-            Row(
-                Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 18.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ShelfDockItemV9(Icons.Rounded.AutoStories, "书架", selected = true, onClick = {})
-                ShelfDockItemV9(Icons.Rounded.AutoAwesome, "创作", selected = false, onClick = onCreate)
-                Box {
-                    ShelfDockItemV9(Icons.Rounded.MoreHoriz, "工具", selected = false, onClick = onShowTools)
-                    DropdownMenu(expanded = showTools, onDismissRequest = onDismissTools) {
-                        DropdownMenuItem(
-                            text = { Text("AI 设置") },
-                            leadingIcon = { Icon(Icons.Rounded.Tune, null) },
-                            onClick = { onDismissTools(); onAiSetup() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("写作 Skills") },
-                            leadingIcon = { Icon(Icons.Rounded.AutoStories, null) },
-                            onClick = { onDismissTools(); onSkills() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("后台任务") },
-                            leadingIcon = { Icon(Icons.Rounded.TaskAlt, null) },
-                            onClick = { onDismissTools(); onRunCenter() },
-                        )
-                    }
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = { onBookMenu(book) },
+                            onLongClick = { onBookMenu(book) },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.MoreHoriz, "书籍菜单", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -471,84 +561,199 @@ private fun ShelfGlassDockV9(
 }
 
 @Composable
-private fun ShelfDockItemV9(
+private fun ShelfDockV10(
+    modifier: Modifier = Modifier,
+    onCreate: () -> Unit,
+    onShowTools: () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .navigationBarsPadding()
+            .padding(horizontal = 28.dp, vertical = 10.dp)
+            .fillMaxWidth()
+            .shadow(10.dp, RoundedCornerShape(32.dp), clip = false)
+            .clip(RoundedCornerShape(32.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = .96f))
+            .border(.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .58f), RoundedCornerShape(32.dp))
+            .height(62.dp)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ShelfDockItemV10(Icons.Rounded.AutoStories, "书架", selected = true, onClick = {})
+        ShelfDockItemV10(Icons.Rounded.AutoAwesome, "创作", selected = false, onClick = onCreate)
+        ShelfDockItemV10(Icons.Rounded.MoreHoriz, "更多", selected = false, onClick = onShowTools)
+    }
+}
+
+@Composable
+private fun ShelfDockItemV10(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Column(
+    Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 15.dp, vertical = 5.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .height(42.dp)
+            .clip(RoundedCornerShape(21.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .78f) else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onClick)
+            .padding(horizontal = if (selected) 15.dp else 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
-        Surface(
-            shape = CircleShape,
-            color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f) else Color.Transparent,
-        ) {
-            Icon(
-                icon,
-                label,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp).size(20.dp),
-                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Text(
+        Icon(
+            icon,
             label,
-            modifier = Modifier.padding(top = 1.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            modifier = Modifier.size(20.dp),
+            tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (selected) {
+            Spacer(Modifier.width(7.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
     }
 }
 
 @Composable
-private fun EmptyShelfV9(
+private fun ShelfToolRowV10(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(42.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .60f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, null, modifier = Modifier.size(20.dp))
+        }
+        Column(Modifier.padding(start = 13.dp).weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, modifier = Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
+    }
+}
+
+@Composable
+private fun ShelfActionRowV10(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = tint)
+        Text(title, modifier = Modifier.padding(start = 13.dp), color = tint, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun DeleteBookDialogV10(
+    book: ReaderBookUi,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(22.dp),
+        ) {
+            Text("删除《${book.title}》？", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "正文、章节版本、记忆数据和本地封面都会一起删除。此操作不可撤销。",
+                modifier = Modifier.padding(top = 10.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 22.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onDismiss) { Text("取消") }
+                Spacer(Modifier.width(6.dp))
+                Button(
+                    onClick = onConfirm,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text("删除")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyShelfV10(
+    hasAnyBook: Boolean,
     query: String,
     modifier: Modifier,
     onImportLocal: () -> Unit,
     onCreate: () -> Unit,
 ) {
     Column(
-        modifier.fillMaxSize().padding(horizontal = 34.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            if (query.isBlank()) Icons.Rounded.AutoStories else Icons.Rounded.SearchOff,
-            null,
-            modifier = Modifier.size(42.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .62f),
-        )
+        Box(
+            Modifier.size(68.dp).clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (hasAnyBook || query.isNotBlank()) Icons.Rounded.SearchOff else Icons.Rounded.AutoStories,
+                null,
+                modifier = Modifier.size(30.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
-            if (query.isBlank()) "书架还是空的" else "没有找到这本书",
-            modifier = Modifier.padding(top = 16.dp),
+            if (hasAnyBook || query.isNotBlank()) "这里没有匹配的书" else "书架还是空的",
+            modifier = Modifier.padding(top = 18.dp),
             style = MaterialTheme.typography.titleLarge,
         )
         Text(
-            if (query.isBlank()) "导入一本小说开始阅读，或者直接用 AI 写一本新的。" else "换个关键词试试。",
+            if (hasAnyBook || query.isNotBlank()) "换个筛选或关键词试试。" else "导入一本小说阅读，或者直接从一个想法开始创作。",
             modifier = Modifier.padding(top = 7.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (query.isBlank()) {
-            Row(
-                modifier = Modifier.padding(top = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilledTonalButton(onClick = onImportLocal, shape = RoundedCornerShape(18.dp)) {
-                    Icon(Icons.Rounded.Add, null)
+        if (!hasAnyBook && query.isBlank()) {
+            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = onCreate, shape = RoundedCornerShape(18.dp)) {
+                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("导入小说")
+                    Text("开始创作")
                 }
-                TextButton(onClick = onCreate) {
-                    Icon(Icons.Rounded.AutoAwesome, null)
+                OutlinedButton(onClick = onImportLocal, shape = RoundedCornerShape(18.dp)) {
+                    Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("AI 创作")
+                    Text("导入")
                 }
             }
         }
@@ -556,16 +761,16 @@ private fun EmptyShelfV9(
 }
 
 @Composable
-private fun ImportingBookStateV9(fileName: String, modifier: Modifier) {
+private fun ImportingBookStateV10(fileName: String, modifier: Modifier) {
     Column(
-        modifier.fillMaxSize().padding(horizontal = 36.dp),
+        modifier.fillMaxWidth().padding(horizontal = 36.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(30.dp))
-        Text("正在导入", modifier = Modifier.padding(top = 14.dp), style = MaterialTheme.typography.titleMedium)
+        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+        Text("正在导入小说", modifier = Modifier.padding(top = 14.dp), style = MaterialTheme.typography.titleMedium)
         Text(
-            fileName.ifBlank { "正在读取本地小说…" },
+            fileName.ifBlank { "正在读取本地文件…" },
             modifier = Modifier.padding(top = 4.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
