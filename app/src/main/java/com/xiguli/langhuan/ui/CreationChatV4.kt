@@ -62,6 +62,7 @@ fun CreationChatV4(
         state.streamingReply.length,
         state.pendingAttachments.size,
         state.lastRouteDecision?.status,
+        state.lastExecutionPlan?.status,
         state.isBusy,
         state.error,
     ) {
@@ -131,7 +132,7 @@ fun CreationChatV4(
 
                 state.lastRouteDecision?.let { route ->
                     item {
-                        NovelRouteTraceCardV4(route)
+                        NovelRouteTraceCardV4(route, state.lastExecutionPlan)
                     }
                 }
 
