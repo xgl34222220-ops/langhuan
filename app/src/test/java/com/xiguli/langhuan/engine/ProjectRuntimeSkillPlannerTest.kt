@@ -7,6 +7,7 @@ import com.xiguli.langhuan.domain.Novel
 import com.xiguli.langhuan.domain.NovelStatus
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.OutlineNode
+import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -116,6 +117,7 @@ class ProjectRuntimeSkillPlannerTest {
         )
         return StorySnapshot(
             novel = novel,
+            activeOutline = listOf(chapterOutline),
             bible = emptyList(),
             characters = listOf(
                 CharacterState(
@@ -133,7 +135,6 @@ class ProjectRuntimeSkillPlannerTest {
             recentTimeline = emptyList(),
             relevantForeshadowing = emptyList(),
             recentSummaries = emptyList(),
-            activeOutline = chapterOutline,
         )
     }
 
@@ -143,6 +144,18 @@ class ProjectRuntimeSkillPlannerTest {
         chapterNumber = 1,
         title = "门外的人",
         objective = "验证门外来客身份。",
-        scenePlan = listOf("门铃响", "周衍隔门核验身份", "门外人说出童年细节"),
+        scenePlan = listOf(
+            ScenePlan(
+                order = 1,
+                viewpoint = "周衍",
+                location = "家中玄关",
+                purpose = "隔门核验来客身份",
+                conflict = "周衍不敢直接开门",
+                outcome = "来客说出只有周衍知道的童年细节",
+                participants = listOf("周衍", "门外来客"),
+                storyDay = 1,
+                timeOfDay = "夜间",
+            )
+        ),
     )
 }
