@@ -16,6 +16,7 @@ V7 把琅嬛现有的自然语言路由、章节 Runtime、Candidate/Canon 和�
 - “继续 / 可以 / 确认”等短回复只确认**当前一个 Gate**。
 - 尚未到 Gate 的阶段不会因为一句“继续”被连续跳过。
 - “不对 / 重做 / 修改”等回复只把当前阶段标记为 `NEEDS_REWORK`，不会清空项目。
+- 在章节 Runtime 中，用户真实执行“开始生成 / 正式保存 / Agent 复盘 / 进入下一章”也会作为对应 Gate 的流程证据，而不是让 AI 自己猜阶段是否完成。
 
 ## Artifact 与 stale
 
@@ -39,6 +40,19 @@ V7 把琅嬛现有的自然语言路由、章节 Runtime、Candidate/Canon 和�
 
 注意：依赖分析本身是只读的。只有用户真的执行了上游修改，调用方才应应用回退。
 
+## Runtime 证据同步
+
+`NovelWorkflowRuntimeObserver` 只在 `ChapterRunRuntime` 真正启用后挂接，不增加冷启动工作。它监听真实 Runtime 状态并通过纯函数 `NovelWorkflowRuntimeSync` 更新流程元数据：
+
+- 开始生成正文：记录当前章，确认本轮章纲/场景计划已被采用，进入 `DRAFT`；
+- 正文生成完成：登记工作稿 Artifact，停在正文确认 Gate；
+- 用户正式保存：把这个真实动作视为当前正文 Gate 的确认，进入 `REVIEW`；
+- Agent 复盘完成：登记审校 Artifact；
+- Candidate 处理完并真实进入下一章：关闭上一章 `CANON_SYNC` 流程边界，再进入新章；
+- 返回修改更早章节：回到最早受影响阶段并标记相关下游 Artifact 为 stale，不删除旧产物。
+
+这个观察器只推进**流程状态**。真正的 Canon 写入仍由现有 `CandidateCanonEngine` / `StoryProjectManager` 路径负责，V7 不复制也不绕过唯一 Canon 写入边界。
+
 ## Capability Routing
 
 `NovelSkillRouter` 仍然负责本轮最小能力集合。V7 只把路由结果保存成流程元数据并注入项目会话：
@@ -57,8 +71,9 @@ V7 把琅嬛现有的自然语言路由、章节 Runtime、Candidate/Canon 和�
 - 工作流元数据损坏时直接丢弃并重建，不影响小说事实；
 - 每次 Gate/路由变化同步持久化；
 - 重新进入项目聊天时恢复当前阶段和待处理项；
+- 对 V7 之前已经存在的书，`NovelWorkflowBootstrap` 只根据已确认 StorySnapshot 推导安全恢复点，不伪造旧 Gate 或旧 Artifact；
 - 历史与 artifact 数量做上限裁剪，避免无限膨胀。
 
 ## 参考
 
-工作流设计借鉴 `aaronyi97/image-story-video-wizard` 的阶段门控、单一流程状态、断点恢复和下游产物 stale 思路；琅嬛实现为小说领域的独立 Kotlin 状态机，并接入现有 Skill OS、ChapterDependencyAnalyzer 与 Canon 边界。
+工作流设计借鉴 `aaronyi97/image-story-video-wizard` 的阶段门控、单一流程状态、断点恢复和下游产物 stale 思路；琅嬛实现为小说领域的独立 Kotlin 状态机，并接入现有 Skill OS、ChapterRunRuntime、ChapterDependencyAnalyzer 与 Canon 边界。
