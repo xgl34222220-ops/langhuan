@@ -1,9 +1,12 @@
 package com.xiguli.langhuan.engine
 
+import com.xiguli.langhuan.domain.ChapterContract
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.CharacterState
 import com.xiguli.langhuan.domain.Novel
 import com.xiguli.langhuan.domain.NovelStatus
+import com.xiguli.langhuan.domain.OutlineLevel
+import com.xiguli.langhuan.domain.OutlineNode
 import com.xiguli.langhuan.domain.StorySnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -91,6 +94,26 @@ class ProjectRuntimeSkillPlannerTest {
             targetWords = 300_000,
             status = NovelStatus.WRITING,
         )
+        val chapterOutline = OutlineNode(
+            id = "chapter-1",
+            novelId = novel.id,
+            level = OutlineLevel.CHAPTER,
+            order = 1,
+            title = "门外的人",
+            objective = "验证门外来客身份。",
+            conflict = "周衍不敢直接开门。",
+            turningPoint = "门外人说出只有周衍知道的童年细节。",
+            chapterContract = ChapterContract(
+                purpose = "验证身份而不揭开镜像来源",
+                mustHappen = listOf("出现一次身份验证动作"),
+                mustNotHappen = listOf("揭示镜像来源"),
+                characterStateIn = mapOf("周衍" to "独居，警惕"),
+                characterStateOut = mapOf("周衍" to "确认来客知道童年秘密"),
+                reveals = listOf("来客掌握童年细节"),
+                secretsPreserved = listOf("镜像来源"),
+                hookOut = "来客说出童年细节",
+            ),
+        )
         return StorySnapshot(
             novel = novel,
             bible = emptyList(),
@@ -110,6 +133,7 @@ class ProjectRuntimeSkillPlannerTest {
             recentTimeline = emptyList(),
             relevantForeshadowing = emptyList(),
             recentSummaries = emptyList(),
+            activeOutline = chapterOutline,
         )
     }
 
@@ -119,5 +143,6 @@ class ProjectRuntimeSkillPlannerTest {
         chapterNumber = 1,
         title = "门外的人",
         objective = "验证门外来客身份。",
+        scenePlan = listOf("门铃响", "周衍隔门核验身份", "门外人说出童年细节"),
     )
 }
