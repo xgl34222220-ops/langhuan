@@ -14,6 +14,8 @@ import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.NovelRouteDecision
 import com.xiguli.langhuan.engine.NovelRouteInput
 import com.xiguli.langhuan.engine.NovelRouteStatus
+import com.xiguli.langhuan.engine.NovelSkillExecutionPlan
+import com.xiguli.langhuan.engine.NovelSkillExecutionPlanner
 import com.xiguli.langhuan.engine.NovelSkillRouter
 import com.xiguli.langhuan.engine.PromptAttachment
 import com.xiguli.langhuan.engine.PromptBundle
@@ -23,7 +25,9 @@ import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.RunStage
 import com.xiguli.langhuan.engine.RunStatus
+import com.xiguli.langhuan.engine.TaskModelRouter
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.engine.WritingSkillStore
 import com.xiguli.langhuan.engine.blueprintRunStage
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -125,6 +129,8 @@ data class NewBookConversationState(
     val lastReferenceUsage: String = "",
     /** Novel Skill OS：仅记录本轮路由与执行状态，不属于项目事实，也不持久化进蓝图。 */
     val lastRouteDecision: NovelRouteDecision? = null,
+    /** Novel Skill OS V2：本轮真实任务模型、Writing Skill 与数据源执行回执。 */
+    val lastExecutionPlan: NovelSkillExecutionPlan? = null,
 )
 
 @Serializable
@@ -191,6 +197,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     private val draftStore = NewBookConversationDraftStore(application)
     private val referenceReportStore = ReferenceDistillationReportStore(application)
     private val referenceBindings = ReferenceDnaBindingStore(application)
+    private val taskModelRouter = TaskModelRouter(application)
+    private val writingSkillStore = WritingSkillStore(application)
     private val _state = MutableStateFlow(draftStore.restore() ?: NewBookConversationState())
     val state: StateFlow<NewBookConversationState> = _state.asStateFlow()
     private var activeProviderId: String? = null
@@ -252,36 +260,56 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 streamingReply = "",
                 lastReferenceUsage = usage.label,
                 lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.RUNNING),
+                lastExecutionPlan = null,
                 runEvents = listOf(RunEvent(RunStage.CREATION_CHAT, RunStatus.RUNNING, runDetail.ifBlank { "模型正在流式回复" })),
                 error = null,
             )
         }
 
         viewModelScope.launch {
-            val gateway = activeGateway()
-            if (gateway == null) {
-                emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "未配置 AI 服务")
+            val routingSession = runCatching { taskModelRouter.snapshot() }.getOrElse { error ->
+                emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "任务模型路由失败：${error.message.orEmpty()}")
                 _state.update {
                     it.copy(
                         isBusy = false,
                         busyLabel = "",
                         streamingReply = "",
                         lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.FAILED),
-                        error = "请先在设置里添加并启用一个 AI 服务",
+                        error = error.message?.takeIf(String::isNotBlank) ?: "请先在设置里添加并启用一个 AI 服务",
                     )
                 }
                 return@launch
             }
+            val skillSnapshot = writingSkillStore.snapshot()
+            val executionPlan = NovelSkillExecutionPlanner.build(
+                route = routeDecision,
+                session = routingSession,
+                skills = skillSnapshot,
+                referenceUsage = usage,
+                hasAttachments = history.lastOrNull()?.attachments?.isNotEmpty() == true,
+                hasFoundation = before.foundation != null,
+            ).copy(status = NovelRouteStatus.RUNNING)
+            val executionDetail = listOf(runDetail, executionPlan.compactSummary).filter(String::isNotBlank).joinToString(" · ")
+            _state.update {
+                it.copy(
+                    lastExecutionPlan = executionPlan,
+                    busyLabel = executionPlan.compactSummary.ifBlank { it.busyLabel },
+                )
+            }
+            emitRun(RunStage.CREATION_CHAT, RunStatus.RUNNING, executionDetail.ifBlank { "执行计划已就绪" })
+
+            val gateway = executionPlan.primaryTask?.let { routingSession.selection(it).gateway } ?: routingSession.defaultGateway
             runCatching {
                 NewBookConversationEngine(gateway).reply(
                     messages = history,
                     currentProposal = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders(),
                     referenceContext = referenceContext,
                     routeDecision = routeDecision,
+                    executionPlan = executionPlan,
                     onDelta = { partial -> _state.update { it.copy(streamingReply = partial) } },
                 )
             }.onSuccess { turn ->
-                emitRun(RunStage.CREATION_CHAT, RunStatus.SUCCESS, runDetail.ifBlank { "回复完成" })
+                emitRun(RunStage.CREATION_CHAT, RunStatus.SUCCESS, executionDetail.ifBlank { "回复完成" })
                 _state.update {
                     it.copy(
                         messages = it.messages + CreationChatMessage("assistant", turn.reply),
@@ -294,6 +322,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         streamingReply = "",
                         lastReferenceUsage = usage.label,
                         lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.SUCCESS),
+                        lastExecutionPlan = executionPlan.copy(status = NovelRouteStatus.SUCCESS),
                     )
                 }
             }.onFailure { error ->
@@ -304,6 +333,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         busyLabel = "",
                         streamingReply = "",
                         lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.FAILED),
+                        lastExecutionPlan = executionPlan.copy(status = NovelRouteStatus.FAILED),
                         error = friendlyAiError(error, if (referenceQuestion) "模板事实读取失败" else "AI 构思失败"),
                     )
                 }
@@ -507,11 +537,14 @@ private class NewBookConversationEngine(private val gateway: AiGateway) {
         currentProposal: NewBookProposal? = null,
         referenceContext: String = "",
         routeDecision: NovelRouteDecision,
+        executionPlan: NovelSkillExecutionPlan,
         onDelta: (String) -> Unit = {},
     ): ConversationTurn {
         val latest = messages.lastOrNull { it.role == "user" }?.text?.substringBefore(RESEARCH_CONTEXT_MARKER)?.trim().orEmpty()
         val hiddenContext = buildString {
             appendLine(routeDecision.systemGuidance())
+            appendLine()
+            appendLine(executionPlan.systemGuidance())
             appendLine()
             currentProposal?.let { appendLine(proposalContext(it)); appendLine() }
             if (referenceContext.isNotBlank()) { appendLine(referenceContext); appendLine() }
