@@ -5,7 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.engine.CanonMigrationQueueStore
-import com.xiguli.langhuan.engine.StoryGraphHealthAnalyzer
+import com.xiguli.langhuan.engine.StoryGraphHealthEngine
 import com.xiguli.langhuan.engine.StoryGraphHealthReport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +42,7 @@ class StoryGraphHealthViewModel(application: Application) : AndroidViewModel(app
                 val chapters = projects.chapterDrafts(novelId)
                 val migration = migrationStore.load(novelId)
                 withContext(Dispatchers.Default) {
-                    StoryGraphHealthAnalyzer.analyze(loaded.snapshot, chapters, migration)
+                    StoryGraphHealthEngine.analyze(loaded.snapshot, chapters, migration)
                 }
             }.onSuccess { report ->
                 _state.update {
