@@ -2,15 +2,15 @@ package com.xiguli.langhuan.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -18,6 +18,8 @@ private enum class RootRouteV3 {
     SHELF,
     BOOK,
     CREATION,
+    CREATION_RESEARCH,
+    TAVERN,
     WRITING,
     EDITOR,
     AGENT,
@@ -29,11 +31,8 @@ private enum class RootRouteV3 {
 }
 
 /**
- * Reader-first 根交互：书架和阅读是第一层，AI 创作与故事能力作为自然延伸。
- *
- * Startup rule: only shelf-critical ViewModels are created here. Feature ViewModels
- * are created only when their route is actually entered, so an unrelated feature
- * cannot crash or slow the launcher path.
+ * Reader-first root. The cold-start safety boundary stays unchanged: only shelf-critical
+ * ViewModels are created here; feature ViewModels remain route-lazy.
  */
 @Composable
 fun LanghuanRootV3(studioVm: StudioViewModel) {
@@ -51,6 +50,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
     var coverStoryId by remember { mutableStateOf<String?>(null) }
+    var tavernStoryId by remember { mutableStateOf<String?>(null) }
 
     val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) localImportVm.importUri(uri)
@@ -76,10 +76,11 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         }
     }
 
-    LaunchedEffect(route, libraryState.openedBook?.id, coverStoryId) {
+    LaunchedEffect(route, libraryState.openedBook?.id, coverStoryId, tavernStoryId) {
         when {
             route == RootRouteV3.BOOK && libraryState.openedBook == null -> route = RootRouteV3.SHELF
             route == RootRouteV3.COVER_STUDIO && coverStoryId == null && libraryState.openedBook == null -> route = RootRouteV3.SHELF
+            route == RootRouteV3.TAVERN && tavernStoryId == null && libraryState.openedBook == null -> route = RootRouteV3.SHELF
         }
     }
 
@@ -87,6 +88,18 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         libraryVm.openBook(id)
         studioVm.selectStory(id)
         route = RootRouteV3.BOOK
+    }
+
+    fun openTavern(id: String) {
+        tavernStoryId = id
+        libraryVm.openBook(id)
+        studioVm.selectStory(id)
+        if (studioState.provider.ready) {
+            route = RootRouteV3.TAVERN
+        } else {
+            returnAfterAiSetup = RootRouteV3.TAVERN
+            route = RootRouteV3.AI_SETUP
+        }
     }
 
     fun backToBook() {
@@ -113,7 +126,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    ReaderShelfV7(
+                    LanghuanHomeV4(
                         state = libraryState,
                         importState = localImportState,
                         onOpenBook = ::openBook,
@@ -123,6 +136,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                             if (studioState.provider.ready) route = RootRouteV3.CREATION
                             else openAiSetup(RootRouteV3.CREATION)
                         },
+                        onOpenTavern = ::openTavern,
                         onAiSetup = { openAiSetup(RootRouteV3.SHELF) },
                         onRunCenter = { route = RootRouteV3.RUN_CENTER },
                         onSkills = { openSkills(RootRouteV3.SHELF) },
@@ -156,11 +170,11 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.CREATION -> {
                     val creationVm: NewBookConversationViewModel = viewModel()
-                    ResearchNewBookConversationPage(
+                    CreationChatV4(
                         viewModel = creationVm,
                         onClose = { route = RootRouteV3.SHELF },
                         onConfigureAi = { openAiSetup(RootRouteV3.CREATION) },
-                        onSwitchModel = { openAiSetup(RootRouteV3.CREATION) },
+                        onAdvancedResearch = { route = RootRouteV3.CREATION_RESEARCH },
                         onCreated = { id ->
                             creationVm.reset()
                             libraryVm.openBook(id)
@@ -168,7 +182,69 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                             route = RootRouteV3.BOOK
                         },
                     )
-                    CreationQuickActionsOverlay(creationVm)
+                }
+
+                RootRouteV3.CREATION_RESEARCH -> {
+                    val creationVm: NewBookConversationViewModel = viewModel()
+                    ResearchNewBookConversationPage(
+                        viewModel = creationVm,
+                        onClose = { route = RootRouteV3.CREATION },
+                        onConfigureAi = { openAiSetup(RootRouteV3.CREATION_RESEARCH) },
+                        onSwitchModel = { openAiSetup(RootRouteV3.CREATION_RESEARCH) },
+                        onCreated = { id ->
+                            creationVm.reset()
+                            libraryVm.openBook(id)
+                            studioVm.selectStory(id)
+                            route = RootRouteV3.BOOK
+                        },
+                    )
+                }
+
+                RootRouteV3.TAVERN -> {
+                    val book = libraryState.openedBook
+                    if (book == null) {
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            CircularProgressIndicator(strokeWidth = 2.dp)
+                            Text(
+                                "正在进入世界…",
+                                modifier = Modifier.padding(top = 12.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        Box(Modifier.fillMaxSize()) {
+                            StoryPlayPanelV17(
+                                book = book,
+                                libraryState = libraryState,
+                                aiReady = studioState.provider.ready,
+                                onAiSetup = { openAiSetup(RootRouteV3.TAVERN) },
+                                onAdopted = { libraryVm.openBook(book.id) },
+                            )
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .statusBarsPadding()
+                                    .padding(12.dp),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = .88f),
+                                shadowElevation = 5.dp,
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        tavernStoryId = null
+                                        libraryVm.closeBook()
+                                        route = RootRouteV3.SHELF
+                                    }
+                                ) {
+                                    Icon(Icons.Rounded.ArrowBack, "返回书架")
+                                }
+                            }
+                        }
+                    }
                 }
 
                 RootRouteV3.WRITING -> {
@@ -247,9 +323,14 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         state = studioState,
                         vm = studioVm,
                         onBack = {
-                            route = if (returnAfterAiSetup == RootRouteV3.CREATION && !studioState.provider.ready) {
-                                RootRouteV3.SHELF
-                            } else returnAfterAiSetup
+                            route = when {
+                                !studioState.provider.ready && returnAfterAiSetup in setOf(
+                                    RootRouteV3.CREATION,
+                                    RootRouteV3.CREATION_RESEARCH,
+                                    RootRouteV3.TAVERN,
+                                ) -> RootRouteV3.SHELF
+                                else -> returnAfterAiSetup
+                            }
                         },
                         onDone = { route = returnAfterAiSetup },
                     )
