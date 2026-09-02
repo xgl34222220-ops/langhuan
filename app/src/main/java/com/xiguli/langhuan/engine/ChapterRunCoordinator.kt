@@ -148,18 +148,50 @@ class ChapterRunCoordinator(
             onRunEvent(event)
         }
 
+        emit(
+            RunEvent(
+                RunStage.CONTEXT_PACK,
+                RunStatus.SUCCESS,
+                "输入快照已锁定 · Canon ${snapshot.bible.size} 条 · 人物 ${snapshot.characters.size} 名 · 场景 ${draft.scenePlan.size} 个",
+            )
+        )
+        if (snapshot.characters.isNotEmpty()) {
+            emit(
+                RunEvent(
+                    RunStage.CHARACTER_STATE,
+                    RunStatus.SUCCESS,
+                    "读取 ${snapshot.characters.size} 名人物当前地点 / 情绪 / 目标 / 关系状态",
+                )
+            )
+        }
         emit(RunEvent(RunStage.CONTEXT, RunStatus.RUNNING, "统一 Coordinator 正在构建 S/A/B/C/D 上下文并检索相关历史"))
-        val retrievedContext = runCatching {
+        emit(RunEvent(RunStage.HYBRID_RAG, RunStatus.RUNNING, "按本章目标、场景、人物与章纲检索 D 层历史 · 上限 10 条"))
+        val retrievedResult = runCatching {
             store.retrieveRelevantContext(snapshot.novel.id, buildChapterRunRagQuery(snapshot, draft), draft.chapterNumber, 10)
-        }.getOrElse { error ->
-            emit(RunEvent(RunStage.CONTEXT, RunStatus.WARNING, "D 层历史召回失败：${error.message.orEmpty()}；继续使用结构化 Canon"))
-            emptyList()
         }
-        if (retrievedContext.isNotEmpty()) {
-            emit(RunEvent(RunStage.CONTEXT, RunStatus.SUCCESS, "D 层召回 ${retrievedContext.size} 条可解释历史；不会污染 recentSummaries"))
-        } else {
-            emit(RunEvent(RunStage.CONTEXT, RunStatus.SUCCESS, "本章无需额外历史召回，继续使用结构化 Canon"))
-        }
+        val retrievedContext = retrievedResult.getOrElse { emptyList() }
+        retrievedResult.fold(
+            onSuccess = { items ->
+                emit(
+                    RunEvent(
+                        RunStage.HYBRID_RAG,
+                        RunStatus.SUCCESS,
+                        if (items.isEmpty()) "检索已执行 · 0 条额外命中，继续使用结构化 Canon" else "检索已执行 · 召回 ${items.size} 条可解释历史",
+                    )
+                )
+                emit(
+                    RunEvent(
+                        RunStage.CONTEXT,
+                        RunStatus.SUCCESS,
+                        if (items.isEmpty()) "本章无需额外历史召回，继续使用结构化 Canon" else "D 层召回 ${items.size} 条可解释历史；不会污染 recentSummaries",
+                    )
+                )
+            },
+            onFailure = { error ->
+                emit(RunEvent(RunStage.HYBRID_RAG, RunStatus.WARNING, "D 层检索执行失败：${error.message.orEmpty()}"))
+                emit(RunEvent(RunStage.CONTEXT, RunStatus.WARNING, "D 层历史召回失败：${error.message.orEmpty()}；继续使用结构化 Canon"))
+            },
+        )
 
         var lastPersistedLength = durable.partialPreview.length
         try {
