@@ -6,6 +6,7 @@ import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.data.local.MemoryChunkEntity
 import com.xiguli.langhuan.domain.StorySnapshot
 import java.io.File
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,7 +21,11 @@ import kotlinx.serialization.json.Json
  * 绝不把未来章节实体直接灌进普通 Bible / Character / Timeline。
  */
 object OriginalCanonIndexCoordinator {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val backgroundErrorHandler = CoroutineExceptionHandler { _, _ ->
+        // Indexing is strictly best-effort. A corrupt archive or device-specific I/O failure must
+        // never terminate the app process after the launcher has already become usable.
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + backgroundErrorHandler)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     @Volatile private var started = false
     private var observer: FileObserver? = null
@@ -29,32 +34,57 @@ object OriginalCanonIndexCoordinator {
         if (started) return
         synchronized(this) {
             if (started) return
-            started = true
             val app = context.applicationContext
-            val dir = File(app.filesDir, "original_canon").apply { mkdirs() }
-            scope.launch { syncAll(app, dir) }
-            observer = object : FileObserver(
-                dir.absolutePath,
-                CLOSE_WRITE or MOVED_TO or CREATE or DELETE or MOVED_FROM,
-            ) {
-                override fun onEvent(event: Int, path: String?) {
-                    val name = path ?: return
-                    if (!name.endsWith(".json", true)) return
-                    scope.launch {
-                        val file = File(dir, name)
-                        if (file.exists()) syncFile(app, file)
-                        else LanghuanDatabase.get(app).memoryChunkDao()
-                            .deleteOriginalCanonForNovel(name.removeSuffix(".json"))
-                    }
+            val dir = runCatching {
+                File(app.filesDir, "original_canon").apply { mkdirs() }
+            }.getOrNull() ?: return
+
+            started = true
+            scope.launch {
+                try {
+                    syncAll(app, dir)
+                } catch (_: Throwable) {
+                    // Best-effort background index; launcher and editing must remain available.
                 }
-            }.also(FileObserver::startWatching)
+            }
+
+            observer = runCatching {
+                object : FileObserver(
+                    dir.absolutePath,
+                    CLOSE_WRITE or MOVED_TO or CREATE or DELETE or MOVED_FROM,
+                ) {
+                    override fun onEvent(event: Int, path: String?) {
+                        val name = path ?: return
+                        if (!name.endsWith(".json", true)) return
+                        scope.launch {
+                            try {
+                                val file = File(dir, name)
+                                if (file.exists()) {
+                                    syncFile(app, file)
+                                } else {
+                                    LanghuanDatabase.get(app).memoryChunkDao()
+                                        .deleteOriginalCanonForNovel(name.removeSuffix(".json"))
+                                }
+                            } catch (_: Throwable) {
+                                // A single file event must never poison the watcher or app process.
+                            }
+                        }
+                    }
+                }.also(FileObserver::startWatching)
+            }.getOrNull()
         }
     }
 
     private suspend fun syncAll(context: Context, dir: File) {
-        dir.listFiles { file -> file.isFile && file.extension.equals("json", true) }
+        val files = dir.listFiles { file -> file.isFile && file.extension.equals("json", true) }
             .orEmpty()
-            .forEach { syncFile(context, it) }
+        for (file in files) {
+            try {
+                syncFile(context, file)
+            } catch (_: Throwable) {
+                // Continue indexing remaining books even when one archive is broken.
+            }
+        }
     }
 
     private suspend fun syncFile(context: Context, file: File) {
