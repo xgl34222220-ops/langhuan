@@ -33,12 +33,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.engine.NovelRouteDecision
 import com.xiguli.langhuan.engine.NovelRouteStatus
+import com.xiguli.langhuan.engine.NovelSkillExecutionPlan
 
 /** Compact, inspectable execution trace for the latest natural-language creation turn. */
 @Composable
-internal fun NovelRouteTraceCardV4(route: NovelRouteDecision) {
-    var expanded by remember(route.summary, route.status) { mutableStateOf(false) }
-    val statusText = when (route.status) {
+internal fun NovelRouteTraceCardV4(
+    route: NovelRouteDecision,
+    plan: NovelSkillExecutionPlan? = null,
+) {
+    var expanded by remember(route.summary, route.status, plan?.compactSummary, plan?.status) { mutableStateOf(false) }
+    val effectiveStatus = plan?.status ?: route.status
+    val statusText = when (effectiveStatus) {
         NovelRouteStatus.SELECTED -> "已选择"
         NovelRouteStatus.RUNNING -> "执行中"
         NovelRouteStatus.SUCCESS -> "已完成"
@@ -69,9 +74,9 @@ internal fun NovelRouteTraceCardV4(route: NovelRouteDecision) {
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    statusText,
+                    plan?.compactSummary?.takeIf(String::isNotBlank) ?: statusText,
                     style = MaterialTheme.typography.labelSmall,
-                    color = when (route.status) {
+                    color = when (effectiveStatus) {
                         NovelRouteStatus.FAILED -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -85,14 +90,22 @@ internal fun NovelRouteTraceCardV4(route: NovelRouteDecision) {
             )
         }
 
-        if (!expanded && route.capabilities.isNotEmpty()) {
-            Text(
-                route.capabilities.take(4).joinToString(" · ") { it.label } +
-                    if (route.capabilities.size > 4) " · +${route.capabilities.size - 4}" else "",
-                modifier = Modifier.padding(top = 7.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (!expanded) {
+            val summary = when {
+                plan != null && plan.executed.isNotEmpty() -> plan.executed.take(3).joinToString(" · ") { it.label } +
+                    if (plan.executed.size > 3) " · +${plan.executed.size - 3}" else ""
+                route.capabilities.isNotEmpty() -> route.capabilities.take(4).joinToString(" · ") { it.label } +
+                    if (route.capabilities.size > 4) " · +${route.capabilities.size - 4}" else ""
+                else -> ""
+            }
+            if (summary.isNotBlank()) {
+                Text(
+                    summary,
+                    modifier = Modifier.padding(top = 7.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (expanded) {
@@ -115,21 +128,55 @@ internal fun NovelRouteTraceCardV4(route: NovelRouteDecision) {
                 }
             }
 
-            route.capabilities.forEach { capability ->
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 8.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(7.dp))
-                    Column {
-                        Text(capability.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
-                        Text(
-                            capability.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            if (plan != null) {
+                Text(
+                    "本轮真正执行",
+                    modifier = Modifier.padding(top = 12.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    if (plan.primaryTask != null) {
+                        "${plan.primaryTask.label} · ${plan.modelLabel}${if (plan.inheritedGlobalModel) " · 继承全局模型" else " · 任务专用模型"}"
+                    } else {
+                        "自由会谈 · ${plan.modelLabel}"
+                    },
+                    modifier = Modifier.padding(top = 5.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (plan.activeSkills.isNotEmpty()) {
+                    Text(
+                        "Writing Skills：${plan.activeSkills.joinToString(" · ")}",
+                        modifier = Modifier.padding(top = 5.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                plan.executed.forEach { step ->
+                    ExecutionStepRowV4("✓", step.label, step.detail, true)
+                }
+
+                if (plan.projectPhaseEngines.isNotEmpty()) {
+                    Text(
+                        "正式项目期接管",
+                        modifier = Modifier.padding(top = 13.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "这些引擎需要 StorySnapshot 才能做硬检查；当前会谈只做预防性分析，不会假装已经执行。",
+                        modifier = Modifier.padding(top = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    plan.projectPhaseEngines.forEach { step ->
+                        ExecutionStepRowV4("→", step.label, step.detail, false)
                     }
+                }
+            } else {
+                route.capabilities.forEach { capability ->
+                    ExecutionStepRowV4("✓", capability.label, capability.description, true)
                 }
             }
 
@@ -141,6 +188,34 @@ internal fun NovelRouteTraceCardV4(route: NovelRouteDecision) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ExecutionStepRowV4(
+    marker: String,
+    label: String,
+    detail: String,
+    active: Boolean,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            marker,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.width(7.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
