@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 
 /**
  * Compatibility entry kept for existing navigation and tests.
- * The actual chapter experience now lives in Novel Skill OS V5 continuous workspace.
+ * The actual chapter experience now lives in Novel Skill OS V6 natural-language controller.
  */
 @Composable
 fun WritingFlowPage(
@@ -13,7 +13,7 @@ fun WritingFlowPage(
     onClose: () -> Unit,
     onEditChapter: (novelId: String, chapterNumber: Int) -> Unit,
 ) {
-    WritingWorkspaceV5(
+    WritingWorkspaceV6(
         novelId = novelId,
         viewModel = viewModel,
         onClose = onClose,
