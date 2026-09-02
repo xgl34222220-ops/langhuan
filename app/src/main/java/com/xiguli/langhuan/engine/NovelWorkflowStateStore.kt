@@ -1,6 +1,11 @@
 package com.xiguli.langhuan.engine
 
 import android.content.Context
+import android.content.SharedPreferences
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.serialization.json.Json
 
 interface NovelWorkflowStateStore {
@@ -56,6 +61,28 @@ class PersistentNovelWorkflowStateStore(context: Context) : NovelWorkflowStateSt
     override fun clear(novelId: String) {
         prefs.edit().remove(key(novelId)).commit()
     }
+
+    /**
+     * Live process-state stream for inspectable UI surfaces.
+     *
+     * It listens only to this novel's workflow metadata key. StorySnapshot/Canon remain owned by
+     * their existing stores and are intentionally not mirrored into this flow.
+     */
+    fun observe(novelId: String): Flow<NovelWorkflowState> = callbackFlow {
+        if (novelId.isBlank()) {
+            close()
+            return@callbackFlow
+        }
+        val workflowKey = key(novelId)
+        trySend(loadOrCreate(novelId))
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, changedKey ->
+            if (changedKey == workflowKey) {
+                load(novelId)?.let(::trySend)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
 
     fun syncRoute(novelId: String, route: NovelRouteDecision): NovelWorkflowState {
         val updated = NovelWorkflowStateMachine.syncRoute(loadOrCreate(novelId), route)

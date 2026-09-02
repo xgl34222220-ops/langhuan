@@ -5,10 +5,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.engine.NovelIntent
 import com.xiguli.langhuan.engine.NovelRouteInput
 import com.xiguli.langhuan.engine.NovelSkillExecutionPlanner
 import com.xiguli.langhuan.engine.NovelSkillRouter
 import com.xiguli.langhuan.engine.NovelWorkflowBootstrap
+import com.xiguli.langhuan.engine.NovelWorkflowState
 import com.xiguli.langhuan.engine.PersistentNovelWorkflowStateStore
 import com.xiguli.langhuan.engine.ProjectConversationMessage
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
@@ -18,9 +20,11 @@ import com.xiguli.langhuan.engine.PromptMessage
 import com.xiguli.langhuan.engine.ReferenceDnaAwareAiGateway
 import com.xiguli.langhuan.engine.ReferenceDnaBindingStore
 import com.xiguli.langhuan.engine.TaskModelRouter
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -29,6 +33,8 @@ data class ProjectConversationUiState(
     val messages: List<ProjectConversationMessage> = emptyList(),
     val streamingReply: String = "",
     val routeSummary: String = "",
+    /** Live V7 process metadata for the inspectable execution UI. Never story Canon. */
+    val workflow: NovelWorkflowState? = null,
     val isLoading: Boolean = false,
     val isBusy: Boolean = false,
     val error: String? = null,
@@ -49,9 +55,12 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
     private val workflows = PersistentNovelWorkflowStateStore(application)
     private val _state = MutableStateFlow(ProjectConversationUiState())
     val state: StateFlow<ProjectConversationUiState> = _state.asStateFlow()
+    private var workflowJob: Job? = null
+    private var observedWorkflowNovelId: String = ""
 
     fun load(novelId: String) {
         if (novelId.isBlank()) return
+        observeWorkflow(novelId)
         val current = _state.value
         if (current.novelId == novelId && !current.isLoading) return
         viewModelScope.launch {
@@ -66,7 +75,8 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
             _state.update {
                 it.copy(
                     messages = messages,
-                    routeSummary = "工作流 · ${workflow.compactSummary()}",
+                    workflow = workflow,
+                    routeSummary = workflow.displaySummary(),
                     isLoading = false,
                 )
             }
@@ -144,7 +154,10 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                 )
                 val workflow = workflows.syncRoute(novelId, route)
                 _state.update {
-                    it.copy(routeSummary = "${route.compactSummary} · ${workflow.compactSummary()}")
+                    it.copy(
+                        workflow = workflow,
+                        routeSummary = "${route.compactSummary} · ${workflow.compactSummary()}",
+                    )
                 }
                 val session = taskRouter.snapshot()
                 val routedTask = NovelSkillExecutionPlanner.primaryTask(route)
@@ -197,6 +210,31 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
+
+    private fun observeWorkflow(novelId: String) {
+        if (observedWorkflowNovelId == novelId && workflowJob?.isActive == true) return
+        workflowJob?.cancel()
+        observedWorkflowNovelId = novelId
+        workflowJob = viewModelScope.launch {
+            workflows.observe(novelId).collect { workflow ->
+                _state.update { current ->
+                    if (current.novelId != novelId) current
+                    else current.copy(
+                        workflow = workflow,
+                        routeSummary = workflow.displaySummary(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun NovelWorkflowState.displaySummary(): String {
+    val intent = NovelIntent.entries.firstOrNull { it.name == capabilities.routeIntent }?.label
+    return buildString {
+        if (!intent.isNullOrBlank()) append(intent).append(" · ") else append("工作流 · ")
+        append(compactSummary())
+    }
 }
 
 private fun projectConversationSystem(
