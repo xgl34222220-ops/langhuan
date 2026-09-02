@@ -43,6 +43,13 @@ enum class NovelCapability(
     PROSE_EDITOR("正文编辑", "定位正文中的逻辑、叙事、表达与场景问题"),
 }
 
+enum class NovelRouteStatus {
+    SELECTED,
+    RUNNING,
+    SUCCESS,
+    FAILED,
+}
+
 data class NovelRouteInput(
     val message: String,
     val attachmentPurposes: List<String> = emptyList(),
@@ -56,6 +63,7 @@ data class NovelRouteDecision(
     val intent: NovelIntent,
     val capabilities: List<NovelCapability>,
     val reasons: List<String> = emptyList(),
+    val status: NovelRouteStatus = NovelRouteStatus.SELECTED,
 ) {
     val summary: String
         get() = if (capabilities.isEmpty()) intent.label
