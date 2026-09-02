@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -25,7 +26,7 @@ fun SkillsPageV3(
     onClose: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val snackbar = SnackbarHostState()
+    val snackbar = remember { SnackbarHostState() }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importSkill(uri)
     }
@@ -53,7 +54,7 @@ fun SkillsPageV3(
                 }
                 Column(Modifier.weight(1f)) {
                     Text("Skills", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("安装、启用与分配写作方法", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("安装、更新、启用与分配写作方法", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Icon(Icons.Rounded.AutoStories, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             }
@@ -63,7 +64,7 @@ fun SkillsPageV3(
                     Text("Skill 是写作方法，不是剧情事实", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "用户 Skill 只允许导入声明式 JSON 提示词，不执行脚本或代码；它不会覆盖 Canon、章节合同、人物认知边界或时间线。",
+                        "用户 Skill 只允许导入或在线拉取声明式 JSON 提示词，不执行脚本或代码；它不会覆盖 Canon、章节合同、人物认知边界或时间线。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -79,7 +80,7 @@ fun SkillsPageV3(
                     }
                     Spacer(Modifier.height(7.dp))
                     Text(
-                        "支持 .json；相同 id 再次导入会升级该 Skill，并重置为新版本推荐任务绑定。",
+                        "自定义 Skill 可在 JSON 中提供 HTTPS updateUrl。在线更新会先显示版本与来源变化，确认后才应用，并保留现有启用状态和任务绑定。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
