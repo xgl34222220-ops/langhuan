@@ -10,9 +10,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.engine.ProjectConversationStore
 
 private enum class RootRouteV3 {
     SHELF,
@@ -41,6 +43,8 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     val libraryState by libraryVm.state.collectAsStateWithLifecycle()
     val localImportVm: LocalBookImportViewModelV1 = viewModel()
     val localImportState by localImportVm.state.collectAsStateWithLifecycle()
+    val appContext = LocalContext.current.applicationContext
+    val projectConversationStore = remember(appContext) { ProjectConversationStore(appContext) }
 
     var route by remember { mutableStateOf(RootRouteV3.SHELF) }
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV3.SHELF) }
@@ -129,6 +133,16 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         route = RootRouteV3.SKILLS
     }
 
+    fun enterCreatedProject(id: String, creationVm: NewBookConversationViewModel) {
+        val creationMessages = creationVm.state.value.messages.map { it.role to it.text }
+        projectConversationStore.handoffFromCreation(id, creationMessages)
+        creationVm.reset()
+        writingStoryId = id
+        libraryVm.openBook(id)
+        studioVm.selectStory(id)
+        route = RootRouteV3.WRITING
+    }
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
@@ -184,12 +198,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         onClose = { route = RootRouteV3.SHELF },
                         onConfigureAi = { openAiSetup(RootRouteV3.CREATION) },
                         onAdvancedResearch = { route = RootRouteV3.CREATION_RESEARCH },
-                        onCreated = { id ->
-                            creationVm.reset()
-                            libraryVm.openBook(id)
-                            studioVm.selectStory(id)
-                            route = RootRouteV3.BOOK
-                        },
+                        onCreated = { id -> enterCreatedProject(id, creationVm) },
                     )
                 }
 
@@ -200,12 +209,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         onClose = { route = RootRouteV3.CREATION },
                         onConfigureAi = { openAiSetup(RootRouteV3.CREATION_RESEARCH) },
                         onSwitchModel = { openAiSetup(RootRouteV3.CREATION_RESEARCH) },
-                        onCreated = { id ->
-                            creationVm.reset()
-                            libraryVm.openBook(id)
-                            studioVm.selectStory(id)
-                            route = RootRouteV3.BOOK
-                        },
+                        onCreated = { id -> enterCreatedProject(id, creationVm) },
                     )
                 }
 
