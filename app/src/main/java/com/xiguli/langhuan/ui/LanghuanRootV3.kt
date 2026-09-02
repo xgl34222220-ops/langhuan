@@ -30,6 +30,10 @@ private enum class RootRouteV3 {
 
 /**
  * Reader-first 根交互：书架和阅读是第一层，AI 创作与故事能力作为自然延伸。
+ *
+ * Startup rule: only shelf-critical ViewModels are created here. Feature ViewModels
+ * are created only when their route is actually entered, so an unrelated feature
+ * cannot crash or slow the launcher path.
  */
 @Composable
 fun LanghuanRootV3(studioVm: StudioViewModel) {
@@ -38,13 +42,6 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     val libraryState by libraryVm.state.collectAsStateWithLifecycle()
     val localImportVm: LocalBookImportViewModelV1 = viewModel()
     val localImportState by localImportVm.state.collectAsStateWithLifecycle()
-    val creationVm: NewBookConversationViewModel = viewModel()
-    val writingVm: WritingFlowViewModel = viewModel()
-    val editorVm: ChapterEditorViewModel = viewModel()
-    val runCenterVm: RunCenterViewModel = viewModel()
-    val runCenterState by runCenterVm.state.collectAsStateWithLifecycle()
-    val skillVm: WritingSkillViewModel = viewModel()
-    val coverGuard: CoverPersistenceGuardViewModel = viewModel()
 
     var route by remember { mutableStateOf(RootRouteV3.SHELF) }
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV3.SHELF) }
@@ -54,9 +51,6 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
     var coverStoryId by remember { mutableStateOf<String?>(null) }
-
-    @Suppress("UNUSED_VARIABLE")
-    val keepCoverGuardAlive = coverGuard
 
     val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) localImportVm.importUri(uri)
@@ -86,16 +80,6 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         when {
             route == RootRouteV3.BOOK && libraryState.openedBook == null -> route = RootRouteV3.SHELF
             route == RootRouteV3.COVER_STUDIO && coverStoryId == null && libraryState.openedBook == null -> route = RootRouteV3.SHELF
-        }
-    }
-
-    LaunchedEffect(runCenterState.openRequest?.token) {
-        runCenterState.openRequest?.let { request ->
-            runCenterVm.consumeOpenRequest()
-            writingStoryId = request.novelId
-            libraryVm.openBook(request.novelId)
-            studioVm.selectStory(request.novelId)
-            route = RootRouteV3.WRITING
         }
     }
 
@@ -171,6 +155,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 }
 
                 RootRouteV3.CREATION -> {
+                    val creationVm: NewBookConversationViewModel = viewModel()
                     ResearchNewBookConversationPage(
                         viewModel = creationVm,
                         onClose = { route = RootRouteV3.SHELF },
@@ -183,9 +168,11 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                             route = RootRouteV3.BOOK
                         },
                     )
+                    CreationQuickActionsOverlay(creationVm)
                 }
 
                 RootRouteV3.WRITING -> {
+                    val writingVm: WritingFlowViewModel = viewModel()
                     val id = writingStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
                     WritingFlowPage(
                         novelId = id,
@@ -204,13 +191,17 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 }
 
                 RootRouteV3.EDITOR -> {
+                    val editorVm: ChapterEditorViewModel = viewModel()
+                    val writingVm: WritingFlowViewModel = viewModel()
                     val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
                     ChapterEditorPage(
                         novelId = id,
                         initialChapter = editorChapter,
                         viewModel = editorVm,
                         onClose = {
-                            writingVm.invalidateAfterExternalEdit(id)
+                            if (returnAfterEditor == RootRouteV3.WRITING) {
+                                writingVm.invalidateAfterExternalEdit(id)
+                            }
                             libraryVm.openBook(id)
                             route = returnAfterEditor
                         },
@@ -232,6 +223,17 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 }
 
                 RootRouteV3.RUN_CENTER -> {
+                    val runCenterVm: RunCenterViewModel = viewModel()
+                    val runCenterState by runCenterVm.state.collectAsStateWithLifecycle()
+                    LaunchedEffect(runCenterState.openRequest?.token) {
+                        runCenterState.openRequest?.let { request ->
+                            runCenterVm.consumeOpenRequest()
+                            writingStoryId = request.novelId
+                            libraryVm.openBook(request.novelId)
+                            studioVm.selectStory(request.novelId)
+                            route = RootRouteV3.WRITING
+                        }
+                    }
                     RunCenterPage(
                         viewModel = runCenterVm,
                         onClose = {
@@ -254,6 +256,8 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 }
 
                 RootRouteV3.COVER_STUDIO -> {
+                    @Suppress("UNUSED_VARIABLE")
+                    val coverGuard: CoverPersistenceGuardViewModel = viewModel()
                     val id = coverStoryId ?: libraryState.openedBook?.id
                     if (id != null) {
                         CoverStudioV3(
@@ -265,15 +269,12 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 }
 
                 RootRouteV3.SKILLS -> {
+                    val skillVm: WritingSkillViewModel = viewModel()
                     SkillsPageV3(
                         viewModel = skillVm,
                         onClose = { route = returnAfterSkills },
                     )
                 }
-            }
-
-            if (route == RootRouteV3.CREATION) {
-                CreationQuickActionsOverlay(creationVm)
             }
         }
     }

@@ -13,7 +13,10 @@ import com.xiguli.langhuan.ui.theme.LanghuanTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OriginalCanonIndexCoordinator.start(applicationContext)
+
+        // Secondary indexing is useful but must never be able to break launcher startup.
+        runCatching { OriginalCanonIndexCoordinator.start(applicationContext) }
+
         enableEdgeToEdge()
         setContent {
             LanghuanTheme {
