@@ -18,15 +18,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.engine.AiTaskType
 import com.xiguli.langhuan.engine.SkillInstallResult
 import com.xiguli.langhuan.engine.WritingSkillBinding
 import com.xiguli.langhuan.engine.WritingSkillCatalog
 import com.xiguli.langhuan.engine.WritingSkillDefinition
 import com.xiguli.langhuan.engine.WritingSkillStore
+import com.xiguli.langhuan.engine.WritingSkillUpdateCandidate
+import com.xiguli.langhuan.engine.WritingSkillUpdateCheck
+import com.xiguli.langhuan.engine.WritingSkillUpdateClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 data class WritingSkillUiItem(
     val definition: WritingSkillDefinition,
@@ -35,12 +40,17 @@ data class WritingSkillUiItem(
 
 data class WritingSkillUiState(
     val skills: List<WritingSkillUiItem> = emptyList(),
+    val updateCandidates: Map<String, WritingSkillUpdateCandidate> = emptyMap(),
+    val isCheckingUpdates: Boolean = false,
+    val updatingSkillId: String? = null,
+    val lastUpdateCheckAt: Long = 0L,
     val message: String? = null,
     val error: String? = null,
 )
 
 class WritingSkillViewModel(application: Application) : AndroidViewModel(application) {
     private val store = WritingSkillStore(application)
+    private val updateClient = WritingSkillUpdateClient()
     private val _state = MutableStateFlow(load())
     val state: StateFlow<WritingSkillUiState> = _state.asStateFlow()
 
@@ -73,6 +83,65 @@ class WritingSkillViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun checkUpdates() {
+        if (_state.value.isCheckingUpdates || _state.value.updatingSkillId != null) return
+        _state.value = _state.value.copy(
+            isCheckingUpdates = true,
+            updateCandidates = emptyMap(),
+            message = null,
+            error = null,
+        )
+        viewModelScope.launch {
+            val candidates = linkedMapOf<String, WritingSkillUpdateCandidate>()
+            val failures = mutableListOf<String>()
+            val skills = store.definitions().filter { it.updateUrl.isNotBlank() }
+            skills.forEach { skill ->
+                when (val result = updateClient.check(skill)) {
+                    is WritingSkillUpdateCheck.Update -> candidates[skill.id] = result.candidate
+                    is WritingSkillUpdateCheck.Error -> failures += "${skill.name}：${result.message}"
+                    is WritingSkillUpdateCheck.UpToDate -> Unit
+                }
+            }
+            val message = when {
+                candidates.isNotEmpty() -> "发现 ${candidates.size} 个 Skill 更新"
+                failures.isEmpty() -> "已检查 ${skills.size} 个 Skill，当前都是最新版本"
+                else -> "检查完成，没有发现可用更新"
+            }
+            _state.value = load().copy(
+                updateCandidates = candidates,
+                isCheckingUpdates = false,
+                lastUpdateCheckAt = System.currentTimeMillis(),
+                message = message,
+                error = failures.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+            )
+        }
+    }
+
+    fun applyUpdate(candidate: WritingSkillUpdateCandidate) {
+        val before = _state.value
+        if (before.isCheckingUpdates || before.updatingSkillId != null) return
+        _state.value = before.copy(updatingSkillId = candidate.skillId, message = null, error = null)
+        viewModelScope.launch {
+            when (val result = store.applyRemoteUpdate(candidate.skillId, candidate.rawManifest)) {
+                is SkillInstallResult.Success -> {
+                    val remaining = before.updateCandidates - candidate.skillId
+                    _state.value = load().copy(
+                        updateCandidates = remaining,
+                        lastUpdateCheckAt = before.lastUpdateCheckAt,
+                        message = "${result.skillName} 已更新到 ${candidate.remoteVersion}；原有启用状态和任务绑定已保留",
+                    )
+                }
+                is SkillInstallResult.Error -> {
+                    _state.value = before.copy(updatingSkillId = null, error = result.message, message = null)
+                }
+            }
+        }
+    }
+
+    fun dismissUpdate(skillId: String) {
+        _state.value = _state.value.copy(updateCandidates = _state.value.updateCandidates - skillId)
+    }
+
     fun uninstall(skillId: String) {
         val name = store.definitions().firstOrNull { it.id == skillId }?.name ?: skillId
         if (store.uninstall(skillId)) refresh(message = "$name 已卸载")
@@ -88,7 +157,12 @@ class WritingSkillViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private fun refresh(message: String? = null) {
-        _state.value = load().copy(message = message)
+        val before = _state.value
+        _state.value = load().copy(
+            updateCandidates = before.updateCandidates,
+            lastUpdateCheckAt = before.lastUpdateCheckAt,
+            message = message,
+        )
     }
 
     private fun load(): WritingSkillUiState {
@@ -108,6 +182,7 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
     val builtins = state.skills.filter { it.definition.builtin }
     val installed = state.skills.filterNot { it.definition.builtin }
     var deleting by remember { mutableStateOf<WritingSkillDefinition?>(null) }
+    var confirmingUpdate by remember { mutableStateOf<WritingSkillUpdateCandidate?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         val enabledCount = state.skills.count { it.binding.enabled && it.binding.tasks.isNotEmpty() }
@@ -127,6 +202,13 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
                 }
             }
         }
+
+        SkillUpdateCenterV8(
+            state = state,
+            onCheck = viewModel::checkUpdates,
+            onUpdate = { confirmingUpdate = it },
+            onDismiss = viewModel::dismissUpdate,
+        )
 
         SkillGroup("内置 Skills", builtins, viewModel, onDelete = {})
         if (installed.isNotEmpty()) {
@@ -156,6 +238,40 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
         }
     }
 
+    confirmingUpdate?.let { candidate ->
+        AlertDialog(
+            onDismissRequest = { if (state.updatingSkillId == null) confirmingUpdate = null },
+            icon = { Icon(Icons.Rounded.SystemUpdateAlt, null) },
+            title = { Text("更新 Skill？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("${candidate.currentVersion} → ${candidate.remoteVersion}", fontWeight = FontWeight.Bold)
+                    candidate.changes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                    Text(
+                        "只更新声明式写作规则，不下载或运行脚本/代码。现有启用状态与任务绑定会保留；内置 Skill 不能借更新扩大执行权限。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (candidate.sourceUrl.isNotBlank()) {
+                        Text(candidate.sourceUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = state.updatingSkillId == null,
+                    onClick = {
+                        viewModel.applyUpdate(candidate)
+                        confirmingUpdate = null
+                    },
+                ) { Text("确认更新") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingUpdate = null }, enabled = state.updatingSkillId == null) { Text("取消") }
+            },
+        )
+    }
+
     deleting?.let { skill ->
         AlertDialog(
             onDismissRequest = { deleting = null },
@@ -169,6 +285,66 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } },
         )
+    }
+}
+
+@Composable
+private fun SkillUpdateCenterV8(
+    state: WritingSkillUiState,
+    onCheck: () -> Unit,
+    onUpdate: (WritingSkillUpdateCandidate) -> Unit,
+    onDismiss: (String) -> Unit,
+) {
+    Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(
+            Modifier.fillMaxWidth().padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Sync, null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.padding(start = 9.dp).weight(1f)) {
+                    Text("Skill 更新中心", fontWeight = FontWeight.Bold)
+                    Text(
+                        "拉取声明式适配规则；发现变化后由你确认，不静默覆盖。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Button(
+                    onClick = onCheck,
+                    enabled = !state.isCheckingUpdates && state.updatingSkillId == null,
+                    shape = RoundedCornerShape(15.dp),
+                ) {
+                    if (state.isCheckingUpdates) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Rounded.Refresh, null, Modifier.size(17.dp))
+                    Text(if (state.isCheckingUpdates) "检查中" else "检查更新", Modifier.padding(start = 5.dp))
+                }
+            }
+
+            state.updateCandidates.values.forEach { candidate ->
+                Surface(
+                    shape = RoundedCornerShape(17.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .48f),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.NewReleases, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                candidate.skillId,
+                                Modifier.padding(start = 7.dp).weight(1f),
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text("${candidate.currentVersion} → ${candidate.remoteVersion}", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(candidate.changes.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { onDismiss(candidate.skillId) }) { Text("稍后") }
+                            TextButton(onClick = { onUpdate(candidate) }) { Text("查看并更新") }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -213,6 +389,7 @@ private fun SkillGroup(
                                     if (skill.author.isNotBlank()) append(" · ${skill.author}")
                                     append(" · ${skill.license}")
                                     append(if (skill.builtin) " · 内置" else " · 用户安装")
+                                    if (skill.updateUrl.isNotBlank()) append(" · 可在线更新")
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
