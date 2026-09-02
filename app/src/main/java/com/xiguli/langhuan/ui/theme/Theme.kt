@@ -21,7 +21,7 @@ import com.materialkolor.PaletteStyle
 
 @Immutable
 data class LanghuanAppearance(
-    val seedArgb: Int = 0xFF7857D8.toInt(),
+    val seedArgb: Int = 0xFFF4553D.toInt(),
     val monetEnabled: Boolean = true,
     val darkMode: Boolean? = null,
     val amoledBlack: Boolean = false,
@@ -36,28 +36,28 @@ data class MiuixTokens(
     val elevatedCardBackground: Color,
     val textPrimary: Color,
     val textSecondary: Color,
-    val success: Color = Color(0xFF27BE83),
-    val warning: Color = Color(0xFFF0A532),
+    val success: Color = Color(0xFF1E9E6A),
+    val warning: Color = Color(0xFFD98A16),
 )
 
 val LocalMiuixTokens = staticCompositionLocalOf {
     MiuixTokens(
-        pageBackground = Color(0xFFF5F3FC),
-        cardBackground = Color.White,
-        elevatedCardBackground = Color.White,
-        textPrimary = Color(0xFF16171B),
-        textSecondary = Color(0xFF70727C),
+        pageBackground = Color(0xFFFFFFFF),
+        cardBackground = Color(0xFFF5F5F7),
+        elevatedCardBackground = Color(0xFFFFFFFF),
+        textPrimary = Color(0xFF1A1A1C),
+        textSecondary = Color(0xFF9A9AA0),
     )
 }
 
 val LocalLanghuanAppearance = staticCompositionLocalOf { LanghuanAppearance() }
 
 private val MiuixShapes = Shapes(
-    extraSmall = RoundedCornerShape(7.dp),
-    small = RoundedCornerShape(11.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(22.dp),
-    extraLarge = RoundedCornerShape(26.dp),
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(20.dp),
 )
 
 private val MiuixTypography = Typography(
@@ -90,7 +90,7 @@ fun LanghuanTheme(
         seedColor = seed,
         useDarkTheme = dark,
         withAmoled = dark && appearance.amoledBlack,
-        style = PaletteStyle.Vibrant,
+        style = PaletteStyle.TonalSpot,
         shapes = MiuixShapes,
         typography = MiuixTypography,
         animate = true,
@@ -101,7 +101,7 @@ fun LanghuanTheme(
             pageBackground = when {
                 pureBlack -> Color.Black
                 dark -> scheme.surfaceContainerLowest
-                else -> Color(0xFFF5F3FC)
+                else -> Color(0xFFFFFFFF)
             },
             cardBackground = when {
                 pureBlack -> Color(0xFF080808)
