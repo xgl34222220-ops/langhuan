@@ -19,9 +19,14 @@ import com.xiguli.langhuan.engine.ChapterRunCoordinator
 import com.xiguli.langhuan.engine.ChapterRunRuntimeState
 import com.xiguli.langhuan.engine.ChapterRuntimeTaskKind
 import com.xiguli.langhuan.engine.PersistentChapterRunCheckpointStore
+import com.xiguli.langhuan.engine.ProjectRuntimePhase
+import com.xiguli.langhuan.engine.ProjectRuntimeSkillAudit
+import com.xiguli.langhuan.engine.ProjectRuntimeSkillPlan
+import com.xiguli.langhuan.engine.ProjectRuntimeSkillPlanner
 import com.xiguli.langhuan.engine.ReferenceDnaAwareAiGateway
 import com.xiguli.langhuan.engine.ReferenceDnaBindingStore
 import com.xiguli.langhuan.engine.RunEvent
+import com.xiguli.langhuan.engine.RunResumePolicy
 import com.xiguli.langhuan.engine.TaskDispatchingAiGateway
 import com.xiguli.langhuan.engine.TaskModelRouter
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
@@ -50,6 +55,10 @@ data class WritingFlowUiState(
     val sceneConversation: List<WritingFlowMessage> = emptyList(),
     val streamPreview: String = "",
     val runEvents: List<RunEvent> = emptyList(),
+    /** Planned runtime capabilities are not proof that they executed. */
+    val runtimePlan: ProjectRuntimeSkillPlan? = null,
+    /** Evidence-backed receipts rebuilt from real RunEvent records. */
+    val runtimeAudit: ProjectRuntimeSkillAudit? = null,
     val result: GenerationResult? = null,
     val review: AgentReview? = null,
     val isLoading: Boolean = false,
@@ -95,7 +104,8 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                     it.copy(
                         snapshot = loaded.snapshot, draft = loaded.draft,
                         providerLabel = buildString { append(label.ifBlank { "未配置 AI 服务" }); if (binding.count > 0) append(" · DNA ${binding.count}本") },
-                        workingScenes = loaded.draft.scenePlan, runEvents = emptyList(), chapterCommitted = loaded.draft.content.isNotBlank(),
+                        workingScenes = loaded.draft.scenePlan, runEvents = emptyList(), runtimePlan = null, runtimeAudit = null,
+                        chapterCommitted = loaded.draft.content.isNotBlank(),
                         isLoading = false, error = null,
                         message = if (binding.count > 0) binding.label else it.message,
                     )
@@ -148,7 +158,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         if (current.busy || runtime.state.value.active) return
         val workingDraft = draft.copy(scenePlan = current.workingScenes.ifEmpty { draft.scenePlan })
         val usage = referenceDna.usage(snapshot.novel.id, listOf(draft.title, draft.objective, extraInstruction, workingDraft.scenePlan.joinToString(" ") { it.purpose + " " + it.conflict + " " + it.outcome }).joinToString(" "), com.xiguli.langhuan.engine.ReferenceDnaPurpose.PROSE)
-        _state.update { it.copy(isGenerating = true, streamPreview = "", runEvents = emptyList(), result = null, review = null, memoryApplied = false, message = usage.label.takeIf(String::isNotBlank), error = null) }
+        _state.update { it.copy(isGenerating = true, streamPreview = "", runEvents = emptyList(), runtimePlan = null, runtimeAudit = null, result = null, review = null, memoryApplied = false, message = usage.label.takeIf(String::isNotBlank), error = null) }
         runtime.generate(snapshot, workingDraft, 2_800, extraInstruction, forceNew)
     }
 
@@ -226,7 +236,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 }
             }.onSuccess { next ->
                 projects.setActiveStoryId(next.snapshot.novel.id); runtime.clearTerminalState(snapshot.novel.id, draft.chapterNumber)
-                _state.update { it.copy(snapshot = next.snapshot, draft = next.draft, workingScenes = next.draft.scenePlan, sceneNote = "", sceneConversation = emptyList(), streamPreview = "", runEvents = emptyList(), result = null, review = null, isSaving = false, chapterCommitted = next.draft.content.isNotBlank(), memoryApplied = false, message = "已进入第${next.draft.chapterNumber}章。先确认场景计划，再开始正文生成。") }
+                _state.update { it.copy(snapshot = next.snapshot, draft = next.draft, workingScenes = next.draft.scenePlan, sceneNote = "", sceneConversation = emptyList(), streamPreview = "", runEvents = emptyList(), runtimePlan = null, runtimeAudit = null, result = null, review = null, isSaving = false, chapterCommitted = next.draft.content.isNotBlank(), memoryApplied = false, message = "已进入第${next.draft.chapterNumber}章。先确认场景计划，再开始正文生成。") }
             }.onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "进入下一章失败") } }
         }
     }
@@ -249,7 +259,8 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
             state.copy(
                 snapshot = run.snapshot ?: state.snapshot, draft = runtimeDraft ?: state.draft, providerLabel = run.providerLabel.ifBlank { state.providerLabel },
                 workingScenes = if (runtimeDraft != null && run.taskKind != ChapterRuntimeTaskKind.GENERATE) runtimeDraft.scenePlan else state.workingScenes,
-                streamPreview = run.preview, runEvents = run.events, result = run.result, review = run.review,
+                streamPreview = run.preview, runEvents = run.events, runtimePlan = run.runtimePlan, runtimeAudit = run.runtimeAudit,
+                result = run.result, review = run.review,
                 isGenerating = run.active && run.taskKind == ChapterRuntimeTaskKind.GENERATE, isSaving = run.active && run.taskKind == ChapterRuntimeTaskKind.COMMIT,
                 isReviewing = run.active && run.taskKind == ChapterRuntimeTaskKind.REVIEW,
                 chapterCommitted = runtimeDraft?.content?.isNotBlank() ?: state.chapterCommitted, memoryApplied = false,
@@ -260,7 +271,29 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
         val recovery = chapterRuns.recover(snapshot, draft) ?: return
-        _state.update { it.copy(streamPreview = recovery.preview, result = recovery.result, runEvents = recovery.events, message = recovery.message) }
+        val plan = if (recovery.policy == RunResumePolicy.RESUME_REVIEW) {
+            ProjectRuntimeSkillPlanner.manualReview(snapshot, draft)
+        } else {
+            ProjectRuntimeSkillPlanner.build(snapshot, draft, referenceDna.summary(snapshot.novel.id).count)
+        }
+        val phases = when (recovery.policy) {
+            RunResumePolicy.RESUME_REVIEW -> setOf(ProjectRuntimePhase.MANUAL_REVIEW)
+            RunResumePolicy.RESUME_POST_COMMIT -> setOf(ProjectRuntimePhase.GENERATION, ProjectRuntimePhase.POST_COMMIT)
+            RunResumePolicy.CONTINUE_GENERATION,
+            RunResumePolicy.RESTORE_RESULT -> setOf(ProjectRuntimePhase.GENERATION)
+            RunResumePolicy.NONE -> emptySet()
+        }
+        val audit = ProjectRuntimeSkillPlanner.audit(plan, recovery.events, phases, finalize = false)
+        _state.update {
+            it.copy(
+                streamPreview = recovery.preview,
+                result = recovery.result,
+                runEvents = recovery.events,
+                runtimePlan = plan,
+                runtimeAudit = audit,
+                message = recovery.message,
+            )
+        }
     }
 
     private suspend fun activeGateway(): AiGateway {

@@ -3,6 +3,13 @@ package com.xiguli.langhuan.engine
 import android.content.Context
 import com.xiguli.langhuan.domain.GeneratedChapter
 
+/** Proof emitted only when Reference DNA was actually found and injected into a model prompt. */
+data class ReferenceDnaExecutionEvidence(
+    val task: AiTaskType,
+    val purpose: ReferenceDnaPurpose,
+    val injectedChars: Int,
+)
+
 /**
  * Injects only creative-transfer DNA into prompts for an already-created novel.
  * STORY facts from the source work are intentionally excluded here; they are available only in
@@ -12,6 +19,7 @@ class ReferenceDnaAwareAiGateway(
     context: Context,
     private val novelId: String,
     private val delegate: AiGateway,
+    private val onDnaInjected: (ReferenceDnaExecutionEvidence) -> Unit = {},
 ) : AiGateway, AiTaskAttributionSource, AiTaskQualityFeedback {
     private val bindings = ReferenceDnaBindingStore(context.applicationContext)
 
@@ -53,6 +61,13 @@ class ReferenceDnaAwareAiGateway(
             ReferenceDnaPurpose.EDITOR -> "把它当作风格/结构目标检查，不是 Canon。偏离参考 DNA 本身绝不能判为硬冲突或 BLOCKING。"
             ReferenceDnaPurpose.BLUEPRINT -> "只做原创迁移。"
         }
+        onDnaInjected(
+            ReferenceDnaExecutionEvidence(
+                task = task,
+                purpose = purpose,
+                injectedChars = dna.length,
+            )
+        )
         return prompt.copy(
             system = prompt.system + "\n\n【作品长期绑定的 Reference DNA｜低于章节合同/Canon】\n$policy\n$dna",
         )

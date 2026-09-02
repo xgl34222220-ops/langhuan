@@ -131,7 +131,6 @@ class ChapterRunRuntime(application: Application) {
     private suspend fun executeGenerate(command: RuntimeCommand.Generate) {
         val started = System.currentTimeMillis()
         val (providerLabel, baseGateway) = resolveGateway(command.allowDemoFallback)
-        val gateway = ReferenceDnaAwareAiGateway(app, command.novelId, baseGateway)
         val dnaSummary = ReferenceDnaBindingStore(app).summary(command.novelId)
         val runtimePlan = ProjectRuntimeSkillPlanner.build(command.snapshot, command.draft, dnaSummary.count)
         _state.value = ChapterRunRuntimeState(
@@ -141,6 +140,7 @@ class ChapterRunRuntime(application: Application) {
             runtimePlan = runtimePlan,
             queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
+        val gateway = generationReferenceAwareGateway(command, baseGateway, canStop = true)
         emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.GENERATION)), true)
         showForeground(command, if (dnaSummary.count > 0) "正在生成正文 · ${dnaSummary.label} · 最长 8 分钟" else "正在生成正文 · 最长 8 分钟，可随时停止", canStop = true)
         try {
@@ -190,7 +190,6 @@ class ChapterRunRuntime(application: Application) {
         val resolved = resolveGatewayOrNull()
         if (resolved == null && !command.allowNoAi) error("请先到设置添加并启用一个 AI 服务")
         val providerLabel = resolved?.first ?: "未配置 AI · 仅保存正文"
-        val gateway = resolved?.second?.let { ReferenceDnaAwareAiGateway(app, command.novelId, it) }
         val previous = _state.value.takeIf { it.matches(command.novelId, command.chapterNumber) }
         val dnaCount = ReferenceDnaBindingStore(app).summary(command.novelId).count
         val runtimePlan = previous?.runtimePlan?.takeIf { it.novelId == command.novelId && it.chapterNumber == command.chapterNumber }
@@ -202,6 +201,8 @@ class ChapterRunRuntime(application: Application) {
             runtimePlan = runtimePlan, runtimeAudit = previous?.runtimeAudit,
             queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
+        // Post-commit editor tasks may still consume DNA, but they must not masquerade as generation-phase DNA evidence.
+        val gateway = resolved?.second?.let { ReferenceDnaAwareAiGateway(app, command.novelId, it) }
         emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.POST_COMMIT)), false)
         showForeground(command, "正在保存正文并执行章节后处理", false)
         try {
@@ -230,7 +231,6 @@ class ChapterRunRuntime(application: Application) {
     private suspend fun executeReview(command: RuntimeCommand.Review) {
         val started = System.currentTimeMillis()
         val resolved = resolveGatewayOrNull() ?: error("请先到设置添加并启用一个 AI 服务")
-        val gateway = ReferenceDnaAwareAiGateway(app, command.novelId, resolved.second)
         val previous = _state.value.takeIf { it.matches(command.novelId, command.chapterNumber) }
         val runtimePlan = ProjectRuntimeSkillPlanner.manualReview(command.snapshot, command.draft)
         _state.value = ChapterRunRuntimeState(
@@ -238,6 +238,8 @@ class ChapterRunRuntime(application: Application) {
             snapshot = command.snapshot, draft = command.draft, providerLabel = resolved.first, preview = previous?.preview.orEmpty(), events = previous?.events.orEmpty(),
             result = previous?.result, runtimePlan = runtimePlan, queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
+        // Manual review has its own Agent receipt; DNA use inside the editor prompt is intentionally not attributed to generation.
+        val gateway = ReferenceDnaAwareAiGateway(app, command.novelId, resolved.second)
         emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.MANUAL_REVIEW)), false)
         showForeground(command, "正在进行 Agent 章节复盘", false)
         try {
@@ -265,16 +267,55 @@ class ChapterRunRuntime(application: Application) {
         prefix: String,
         canStop: Boolean,
     ): ProjectRuntimeSkillAudit {
-        val audit = ProjectRuntimeSkillPlanner.audit(plan, _state.value.events, phases)
+        val audit = ProjectRuntimeSkillPlanner.audit(plan, _state.value.events, phases, finalize = true)
         emit(command, RunEvent(RunStage.SKILL_AUDIT, audit.runStatus, audit.summary(prefix)), canStop)
         return audit
     }
 
     private fun emit(command: RuntimeCommand, event: RunEvent, canStop: Boolean) {
-        _state.update { it.copy(events = (it.events + event).takeLast(96), updatedAt = System.currentTimeMillis()) }
+        _state.update { current ->
+            val nextEvents = (current.events + event).takeLast(96)
+            val liveAudit = current.runtimePlan?.let { plan ->
+                ProjectRuntimeSkillPlanner.audit(
+                    plan = plan,
+                    events = nextEvents,
+                    phases = liveAuditPhases(current.taskKind, nextEvents),
+                    finalize = false,
+                )
+            } ?: current.runtimeAudit
+            current.copy(
+                events = nextEvents,
+                runtimeAudit = liveAudit,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
         val detail = buildString { append(event.stage.label); if (event.detail.isNotBlank()) append(" · ").append(event.detail.take(96)) }
         showForeground(command, detail, canStop)
     }
+
+    private fun generationReferenceAwareGateway(command: RuntimeCommand.Generate, delegate: AiGateway, canStop: Boolean): AiGateway =
+        ReferenceDnaAwareAiGateway(app, command.novelId, delegate) { evidence ->
+            emit(
+                command,
+                RunEvent(
+                    stage = RunStage.REFERENCE_DNA,
+                    status = RunStatus.SUCCESS,
+                    detail = "${evidence.task.name} · ${evidence.purpose.name} · 实际注入 ${evidence.injectedChars} 字",
+                ),
+                canStop,
+            )
+        }
+
+    private fun liveAuditPhases(taskKind: ChapterRuntimeTaskKind, events: List<RunEvent>): Set<ProjectRuntimePhase> = when (taskKind) {
+        ChapterRuntimeTaskKind.GENERATE -> setOf(ProjectRuntimePhase.GENERATION)
+        ChapterRuntimeTaskKind.REVIEW -> setOf(ProjectRuntimePhase.MANUAL_REVIEW)
+        ChapterRuntimeTaskKind.COMMIT -> buildSet {
+            add(ProjectRuntimePhase.POST_COMMIT)
+            if (events.any { it.stage == RunStage.DRAFT || it.stage == RunStage.CONSISTENCY }) add(ProjectRuntimePhase.GENERATION)
+        }
+        ChapterRuntimeTaskKind.IDLE -> emptySet()
+    }
+
     private fun emitLocalFailure(command: RuntimeCommand, stage: RunStage, detail: String) { emit(command, RunEvent(stage, RunStatus.FAILED, detail), command.kind == ChapterRuntimeTaskKind.GENERATE) }
     private fun showForeground(command: RuntimeCommand, detail: String, canStop: Boolean) {
         ChapterRunForegroundService.show(app, command.novelId, command.chapterNumber, "第${command.chapterNumber}章 · 后台章节任务", detail, canStop)

@@ -44,7 +44,10 @@ class ChapterRunCoordinatorTest {
         assertTrue(store.lastQuery.contains("身份错位"))
         assertTrue(previews.distinct().size >= 3)
         assertEquals(1, gateway.streamingCalls)
-        assertEquals(RunStage.CONTEXT, events.first().stage)
+        assertEquals(RunStage.CONTEXT_PACK, events.first().stage)
+        assertTrue(events.any { it.stage == RunStage.CHARACTER_STATE && it.status == RunStatus.SUCCESS })
+        assertTrue(events.any { it.stage == RunStage.HYBRID_RAG && it.status == RunStatus.SUCCESS })
+        assertTrue(events.any { it.stage == RunStage.CONTEXT })
         assertTrue(events.any { it.stage == RunStage.DRAFT && it.status == RunStatus.SUCCESS })
         assertTrue(events.any { it.stage == RunStage.READY_TO_COMMIT && it.status == RunStatus.SUCCESS })
     }

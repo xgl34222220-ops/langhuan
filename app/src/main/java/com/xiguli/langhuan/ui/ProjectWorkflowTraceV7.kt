@@ -46,6 +46,8 @@ import com.xiguli.langhuan.engine.NovelWorkflowArtifact
 import com.xiguli.langhuan.engine.NovelWorkflowHistoryEntry
 import com.xiguli.langhuan.engine.NovelWorkflowState
 import com.xiguli.langhuan.engine.NovelWorkflowStatus
+import com.xiguli.langhuan.engine.ProjectRuntimeReceiptState
+import com.xiguli.langhuan.engine.ProjectRuntimeSkillReceipt
 import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -135,7 +137,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                 Column(Modifier.padding(start = 9.dp).weight(1f)) {
                     Text("Skill OS 执行详情", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(
-                        "只显示真实流程证据；工作流元数据不等于 Canon",
+                        "路由只是候选；只有真实 RunEvent 证据才能标记为已执行",
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalMiuixTokens.current.textSecondary,
                     )
@@ -209,9 +211,30 @@ internal fun ProjectWorkflowTraceSheetV7(
                     }
                 }
 
+                flow.runtimeAudit?.let { audit ->
+                    item {
+                        TraceSectionV7(
+                            title = "真实执行回执 · 已执行 ${audit.executedCount}/${audit.receipts.size}",
+                            danger = audit.failedCount > 0,
+                        ) {
+                            Text(
+                                buildString {
+                                    append("只认实际运行证据")
+                                    if (audit.skippedCount > 0) append(" · 未触发/跳过 ${audit.skippedCount}")
+                                    if (audit.pendingCount > 0) append(" · 无专属证据 ${audit.pendingCount}")
+                                    if (audit.failedCount > 0) append(" · 失败 ${audit.failedCount}")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LocalMiuixTokens.current.textSecondary,
+                            )
+                            audit.receipts.forEach { receipt -> ExecutionReceiptRowV9(receipt) }
+                        }
+                    }
+                }
+
                 if (capabilities.isNotEmpty()) {
                     item {
-                        TraceSectionV7(title = "本轮启用能力") {
+                        TraceSectionV7(title = "路由候选能力 · 不等于已执行") {
                             Row(
                                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -231,7 +254,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                             if (intent.isNotBlank()) {
                                 val intentLabel = NovelIntent.entries.firstOrNull { it.name == intent }?.label ?: intent
                                 Text(
-                                    "当前意图：$intentLabel",
+                                    "当前意图：$intentLabel · 路由只说明本轮允许调用这些能力，实际执行以回执为准。",
                                     modifier = Modifier.padding(top = 7.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = LocalMiuixTokens.current.textSecondary,
@@ -271,7 +294,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
                         Text(
-                            "这里显示的是流程状态、路由能力和执行证据。小说事实仍以 StorySnapshot / Candidate / Canon 管道为准；普通聊天不会因为这里显示“已执行”就自动改写正式正文或 Canon。",
+                            "这里显示的是流程状态、候选路由和真实执行证据。小说事实仍以 StorySnapshot / Candidate / Canon 管道为准；执行回执本身也不会写入 Canon。",
                             modifier = Modifier.padding(12.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = LocalMiuixTokens.current.textSecondary,
@@ -302,6 +325,81 @@ private fun TraceSectionV7(
                 color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             )
             content()
+        }
+    }
+}
+
+@Composable
+private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
+    val icon = when (receipt.state) {
+        ProjectRuntimeReceiptState.EXECUTED -> Icons.Rounded.CheckCircle
+        ProjectRuntimeReceiptState.SKIPPED -> Icons.Rounded.RemoveCircleOutline
+        ProjectRuntimeReceiptState.PENDING -> Icons.Rounded.HourglassTop
+        ProjectRuntimeReceiptState.FAILED -> Icons.Rounded.ErrorOutline
+    }
+    val tint = when (receipt.state) {
+        ProjectRuntimeReceiptState.EXECUTED -> LocalMiuixTokens.current.success
+        ProjectRuntimeReceiptState.SKIPPED -> LocalMiuixTokens.current.textSecondary
+        ProjectRuntimeReceiptState.PENDING -> MaterialTheme.colorScheme.primary
+        ProjectRuntimeReceiptState.FAILED -> MaterialTheme.colorScheme.error
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 5.dp), verticalAlignment = Alignment.Top) {
+        Icon(icon, null, Modifier.size(18.dp), tint = tint)
+        Column(Modifier.padding(start = 8.dp).weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    receipt.step.capability.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    receipt.state.label + receipt.durationMs?.let { " · ${formatDurationV9(it)}" }.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint,
+                )
+            }
+            Text(
+                "${receipt.step.phase.label} · ${receipt.step.engine}",
+                style = MaterialTheme.typography.labelSmall,
+                color = LocalMiuixTokens.current.textSecondary,
+            )
+            if (receipt.state == ProjectRuntimeReceiptState.PENDING) {
+                Text(
+                    "尚无专属执行证据；不会计为已执行。",
+                    modifier = Modifier.padding(top = 3.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalMiuixTokens.current.textSecondary,
+                )
+            }
+            if (receipt.dataInputs.isNotEmpty()) {
+                Text(
+                    "读取：${receipt.dataInputs.joinToString(" · ")}",
+                    modifier = Modifier.padding(top = 3.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            if (receipt.outputSummary.isNotBlank()) {
+                Text(
+                    when (receipt.state) {
+                        ProjectRuntimeReceiptState.SKIPPED -> "未触发原因：${receipt.outputSummary}"
+                        ProjectRuntimeReceiptState.FAILED -> "失败证据：${receipt.outputSummary}"
+                        else -> "产出：${receipt.outputSummary}"
+                    },
+                    modifier = Modifier.padding(top = 3.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (receipt.state == ProjectRuntimeReceiptState.FAILED) MaterialTheme.colorScheme.error else LocalMiuixTokens.current.textSecondary,
+                )
+            }
+            receipt.evidenceTrail.takeLast(2).forEach { evidence ->
+                Text(
+                    "证据 · ${evidence.stage.label} / ${evidence.status.name}${evidence.detail.takeIf(String::isNotBlank)?.let { " · ${it.take(120)}" }.orEmpty()}",
+                    modifier = Modifier.padding(top = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalMiuixTokens.current.textSecondary,
+                )
+            }
         }
     }
 }
@@ -411,6 +509,12 @@ private fun runtimeTraceV7(flow: WritingFlowUiState): RuntimeTraceV7 {
         flow.ready -> RuntimeTraceV7("执行空闲", "$chapter · 等待下一次真实执行动作", false, Icons.Rounded.History, RuntimeToneV7.IDLE)
         else -> RuntimeTraceV7("执行状态未载入", "正在等待章节工作台状态", false, Icons.Rounded.History, RuntimeToneV7.IDLE)
     }
+}
+
+private fun formatDurationV9(millis: Long): String = when {
+    millis < 1_000L -> "${millis}ms"
+    millis < 60_000L -> String.format(Locale.getDefault(), "%.1fs", millis / 1_000.0)
+    else -> "${millis / 60_000}m ${(millis % 60_000) / 1_000}s"
 }
 
 private fun formatTraceTimeV7(millis: Long): String = runCatching {
