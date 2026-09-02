@@ -1,9 +1,11 @@
 package com.xiguli.langhuan.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -66,6 +68,7 @@ fun WritingWorkspaceV6(
     var lastPlan by remember(novelId) { mutableStateOf<WorkspaceNaturalPlan?>(null) }
     var pendingCompound by remember(novelId) { mutableStateOf<PendingCompoundV6?>(null) }
     var showHistory by remember { mutableStateOf(false) }
+    var showTrace by remember { mutableStateOf(false) }
 
     LaunchedEffect(novelId) {
         conversationVm.load(novelId)
@@ -122,6 +125,7 @@ fun WritingWorkspaceV6(
             lastPlan = lastPlan,
             onInput = { input = it },
             onHistory = { showHistory = true },
+            onTrace = { showTrace = true },
             onMigrationQueue = canonVm::openMigrationQueue,
             onQuickAction = { action -> performQuickActionV6(action, flow, viewModel) },
             onSend = {
@@ -162,6 +166,14 @@ fun WritingWorkspaceV6(
         )
     }
 
+    if (showTrace) {
+        ProjectWorkflowTraceSheetV7(
+            conversation = conversation,
+            flow = flow,
+            onDismiss = { showTrace = false },
+        )
+    }
+
     if (canon.isBusy || canon.isApplying || canon.proposal != null || canon.error != null) {
         CanonChangeProposalSheetV7(
             state = canon,
@@ -196,6 +208,7 @@ private fun WorkspaceNaturalControllerDockV6(
     lastPlan: WorkspaceNaturalPlan?,
     onInput: (String) -> Unit,
     onHistory: () -> Unit,
+    onTrace: () -> Unit,
     onMigrationQueue: () -> Unit,
     onQuickAction: (WorkspaceQuickActionV6) -> Unit,
     onSend: () -> Unit,
@@ -235,47 +248,58 @@ private fun WorkspaceNaturalControllerDockV6(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(99.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .68f),
-                    modifier = Modifier.clickable(onClick = onHistory),
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.History, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text("会话", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                if (migrationCount > 0) {
                     Surface(
                         shape = RoundedCornerShape(99.dp),
-                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .75f),
-                        modifier = Modifier.clickable(onClick = onMigrationQueue),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .68f),
+                        modifier = Modifier.clickable(onClick = onHistory),
                     ) {
                         Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Route, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.tertiary)
+                            Icon(Icons.Rounded.History, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text("会话", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    ProjectWorkflowTracePillV7(
+                        workflow = conversation.workflow,
+                        flow = flow,
+                        onClick = onTrace,
+                    )
+                    if (migrationCount > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(99.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .75f),
+                            modifier = Modifier.clickable(onClick = onMigrationQueue),
+                        ) {
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.Route, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.tertiary)
+                                Text(
+                                    "修复队列 $migrationCount",
+                                    modifier = Modifier.padding(start = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                    }
+                    lastPlan?.let { plan ->
+                        Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                             Text(
-                                "修复队列 $migrationCount",
-                                modifier = Modifier.padding(start = 4.dp),
+                                plan.summary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 }
-                lastPlan?.let { plan ->
-                    Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                        Text(
-                            plan.summary,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Spacer(Modifier.weight(1f))
                 quickAction?.let { action ->
+                    Spacer(Modifier.width(7.dp))
                     AssistChip(
                         onClick = { onQuickAction(action) },
                         enabled = action == WorkspaceQuickActionV6.STOP || !flow.busy,
