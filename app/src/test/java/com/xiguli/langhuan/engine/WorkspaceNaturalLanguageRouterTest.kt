@@ -61,10 +61,19 @@ class WorkspaceNaturalLanguageRouterTest {
     }
 
     @Test
-    fun `world canon rewrite request is discussion until a supported mutation target is explicit`() {
+    fun `world canon rewrite request becomes proposal not direct write`() {
         val plan = WorkspaceNaturalLanguageRouter.route("把主角的核心设定改成不死之身")
 
-        assertEquals(listOf(WorkspaceNaturalAction.DISCUSS), plan.actions)
+        assertEquals(listOf(WorkspaceNaturalAction.CANON_PROPOSAL), plan.actions)
+        assertTrue(plan.requestsCanonProposal)
         assertFalse(plan.mutatesWorkingDraft)
+    }
+
+    @Test
+    fun `canon proposal stops downstream prose until confirmed`() {
+        val plan = WorkspaceNaturalLanguageRouter.route("把世界规则改成只有午夜才能触发，然后顺便重写这一章")
+
+        assertEquals(listOf(WorkspaceNaturalAction.CANON_PROPOSAL), plan.actions)
+        assertFalse(plan.hasProseMutation)
     }
 }

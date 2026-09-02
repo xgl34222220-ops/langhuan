@@ -57,6 +57,8 @@ fun WritingWorkspaceV6(
     val flow by viewModel.state.collectAsStateWithLifecycle()
     val conversationVm: ProjectConversationViewModel = viewModel()
     val conversation by conversationVm.state.collectAsStateWithLifecycle()
+    val canonVm: CanonChangeProposalViewModel = viewModel()
+    val canon by canonVm.state.collectAsStateWithLifecycle()
 
     var input by remember(novelId) { mutableStateOf("") }
     var lastPlan by remember(novelId) { mutableStateOf<WorkspaceNaturalPlan?>(null) }
@@ -64,6 +66,12 @@ fun WritingWorkspaceV6(
     var showHistory by remember { mutableStateOf(false) }
 
     LaunchedEffect(novelId) { conversationVm.load(novelId) }
+    LaunchedEffect(canon.appliedAt) {
+        if (canon.appliedAt > 0L) {
+            viewModel.invalidateAfterExternalEdit(novelId)
+            viewModel.load(novelId)
+        }
+    }
 
     LaunchedEffect(
         pendingCompound?.token,
@@ -103,6 +111,7 @@ fun WritingWorkspaceV6(
             modifier = Modifier.align(Alignment.BottomCenter),
             flow = flow,
             conversation = conversation,
+            externalBusy = canon.active,
             input = input,
             lastPlan = lastPlan,
             onInput = { input = it },
@@ -110,11 +119,15 @@ fun WritingWorkspaceV6(
             onQuickAction = { action -> performQuickActionV6(action, flow, viewModel) },
             onSend = {
                 val clean = input.trim()
-                if (clean.isNotBlank() && !flow.busy && !conversation.isBusy) {
+                if (clean.isNotBlank() && !flow.busy && !conversation.isBusy && !canon.active) {
                     val plan = WorkspaceNaturalLanguageRouter.route(clean)
                     input = ""
                     lastPlan = plan
                     when {
+                        plan.requestsCanonProposal -> {
+                            conversationVm.recordWorkspaceCommand(clean, plan.summary)
+                            canonVm.propose(novelId, clean)
+                        }
                         plan.isDiscussionOnly || plan.isReviewOnly -> conversationVm.send(clean)
                         plan.mutatesWorkingDraft -> {
                             conversationVm.recordWorkspaceCommand(clean, plan.summary)
@@ -141,6 +154,15 @@ fun WritingWorkspaceV6(
             onClearError = conversationVm::clearError,
         )
     }
+
+    if (canon.isBusy || canon.isApplying || canon.proposal != null || canon.error != null) {
+        CanonChangeProposalSheetV7(
+            state = canon,
+            onApply = canonVm::applyPending,
+            onDiscard = canonVm::discardPending,
+            onDismiss = canonVm::discardPending,
+        )
+    }
 }
 
 @Composable
@@ -148,6 +170,7 @@ private fun WorkspaceNaturalControllerDockV6(
     modifier: Modifier = Modifier,
     flow: WritingFlowUiState,
     conversation: ProjectConversationUiState,
+    externalBusy: Boolean,
     input: String,
     lastPlan: WorkspaceNaturalPlan?,
     onInput: (String) -> Unit,
@@ -158,7 +181,7 @@ private fun WorkspaceNaturalControllerDockV6(
     val quickAction = workspaceQuickActionV6(flow)
     val latestAssistant = conversation.streamingReply.takeIf(String::isNotBlank)
         ?: conversation.messages.lastOrNull { it.role == "assistant" }?.text.orEmpty()
-    val disabled = flow.busy || conversation.isBusy
+    val disabled = flow.busy || conversation.isBusy || externalBusy
 
     Surface(
         modifier = modifier.fillMaxWidth().navigationBarsPadding(),
@@ -242,7 +265,7 @@ private fun WorkspaceNaturalControllerDockV6(
                         value = input,
                         onValueChange = onInput,
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("直接说你要做什么：聊、改场景、改正文、检查冲突都可以…") },
+                        placeholder = { Text("直接说：聊设定、改 Canon、调场景、改正文、检查冲突都可以…") },
                         minLines = 1,
                         maxLines = 4,
                         enabled = !disabled,

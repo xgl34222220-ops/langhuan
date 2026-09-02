@@ -109,11 +109,11 @@ object WritingSkillCatalog {
         WritingSkillDefinition(
             id = "sepia-fiction",
             name = "Sepia 叙事去 AI 化",
-            description = "从叙事结构、段落推进和表面文风三层诊断 AI 痕迹；先修结构，再做最小文字修改。",
-            version = "0.4.0-adapted",
+            description = "从叙事结构、段落推进和表面文风三层诊断 AI 痕迹；按五组叙事特征分步审查，先修结构，再做最小文字修改。",
+            version = "0.4.1-adapted",
             license = "MIT",
             sourceUrl = "https://github.com/Nanako0129/sepia",
-            sourceRevision = "94f6dc2fc1eaff50570e735f2ae397eedbd49782",
+            sourceRevision = "ac2f06e8aa3d5a7ea3052e80e5815818322d688a",
             supportedTasks = setOf(
                 AiTaskType.SCENE_DIRECTOR,
                 AiTaskType.PROSE_AUTHOR,
@@ -129,6 +129,7 @@ object WritingSkillCatalog {
                 AiTaskType.NOVELIZATION,
                 AiTaskType.EDITOR_REVIEW,
                 AiTaskType.EDITOR_REWRITE,
+                AiTaskType.AUTONOMOUS_PLANNER,
                 AiTaskType.FULL_BOOK_EDITOR,
             ),
             author = "Nanako Tsai",
@@ -196,25 +197,30 @@ object WritingSkillCatalog {
 
     private fun sepiaFictionGuidance(task: AiTaskType): String {
         val common = """
-            来源适配：Nanako0129/sepia v0.4.0（MIT）。这是叙事校准方法，不是作者身份检测器。
-            - 修订顺序固定为“叙事结构 → 段落/信息推进 → 词句表面”。结构问题不能靠同义改写掩盖；先列出具体缺陷，再做最小必要修改。
-            - 不要把所有规则同时套满。只选择当前章节真正命中的 3-5 项，允许普通句、未被解释的细节和适度粗粝感；过度抛光本身也是模板。
+            来源适配：Nanako0129/sepia v0.4.1（MIT）。这是叙事校准方法，不是作者身份检测器，也不能输出“AI 概率”。
+            - Sepia 的四种操作要区分：write=新写；review=只诊断不改；refactor=完整列缺陷后做最小原位修改；recreate=先抽取事实/意图，再从事实重写。不要把 review 偷偷变成 rewrite。
+            - 修订顺序固定为“叙事结构 → 段落/信息推进 → 词句表面”。结构问题不能靠同义改写掩盖；refactor/recreate 必须先列出缺陷，再从最深层开始处理。
+            - 诊断时按五组分开读：A 主题过度决定；B 感官/身体化表演；C 结构过度整齐；D 人类正向标记；E 时间复杂度与多样性。每个命中都要能指出具体证据；无证据就不报。
+            - 不把 30 项特征合成“作者身份分数”。它们只用于编辑校准；没有评估机会的项标 n/a，反向拉满也要视作过度校准风险。
+            - 不要把所有规则同时套满。每章/每次规划只选择真正相关的 3-5 项，再允许一个有依据的稀有结构选择；保留普通句、未被解释的细节和适度粗粝感。
             - 逻辑必须成立，但“成立”不等于每个节拍都整齐服务单一主线。可以保留一个有生活质感的摩擦、旁支或未闭合细节，前提是不制造剧情漏洞、不违反章节合同。
             - 主题默认由事件、选择和后果暗示；删除旁白替读者总结的人生道理、成长结论和对符号的解释。
             - 情绪使用对白、行为、回避、误判、沉默、明确感受和身体反应的混合；身体感受只留在真正峰值，禁止全章反复“心头一紧/呼吸一滞”。
             - 揭示尽量后置并分层；不要在场景刚开始就解释异常、人物动机或主题。章末优先落在外部行动、代价、未完成选择或新威胁，不默认用“终于理解/接受自己”收束。
-            - 段落长度、关键句位置和问答节拍要自然变化；禁止连续使用“提出问题→立即回答→总结意义”的同一模板。
+            - 做 QUD 检查：观察场景/段落是否反复沿“发生了什么→为什么→后果→意义”直线推进；允许比较、验证、矛盾、延迟解释和有回报的岔开。
+            - 中段是重点检查区：避免开头承诺之后，中段退化为匀速填充、按计划解决悬念；相邻场景允许密度、对白比例和节奏明显不同。
+            - 段落长度、关键句位置和问答节拍要自然变化；禁止连续使用“提出问题→立即回答→总结意义”的同一模板，也不要机械三段式/三项目。
             - 现实作品、地点、品牌和技术细节只能来自已确认 Canon、可靠研究或正文原有事实；绝不为了增加“人味”发明具体信息。
-            - 尊重作者画像与人物对白。自然、有个人习惯的段落不动；优先替换或删除，新增只用于真实且必要的具体性。
+            - 尊重作者画像与人物对白。自然、有个人习惯的段落不动；优先替换/删除，新增只用于真实且必要的具体性。
         """.trimIndent()
         val taskSpecific = when (task) {
-            AiTaskType.SCENE_DIRECTOR -> "章纲导演：先检查主题是否被直接讲明、转折是否是该故事独有、信息是否过早给完；只选 3-5 个本章校准动作，不机械加支线。"
-            AiTaskType.PROSE_AUTHOR -> "正文作者：先保证人物为什么这么做在场景中成立，再避免单轨过度整齐、主题解说、同一种情绪写法和公式化成长收尾。"
-            AiTaskType.NOVELIZATION -> "小说化重构：先完整诊断再修改；保留事实、事件顺序、对白个性和粗粝处，只处理真正命中的结构/推进/表面指纹。"
-            AiTaskType.EDITOR_REVIEW -> "主编审稿：分别给出【叙事结构】【段落推进】【表面文风】证据；单个常见词不算问题，只有成簇重复或结构性模式才允许退稿。"
-            AiTaskType.EDITOR_REWRITE -> "主编修订：从最深层命中项开始，优先替换/删除；禁止把整章统一抛光成另一种模型模板。"
-            AiTaskType.AUTONOMOUS_PLANNER -> "自治规划：跨章检查单轨因果、支线缺失、揭示前置、结局总由主角成长解决等长期结构指纹，并保持适度而非反向拉满。"
-            AiTaskType.FULL_BOOK_EDITOR -> "全书主编：按章节抽样比较主题显性度、情绪模式、段落节拍、转折同质化与结尾模式；报告趋势，不因单章风格选择下结论。"
+            AiTaskType.SCENE_DIRECTOR -> "章纲导演（write）：先填本章叙事架构选择，检查主题是否被直接讲明、转折是否是该故事独有、揭示是否过早；只选 3-5 个校准动作，不机械加支线。"
+            AiTaskType.PROSE_AUTHOR -> "正文作者（write）：先保证人物为什么这么做在场景中成立，再避免单轨过度整齐、主题解说、同一种情绪写法和公式化成长收尾；风格清扫永远放最后。"
+            AiTaskType.NOVELIZATION -> "小说化重构（recreate）：先抽取不可变事实、事件顺序与作者意图，再重新小说化；不得借重写发明具体事实。"
+            AiTaskType.EDITOR_REVIEW -> "主编审稿（review）：只诊断，不直接改。按 A→E 五组分开检查，再做 QUD/中段/表面文风；每个问题给短证据和修复层级，不给 AI 身份概率。"
+            AiTaskType.EDITOR_REWRITE -> "主编修订（refactor）：先使用已有审稿缺陷表，从最深层命中项开始，优先替换/删除；只改命中片段，禁止把整章统一抛光成另一种模型模板。"
+            AiTaskType.AUTONOMOUS_PLANNER -> "自治规划（write/architecture）：跨章先看主题显性度、单轨因果、支线网络、揭示前置、时间结构和结局模式；只采用 3-5 个与当前故事匹配的结构动作，并给后续留下松弛空间。"
+            AiTaskType.FULL_BOOK_EDITOR -> "全书主编（review）：跨章按 A-E 五组抽样比较主题、情绪、结构、时间和段落节拍趋势；把单章特例与全书重复模式分开报告，不用汇总分数判作者身份。"
             else -> ""
         }
         return "$common\n$taskSpecific".trim()
