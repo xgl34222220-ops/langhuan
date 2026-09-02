@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.NovelRouteInput
+import com.xiguli.langhuan.engine.NovelSkillExecutionPlanner
 import com.xiguli.langhuan.engine.NovelSkillRouter
 import com.xiguli.langhuan.engine.ProjectConversationMessage
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
@@ -35,8 +36,8 @@ data class ProjectConversationUiState(
  * Project-phase continuation chat.
  *
  * This chat can read the current project and Reference DNA, but it deliberately cannot write
- * Canon, overwrite ScenePlan, or replace chapter text. Those mutations remain behind the
- * explicit V4 workspace actions so discussion and committed novel truth never get conflated.
+ * Canon, overwrite ScenePlan, or replace chapter text. V6 may route a review-only request to
+ * the configured editor-review model, while all mutations still remain in the chapter runtime.
  */
 class ProjectConversationViewModel(application: Application) : AndroidViewModel(application) {
     private val projects = StoryProjectManager(application)
@@ -57,7 +58,33 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
         }
     }
 
-    fun send(text: String) {
+    fun send(text: String) = sendInternal(text, "")
+
+    /** Review proposed working state without persisting it into StorySnapshot. */
+    fun sendWithTransientContext(text: String, transientContext: String) =
+        sendInternal(text, transientContext.trim())
+
+    /** Persist an explicit workspace execution request into the continuous authoring history. */
+    fun recordWorkspaceCommand(text: String, planSummary: String) {
+        val before = _state.value
+        val clean = text.trim()
+        if (clean.isBlank() || before.novelId.isBlank()) return
+        val user = ProjectConversationMessage(
+            role = "user",
+            text = clean,
+            origin = ProjectConversationOrigin.PROJECT,
+        )
+        val receipt = ProjectConversationMessage(
+            role = "assistant",
+            text = "已交给章节工作台执行：$planSummary。真实执行结果以 Skill OS 运行轨迹为准，未保存内容不会自动进入 Canon。",
+            origin = ProjectConversationOrigin.PROJECT,
+        )
+        conversations.append(before.novelId, user)
+        conversations.append(before.novelId, receipt)
+        _state.update { it.copy(messages = it.messages + user + receipt, routeSummary = planSummary) }
+    }
+
+    private fun sendInternal(text: String, transientContext: String) {
         val clean = text.trim()
         val before = _state.value
         if (clean.isBlank() || before.isBusy || before.novelId.isBlank()) return
@@ -91,14 +118,20 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                 )
                 _state.update { it.copy(routeSummary = route.compactSummary) }
                 val session = taskRouter.snapshot()
+                val routedTask = NovelSkillExecutionPlanner.primaryTask(route)
+                val routedGateway = routedTask?.let { session.selection(it).gateway } ?: session.defaultGateway
                 val gateway = ReferenceDnaAwareAiGateway(
                     getApplication(),
                     novelId,
-                    session.defaultGateway,
+                    routedGateway,
                 )
-                val reply = gateway.generateTextStreaming(
+                gateway.generateTextStreaming(
                     PromptBundle(
-                        system = projectConversationSystem(loaded.snapshot, route.systemGuidance()),
+                        system = projectConversationSystem(
+                            snapshot = loaded.snapshot,
+                            routeGuidance = route.systemGuidance(),
+                            transientContext = transientContext,
+                        ),
                         user = clean,
                         messages = before.messages.takeLast(18).map {
                             PromptMessage(if (it.role == "assistant") "assistant" else "user", it.text)
@@ -107,7 +140,6 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                     ),
                     onDelta = { partial -> _state.update { it.copy(streamingReply = partial) } },
                 ).trim().ifBlank { "我在。继续按这本书当前已经确认的设定往下聊。" }
-                reply
             }.onSuccess { reply ->
                 val assistant = ProjectConversationMessage(
                     role = "assistant",
@@ -137,13 +169,22 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
     fun clearError() = _state.update { it.copy(error = null) }
 }
 
-private fun projectConversationSystem(snapshot: StorySnapshot, routeGuidance: String): String = buildString {
+private fun projectConversationSystem(
+    snapshot: StorySnapshot,
+    routeGuidance: String,
+    transientContext: String = "",
+): String = buildString {
     appendLine("你是‘琅嬛’的项目期创作搭档。你正在延续这本书从建书阶段开始的同一条作者会话。")
     appendLine("当前会话只负责讨论、分析、推演和提出修改方案；不要因为聊天本身直接写 Canon、覆盖 ScenePlan、提交 Candidate 或替换正式章节正文。")
     appendLine("如果用户只是问设定、人物、剧情、逻辑、伏笔或下一步怎么写，就直接结合当前项目回答。")
-    appendLine("如果用户明确要改正文或场景，可以给出具体建议，并说明工作台里的‘写正文/调场景’会真正执行；不要假装聊天已经保存。")
+    appendLine("如果用户明确要改正文或场景，可以给出具体建议；真正执行由章节工作台和 V3 Runtime 完成，不要假装聊天已经保存。")
     appendLine("当前 StorySnapshot 中已确认事实优先级高于历史聊天里的旧想法。后续明确决定覆盖之前的讨论。")
-    appendLine("$routeGuidance")
+    appendLine(routeGuidance)
+    if (transientContext.isNotBlank()) {
+        appendLine()
+        appendLine("【本轮临时 working draft，仅用于检查，不得视为已保存 Canon】")
+        appendLine(transientContext)
+    }
     appendLine()
     appendLine("【当前项目】")
     appendLine("书名：${snapshot.novel.title}")
