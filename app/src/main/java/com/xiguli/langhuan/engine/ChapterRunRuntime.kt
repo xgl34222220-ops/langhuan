@@ -36,6 +36,8 @@ data class ChapterRunRuntimeState(
     val events: List<RunEvent> = emptyList(),
     val result: GenerationResult? = null,
     val review: AgentReview? = null,
+    val runtimePlan: ProjectRuntimeSkillPlan? = null,
+    val runtimeAudit: ProjectRuntimeSkillAudit? = null,
     val queuedCount: Int = 0,
     val message: String? = null,
     val error: String? = null,
@@ -109,7 +111,8 @@ class ChapterRunRuntime(application: Application) {
                 _state.value = ChapterRunRuntimeState(
                     active = false, taskKind = command.kind, novelId = command.novelId, chapterNumber = command.chapterNumber,
                     snapshot = previous?.snapshot, draft = previous?.draft, providerLabel = previous?.providerLabel.orEmpty(), preview = previous?.preview.orEmpty(),
-                    events = previous?.events.orEmpty(), result = previous?.result, review = previous?.review, queuedCount = queuedSize(),
+                    events = previous?.events.orEmpty(), result = previous?.result, review = previous?.review,
+                    runtimePlan = previous?.runtimePlan, runtimeAudit = previous?.runtimeAudit, queuedCount = queuedSize(),
                     error = error.message ?: "后台章节任务失败", updatedAt = System.currentTimeMillis(),
                 )
             } finally {
@@ -130,12 +133,15 @@ class ChapterRunRuntime(application: Application) {
         val (providerLabel, baseGateway) = resolveGateway(command.allowDemoFallback)
         val gateway = ReferenceDnaAwareAiGateway(app, command.novelId, baseGateway)
         val dnaSummary = ReferenceDnaBindingStore(app).summary(command.novelId)
+        val runtimePlan = ProjectRuntimeSkillPlanner.build(command.snapshot, command.draft, dnaSummary.count)
         _state.value = ChapterRunRuntimeState(
             active = true, taskKind = ChapterRuntimeTaskKind.GENERATE, novelId = command.novelId, chapterNumber = command.chapterNumber,
             snapshot = command.snapshot, draft = command.draft,
             providerLabel = if (dnaSummary.count > 0) "$providerLabel · DNA ${dnaSummary.count}本" else providerLabel,
+            runtimePlan = runtimePlan,
             queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
+        emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.GENERATION)), true)
         showForeground(command, if (dnaSummary.count > 0) "正在生成正文 · ${dnaSummary.label} · 最长 8 分钟" else "正在生成正文 · 最长 8 分钟，可随时停止", canStop = true)
         try {
             val result = withTimeout(GENERATION_DEADLINE_MS) {
@@ -146,16 +152,36 @@ class ChapterRunRuntime(application: Application) {
                     onRunEvent = { event -> emit(command, event, true) },
                 )
             }
-            _state.update { it.copy(active = false, preview = result.chapter.content, result = result, message = if (result.canCommit) "正文已生成并通过阻断级检查" else "正文已生成，但存在阻断级一致性问题", error = null, updatedAt = System.currentTimeMillis()) }
+            val audit = emitSkillAudit(
+                command = command,
+                plan = runtimePlan,
+                phases = setOf(ProjectRuntimePhase.GENERATION),
+                prefix = "生成期 Skill OS",
+                canStop = false,
+            )
+            _state.update {
+                it.copy(
+                    active = false,
+                    preview = result.chapter.content,
+                    result = result,
+                    runtimeAudit = audit,
+                    message = if (result.canCommit) "正文已生成并通过阻断级检查" else "正文已生成，但存在阻断级一致性问题",
+                    error = null,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
         } catch (_: TimeoutCancellationException) {
             val message = "整章生成超过 8 分钟，已自动停止；已返回内容和断点仍保留。请重试或切换更稳定的模型/中转站。"
             emitLocalFailure(command, RunStage.READY_TO_COMMIT, message)
-            _state.update { it.copy(active = false, error = message, updatedAt = System.currentTimeMillis()) }
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.GENERATION), "生成期 Skill OS", false)
+            _state.update { it.copy(active = false, runtimeAudit = audit, error = message, updatedAt = System.currentTimeMillis()) }
         } catch (cancelled: CancellationException) {
-            _state.update { it.copy(active = false, message = "已停止本次生成；断点已保留，已收到内容不会自动二次请求", error = null, updatedAt = System.currentTimeMillis()) }
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.GENERATION), "生成期 Skill OS", false)
+            _state.update { it.copy(active = false, runtimeAudit = audit, message = "已停止本次生成；断点已保留，已收到内容不会自动二次请求", error = null, updatedAt = System.currentTimeMillis()) }
         } catch (error: Throwable) {
             emitLocalFailure(command, RunStage.READY_TO_COMMIT, error.message ?: "正文生成失败")
-            _state.update { it.copy(active = false, error = error.message ?: "正文生成失败", updatedAt = System.currentTimeMillis()) }
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.GENERATION), "生成期 Skill OS", false)
+            _state.update { it.copy(active = false, runtimeAudit = audit, error = error.message ?: "正文生成失败", updatedAt = System.currentTimeMillis()) }
         }
     }
 
@@ -166,11 +192,17 @@ class ChapterRunRuntime(application: Application) {
         val providerLabel = resolved?.first ?: "未配置 AI · 仅保存正文"
         val gateway = resolved?.second?.let { ReferenceDnaAwareAiGateway(app, command.novelId, it) }
         val previous = _state.value.takeIf { it.matches(command.novelId, command.chapterNumber) }
+        val dnaCount = ReferenceDnaBindingStore(app).summary(command.novelId).count
+        val runtimePlan = previous?.runtimePlan?.takeIf { it.novelId == command.novelId && it.chapterNumber == command.chapterNumber }
+            ?: ProjectRuntimeSkillPlanner.build(command.snapshot, command.draft, dnaCount)
         _state.value = ChapterRunRuntimeState(
             active = true, taskKind = ChapterRuntimeTaskKind.COMMIT, novelId = command.novelId, chapterNumber = command.chapterNumber,
             snapshot = command.snapshot, draft = command.draft, providerLabel = providerLabel, preview = command.result.chapter.content,
-            events = previous?.events.orEmpty(), result = command.result, review = previous?.review, queuedCount = queuedSize(), startedAt = started, updatedAt = started,
+            events = previous?.events.orEmpty(), result = command.result, review = previous?.review,
+            runtimePlan = runtimePlan, runtimeAudit = previous?.runtimeAudit,
+            queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
+        emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.POST_COMMIT)), false)
         showForeground(command, "正在保存正文并执行章节后处理", false)
         try {
             val outcome = coordinator.commit(command.snapshot, command.draft, command.result, gateway) { event -> emit(command, event, false) }
@@ -178,11 +210,20 @@ class ChapterRunRuntime(application: Application) {
                 val acceptanceKey = listOf(command.novelId, command.chapterNumber.toString(), command.draft.version.toString(), command.result.chapter.content.hashCode().toString()).joinToString(":")
                 modelTelemetry.recordUserAccepted(attribution, acceptanceKey)
             }
-            applyPersistedOutcome(outcome.persisted, outcome.review, outcome.summary(), true)
+            val phases = if (_state.value.events.any { it.stage == RunStage.DRAFT || it.stage == RunStage.CONSISTENCY }) {
+                setOf(ProjectRuntimePhase.GENERATION, ProjectRuntimePhase.POST_COMMIT)
+            } else {
+                setOf(ProjectRuntimePhase.POST_COMMIT)
+            }
+            val audit = emitSkillAudit(command, runtimePlan, phases, "正式项目 Skill OS", false)
+            _state.update { it.copy(runtimeAudit = audit) }
+            applyPersistedOutcome(outcome.persisted, outcome.review, "${outcome.summary()} · ${audit.summary("Skill OS")}", true)
         } catch (cancelled: CancellationException) {
-            _state.update { it.copy(active = false, message = "保存后处理被系统中断；已完成阶段仍可从断点恢复", updatedAt = System.currentTimeMillis()) }; throw cancelled
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.POST_COMMIT), "提交后 Skill OS", false)
+            _state.update { it.copy(active = false, runtimeAudit = audit, message = "保存后处理被系统中断；已完成阶段仍可从断点恢复", updatedAt = System.currentTimeMillis()) }; throw cancelled
         } catch (error: Throwable) {
-            _state.update { it.copy(active = false, error = error.message ?: "保存正文失败", updatedAt = System.currentTimeMillis()) }
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.POST_COMMIT), "提交后 Skill OS", false)
+            _state.update { it.copy(active = false, runtimeAudit = audit, error = error.message ?: "保存正文失败", updatedAt = System.currentTimeMillis()) }
         }
     }
 
@@ -191,24 +232,42 @@ class ChapterRunRuntime(application: Application) {
         val resolved = resolveGatewayOrNull() ?: error("请先到设置添加并启用一个 AI 服务")
         val gateway = ReferenceDnaAwareAiGateway(app, command.novelId, resolved.second)
         val previous = _state.value.takeIf { it.matches(command.novelId, command.chapterNumber) }
+        val runtimePlan = ProjectRuntimeSkillPlanner.manualReview(command.snapshot, command.draft)
         _state.value = ChapterRunRuntimeState(
             active = true, taskKind = ChapterRuntimeTaskKind.REVIEW, novelId = command.novelId, chapterNumber = command.chapterNumber,
             snapshot = command.snapshot, draft = command.draft, providerLabel = resolved.first, preview = previous?.preview.orEmpty(), events = previous?.events.orEmpty(),
-            result = previous?.result, queuedCount = queuedSize(), startedAt = started, updatedAt = started,
+            result = previous?.result, runtimePlan = runtimePlan, queuedCount = queuedSize(), startedAt = started, updatedAt = started,
         )
+        emit(command, RunEvent(RunStage.SKILL_PLAN, RunStatus.SUCCESS, runtimePlan.phaseSummary(ProjectRuntimePhase.MANUAL_REVIEW)), false)
         showForeground(command, "正在进行 Agent 章节复盘", false)
         try {
             val reviewed = coordinator.reviewSavedChapter(command.snapshot, command.draft, gateway) { event -> emit(command, event, false) }
-            applyPersistedOutcome(reviewed.persisted, reviewed.review, "Agent 已完成复盘；${reviewed.stagedCount} 条候选事实已进入 Candidate", false)
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.MANUAL_REVIEW), "复盘 Skill OS", false)
+            _state.update { it.copy(runtimeAudit = audit) }
+            applyPersistedOutcome(reviewed.persisted, reviewed.review, "Agent 已完成复盘；${reviewed.stagedCount} 条候选事实已进入 Candidate · ${audit.summary("Skill OS")}", false)
         } catch (cancelled: CancellationException) {
-            _state.update { it.copy(active = false, message = "Agent 复盘被系统中断；不会自动重复已完成请求", updatedAt = System.currentTimeMillis()) }; throw cancelled
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.MANUAL_REVIEW), "复盘 Skill OS", false)
+            _state.update { it.copy(active = false, runtimeAudit = audit, message = "Agent 复盘被系统中断；不会自动重复已完成请求", updatedAt = System.currentTimeMillis()) }; throw cancelled
         } catch (error: Throwable) {
-            _state.update { it.copy(active = false, error = error.message ?: "章节复盘失败", updatedAt = System.currentTimeMillis()) }
+            val audit = emitSkillAudit(command, runtimePlan, setOf(ProjectRuntimePhase.MANUAL_REVIEW), "复盘 Skill OS", false)
+            _state.update { it.copy(active = false, runtimeAudit = audit, error = error.message ?: "章节复盘失败", updatedAt = System.currentTimeMillis()) }
         }
     }
 
     private fun applyPersistedOutcome(persisted: PersistedStory, review: AgentReview?, message: String, clearResult: Boolean) {
         _state.update { it.copy(active = false, snapshot = persisted.snapshot, draft = persisted.draft, preview = if (clearResult) "" else it.preview, result = if (clearResult) null else it.result, review = review, message = message, error = null, updatedAt = System.currentTimeMillis()) }
+    }
+
+    private fun emitSkillAudit(
+        command: RuntimeCommand,
+        plan: ProjectRuntimeSkillPlan,
+        phases: Set<ProjectRuntimePhase>,
+        prefix: String,
+        canStop: Boolean,
+    ): ProjectRuntimeSkillAudit {
+        val audit = ProjectRuntimeSkillPlanner.audit(plan, _state.value.events, phases)
+        emit(command, RunEvent(RunStage.SKILL_AUDIT, audit.runStatus, audit.summary(prefix)), canStop)
+        return audit
     }
 
     private fun emit(command: RuntimeCommand, event: RunEvent, canStop: Boolean) {
