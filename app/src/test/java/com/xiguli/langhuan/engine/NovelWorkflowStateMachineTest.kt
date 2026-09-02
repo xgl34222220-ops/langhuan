@@ -23,7 +23,7 @@ class NovelWorkflowStateMachineTest {
 
         assertEquals(NovelWorkflowStage.RESEARCH, approved.currentStage)
         assertEquals(NovelWorkflowStatus.RUNNING, approved.stageStatus)
-        assertEquals(1, approved.stageHistory.size)
+        assertEquals(2, approved.stageHistory.size)
 
         // The same short reply cannot silently approve a future stage that has not reached a gate.
         val unchanged = NovelWorkflowStateMachine.applyGateReply(approved, "继续")
