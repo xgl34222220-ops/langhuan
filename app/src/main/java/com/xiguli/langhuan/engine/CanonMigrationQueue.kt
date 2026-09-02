@@ -18,7 +18,14 @@ enum class CanonMigrationAction(val label: String) {
 }
 
 @Serializable
-enum class CanonMigrationTaskStatus { PENDING, DONE, SKIPPED }
+enum class CanonMigrationTaskStatus {
+    PENDING,
+    RUNNING,
+    AWAITING_CONFIRMATION,
+    DONE,
+    SKIPPED,
+    FAILED,
+}
 
 @Serializable
 data class CanonMigrationTask(
@@ -43,7 +50,10 @@ data class CanonMigrationQueue(
     val tasks: List<CanonMigrationTask> = emptyList(),
     val updatedAt: Long = System.currentTimeMillis(),
 ) {
-    val pending: List<CanonMigrationTask> get() = tasks.filter { it.status == CanonMigrationTaskStatus.PENDING }
+    /** Compatibility name retained for V8 UI: now means every unresolved migration task. */
+    val pending: List<CanonMigrationTask> get() = tasks.filterNot { it.status.isResolved }
+    val actionable: List<CanonMigrationTask>
+        get() = tasks.filter { it.status == CanonMigrationTaskStatus.PENDING || it.status == CanonMigrationTaskStatus.FAILED }
     val completedCount: Int get() = tasks.count { it.status == CanonMigrationTaskStatus.DONE }
 }
 
@@ -139,13 +149,37 @@ class CanonMigrationQueueStore(context: Context) {
             .getOrElse { CanonMigrationQueue(novelId) }
     }
 
+    /**
+     * Proposal UI state is intentionally ephemeral. If the process died while generating or
+     * waiting for confirmation, recover that task to PENDING instead of pretending work continued.
+     */
+    @Synchronized
+    fun recoverInterrupted(novelId: String): CanonMigrationQueue {
+        val current = load(novelId)
+        val interrupted = current.tasks.any {
+            it.status == CanonMigrationTaskStatus.RUNNING ||
+                it.status == CanonMigrationTaskStatus.AWAITING_CONFIRMATION
+        }
+        if (!interrupted) return current
+        val updated = current.copy(
+            tasks = current.tasks.map { task ->
+                if (task.status == CanonMigrationTaskStatus.RUNNING ||
+                    task.status == CanonMigrationTaskStatus.AWAITING_CONFIRMATION
+                ) task.copy(status = CanonMigrationTaskStatus.PENDING, resolvedAt = 0L) else task
+            },
+            updatedAt = System.currentTimeMillis(),
+        )
+        save(updated)
+        return updated
+    }
+
     @Synchronized
     fun appendFromProposal(novelId: String, proposal: CanonChangeProposal): CanonMigrationQueue {
         val current = load(novelId)
         val incoming = CanonMigrationPlanner.build(novelId, proposal)
         val retained = current.tasks.filter { old ->
             incoming.tasks.none { fresh ->
-                old.status == CanonMigrationTaskStatus.PENDING &&
+                !old.status.isResolved &&
                     old.scope == fresh.scope &&
                     old.label == fresh.label &&
                     old.chapterNumber == fresh.chapterNumber
@@ -168,7 +202,7 @@ class CanonMigrationQueueStore(context: Context) {
             tasks = current.tasks.map { task ->
                 if (task.id == taskId) task.copy(
                     status = status,
-                    resolvedAt = if (status == CanonMigrationTaskStatus.PENDING) 0L else now,
+                    resolvedAt = if (status.isResolved) now else 0L,
                 ) else task
             },
             updatedAt = now,
@@ -181,7 +215,7 @@ class CanonMigrationQueueStore(context: Context) {
     fun clearResolved(novelId: String): CanonMigrationQueue {
         val current = load(novelId)
         val updated = current.copy(
-            tasks = current.tasks.filter { it.status == CanonMigrationTaskStatus.PENDING },
+            tasks = current.tasks.filterNot { it.status.isResolved },
             updatedAt = System.currentTimeMillis(),
         )
         save(updated)
