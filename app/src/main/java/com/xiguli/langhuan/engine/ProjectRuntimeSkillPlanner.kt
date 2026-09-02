@@ -330,7 +330,12 @@ object ProjectRuntimeSkillPlanner {
                 event.stage == done.stage && event.status == RunStatus.RUNNING && event.atMillis <= done.atMillis
             }.takeIf { it >= 0 }?.let(evidenceEvents::get)
         }
-        val duration = if (matchingStart != null && completion != null && completion.atMillis >= matchingStart.atMillis) {
+        val duration = if (
+            matchingStart != null &&
+            completion != null &&
+            completion.atMillis >= matchingStart.atMillis &&
+            independentlyTimed(step.capability, completion.stage)
+        ) {
             completion.atMillis - matchingStart.atMillis
         } else null
         val latestForText = completion ?: latest
@@ -359,6 +364,21 @@ object ProjectRuntimeSkillPlanner {
                 ProjectRuntimeReceiptState.PENDING -> ""
             },
         )
+    }
+
+    private fun independentlyTimed(capability: ProjectRuntimeCapability, stage: RunStage): Boolean = when (capability) {
+        ProjectRuntimeCapability.HYBRID_RAG -> stage == RunStage.HYBRID_RAG
+        ProjectRuntimeCapability.CONSISTENCY_GATE -> stage == RunStage.CONSISTENCY
+        ProjectRuntimeCapability.FULL_BOOK_AUDIT -> stage == RunStage.FULL_BOOK_AUDIT
+        ProjectRuntimeCapability.EXECUTION_AUDIT -> stage == RunStage.EXECUTION_AUDIT
+        ProjectRuntimeCapability.AGENT_CANDIDATE -> stage == RunStage.CANDIDATE
+        ProjectRuntimeCapability.AUTONOMOUS_REPLAN -> stage == RunStage.AUTONOMOUS_REPLAN
+        ProjectRuntimeCapability.CONTEXT_PACK,
+        ProjectRuntimeCapability.REFERENCE_DNA,
+        ProjectRuntimeCapability.CHARACTER_STATE,
+        ProjectRuntimeCapability.CHRONOLOGY,
+        ProjectRuntimeCapability.ERA_TECH,
+        ProjectRuntimeCapability.FORESHADOWING -> false
     }
 
     private fun evidenceStages(capability: ProjectRuntimeCapability): Set<RunStage> = when (capability) {
