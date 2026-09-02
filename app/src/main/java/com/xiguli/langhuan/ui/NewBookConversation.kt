@@ -63,8 +63,10 @@ private fun isQuestionLike(text: String): Boolean {
 private fun isReferenceFactQuestion(text: String): Boolean {
     val value = text.trim()
     if (!isQuestionLike(value)) return false
-    val referenceCue = listOf("模板", "参考", "原作", "蒸馏", "这本", "那本", "这部", "那部", "Story DNA", "DNA")
-        .any { value.contains(it, ignoreCase = true) }
+    val referenceCue = listOf(
+        "模板", "参考", "原作", "蒸馏", "这本", "那本", "这部", "那部", "Story DNA", "DNA",
+        "他们", "它们", "这几本", "这两本", "这些作品", "那些作品", "作品",
+    ).any { value.contains(it, ignoreCase = true) }
     val factCue = listOf("主角", "配角", "人物", "名字", "姓名", "能力", "世界观", "世界", "规则", "设定", "关系", "势力", "地点", "冲突", "谜团", "主题", "剧情", "结局")
         .any { value.contains(it, ignoreCase = true) }
     return referenceCue && factCue
