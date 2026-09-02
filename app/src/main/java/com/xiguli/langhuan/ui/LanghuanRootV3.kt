@@ -50,6 +50,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
     var coverStoryId by remember { mutableStateOf<String?>(null) }
+    var openBookOnInfo by remember { mutableStateOf(false) }
     var tavernStoryId by remember { mutableStateOf<String?>(null) }
 
     val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -85,9 +86,15 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     }
 
     fun openBook(id: String) {
+        openBookOnInfo = false
         libraryVm.openBook(id)
         studioVm.selectStory(id)
         route = RootRouteV3.BOOK
+    }
+
+    fun openBookInfo(id: String) {
+        openBook(id)
+        openBookOnInfo = true
     }
 
     fun openTavern(id: String) {
@@ -126,17 +133,18 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    LanghuanHomeV4(
+                    ReaderShelfV8(
                         state = libraryState,
                         importState = localImportState,
                         onOpenBook = ::openBook,
+                        onOpenBookInfo = ::openBookInfo,
+                        onOpenTavern = ::openTavern,
                         onImportLocal = { localBookLauncher.launch(arrayOf("*/*")) },
                         onDeleteBook = libraryVm::deleteBook,
                         onCreate = {
                             if (studioState.provider.ready) route = RootRouteV3.CREATION
                             else openAiSetup(RootRouteV3.CREATION)
                         },
-                        onOpenTavern = ::openTavern,
                         onAiSetup = { openAiSetup(RootRouteV3.SHELF) },
                         onRunCenter = { route = RootRouteV3.RUN_CENTER },
                         onSkills = { openSkills(RootRouteV3.SHELF) },
@@ -145,7 +153,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.BOOK -> {
                     if (libraryState.openedBook != null) {
-                        ReaderFirstBookV7(
+                        ReaderFirstBookV11(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
@@ -164,6 +172,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                                 route = RootRouteV3.EDITOR
                             },
                             onOpenAiSetup = { openAiSetup(RootRouteV3.BOOK) },
+                            startOnInfo = openBookOnInfo,
                         )
                     }
                 }
