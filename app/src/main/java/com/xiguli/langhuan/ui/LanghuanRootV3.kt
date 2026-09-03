@@ -147,7 +147,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    ReaderShelfV8(
+                    ReaderShelfV9(
                         state = libraryState,
                         importState = localImportState,
                         onOpenBook = ::openBook,
