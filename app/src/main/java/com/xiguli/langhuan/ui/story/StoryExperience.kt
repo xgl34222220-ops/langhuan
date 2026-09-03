@@ -3,6 +3,7 @@ package com.xiguli.langhuan.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -87,7 +88,6 @@ private fun StoryImmersiveSurface(
     val vm: StoryPlayV3ViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val t = LocalLanghuanUiTokens.current
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val anchor = libraryState.readingChapter
         ?: libraryState.chapters.firstOrNull { it.chapterNumber == book.currentChapter }
@@ -157,7 +157,7 @@ private fun StoryImmersiveSurface(
                     val choices = session?.turns?.lastOrNull()?.choices.orEmpty()
                     if (choices.isNotEmpty() && !state.busy) {
                         Row(
-                            Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             choices.forEach { choice ->
@@ -355,7 +355,6 @@ private fun StoryContextChip(icon: androidx.compose.ui.graphics.vector.ImageVect
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StoryBranchSheet(
     sessions: List<StoryPlaySession>,
@@ -394,7 +393,6 @@ private fun StoryBranchSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StoryContextSheet(
     session: StoryPlaySession?,
