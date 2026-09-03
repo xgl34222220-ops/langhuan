@@ -16,26 +16,26 @@ class ReaderVideoReplicaV12Test {
     }
 
     @Test
-    fun readerMatchesCurrentControlAndThemeStructure() {
-        val source = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderFirstBookV11.kt").readText()
+    fun matureReaderKeepsEssentialControlsAndContinuousReading() {
+        val source = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderExperience.kt").readText()
         listOf(
-            "详情",
             "目录",
-            "阅读设置",
+            "搜索",
+            "排版",
             "书签",
             "批注",
-            "全文搜索",
-            "阅读方案",
-            "翻页方式",
             "进入故事",
-            "纸张",
-            "暖黄",
-            "护眼",
-            "夜间",
+            "首行缩进",
+            "段距",
+            "继续向下滑动",
+            "自动进入下一章",
         ).forEach { label -> assertTrue("missing $label", source.contains(label)) }
-        assertTrue(source.contains("GridCells.Fixed(3)"))
-        assertTrue(source.contains("GridCells.Fixed(2)"))
-        assertTrue(source.contains("ReaderPageModeV10.entries"))
+        assertTrue(source.contains("progressRestored"))
+        assertTrue(source.contains("textOffset"))
+        assertTrue(source.contains("positionFraction"))
+        assertTrue(source.contains("page >= pages.size"))
+        assertTrue(source.contains("scrollState.isScrollInProgress"))
+        assertTrue(source.contains("readerBuiltInPresetsV12()"))
         assertTrue(source.contains("ReaderReadingStoreV11"))
         assertTrue(source.contains("EpubOriginalTocV1"))
     }
