@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.ui
 
 import android.content.Context
+import android.content.res.Resources
 import android.graphics.Typeface
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -90,9 +91,12 @@ internal fun readerColorHexV10(color: Color): String {
 }
 
 /**
- * Conservative phone-page fallback. The old ~920-character target overflowed real phone viewports.
- * Stable reading position is stored separately as chapter + textOffset, so repagination can safely
- * change page count when typography changes.
+ * Conservative phone-page fallback. The old implementation assumed about 920 characters per page,
+ * which is far beyond a normal phone viewport and caused the lower part of a page to be clipped.
+ *
+ * This fallback estimates capacity from the actual device dp size and font scale, then keeps generous
+ * headroom for safe-system insets, chapter title, footer and mixed-width punctuation. Stable reading
+ * position is stored separately as chapter + textOffset, so repagination can change page count safely.
  */
 internal fun splitReaderPagesV10(
     text: String,
@@ -104,15 +108,28 @@ internal fun splitReaderPagesV10(
     val normalized = text.trim()
     if (normalized.isBlank()) return listOf("")
 
-    val fontPenalty = (fontSize / 19f).coerceIn(.72f, 1.7f)
-    val linePenalty = (lineFactor / 1.8f).coerceIn(.75f, 1.45f)
-    val widthPenalty = (1f + ((sidePadding - 24f) / 82f)).coerceIn(.78f, 1.35f)
-    val paragraphPenalty = (1f + (paragraphSpacing - 12f) / 120f).coerceIn(.9f, 1.18f)
-    val densityPenalty = fontPenalty * linePenalty * widthPenalty * paragraphPenalty
+    val metrics = Resources.getSystem().displayMetrics
+    val density = metrics.density.coerceAtLeast(1f)
+    val scaledDensity = metrics.scaledDensity.coerceAtLeast(density)
+    val widthDp = metrics.widthPixels / density
+    val heightDp = metrics.heightPixels / density
+    val effectiveFontDp = fontSize * (scaledDensity / density)
 
-    // Around 390–410 Chinese characters is a realistic full phone page at 20sp / 1.8 line height.
-    // Keep extra headroom for chapter titles, Latin runs, punctuation and the quiet footer.
-    val target = (410f / densityPenalty).toInt().coerceIn(220, 720)
+    // ReaderExperience itself also applies WindowInsets.safeDrawing. Reserve extra vertical space
+    // here because the first page additionally contains a chapter title and every page has a footer.
+    val usableWidthDp = (widthDp - sidePadding * 2f).coerceAtLeast(220f)
+    val usableHeightDp = (heightDp - 170f).coerceAtLeast(360f)
+    val approximateCharWidthDp = (effectiveFontDp * 1.02f).coerceAtLeast(12f)
+    val approximateLineHeightDp = (effectiveFontDp * lineFactor).coerceAtLeast(20f)
+    val charsPerLine = (usableWidthDp / approximateCharWidthDp).coerceIn(10f, 38f)
+    val linesPerPage = (usableHeightDp / approximateLineHeightDp).coerceIn(10f, 32f)
+
+    val paragraphPenalty = (1f + (paragraphSpacing - 12f) / 95f).coerceIn(.9f, 1.25f)
+    // 82% leaves room for glyph-width variance, punctuation, English runs and the chapter-title page.
+    val target = ((charsPerLine * linesPerPage * .82f) / paragraphPenalty)
+        .toInt()
+        .coerceIn(180, 620)
+
     val paragraphs = normalized.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
     val pages = mutableListOf<String>()
     val buffer = StringBuilder()
