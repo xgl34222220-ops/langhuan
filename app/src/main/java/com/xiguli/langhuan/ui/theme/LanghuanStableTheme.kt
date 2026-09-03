@@ -25,13 +25,17 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
  * 琅嬛稳定主题：shadcn-inspired semantic design system for Compose.
  *
  * 不是照搬网页样式，而是保留「纸白阅读感 + 暖橙品牌色」，同时引入统一的
- * background / foreground / card / muted / border / accent / destructive / ring 语义层。
- * 业务页不应再自行发明颜色和边框。
+ * background / foreground / card / muted / border / accent / destructive / success / warning /
+ * ring 语义层。业务页不应再自行发明颜色和边框。
  */
 private val AccentLight = Color(0xFFF4553D)
 private val AccentDark = Color(0xFFFF7A66)
 private val InkLight = Color(0xFF18181B)
 private val InkDark = Color(0xFFF4F4F5)
+private val SuccessLight = Color(0xFF16875D)
+private val SuccessDark = Color(0xFF4FD39B)
+private val WarningLight = Color(0xFFC87912)
+private val WarningDark = Color(0xFFF5B95C)
 
 private val PaperLightColors = lightColorScheme(
     primary = InkLight,
@@ -93,7 +97,6 @@ private val PaperDarkColors = darkColorScheme(
     onError = Color(0xFF450A0A),
 )
 
-/** Consistent radius scale used by every primitive. */
 private val StableShapes = Shapes(
     extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(8.dp),
@@ -102,10 +105,6 @@ private val StableShapes = Shapes(
     extraLarge = RoundedCornerShape(20.dp),
 )
 
-/**
- * A quieter type scale than the previous all-bold UI. Hierarchy comes from size and spacing,
- * not from making every heading black-weight.
- */
 private val StableTypography = Typography(
     displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 39.sp, fontWeight = FontWeight.SemiBold),
     headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold),
@@ -134,6 +133,8 @@ fun LanghuanStableTheme(
     } else {
         if (dark) PaperDarkColors else PaperLightColors
     }
+    val success = if (dark) SuccessDark else SuccessLight
+    val warning = if (dark) WarningDark else WarningLight
 
     val legacyTokens = MiuixTokens(
         pageBackground = colors.background,
@@ -141,8 +142,8 @@ fun LanghuanStableTheme(
         elevatedCardBackground = colors.surfaceContainerLowest,
         textPrimary = colors.onSurface,
         textSecondary = colors.onSurfaceVariant,
-        success = if (dark) Color(0xFF4FD39B) else Color(0xFF16875D),
-        warning = if (dark) Color(0xFFF5B95C) else Color(0xFFC87912),
+        success = success,
+        warning = warning,
     )
 
     val uiTokens = LanghuanUiTokens(
@@ -160,6 +161,10 @@ fun LanghuanStableTheme(
         accentForeground = colors.onTertiary,
         destructive = colors.error,
         destructiveForeground = colors.onError,
+        success = success,
+        successForeground = if (dark) Color(0xFF052E20) else Color.White,
+        warning = warning,
+        warningForeground = if (dark) Color(0xFF3A2400) else Color.White,
         ring = colors.tertiary,
         warmSurface = if (dark) Color(0xFF281713) else Color(0xFFFFF4F0),
     )
