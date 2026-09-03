@@ -188,7 +188,11 @@ private fun ReaderExperiencePage(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember(book.id) { context.getSharedPreferences("reader_settings_v2", Context.MODE_PRIVATE) }
+    val prefs = remember(book.id) {
+        context.getSharedPreferences("reader_settings_v2", Context.MODE_PRIVATE).also {
+            migrateReaderTypographyV14(it, book.id)
+        }
+    }
     val ordered = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } }
     val chapterIndex = ordered.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0)
     val previous = ordered.getOrNull(chapterIndex - 1)
@@ -202,9 +206,9 @@ private fun ReaderExperiencePage(
     var archive by remember(book.id) { mutableStateOf(ReaderReadingStoreV11.load(context, book.id)) }
 
     var fontSize by remember(book.id) { mutableFloatStateOf(prefs.getFloat("font_${book.id}", 20f)) }
-    var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line_${book.id}", 1.82f)) }
+    var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line_${book.id}", 1.68f)) }
     var sidePadding by remember(book.id) { mutableFloatStateOf(prefs.getFloat("padding_${book.id}", 24f)) }
-    var paragraphSpacing by remember(book.id) { mutableFloatStateOf(prefs.getFloat("paragraph_${book.id}", 12f)) }
+    var paragraphSpacing by remember(book.id) { mutableFloatStateOf(prefs.getFloat("paragraph_${book.id}", 8f)) }
     var firstLineIndent by remember(book.id) { mutableStateOf(prefs.getBoolean("indent_${book.id}", true)) }
     var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme_${book.id}", "paper") ?: "paper") }
     var fontKey by remember(book.id) { mutableStateOf(prefs.getString("family_${book.id}", "serif") ?: "serif") }
@@ -223,7 +227,8 @@ private fun ReaderExperiencePage(
         readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber)
     }
     val readingText = remember(chapter.id, chapter.title, chapter.content) {
-        readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content).ifBlank { "这一章没有正文。" }
+        readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
+            .ifBlank { "这一章没有正文。" }
     }
     val scrollState = rememberScrollState()
     val pages = remember(chapter.id, readingText, fontSize, lineFactor, sidePadding, paragraphSpacing, fontKey) {
@@ -401,7 +406,7 @@ private fun ReaderExperiencePage(
                             .padding(top = 22.dp, bottom = 58.dp),
                     ) {
                         ReaderChapterTitle(chapter, fontSize, family, palette)
-                        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.height(16.dp))
                         ReaderParagraphs(
                             readingText, fontSize, lineFactor,
                             paragraphSpacing, firstLineIndent, family, palette.foreground,
@@ -429,35 +434,27 @@ private fun ReaderExperiencePage(
                             page >= leadingPageCount + pages.size -> ReaderChapterSentinel(next, "下一章", palette)
                             else -> {
                                 val contentPage = contentPageFromPager(page)
-                                Box(
-                                    Modifier.fillMaxSize().background(palette.background)
-                                        .clickable { chromeVisible = !chromeVisible }
-                                        .padding(horizontal = sidePadding.dp)
-                                        .padding(top = 22.dp, bottom = 48.dp),
-                                ) {
-                                    Column(Modifier.fillMaxSize()) {
-                                        if (contentPage == 0) {
-                                            ReaderChapterTitle(chapter, fontSize, family, palette)
-                                            Spacer(Modifier.height(20.dp))
-                                        }
-                                        Text(
-                                            formattedPageText(pages[contentPage], firstLineIndent, paragraphSpacing),
-                                            modifier = Modifier.weight(1f),
-                                            fontSize = fontSize.sp,
-                                            lineHeight = (fontSize * lineFactor).sp,
-                                            fontFamily = family,
-                                            color = palette.foreground,
-                                            overflow = TextOverflow.Clip,
-                                        )
-                                        Text(
-                                            "${contentPage + 1}/${pages.size} · $displayTitle",
-                                            Modifier.fillMaxWidth().padding(top = 4.dp),
-                                            textAlign = TextAlign.End,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = palette.secondary,
-                                        )
-                                    }
-                                }
+                                val pageBookFraction = (
+                                    (chapterIndex.toFloat() + (contentPage + 1f) / pages.size.coerceAtLeast(1).toFloat()) /
+                                        ordered.size.coerceAtLeast(1).toFloat()
+                                    ).coerceIn(0f, 1f)
+                                ReaderPagedLayoutV14(
+                                    pageText = pages[contentPage],
+                                    contentPage = contentPage,
+                                    pageCount = pages.size,
+                                    displayTitle = displayTitle,
+                                    fontSize = fontSize,
+                                    lineFactor = lineFactor,
+                                    sidePadding = sidePadding,
+                                    paragraphSpacing = paragraphSpacing,
+                                    firstLineIndent = firstLineIndent,
+                                    family = family,
+                                    background = palette.background,
+                                    foreground = palette.foreground,
+                                    secondary = palette.secondary,
+                                    overallFraction = pageBookFraction,
+                                    onToggleChrome = { chromeVisible = !chromeVisible },
+                                )
                             }
                         }
                     }
@@ -467,10 +464,10 @@ private fun ReaderExperiencePage(
                 }
             }
 
-            if (!chromeVisible) {
+            if (!chromeVisible && pageMode == ReaderPageModeV10.SCROLL) {
                 val overall = ((chapterIndex.toFloat() + currentFraction()) / ordered.size.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
                 ReaderQuietFooter(Modifier.align(Alignment.BottomCenter), overall, palette)
-            } else {
+            } else if (chromeVisible) {
                 ReaderMatureChrome(
                     modifier = Modifier.align(Alignment.Center),
                     bookTitle = book.title,
@@ -493,7 +490,7 @@ private fun ReaderExperiencePage(
                             if (pageMode == ReaderPageModeV10.SCROLL) {
                                 scrollState.scrollTo((scrollState.maxValue * value).roundToInt().coerceIn(0, scrollState.maxValue))
                             } else {
-                                val offset = (chapter.content.length * value).roundToInt()
+                                val offset = (readingText.length * value).roundToInt()
                                 val contentPage = pageForRawTextOffset(pageOffsets, offset)
                                 pagerState.animateScrollToPage((leadingPageCount + contentPage).coerceIn(0, totalPagerPages - 1))
                             }
@@ -695,7 +692,7 @@ private fun ReaderParagraphs(text: String, fontSize: Float, lineFactor: Float, p
 
 @Composable
 private fun ReaderChapterTitle(chapter: ChapterDraft, fontSize: Float, family: FontFamily, palette: ReaderExperiencePalette) {
-    Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), fontSize = (fontSize + 5).sp, lineHeight = (fontSize + 11).sp, fontWeight = FontWeight.SemiBold, fontFamily = family, color = palette.foreground)
+    Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), fontSize = (fontSize + 3).sp, lineHeight = (fontSize + 8).sp, fontWeight = FontWeight.SemiBold, fontFamily = family, color = palette.foreground)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
