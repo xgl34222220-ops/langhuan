@@ -32,8 +32,10 @@ class ReaderMatureLayoutV14Test {
         val migration = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderTypographyMigrationV14.kt").readText()
 
         assertTrue(assets.contains("readerNormalizeBodyV14"))
-        assertTrue(assets.contains("heightDp - 205f"))
-        assertTrue(assets.contains("heightDp - 190f"))
+        assertTrue(assets.contains("heightDp - 152f"))
+        assertTrue(assets.contains("heightDp - 136f"))
+        assertFalse(assets.contains("heightDp - 205f"))
+        assertFalse(assets.contains("heightDp - 190f"))
         assertTrue(assets.contains("paragraphSpacing.coerceIn(0f, 24f)"))
         assertFalse(assets.contains("lineEnd < normalized.length && normalized.getOrNull(lineEnd) == '\\n'"))
 
