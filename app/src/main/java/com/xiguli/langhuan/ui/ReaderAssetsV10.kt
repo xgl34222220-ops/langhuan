@@ -108,11 +108,13 @@ internal fun splitReaderPagesV10(
     val normalized = text.trim()
     if (normalized.isBlank()) return listOf("")
 
-    val metrics = Resources.getSystem().displayMetrics
-    val density = metrics.density.coerceAtLeast(1f)
-    val scaledDensity = metrics.scaledDensity.coerceAtLeast(density)
-    val widthDp = metrics.widthPixels / density
-    val heightDp = metrics.heightPixels / density
+    val metrics = runCatching { Resources.getSystem().displayMetrics }.getOrNull()
+    val density = metrics?.density?.coerceAtLeast(1f) ?: 1f
+    val scaledDensity = metrics?.scaledDensity?.coerceAtLeast(density) ?: density
+    // The fallback values are intentionally phone-sized and are used only by plain JVM tests where
+    // android.content.res.Resources is a stub. A real Android process always uses its display metrics.
+    val widthDp = metrics?.let { it.widthPixels / density } ?: 393f
+    val heightDp = metrics?.let { it.heightPixels / density } ?: 820f
     val effectiveFontDp = fontSize * (scaledDensity / density)
 
     // ReaderExperience itself also applies WindowInsets.safeDrawing. Reserve extra vertical space
