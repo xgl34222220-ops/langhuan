@@ -18,108 +18,110 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xiguli.langhuan.ui.design.LanghuanUiTokens
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
- * 琅嬛「纸白」主题。
+ * 琅嬛稳定主题：shadcn-inspired semantic design system for Compose.
  *
- * 设计取向：近乎单色的纸白底 + 高对比正文 + 单一暖橙强调色，圆角克制，
- * 让封面和正文本身成为页面上唯一的颜色来源。
+ * 不是照搬网页样式，而是保留「纸白阅读感 + 暖橙品牌色」，同时引入统一的
+ * background / foreground / card / muted / border / accent / destructive / ring 语义层。
+ * 业务页不应再自行发明颜色和边框。
  */
-
-/** 暖橙强调色：选中态下划线、徽标、可点击强调文字。 */
 private val AccentLight = Color(0xFFF4553D)
 private val AccentDark = Color(0xFFFF7A66)
+private val InkLight = Color(0xFF18181B)
+private val InkDark = Color(0xFFF4F4F5)
 
 private val PaperLightColors = lightColorScheme(
-    primary = AccentLight,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFE6E1),
-    onPrimaryContainer = Color(0xFF5C1A10),
-    secondary = Color(0xFF5A5A5F),
+    primary = InkLight,
+    onPrimary = Color(0xFFFAFAFA),
+    primaryContainer = Color(0xFFF0EFED),
+    onPrimaryContainer = InkLight,
+    secondary = Color(0xFF52525B),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFF0F0F2),
-    onSecondaryContainer = Color(0xFF1A1A1C),
-    tertiary = Color(0xFFC8912F),
+    secondaryContainer = Color(0xFFF4F4F2),
+    onSecondaryContainer = InkLight,
+    tertiary = AccentLight,
     onTertiary = Color.White,
-    background = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF1A1A1C),
+    tertiaryContainer = Color(0xFFFFE8E2),
+    onTertiaryContainer = Color(0xFF6A1D11),
+    background = Color(0xFFFCFCFB),
+    onBackground = InkLight,
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1A1C),
-    surfaceVariant = Color(0xFFF5F5F7),
-    onSurfaceVariant = Color(0xFF9A9AA0),
+    onSurface = InkLight,
+    surfaceVariant = Color(0xFFF4F4F2),
+    onSurfaceVariant = Color(0xFF71717A),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFAFAFB),
-    surfaceContainer = Color(0xFFF5F5F7),
-    surfaceContainerHigh = Color(0xFFEFEFF2),
-    surfaceContainerHighest = Color(0xFFE9E9ED),
-    outline = Color(0xFFC6C6CC),
-    outlineVariant = Color(0xFFEDEDF0),
-    error = Color(0xFFD93025),
+    surfaceContainerLow = Color(0xFFFAFAF9),
+    surfaceContainer = Color(0xFFF6F6F4),
+    surfaceContainerHigh = Color(0xFFF0EFED),
+    surfaceContainerHighest = Color(0xFFE9E8E5),
+    outline = Color(0xFFD6D3D1),
+    outlineVariant = Color(0xFFE7E5E4),
+    error = Color(0xFFDC2626),
     onError = Color.White,
 )
 
 private val PaperDarkColors = darkColorScheme(
-    primary = AccentDark,
-    onPrimary = Color(0xFF3A0F08),
-    primaryContainer = Color(0xFF5C2419),
-    onPrimaryContainer = Color(0xFFFFDAD3),
-    secondary = Color(0xFFB6B6BC),
-    onSecondary = Color(0xFF1A1A1C),
-    secondaryContainer = Color(0xFF2A2A2E),
-    onSecondaryContainer = Color(0xFFEDEDEF),
-    tertiary = Color(0xFFE2BC6E),
-    onTertiary = Color(0xFF3A2D08),
-    background = Color(0xFF0F0F10),
-    onBackground = Color(0xFFEDEDEF),
-    surface = Color(0xFF0F0F10),
-    onSurface = Color(0xFFEDEDEF),
-    surfaceVariant = Color(0xFF232326),
-    onSurfaceVariant = Color(0xFF8A8A90),
-    surfaceContainerLowest = Color(0xFF0A0A0B),
-    surfaceContainerLow = Color(0xFF141416),
-    surfaceContainer = Color(0xFF1A1A1C),
-    surfaceContainerHigh = Color(0xFF232326),
-    surfaceContainerHighest = Color(0xFF2C2C30),
-    outline = Color(0xFF5A5A60),
-    outlineVariant = Color(0xFF2A2A2E),
-    error = Color(0xFFFF6B5E),
-    onError = Color(0xFF3A0A06),
+    primary = InkDark,
+    onPrimary = Color(0xFF111113),
+    primaryContainer = Color(0xFF27272A),
+    onPrimaryContainer = InkDark,
+    secondary = Color(0xFFD4D4D8),
+    onSecondary = Color(0xFF18181B),
+    secondaryContainer = Color(0xFF27272A),
+    onSecondaryContainer = InkDark,
+    tertiary = AccentDark,
+    onTertiary = Color(0xFF3A0F08),
+    tertiaryContainer = Color(0xFF5A241A),
+    onTertiaryContainer = Color(0xFFFFDAD3),
+    background = Color(0xFF0B0B0C),
+    onBackground = InkDark,
+    surface = Color(0xFF111113),
+    onSurface = InkDark,
+    surfaceVariant = Color(0xFF1C1C1F),
+    onSurfaceVariant = Color(0xFFA1A1AA),
+    surfaceContainerLowest = Color(0xFF09090B),
+    surfaceContainerLow = Color(0xFF111113),
+    surfaceContainer = Color(0xFF18181B),
+    surfaceContainerHigh = Color(0xFF202023),
+    surfaceContainerHighest = Color(0xFF27272A),
+    outline = Color(0xFF3F3F46),
+    outlineVariant = Color(0xFF27272A),
+    error = Color(0xFFF87171),
+    onError = Color(0xFF450A0A),
 )
 
-/** 圆角收敛：封面 4dp、卡片 8/12dp、面板 16dp、底部弹层 20dp。 */
+/** Consistent radius scale used by every primitive. */
 private val StableShapes = Shapes(
-    extraSmall = RoundedCornerShape(4.dp),
+    extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(8.dp),
     medium = RoundedCornerShape(12.dp),
     large = RoundedCornerShape(16.dp),
     extraLarge = RoundedCornerShape(20.dp),
 )
 
-/** 字阶：标题重、正文松、次要信息小而灰，拉开层级而不靠颜色。 */
+/**
+ * A quieter type scale than the previous all-bold UI. Hierarchy comes from size and spacing,
+ * not from making every heading black-weight.
+ */
 private val StableTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 23.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold),
+    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 39.sp, fontWeight = FontWeight.SemiBold),
+    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold),
+    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 31.sp, fontWeight = FontWeight.SemiBold),
+    headlineSmall = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
     titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 25.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
-    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 25.sp, fontWeight = FontWeight.Normal),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp, fontWeight = FontWeight.Normal),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
+    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
     labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
     labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium),
 )
 
-/**
- * Stable theme used only after StartupDatabaseGate succeeds.
- *
- * 默认使用固定的纸白配色，让应用有稳定的视觉身份；把 [dynamicColor] 置为 true
- * 可以退回 Android 12+ 的系统 Monet 取色。无论走哪条分支，都会向下提供
- * [LocalMiuixTokens]，因此所有读 tokens 的页面都会跟随明暗模式，而不再固定
- * 落在浅色默认值上。
- */
 @Composable
 fun LanghuanStableTheme(
     dynamicColor: Boolean = false,
@@ -133,14 +135,33 @@ fun LanghuanStableTheme(
         if (dark) PaperDarkColors else PaperLightColors
     }
 
-    val tokens = MiuixTokens(
+    val legacyTokens = MiuixTokens(
         pageBackground = colors.background,
-        cardBackground = if (dark) colors.surfaceContainer else colors.surfaceVariant,
-        elevatedCardBackground = if (dark) colors.surfaceContainerHigh else colors.surfaceContainerLowest,
+        cardBackground = colors.surfaceContainer,
+        elevatedCardBackground = colors.surfaceContainerLowest,
         textPrimary = colors.onSurface,
         textSecondary = colors.onSurfaceVariant,
-        success = if (dark) Color(0xFF4FD39B) else Color(0xFF1E9E6A),
-        warning = if (dark) Color(0xFFF5B95C) else Color(0xFFD98A16),
+        success = if (dark) Color(0xFF4FD39B) else Color(0xFF16875D),
+        warning = if (dark) Color(0xFFF5B95C) else Color(0xFFC87912),
+    )
+
+    val uiTokens = LanghuanUiTokens(
+        background = colors.background,
+        foreground = colors.onBackground,
+        card = colors.surface,
+        cardForeground = colors.onSurface,
+        muted = colors.surfaceContainer,
+        mutedForeground = colors.onSurfaceVariant,
+        border = colors.outlineVariant,
+        input = colors.outlineVariant,
+        primary = colors.primary,
+        primaryForeground = colors.onPrimary,
+        accent = colors.tertiary,
+        accentForeground = colors.onTertiary,
+        destructive = colors.error,
+        destructiveForeground = colors.onError,
+        ring = colors.tertiary,
+        warmSurface = if (dark) Color(0xFF281713) else Color(0xFFFFF4F0),
     )
 
     MaterialTheme(
@@ -149,7 +170,8 @@ fun LanghuanStableTheme(
         typography = StableTypography,
     ) {
         CompositionLocalProvider(
-            LocalMiuixTokens provides tokens,
+            LocalMiuixTokens provides legacyTokens,
+            LocalLanghuanUiTokens provides uiTokens,
             content = content,
         )
     }
