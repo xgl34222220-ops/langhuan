@@ -5,6 +5,9 @@ import android.content.res.Resources
 import android.graphics.Typeface
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import java.io.File
@@ -91,12 +94,66 @@ internal fun readerColorHexV10(color: Color): String {
 }
 
 /**
- * Conservative phone-page fallback. The old implementation assumed about 920 characters per page,
- * which is far beyond a normal phone viewport and caused the lower part of a page to be clipped.
+ * User-facing chapter title. Imported books may use internal chapter numbers that include cover,
+ * metadata or other EPUB resources, so those numbers must never replace the actual title shown to
+ * the reader.
+ */
+internal fun readerDisplayChapterTitleV13(title: String, chapterNumber: Int): String =
+    title.replace(Regex("\\s+"), " ").trim().ifBlank { "第 $chapterNumber 章" }
+
+/**
+ * Some EPUB/TXT importers keep the visible chapter heading both in ChapterDraft.title and at the
+ * beginning of ChapterDraft.content. Remove only a very small, anchored duplicate heading so the
+ * reading page does not show e.g. “第1章 出院 / 第1章 / 出院” three times.
+ */
+internal fun readerBodyWithoutDuplicateHeadingV13(title: String, content: String): String {
+    val body = content.replace("\r\n", "\n").trimStart()
+    if (body.isBlank()) return body
+    val displayTitle = title.replace(Regex("\\s+"), " ").trim()
+    if (displayTitle.isBlank()) return body
+
+    val compactBody = body.replaceFirst(Regex("^[\\uFEFF\\s]*"), "")
+    if (compactBody.startsWith(displayTitle, ignoreCase = true)) {
+        return compactBody.drop(displayTitle.length).trimStart('\n', '\r', ' ', '\t')
+    }
+
+    val chapterPrefix = Regex("^(第\\s*[0-9０-９一二三四五六七八九十百千万零〇两]+\\s*[章节回卷])(?:\\s+|$)")
+        .find(displayTitle)?.groupValues?.getOrNull(1)?.trim()
+    val suffix = chapterPrefix?.let { displayTitle.removePrefix(it).trim() }.orEmpty()
+    if (!chapterPrefix.isNullOrBlank()) {
+        val lines = compactBody.lines()
+        val firstIndex = lines.indexOfFirst { it.isNotBlank() }
+        if (firstIndex >= 0 && lines[firstIndex].trim().replace(Regex("\\s+"), " ").equals(chapterPrefix.replace(Regex("\\s+"), " "), true)) {
+            var endIndex = firstIndex + 1
+            if (suffix.isNotBlank()) {
+                val secondIndex = lines.indexOfFirstFromV13(firstIndex + 1) { it.isNotBlank() }
+                if (secondIndex >= 0 && lines[secondIndex].trim().replace(Regex("\\s+"), " ").equals(suffix, true)) {
+                    endIndex = secondIndex + 1
+                }
+            }
+            return lines.drop(endIndex).joinToString("\n").trimStart()
+        }
+    }
+    return compactBody
+}
+
+private inline fun List<String>.indexOfFirstFromV13(start: Int, predicate: (String) -> Boolean): Int {
+    for (index in start.coerceAtLeast(0)..lastIndex) if (predicate(this[index])) return index
+    return -1
+}
+
+/**
+ * Real measured pagination for phone reading.
  *
- * This fallback estimates capacity from the actual device dp size and font scale, then keeps generous
- * headroom for safe-system insets, chapter title, footer and mixed-width punctuation. Stable reading
- * position is stored separately as chapter + textOffset, so repagination can change page count safely.
+ * The previous reader still estimated “characters per page”. That inevitably clips large fonts,
+ * custom fonts and mixed Chinese/Latin text because character count is not a layout unit. This
+ * version asks Android StaticLayout to perform the same kind of line breaking used by Text, then
+ * cuts pages only on measured line boundaries. The first page gets a smaller body viewport because
+ * the chapter title occupies vertical space.
+ *
+ * This remains deliberately conservative: ReaderExperience applies safeDrawing insets, title/footer
+ * chrome and page padding after this function. Leaving a little vertical headroom is preferable to
+ * clipping even one line at the bottom.
  */
 internal fun splitReaderPagesV10(
     text: String,
@@ -105,54 +162,66 @@ internal fun splitReaderPagesV10(
     sidePadding: Float,
     paragraphSpacing: Float = 12f,
 ): List<String> {
-    val normalized = text.trim()
+    val normalized = text.replace("\r\n", "\n").trim()
     if (normalized.isBlank()) return listOf("")
 
-    val metrics = runCatching { Resources.getSystem().displayMetrics }.getOrNull()
-    val density = metrics?.density?.coerceAtLeast(1f) ?: 1f
-    val scaledDensity = metrics?.scaledDensity?.coerceAtLeast(density) ?: density
-    // The fallback values are intentionally phone-sized and are used only by plain JVM tests where
-    // android.content.res.Resources is a stub. A real Android process always uses its display metrics.
-    val widthDp = metrics?.let { it.widthPixels / density } ?: 393f
-    val heightDp = metrics?.let { it.heightPixels / density } ?: 820f
-    val effectiveFontDp = fontSize * (scaledDensity / density)
+    return runCatching {
+        val metrics = Resources.getSystem().displayMetrics
+        val density = metrics.density.coerceAtLeast(1f)
+        val scaledDensity = metrics.scaledDensity.coerceAtLeast(density)
+        val widthDp = metrics.widthPixels / density
+        val heightDp = metrics.heightPixels / density
 
-    // ReaderExperience itself also applies WindowInsets.safeDrawing. Reserve extra vertical space
-    // here because the first page additionally contains a chapter title and every page has a footer.
-    val usableWidthDp = (widthDp - sidePadding * 2f).coerceAtLeast(220f)
-    val usableHeightDp = (heightDp - 170f).coerceAtLeast(360f)
-    val approximateCharWidthDp = (effectiveFontDp * 1.02f).coerceAtLeast(12f)
-    val approximateLineHeightDp = (effectiveFontDp * lineFactor).coerceAtLeast(20f)
-    val charsPerLine = (usableWidthDp / approximateCharWidthDp).coerceIn(10f, 38f)
-    val linesPerPage = (usableHeightDp / approximateLineHeightDp).coerceIn(10f, 32f)
+        val widthPx = ((widthDp - sidePadding * 2f).coerceAtLeast(180f) * density).toInt().coerceAtLeast(1)
+        val firstBodyHeightPx = ((heightDp - 250f).coerceAtLeast(220f) * density).toInt()
+        val normalBodyHeightPx = ((heightDp - 188f).coerceAtLeast(260f) * density).toInt()
+        val paragraphExtraPx = (paragraphSpacing.coerceIn(0f, 30f) * density).toInt()
 
-    val paragraphPenalty = (1f + (paragraphSpacing - 12f) / 95f).coerceIn(.9f, 1.25f)
-    // 82% leaves room for glyph-width variance, punctuation, English runs and the chapter-title page.
-    val target = ((charsPerLine * linesPerPage * .82f) / paragraphPenalty)
-        .toInt()
-        .coerceIn(180, 620)
-
-    val paragraphs = normalized.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
-    val pages = mutableListOf<String>()
-    val buffer = StringBuilder()
-
-    fun flush() {
-        if (buffer.isNotBlank()) pages += buffer.toString().trim()
-        buffer.clear()
-    }
-
-    paragraphs.forEach { paragraph ->
-        if (paragraph.length > target * 2) {
-            flush()
-            paragraph.chunked(target).forEach { chunk -> if (chunk.isNotBlank()) pages += chunk.trim() }
-        } else if (buffer.length + paragraph.length + 2 > target && buffer.isNotEmpty()) {
-            flush()
-            buffer.append(paragraph)
-        } else {
-            if (buffer.isNotEmpty()) buffer.append("\n\n")
-            buffer.append(paragraph)
+        val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
+            textSize = fontSize.coerceIn(12f, 36f) * scaledDensity
+            typeface = Typeface.DEFAULT
         }
+        val baseFontHeight = (paint.fontMetrics.bottom - paint.fontMetrics.top).coerceAtLeast(1f)
+        val requestedLineHeight = fontSize.coerceIn(12f, 36f) * lineFactor.coerceIn(1.2f, 2.6f) * scaledDensity
+        val spacingMultiplier = (requestedLineHeight / baseFontHeight).coerceIn(.8f, 2.6f)
+
+        val layout = StaticLayout.Builder.obtain(normalized, 0, normalized.length, paint, widthPx)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setIncludePad(false)
+            .setLineSpacing(0f, spacingMultiplier)
+            .build()
+
+        val pages = mutableListOf<String>()
+        var line = 0
+        while (line < layout.lineCount) {
+            val firstLine = line
+            val maxHeight = if (pages.isEmpty()) firstBodyHeightPx else normalBodyHeightPx
+            var usedHeight = 0
+            while (line < layout.lineCount) {
+                val lineHeight = (layout.getLineBottom(line) - layout.getLineTop(line)).coerceAtLeast(1)
+                val lineStart = layout.getLineStart(line).coerceIn(0, normalized.length)
+                val lineEnd = layout.getLineEnd(line).coerceIn(lineStart, normalized.length)
+                val segment = normalized.substring(lineStart, lineEnd)
+                val paragraphExtra = if (segment.endsWith("\n") && lineEnd < normalized.length && normalized.getOrNull(lineEnd) == '\n') paragraphExtraPx else 0
+                val nextHeight = usedHeight + lineHeight + paragraphExtra
+                if (line > firstLine && nextHeight > maxHeight) break
+                usedHeight = nextHeight
+                line++
+            }
+            if (line == firstLine) line++
+            val startOffset = layout.getLineStart(firstLine).coerceIn(0, normalized.length)
+            val endOffset = layout.getLineEnd((line - 1).coerceAtLeast(firstLine)).coerceIn(startOffset, normalized.length)
+            val page = normalized.substring(startOffset, endOffset).trim()
+            if (page.isNotBlank()) pages += page
+        }
+        pages.ifEmpty { listOf(normalized) }
+    }.getOrElse {
+        // JVM/local unit tests do not provide a real Android text stack. Keep a conservative fallback
+        // there, but never impose a minimum character count that can overflow a real phone page.
+        val fontPenalty = (fontSize / 20f).coerceIn(.7f, 2f)
+        val linePenalty = (lineFactor / 1.8f).coerceIn(.75f, 1.6f)
+        val widthPenalty = (1f + ((sidePadding - 24f) / 75f)).coerceIn(.72f, 1.45f)
+        val target = (300f / (fontPenalty * linePenalty * widthPenalty)).toInt().coerceIn(72, 420)
+        normalized.chunked(target).filter { it.isNotBlank() }.ifEmpty { listOf(normalized) }
     }
-    flush()
-    return pages.ifEmpty { listOf(normalized) }
 }
