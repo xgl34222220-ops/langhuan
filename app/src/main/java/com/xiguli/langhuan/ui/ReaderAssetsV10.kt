@@ -90,26 +90,28 @@ internal fun readerColorHexV10(color: Color): String {
 }
 
 /**
- * Conservative fallback pagination used by the Compose reader.
- *
- * The previous implementation targeted ~920 characters and clamped the minimum to 420.
- * On a phone at 19–21sp with normal line spacing that is roughly 1.7–2x the amount that can
- * actually fit between the safe top/bottom reading margins, so Text was simply clipped at the
- * bottom.  Mature readers paginate from a stable character position and never assume a desktop-
- * sized text viewport.  Until the measured-layout paginator is fully extracted, keep this fallback
- * deliberately conservative: it is better to have a little breathing room than to lose half a page.
+ * Conservative phone-page fallback. The old ~920-character target overflowed real phone viewports.
+ * Stable reading position is stored separately as chapter + textOffset, so repagination can safely
+ * change page count when typography changes.
  */
-internal fun splitReaderPagesV10(text: String, fontSize: Float, lineFactor: Float, sidePadding: Float): List<String> {
+internal fun splitReaderPagesV10(
+    text: String,
+    fontSize: Float,
+    lineFactor: Float,
+    sidePadding: Float,
+    paragraphSpacing: Float = 12f,
+): List<String> {
     val normalized = text.trim()
     if (normalized.isBlank()) return listOf("")
 
     val fontPenalty = (fontSize / 19f).coerceIn(.72f, 1.7f)
     val linePenalty = (lineFactor / 1.8f).coerceIn(.75f, 1.45f)
     val widthPenalty = (1f + ((sidePadding - 24f) / 82f)).coerceIn(.78f, 1.35f)
-    val densityPenalty = fontPenalty * linePenalty * widthPenalty
+    val paragraphPenalty = (1f + (paragraphSpacing - 12f) / 120f).coerceIn(.9f, 1.18f)
+    val densityPenalty = fontPenalty * linePenalty * widthPenalty * paragraphPenalty
 
-    // ~390 Chinese characters is a realistic full phone page at 20sp / 1.8 line height.
-    // Leave headroom for punctuation, Latin text, chapter titles and the quiet footer.
+    // Around 390–410 Chinese characters is a realistic full phone page at 20sp / 1.8 line height.
+    // Keep extra headroom for chapter titles, Latin runs, punctuation and the quiet footer.
     val target = (410f / densityPenalty).toInt().coerceIn(220, 720)
     val paragraphs = normalized.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
     val pages = mutableListOf<String>()
@@ -123,9 +125,7 @@ internal fun splitReaderPagesV10(text: String, fontSize: Float, lineFactor: Floa
     paragraphs.forEach { paragraph ->
         if (paragraph.length > target * 2) {
             flush()
-            paragraph.chunked(target).forEach { chunk ->
-                if (chunk.isNotBlank()) pages += chunk.trim()
-            }
+            paragraph.chunked(target).forEach { chunk -> if (chunk.isNotBlank()) pages += chunk.trim() }
         } else if (buffer.length + paragraph.length + 2 > target && buffer.isNotEmpty()) {
             flush()
             buffer.append(paragraph)
