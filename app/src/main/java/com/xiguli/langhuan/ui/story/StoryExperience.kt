@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,7 +29,7 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 /**
  * Player-facing story surface. The V3→V17 wrapper stack is temporarily kept alive invisibly so
  * Original Canon, role snapshots, NPC memory, spatial/perception and takeover side effects keep
- * running while their scattered floating controls are consolidated behind “高级世界工具”.
+ * running while their scattered floating controls are consolidated behind the story management layer.
  */
 @Composable
 fun StoryExperience(
@@ -40,28 +39,23 @@ fun StoryExperience(
     onAiSetup: () -> Unit,
     onAdopted: () -> Unit,
 ) {
-    var advanced by remember(book.id) { mutableStateOf(false) }
+    var management by remember(book.id) { mutableStateOf(false) }
 
-    if (advanced) {
-        Box(Modifier.fillMaxSize()) {
-            StoryPlayPanelV17(book, libraryState, aiReady, onAiSetup, onAdopted)
-            Surface(
-                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
-                shape = RoundedCornerShape(99.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = .95f),
-                shadowElevation = 5.dp,
-            ) {
-                TextButton(onClick = { advanced = false }) {
-                    Icon(Icons.Rounded.ArrowBack, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("回到故事")
-                }
-            }
-        }
+    if (management) {
+        StoryManagementExperience(
+            book = book,
+            libraryState = libraryState,
+            aiReady = aiReady,
+            onAiSetup = onAiSetup,
+            onAdopted = onAdopted,
+            onClose = { management = false },
+        )
         return
     }
 
     Box(Modifier.fillMaxSize()) {
+        // Keep the mature runtime/bridge chain mounted, but hide its accumulated FAB stack in the
+        // normal player experience. The management page now owns the migrated common controls.
         Box(Modifier.fillMaxSize().alpha(0f)) {
             StoryPlayPanelV17(book, libraryState, aiReady, onAiSetup, onAdopted)
         }
@@ -70,7 +64,7 @@ fun StoryExperience(
             libraryState = libraryState,
             aiReady = aiReady,
             onAiSetup = onAiSetup,
-            onAdvanced = { advanced = true },
+            onManagement = { management = true },
         )
     }
 }
@@ -81,7 +75,7 @@ private fun StoryImmersiveSurface(
     libraryState: LibraryExperienceState,
     aiReady: Boolean,
     onAiSetup: () -> Unit,
-    onAdvanced: () -> Unit,
+    onManagement: () -> Unit,
 ) {
     val vm: StoryPlayV3ViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
@@ -135,7 +129,7 @@ private fun StoryImmersiveSurface(
                         }
                         IconButton(onClick = { showContext = true }) { Icon(Icons.Rounded.Explore, "世界状态", tint = t.foreground) }
                         IconButton(onClick = { showBranches = true }) { Icon(Icons.Rounded.ForkRight, "故事分支", tint = t.foreground) }
-                        IconButton(onClick = onAdvanced) { Icon(Icons.Rounded.Tune, "高级世界工具", tint = t.foreground) }
+                        IconButton(onClick = onManagement) { Icon(Icons.Rounded.Tune, "故事设置", tint = t.foreground) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         StoryContextChip(Icons.Rounded.Place, location)
@@ -250,7 +244,7 @@ private fun StoryImmersiveSurface(
                         )
                         if (player?.name.isNullOrBlank()) {
                             Text(
-                                "还没有设置角色身份。可以直接开始，也可以从右上角「高级世界工具」设置原著角色、原创角色或自己的身份。",
+                                "还没有设置角色身份。可以直接开始，也可以从右上角「故事设置」补全角色身份与知识边界。",
                                 Modifier.padding(top = 14.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = t.accent,
@@ -336,7 +330,7 @@ private fun StoryImmersiveSurface(
         StoryContextSheet(
             session = session,
             runtime = runtime,
-            onAdvanced = { showContext = false; onAdvanced() },
+            onManagement = { showContext = false; onManagement() },
             onDismiss = { showContext = false },
         )
     }
@@ -395,7 +389,7 @@ private fun StoryBranchSheet(
 private fun StoryContextSheet(
     session: StoryPlaySession?,
     runtime: StoryRuntimeSessionV3?,
-    onAdvanced: () -> Unit,
+    onManagement: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
@@ -421,13 +415,13 @@ private fun StoryContextSheet(
                     StoryContextRow("当前身份", listOf(profile.name, profile.identity).filter { it.isNotBlank() }.joinToString(" · "))
                 }
             }
-            OutlinedButton(onClick = onAdvanced, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onManagement, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.Tune, null)
                 Spacer(Modifier.width(6.dp))
-                Text("高级世界工具")
+                Text("角色 / 世界 / 分支 / 章节草稿")
             }
             Text(
-                "角色卡、原著角色入场快照、NPC 记忆、空间/感知、世界状态编辑、分支管理与转章节草稿暂时集中在高级工具；后续会逐项迁入这个沉浸层。",
+                "常用高级能力已经迁入故事设置；NPC 记忆、原著角色快照、空间/感知与最终草稿采用仍保留在完整工具。",
                 style = MaterialTheme.typography.bodySmall,
                 color = t.mutedForeground,
             )
