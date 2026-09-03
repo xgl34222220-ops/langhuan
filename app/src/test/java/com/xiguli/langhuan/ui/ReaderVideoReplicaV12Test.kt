@@ -47,9 +47,9 @@ class ReaderVideoReplicaV12Test {
         assertTrue(reader.contains("ReaderReadingStoreV11"))
         assertTrue(reader.contains("EpubOriginalTocV1"))
 
-        // Regression guard for the old phone-overflow paginator.
+        // Regression guard for the old phone-overflow paginator and oversized paragraph spacing.
         assertFalse(assets.contains("920f / densityPenalty"))
         assertFalse(assets.contains("coerceIn(420, 1500)"))
-        assertTrue(assets.contains("paragraphSpacing: Float = 12f"))
+        assertTrue(assets.contains("paragraphSpacing: Float = 8f"))
     }
 }
