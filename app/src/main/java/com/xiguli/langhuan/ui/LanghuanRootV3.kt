@@ -230,7 +230,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         }
                     } else {
                         Box(Modifier.fillMaxSize()) {
-                            StoryPlayPanelV17(
+                            StoryExperience(
                                 book = book,
                                 libraryState = libraryState,
                                 aiReady = studioState.provider.ready,
