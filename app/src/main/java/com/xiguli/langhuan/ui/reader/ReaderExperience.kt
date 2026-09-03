@@ -231,22 +231,24 @@ private fun ReaderExperiencePage(
             .ifBlank { "这一章没有正文。" }
     }
     val scrollState = rememberScrollState()
-    val pages = remember(chapter.id, readingText, fontSize, lineFactor, sidePadding, paragraphSpacing, fontKey) {
-        splitReaderPagesV10(
-            readingText,
-            fontSize,
-            lineFactor,
-            sidePadding,
-            paragraphSpacing,
-        )
-    }
-    val pageOffsets = remember(readingText, pages) { readerPageStartOffsets(readingText, pages) }
+    val measuredPagination = rememberReaderMeasuredPaginationV16(
+        text = readingText,
+        displayTitle = displayTitle,
+        fontSize = fontSize,
+        lineFactor = lineFactor,
+        sidePadding = sidePadding,
+        paragraphSpacing = paragraphSpacing,
+        firstLineIndent = firstLineIndent,
+        family = family,
+    )
+    val pages = measuredPagination.pages
+    val pageOffsets = measuredPagination.offsets
     val leadingPageCount = if (previous != null) 1 else 0
     val trailingPageCount = if (next != null) 1 else 0
     val totalPagerPages = (leadingPageCount + pages.size + trailingPageCount).coerceAtLeast(1)
     val pagerState = rememberPagerState(pageCount = { totalPagerPages })
     val saved = remember(chapter.id) { ReaderProgressStoreV11.load(context, book.id, chapter.chapterNumber) }
-    val layoutKey = "$pageModeKey|$fontKey|${fontSize.roundToInt()}|${(lineFactor * 100).roundToInt()}|${sidePadding.roundToInt()}|${paragraphSpacing.roundToInt()}|$firstLineIndent"
+    val layoutKey = "$pageModeKey|$fontKey|${fontSize.roundToInt()}|${(lineFactor * 100).roundToInt()}|${sidePadding.roundToInt()}|${paragraphSpacing.roundToInt()}|$firstLineIndent|${measuredPagination.layoutToken}"
     var progressRestored by remember(chapter.id, layoutKey) { mutableStateOf(false) }
     var crossingChapter by remember(chapter.id) { mutableStateOf(false) }
 
@@ -448,6 +450,7 @@ private fun ReaderExperiencePage(
                                     sidePadding = sidePadding,
                                     paragraphSpacing = paragraphSpacing,
                                     firstLineIndent = firstLineIndent,
+                                    indentFirstParagraph = measuredPagination.indentFirstParagraph.getOrElse(contentPage) { true },
                                     family = family,
                                     background = palette.background,
                                     foreground = palette.foreground,
