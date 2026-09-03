@@ -163,8 +163,11 @@ internal fun splitReaderPagesV10(
         val heightDp = metrics.heightPixels / density
 
         val widthPx = ((widthDp - sidePadding * 2f).coerceAtLeast(180f) * density).toInt().coerceAtLeast(1)
-        val firstBodyHeightPx = ((heightDp - 205f).coerceAtLeast(240f) * density).toInt()
-        val normalBodyHeightPx = ((heightDp - 190f).coerceAtLeast(280f) * density).toInt()
+        // V14 page chrome is intentionally small. The old 205/190dp reserve caused every page to
+        // stop several lines too early, leaving a large fake blank band above the footer.
+        // Keep only the real title/running-header + footer + system inset budget here.
+        val firstBodyHeightPx = ((heightDp - 152f).coerceAtLeast(300f) * density).toInt()
+        val normalBodyHeightPx = ((heightDp - 136f).coerceAtLeast(320f) * density).toInt()
         val paragraphExtraPx = (paragraphSpacing.coerceIn(0f, 24f) * density).toInt()
 
         val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
