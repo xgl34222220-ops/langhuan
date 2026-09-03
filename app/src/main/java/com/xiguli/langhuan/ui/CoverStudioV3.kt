@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.provider.MediaStore
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,6 +35,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,6 +65,7 @@ fun CoverStudioV3(
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+    val t = LocalLanghuanUiTokens.current
     var history by remember(bookId) { mutableStateOf<List<File>>(emptyList()) }
     var applying by remember { mutableStateOf(false) }
 
@@ -80,212 +86,292 @@ fun CoverStudioV3(
     }
 
     if (book == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+        Surface(Modifier.fillMaxSize(), color = t.background) {
+            Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(color = t.accent) }
         }
         return
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().statusBarsPadding(),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClose) { Icon(Icons.Rounded.ArrowBack, "返回") }
-                    Column(Modifier.weight(1f)) {
-                        Text("封面工作室", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text("AI 背景 · 本地中文排版 · 预览后再采用", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Surface(Modifier.fillMaxSize(), color = t.background) {
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().statusBarsPadding(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onClose)
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text("封面工作室", style = MaterialTheme.typography.headlineMedium, color = t.foreground)
+                            Text("AI 生成背景 · 琅嬛本地排中文 · 确认后才覆盖", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                        }
+                        LanghuanBadge(if (generation.candidatePath != null) "待确认" else "已保存", accent = generation.candidatePath != null)
                     }
                 }
-            }
 
-            item {
-                Surface(shape = RoundedCornerShape(28.dp), tonalElevation = 2.dp) {
-                    Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("当前封面", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(12.dp))
-                        CoverPreviewV3(book.coverPath, book.title, Modifier.width(220.dp).height(314.dp))
-                        Spacer(Modifier.height(14.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (File(book.coverPath).isFile) "已持久化保存" else "当前封面文件不可用",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                        Spacer(Modifier.height(14.dp))
-                        Button(
-                            onClick = { coverViewModel.generate(book) },
-                            enabled = !generation.busy && !applying,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            if (generation.busy) {
-                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                            } else {
-                                Icon(Icons.Rounded.AutoAwesome, null)
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (generation.busy) "正在生成背景与排版…" else "生成新封面")
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = {
+                generation.candidatePath?.let { candidatePath ->
+                    item {
+                        CoverCandidateCard(
+                            candidatePath = candidatePath,
+                            title = book.title,
+                            sourceLabel = generation.sourceLabel,
+                            applying = applying,
+                            onApply = {
                                 scope.launch {
-                                    val result = runCatching { exportCoverToGallery(context, File(book.coverPath), book.title) }
-                                    snackbar.showSnackbar(result.fold({ "已保存到系统相册" }, { it.message ?: "保存到相册失败" }))
+                                    applying = true
+                                    val result = runCatching {
+                                        val official = promoteCandidate(appContext, bookId, candidatePath)
+                                        applyCoverPath(appContext, bookId, official.absolutePath)
+                                    }
+                                    if (result.isSuccess) {
+                                        coverViewModel.consumeCandidate()
+                                        libraryViewModel.openBook(bookId)
+                                        refreshHistory()
+                                        snackbar.showSnackbar("已设为当前封面并永久保存")
+                                    } else {
+                                        snackbar.showSnackbar(result.exceptionOrNull()?.message ?: "保存封面失败")
+                                    }
+                                    applying = false
                                 }
                             },
-                            enabled = File(book.coverPath).isFile && !applying,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            Icon(Icons.Rounded.Download, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("保存当前封面到相册")
-                        }
-                    }
-                }
-            }
-
-            generation.candidatePath?.let { candidatePath ->
-                item {
-                    Surface(shape = RoundedCornerShape(28.dp), tonalElevation = 3.dp) {
-                        Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(8.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text("新方案预览", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                    Text(
-                                        generation.sourceLabel.ifBlank { "封面生成" },
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(14.dp))
-                            CoverPreviewV3(candidatePath, book.title, Modifier.width(240.dp).height(342.dp))
-                            Spacer(Modifier.height(14.dp))
-                            Text(
-                                "这张图还没有覆盖当前封面。AI 只负责无文字背景，中文书名由琅嬛本地渲染。",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        applying = true
-                                        val result = runCatching {
-                                            val official = promoteCandidate(appContext, bookId, candidatePath)
-                                            applyCoverPath(appContext, bookId, official.absolutePath)
-                                        }
-                                        if (result.isSuccess) {
-                                            coverViewModel.consumeCandidate()
-                                            libraryViewModel.openBook(bookId)
-                                            refreshHistory()
-                                            snackbar.showSnackbar("已设为当前封面并永久保存")
-                                        } else {
-                                            snackbar.showSnackbar(result.exceptionOrNull()?.message ?: "保存封面失败")
-                                        }
-                                        applying = false
-                                    }
-                                },
-                                enabled = !applying,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(17.dp),
-                            ) {
-                                Icon(Icons.Rounded.CheckCircle, null)
-                                Spacer(Modifier.width(7.dp))
-                                Text("设为当前封面")
-                            }
-                            TextButton(
-                                onClick = {
-                                    runCatching { File(candidatePath).delete() }
-                                    coverViewModel.consumeCandidate()
-                                },
-                                enabled = !applying,
-                            ) { Text("放弃这个方案") }
-                        }
-                    }
-                }
-            }
-
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("封面历史", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("只有确认采用的封面才进入历史，可随时恢复", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    IconButton({ refreshHistory() }) { Icon(Icons.Rounded.Refresh, "刷新") }
-                }
-            }
-
-            if (history.isEmpty()) {
-                item {
-                    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
-                        Text(
-                            "还没有历史封面。生成并采用一个新方案后，这里会保留版本。",
-                            modifier = Modifier.fillMaxWidth().padding(18.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onDiscard = {
+                                runCatching { File(candidatePath).delete() }
+                                coverViewModel.consumeCandidate()
+                            },
                         )
                     }
                 }
-            } else {
-                items(history, key = { it.absolutePath }) { file ->
-                    val active = file.absolutePath == book.coverPath
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().clickable(enabled = !active && !applying) {
+
+                item {
+                    CurrentCoverCard(
+                        path = book.coverPath,
+                        title = book.title,
+                        busy = generation.busy,
+                        applying = applying,
+                        onGenerate = { coverViewModel.generate(book) },
+                        onExport = {
                             scope.launch {
-                                applying = true
-                                val result = runCatching { applyCoverPath(appContext, bookId, file.absolutePath) }
-                                if (result.isSuccess) {
-                                    libraryViewModel.openBook(bookId)
-                                    snackbar.showSnackbar("已恢复这张封面")
-                                } else {
-                                    snackbar.showSnackbar(result.exceptionOrNull()?.message ?: "恢复封面失败")
-                                }
-                                applying = false
+                                val result = runCatching { exportCoverToGallery(context, File(book.coverPath), book.title) }
+                                snackbar.showSnackbar(result.fold({ "已保存到系统相册" }, { it.message ?: "保存到相册失败" }))
                             }
                         },
-                        shape = RoundedCornerShape(22.dp),
-                        tonalElevation = if (active) 3.dp else 1.dp,
-                    ) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CoverPreviewV3(file.absolutePath, book.title, Modifier.width(76.dp).height(108.dp))
-                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                                Text(if (active) "当前封面" else "历史方案", fontWeight = FontWeight.Bold)
-                                Text(
-                                    file.name,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Text(
-                                    "${(file.length() / 1024L).coerceAtLeast(1)} KB",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                    )
+                }
+
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            modifier = Modifier.size(34.dp),
+                            shape = RoundedCornerShape(t.radiusSm),
+                            color = t.muted,
+                            border = BorderStroke(1.dp, t.border),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.History, null, Modifier.size(18.dp), tint = t.mutedForeground)
                             }
-                            if (active) Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
                         }
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text("封面历史", style = MaterialTheme.typography.titleLarge, color = t.foreground)
+                            Text("只有确认采用的封面才会进入版本历史", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                        }
+                        LanghuanIconButton(Icons.Rounded.Refresh, "刷新", { refreshHistory() })
+                    }
+                }
+
+                if (history.isEmpty()) {
+                    item {
+                        LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 18.dp) {
+                            Text(
+                                "还没有历史封面。生成并采用一个新方案后，这里会保留版本。",
+                                color = t.mutedForeground,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                } else {
+                    items(history, key = { it.absolutePath }) { file ->
+                        val active = file.absolutePath == book.coverPath
+                        CoverHistoryRow(
+                            file = file,
+                            title = book.title,
+                            active = active,
+                            enabled = !active && !applying,
+                            onRestore = {
+                                scope.launch {
+                                    applying = true
+                                    val result = runCatching { applyCoverPath(appContext, bookId, file.absolutePath) }
+                                    if (result.isSuccess) {
+                                        libraryViewModel.openBook(bookId)
+                                        snackbar.showSnackbar("已恢复这张封面")
+                                    } else {
+                                        snackbar.showSnackbar(result.exceptionOrNull()?.message ?: "恢复封面失败")
+                                    }
+                                    applying = false
+                                }
+                            },
+                        )
                     }
                 }
             }
+            SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp))
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp))
+    }
+}
+
+@Composable
+private fun CoverCandidateCard(
+    candidatePath: String,
+    title: String,
+    sourceLabel: String,
+    applying: Boolean,
+    onApply: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = t.warmSurface,
+        contentColor = t.foreground,
+        border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.card,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp), tint = t.accent)
+                    }
+                }
+                Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                    Text("新方案待确认", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                    Text(sourceLabel.ifBlank { "封面生成" }, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                }
+                LanghuanBadge("PREVIEW", accent = true)
+            }
+
+            Spacer(Modifier.height(14.dp))
+            CoverPreviewV3(candidatePath, title, Modifier.width(240.dp).height(342.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "这张图目前只是预览，没有覆盖当前封面。AI 只负责无文字背景，中文书名由琅嬛本地渲染。",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = onApply,
+                enabled = !applying,
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(t.radiusMd),
+                colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+            ) {
+                Icon(Icons.Rounded.CheckCircle, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(7.dp))
+                Text(if (applying) "正在保存…" else "采用并设为当前封面")
+            }
+            TextButton(onClick = onDiscard, enabled = !applying) {
+                Text("放弃这个方案", color = t.mutedForeground)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CurrentCoverCard(
+    path: String,
+    title: String,
+    busy: Boolean,
+    applying: Boolean,
+    onGenerate: () -> Unit,
+    onExport: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("当前封面", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                    Text(
+                        if (File(path).isFile) "已持久化保存" else "当前封面文件不可用",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (File(path).isFile) t.mutedForeground else t.destructive,
+                    )
+                }
+                LanghuanBadge(if (File(path).isFile) "CURRENT" else "ERROR", accent = File(path).isFile)
+            }
+            Spacer(Modifier.height(12.dp))
+            CoverPreviewV3(path, title, Modifier.width(220.dp).height(314.dp))
+            Spacer(Modifier.height(14.dp))
+            Button(
+                onClick = onGenerate,
+                enabled = !busy && !applying,
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(t.radiusMd),
+                colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+            ) {
+                if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 1.8.dp, color = t.primaryForeground)
+                else Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(7.dp))
+                Text(if (busy) "正在生成背景与排版…" else "生成新方案")
+            }
+            Spacer(Modifier.height(7.dp))
+            OutlinedButton(
+                onClick = onExport,
+                enabled = File(path).isFile && !applying,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusMd),
+                border = BorderStroke(1.dp, t.border),
+            ) {
+                Icon(Icons.Rounded.Download, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("保存当前封面到相册")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoverHistoryRow(
+    file: File,
+    title: String,
+    active: Boolean,
+    enabled: Boolean,
+    onRestore: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onRestore),
+        shape = RoundedCornerShape(t.radiusMd),
+        color = if (active) t.warmSurface else t.card,
+        border = BorderStroke(1.dp, if (active) t.accent.copy(alpha = .18f) else t.border),
+    ) {
+        Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
+            CoverPreviewV3(file.absolutePath, title, Modifier.width(70.dp).height(100.dp))
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text(if (active) "当前封面" else "历史方案", style = MaterialTheme.typography.titleSmall, color = t.foreground)
+                Text(
+                    file.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = t.mutedForeground,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text("${(file.length() / 1024L).coerceAtLeast(1)} KB", color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
+            }
+            if (active) LanghuanBadge("当前", accent = true)
+            else Text("点击恢复", style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
+        }
     }
 }
 
 @Composable
 fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier) {
+    val t = LocalLanghuanUiTokens.current
     val stamp = runCatching { File(path).lastModified() }.getOrDefault(0L)
     val bitmap = remember(path, stamp) {
         path.takeIf { it.isNotBlank() }
@@ -295,15 +381,17 @@ fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier) {
         Image(
             bitmap = bitmap,
             contentDescription = title,
-            modifier = modifier.clip(RoundedCornerShape(18.dp)),
+            modifier = modifier.clip(RoundedCornerShape(t.radiusSm)),
             contentScale = ContentScale.Crop,
         )
     } else {
         Box(
-            modifier = modifier.clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+            modifier = modifier
+                .clip(RoundedCornerShape(t.radiusSm))
+                .background(t.muted),
             contentAlignment = Alignment.Center,
         ) {
-            Text(title.take(10), modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Bold)
+            Text(title.take(10), modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground)
         }
     }
 }
