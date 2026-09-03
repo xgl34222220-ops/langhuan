@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +16,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -190,7 +193,6 @@ fun ResearchNewBookConversationPage(
     }
 
     val busy = state.isBusy || researching || state.isLoadingAttachments
-    val hasConversation = state.messages.any { it.role == "user" }
 
     Scaffold(
         containerColor = t.background,
@@ -376,7 +378,7 @@ fun ResearchNewBookConversationPage(
 private fun ResearchWorkspaceDock(
     input: String,
     onInput: (String) -> Unit,
-    state: NewBookConversationUiState,
+    state: NewBookConversationState,
     researching: Boolean,
     webResearchEnabled: Boolean,
     archiveCount: Int,
@@ -481,7 +483,6 @@ private fun ResearchWorkspaceDock(
                         minLines = 1,
                         maxLines = 4,
                         enabled = !busy,
-                        border = null,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color.Transparent,
                             unfocusedBorderColor = Color.Transparent,
