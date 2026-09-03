@@ -167,7 +167,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.BOOK -> {
                     if (libraryState.openedBook != null) {
-                        ReaderFirstBookV11(
+                        ReaderExperience(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
