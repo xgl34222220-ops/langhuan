@@ -1,0 +1,189 @@
+name: Reader V13 one-shot patch
+
+on:
+  push:
+    branches:
+      - feat/shadcn-ui-rebuild-v1
+    paths:
+      - .github/workflows/reader-v13-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-reader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/shadcn-ui-rebuild-v1
+          fetch-depth: 0
+      - name: Patch ReaderExperience precisely
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/xiguli/langhuan/ui/reader/ReaderExperience.kt')
+          s = path.read_text(encoding='utf-8')
+
+          def rep(old: str, new: str, count: int = 1):
+              global s
+              actual = s.count(old)
+              if actual != count:
+                  raise SystemExit(f'expected {count} occurrence(s), found {actual}: {old[:120]!r}')
+              s = s.replace(old, new, count)
+
+          rep(
+              '    val family = remember(fontKey) { readerExperienceFont(fontKey) }\n    val scrollState = rememberScrollState()\n',
+              '    val family = remember(fontKey) { readerExperienceFont(fontKey) }\n'
+              '    val displayTitle = remember(chapter.id, chapter.title, chapter.chapterNumber) {\n'
+              '        readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber)\n'
+              '    }\n'
+              '    val readingText = remember(chapter.id, chapter.title, chapter.content) {\n'
+              '        readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content).ifBlank { "这一章没有正文。" }\n'
+              '    }\n'
+              '    val scrollState = rememberScrollState()\n'
+          )
+
+          rep(
+              '    val pages = remember(chapter.id, chapter.content, fontSize, lineFactor, sidePadding, paragraphSpacing, fontKey) {\n'
+              '        splitReaderPagesV10(\n'
+              '            chapter.content.ifBlank { "这一章没有正文。" },\n'
+              '            fontSize,\n'
+              '            lineFactor,\n'
+              '            sidePadding,\n'
+              '            paragraphSpacing,\n'
+              '        )\n'
+              '    }\n'
+              '    val pageOffsets = remember(chapter.content, pages) { readerPageStartOffsets(chapter.content, pages) }\n',
+              '    val pages = remember(chapter.id, readingText, fontSize, lineFactor, sidePadding, paragraphSpacing, fontKey) {\n'
+              '        splitReaderPagesV10(\n'
+              '            readingText,\n'
+              '            fontSize,\n'
+              '            lineFactor,\n'
+              '            sidePadding,\n'
+              '            paragraphSpacing,\n'
+              '        )\n'
+              '    }\n'
+              '    val pageOffsets = remember(readingText, pages) { readerPageStartOffsets(readingText, pages) }\n'
+          )
+
+          rep(
+              '            (chapter.content.length * fraction).roundToInt().coerceIn(0, chapter.content.length)\n',
+              '            (readingText.length * fraction).roundToInt().coerceIn(0, readingText.length)\n'
+          )
+          rep(
+              '        else -> pageOffsets.getOrElse(currentContentPage()) { 0 }.coerceIn(0, chapter.content.length)\n',
+              '        else -> pageOffsets.getOrElse(currentContentPage()) { 0 }.coerceIn(0, readingText.length)\n'
+          )
+          rep(
+              '        else -> if (chapter.content.isBlank()) 0f else currentTextOffset().toFloat() / chapter.content.length.toFloat()\n',
+              '        else -> if (readingText.isBlank()) 0f else currentTextOffset().toFloat() / readingText.length.toFloat()\n'
+          )
+
+          rep(
+              '                saved.textOffset > 0 && chapter.content.isNotBlank() -> saved.textOffset.toFloat() / chapter.content.length.toFloat()\n',
+              '                saved.textOffset > 0 && readingText.isNotBlank() -> saved.textOffset.toFloat() / readingText.length.toFloat()\n'
+          )
+          rep(
+              '                saved.positionFraction > 0f -> pageForRawTextOffset(pageOffsets, (chapter.content.length * saved.positionFraction).roundToInt())\n',
+              '                saved.positionFraction > 0f -> pageForRawTextOffset(pageOffsets, (readingText.length * saved.positionFraction).roundToInt())\n'
+          )
+
+          rep(
+              '            chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" },\n'
+              '            readerExcerptAtV11(chapter.content, fraction), fraction, currentTextOffset(),\n',
+              '            displayTitle,\n'
+              '            readerExcerptAtV11(readingText, fraction), fraction, currentTextOffset(),\n'
+          )
+
+          rep(
+              '                            chapter.content.ifBlank { "这一章没有正文。" }, fontSize, lineFactor,\n',
+              '                            readingText, fontSize, lineFactor,\n'
+          )
+
+          rep(
+              '                                            formattedPageText(pages[contentPage], firstLineIndent),\n',
+              '                                            formattedPageText(pages[contentPage], firstLineIndent, paragraphSpacing),\n'
+          )
+
+          rep(
+              '                                            "${contentPage + 1}/${pages.size} · 第 ${chapter.chapterNumber} 章",\n',
+              '                                            "${contentPage + 1}/${pages.size} · $displayTitle",\n'
+          )
+
+          rep(
+              '                ReaderQuietFooter(\n'
+              '                    Modifier.align(Alignment.BottomCenter), chapterIndex, ordered.size, currentFraction(), palette,\n'
+              '                )\n',
+              '                val overall = ((chapterIndex.toFloat() + currentFraction()) / ordered.size.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)\n'
+              '                ReaderQuietFooter(Modifier.align(Alignment.BottomCenter), overall, palette)\n'
+          )
+
+          rep(
+              '            Text(chapter?.title?.ifBlank { "第 ${chapter.chapterNumber} 章" } ?: "没有更多章节", Modifier.padding(top = 5.dp), color = palette.secondary)\n',
+              '            Text(chapter?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) } ?: "没有更多章节", Modifier.padding(top = 5.dp), color = palette.secondary)\n'
+          )
+
+          rep(
+              '                    Text(chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" }, maxLines = 1, overflow = TextOverflow.Ellipsis, color = palette.foreground, fontWeight = FontWeight.Medium)\n',
+              '                    Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), maxLines = 1, overflow = TextOverflow.Ellipsis, color = palette.foreground, fontWeight = FontWeight.Medium)\n'
+          )
+
+          rep(
+              '                    "第 ${chapterIndex + 1}/$chapterCount 章 · 本章 ${(fraction * 100).roundToInt()}% · 翻到边界自动进入上一章 / 下一章",\n',
+              '                    "${readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber)} · 本章 ${(fraction * 100).roundToInt()}% · 左右翻页可跨章",\n'
+          )
+
+          rep(
+              '@Composable\nprivate fun ReaderQuietFooter(modifier: Modifier, chapterIndex: Int, chapterCount: Int, fraction: Float, palette: ReaderExperiencePalette) {\n'
+              '    Row(modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {\n'
+              '        Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()), style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))\n'
+              '        Spacer(Modifier.weight(1f))\n'
+              '        Text("${chapterIndex + 1}/$chapterCount · ${(fraction * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))\n'
+              '    }\n'
+              '}\n',
+              '@Composable\nprivate fun ReaderQuietFooter(modifier: Modifier, overallFraction: Float, palette: ReaderExperiencePalette) {\n'
+              '    Row(modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {\n'
+              '        Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()), style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))\n'
+              '        Spacer(Modifier.weight(1f))\n'
+              '        Text("全书 ${(overallFraction.coerceIn(0f, 1f) * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))\n'
+              '    }\n'
+              '}\n'
+          )
+
+          rep(
+              '@Composable\nprivate fun ReaderChapterTitle(chapter: ChapterDraft, fontSize: Float, family: FontFamily, palette: ReaderExperiencePalette) {\n'
+              '    Text(chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" }, fontSize = (fontSize + 5).sp, lineHeight = (fontSize + 11).sp, fontWeight = FontWeight.SemiBold, fontFamily = family, color = palette.foreground)\n'
+              '}\n',
+              '@Composable\nprivate fun ReaderChapterTitle(chapter: ChapterDraft, fontSize: Float, family: FontFamily, palette: ReaderExperiencePalette) {\n'
+              '    Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), fontSize = (fontSize + 5).sp, lineHeight = (fontSize + 11).sp, fontWeight = FontWeight.SemiBold, fontFamily = family, color = palette.foreground)\n'
+              '}\n'
+          )
+
+          rep(
+              'private fun formattedPageText(text: String, indent: Boolean): String = if (!indent) text else text.split(Regex("\\\\n\\\\s*\\\\n")).joinToString("\\n\\n") { paragraph -> paragraph.trim().let { if (it.isBlank()) it else "　　$it" } }\n',
+              'private fun formattedPageText(text: String, indent: Boolean, paragraphSpacing: Float): String {\n'
+              '    val separator = when {\n'
+              '        paragraphSpacing < 5f -> "\\n"\n'
+              '        paragraphSpacing < 19f -> "\\n\\n"\n'
+              '        else -> "\\n\\n\\n"\n'
+              '    }\n'
+              '    return text.split(Regex("\\\\n\\\\s*\\\\n")).joinToString(separator) { paragraph ->\n'
+              '        paragraph.trim().let { if (it.isBlank() || !indent) it else "　　$it" }\n'
+              '    }\n'
+              '}\n'
+          )
+
+          path.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit source patch
+        shell: bash
+        run: |
+          git config user.name "langhuan-ui-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/src/main/java/com/xiguli/langhuan/ui/reader/ReaderExperience.kt
+          git diff --cached --check
+          git commit -m "fix(reader): correct measured page presentation"
+          git push origin HEAD:feat/shadcn-ui-rebuild-v1
