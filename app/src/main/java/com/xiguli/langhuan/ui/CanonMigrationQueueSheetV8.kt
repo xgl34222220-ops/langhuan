@@ -380,7 +380,7 @@ private fun PriorityBadgeV8(risk: CanonChangeRisk) {
         CanonChangeRisk.MEDIUM -> "中" to t.warning
         CanonChangeRisk.HIGH -> "高" to t.destructive
     }
-    MigrationSmallBadgeV8("$label风险", color)
+    MigrationSmallBadgeV8("${label}风险", color)
 }
 
 @Composable
