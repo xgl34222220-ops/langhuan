@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -16,8 +16,24 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout PR head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Apply Reader V16 route migration
+        run: python tools/apply_reader_v16.py
+
+      - name: Commit Reader V16 route migration
+        shell: bash
+        run: |
+          if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "feat(reader): switch main reader to Compose-measured pagination"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
