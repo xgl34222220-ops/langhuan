@@ -12,8 +12,8 @@ import java.util.UUID
 
 internal enum class ReaderPageModeV10(val key: String, val label: String, val summary: String) {
     SCROLL("scroll", "上下滚动", "连续阅读，适合长时间阅读"),
-    PAGE("page", "左右滑页", "正文按页切分，横向翻页"),
-    COVER("cover", "覆盖翻页", "整页切换，减少连续滚动干扰"),
+    PAGE("page", "左右滑页", "整页横向滑动，支持跨章前后翻"),
+    COVER("cover", "覆盖翻页", "整页覆盖切换，保持稳定阅读区域"),
 }
 
 internal data class ReaderCustomThemeV10(
@@ -89,22 +89,43 @@ internal fun readerColorHexV10(color: Color): String {
     return "#%02X%02X%02X%02X".format(a, r, g, b)
 }
 
+/**
+ * Conservative fallback pagination used by the Compose reader.
+ *
+ * The previous implementation targeted ~920 characters and clamped the minimum to 420.
+ * On a phone at 19–21sp with normal line spacing that is roughly 1.7–2x the amount that can
+ * actually fit between the safe top/bottom reading margins, so Text was simply clipped at the
+ * bottom.  Mature readers paginate from a stable character position and never assume a desktop-
+ * sized text viewport.  Until the measured-layout paginator is fully extracted, keep this fallback
+ * deliberately conservative: it is better to have a little breathing room than to lose half a page.
+ */
 internal fun splitReaderPagesV10(text: String, fontSize: Float, lineFactor: Float, sidePadding: Float): List<String> {
     val normalized = text.trim()
     if (normalized.isBlank()) return listOf("")
-    val densityPenalty = (fontSize / 19f).coerceIn(.72f, 1.7f) * (lineFactor / 1.8f).coerceIn(.75f, 1.45f) * (1f + ((sidePadding - 24f) / 90f))
-    val target = (920f / densityPenalty).toInt().coerceIn(420, 1500)
+
+    val fontPenalty = (fontSize / 19f).coerceIn(.72f, 1.7f)
+    val linePenalty = (lineFactor / 1.8f).coerceIn(.75f, 1.45f)
+    val widthPenalty = (1f + ((sidePadding - 24f) / 82f)).coerceIn(.78f, 1.35f)
+    val densityPenalty = fontPenalty * linePenalty * widthPenalty
+
+    // ~390 Chinese characters is a realistic full phone page at 20sp / 1.8 line height.
+    // Leave headroom for punctuation, Latin text, chapter titles and the quiet footer.
+    val target = (410f / densityPenalty).toInt().coerceIn(220, 720)
     val paragraphs = normalized.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
     val pages = mutableListOf<String>()
     val buffer = StringBuilder()
+
     fun flush() {
         if (buffer.isNotBlank()) pages += buffer.toString().trim()
         buffer.clear()
     }
+
     paragraphs.forEach { paragraph ->
         if (paragraph.length > target * 2) {
             flush()
-            paragraph.chunked(target).forEach { pages += it.trim() }
+            paragraph.chunked(target).forEach { chunk ->
+                if (chunk.isNotBlank()) pages += chunk.trim()
+            }
         } else if (buffer.length + paragraph.length + 2 > target && buffer.isNotEmpty()) {
             flush()
             buffer.append(paragraph)
