@@ -283,7 +283,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                     val editorVm: ChapterEditorViewModel = viewModel()
                     val writingVm: WritingFlowViewModel = viewModel()
                     val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
-                    ChapterEditorPage(
+                    ChapterEditorExperience(
                         novelId = id,
                         initialChapter = editorChapter,
                         viewModel = editorVm,
