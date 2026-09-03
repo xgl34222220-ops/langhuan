@@ -12,12 +12,16 @@ class FullShellV4RouteTest {
         val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderShelfV9.kt").readText()
         val creation = File(root, "src/main/java/com/xiguli/langhuan/ui/CreationChatV4.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderExperience.kt").readText()
+        val entryGuard = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderExperienceEntryGuard.kt").readText()
         val story = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryExperience.kt").readText()
         val storyManagement = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryManagementScreen.kt").readText()
         val editor = File(root, "src/main/java/com/xiguli/langhuan/ui/writing/ChapterEditorExperience.kt").readText()
 
         assertTrue(router.contains("ReaderShelfV9("))
-        assertTrue(router.contains("ReaderExperience("))
+        assertTrue(router.contains("ReaderExperienceEntryGuard("))
+        assertTrue(entryGuard.contains("ReaderExperience("))
+        assertTrue(entryGuard.contains("failedAttempts >= 4"))
+        assertTrue(entryGuard.contains("没有可阅读章节"))
         assertTrue(router.contains("CreationChatV4("))
         assertTrue(router.contains("StoryExperience("))
         assertTrue(router.contains("ChapterEditorExperience("))
@@ -28,7 +32,7 @@ class FullShellV4RouteTest {
         assertTrue(shelf.contains("进入故事"))
         assertTrue(shelf.contains("onDeleteBook(book.id)"))
 
-        // Reader is now resume-first and supports both chapter boundaries in horizontal modes.
+        // Reader is resume-first and supports both chapter boundaries in horizontal modes.
         assertTrue(reader.contains("ReaderProgressStoreV11.load"))
         assertTrue(reader.contains("ReaderResumeGate"))
         assertTrue(reader.contains("WindowInsets.safeDrawing"))
