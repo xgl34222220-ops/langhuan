@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -25,7 +26,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
-import kotlinx.coroutines.launch
 
 /**
  * Player-facing story surface. The V3→V17 wrapper stack is temporarily kept alive invisibly so
@@ -62,8 +62,6 @@ fun StoryExperience(
     }
 
     Box(Modifier.fillMaxSize()) {
-        // Keep the mature runtime/bridge chain mounted, but do not expose its accumulated FAB stack
-        // in the normal player experience. This will be removed after each advanced panel is migrated.
         Box(Modifier.fillMaxSize().alpha(0f)) {
             StoryPlayPanelV17(book, libraryState, aiReady, onAiSetup, onAdopted)
         }
