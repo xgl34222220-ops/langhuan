@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,8 +15,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -33,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,8 +46,7 @@ import com.xiguli.langhuan.engine.CanonMigrationExecutionItem
 import com.xiguli.langhuan.engine.CanonMigrationExecutionMode
 import com.xiguli.langhuan.engine.CanonMigrationTask
 import com.xiguli.langhuan.engine.CanonMigrationTaskStatus
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
-import top.yukonga.miuix.kmp.squircle.squircleClip
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,17 +59,17 @@ internal fun CanonMigrationQueueSheetV8(
     onClearResolved: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Same ViewModelStoreOwner as WritingWorkspaceV6, therefore this resolves the already-created
-    // project-scoped instance instead of creating a second migration state owner.
+    val t = LocalLanghuanUiTokens.current
     val migrationVm: CanonChangeProposalViewModel = viewModel()
     val executeSafe = migrationVm::executeReadySafeMigrations
     val queue = state.migrationQueue
     val plan = state.migrationPlan
     val pending = queue?.pending.orEmpty()
     val resolved = queue?.tasks.orEmpty().count { it.status == CanonMigrationTaskStatus.DONE || it.status == CanonMigrationTaskStatus.SKIPPED }
+    val failed = queue?.tasks.orEmpty().count { it.status == CanonMigrationTaskStatus.FAILED }
     val next = plan?.next
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -76,76 +79,37 @@ internal fun CanonMigrationQueueSheetV8(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    modifier = Modifier.size(42.dp).squircleClip(15.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(t.radiusMd),
+                    color = t.warmSurface,
+                    border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
                 ) {
                     Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Route, null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Rounded.Route, null, tint = t.accent)
                     }
                 }
                 Column(Modifier.padding(start = 11.dp).weight(1f)) {
-                    Text("Canon 修复编排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Canon 修复队列", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = t.foreground)
                     Text(
-                        "${pending.size} 项未完成${if (resolved > 0) " · $resolved 项已处理/跳过" else ""}",
+                        buildString {
+                            append("${pending.size} 项待处理")
+                            if (failed > 0) append(" · $failed 项失败")
+                            if (resolved > 0) append(" · $resolved 项已处理/跳过")
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = t.mutedForeground,
                     )
                 }
-                if (resolved > 0) {
-                    TextButton(onClick = onClearResolved) { Text("清理已完成") }
-                }
+                if (resolved > 0) TextButton(onClick = onClearResolved) { Text("清理已完成") }
             }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth().squircleClip(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-            ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                        Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                            Text("V9 自动编排", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                plan?.summary() ?: "正在读取修复计划",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                    Text(
-                        "顺序固定为：项目结构 → 章节 Runtime → 长期记忆。自动化只会直接执行确定性的记忆重建；Canon 差异仍必须确认，正文仍必须重新过连续性检查。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
-                    )
-                }
-            }
+            MigrationPlanSummaryV8(plan?.summary() ?: "正在读取修复计划")
 
-            state.migrationMessage?.let { notice ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().squircleClip(15.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f),
-                ) {
-                    Text(notice, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            state.migrationError?.let { error ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().squircleClip(15.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                ) {
-                    Text(error, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
-                }
-            }
+            state.migrationMessage?.let { notice -> MigrationQueueNoticeV8(notice, t.accent) }
+            state.migrationError?.let { error -> MigrationQueueNoticeV8(error, t.destructive) }
 
             if (state.isMigrationExecuting) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().squircleClip(17.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                ) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text("正在执行安全同步…", Modifier.padding(start = 9.dp), fontWeight = FontWeight.Medium)
-                    }
-                }
+                MigrationQueueNoticeV8("正在执行就绪的安全同步……", t.accent, progress = true)
             } else if (next != null) {
                 MigrationNextActionV9(
                     item = next,
@@ -157,16 +121,18 @@ internal fun CanonMigrationQueueSheetV8(
 
             if (pending.isEmpty()) {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().squircleClip(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(t.radiusLg),
+                    color = t.success.copy(alpha = .08f),
+                    border = BorderStroke(1.dp, t.success.copy(alpha = .18f)),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                        Text("当前没有待修复项", modifier = Modifier.padding(top = 7.dp), fontWeight = FontWeight.Bold)
+                        Icon(Icons.Rounded.CheckCircle, null, tint = t.success)
+                        Text("当前没有待修复项", modifier = Modifier.padding(top = 7.dp), fontWeight = FontWeight.SemiBold, color = t.foreground)
                         Text(
-                            "后续确认新的 Canon 变更时，受影响内容会自动进入这里并重新编排。",
+                            "新的 Canon 变更确认后，受影响内容会自动进入这里并按依赖重新编排。",
                             style = MaterialTheme.typography.bodySmall,
-                            color = LocalMiuixTokens.current.textSecondary,
+                            color = t.mutedForeground,
                         )
                     }
                 }
@@ -190,10 +156,37 @@ internal fun CanonMigrationQueueSheetV8(
                 }
             }
 
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(t.radiusMd)) {
                 Text("回到写作总控")
             }
             Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+@Composable
+private fun MigrationPlanSummaryV8(summary: String) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = t.card,
+        border = BorderStroke(1.dp, t.border),
+    ) {
+        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(18.dp), tint = t.accent)
+                Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                    Text("修复编排", fontWeight = FontWeight.SemiBold, color = t.foreground)
+                    Text(summary, style = MaterialTheme.typography.bodySmall, color = t.foreground)
+                }
+            }
+            HorizontalDivider(color = t.border)
+            Text(
+                "顺序：项目结构 → 章节 Runtime → 长期记忆。只有确定性的记忆重建会直接执行；Canon 差异必须经过提案确认，正文必须进入章节 Runtime 重新检查，不会后台静默改写。",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
         }
     }
 }
@@ -205,22 +198,49 @@ private fun MigrationNextActionV9(
     onOpenChapter: () -> Unit,
     onExecuteSafe: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
+    val blocked = item.blockedByTaskIds.isNotEmpty()
+    val waitingConfirmation = item.task.status == CanonMigrationTaskStatus.AWAITING_CONFIRMATION
+    val tone = when {
+        blocked -> t.warning
+        waitingConfirmation -> t.warning
+        item.mode == CanonMigrationExecutionMode.SAFE_LOCAL -> t.success
+        else -> t.accent
+    }
     Surface(
-        modifier = Modifier.fillMaxWidth().squircleClip(18.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .58f),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = tone.copy(alpha = .08f),
+        border = BorderStroke(1.dp, tone.copy(alpha = .20f)),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("下一步 · ${item.phase.label}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-            Text("${item.task.action.label} · ${item.task.label}", fontWeight = FontWeight.SemiBold)
-            when {
-                item.blockedByTaskIds.isNotEmpty() -> Text(
-                    "等待 ${item.blockedByTaskIds.size} 项前置修复完成后自动解锁。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LocalMiuixTokens.current.textSecondary,
+        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    when {
+                        blocked -> Icons.Rounded.Block
+                        waitingConfirmation -> Icons.Rounded.HourglassTop
+                        else -> Icons.Rounded.AutoFixHigh
+                    },
+                    null,
+                    Modifier.size(18.dp),
+                    tint = tone,
                 )
-                item.task.status == CanonMigrationTaskStatus.AWAITING_CONFIRMATION -> Text(
-                    "差异提案已经生成，先确认或取消当前提案。",
+                Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                    Text("下一步 · ${item.phase.label}", style = MaterialTheme.typography.labelMedium, color = tone, fontWeight = FontWeight.SemiBold)
+                    Text("${item.task.action.label} · ${item.task.label}", fontWeight = FontWeight.SemiBold, color = t.foreground)
+                }
+                MigrationModeBadgeV8(item.mode)
+            }
+            when {
+                blocked -> Text(
+                    "被 ${item.blockedByTaskIds.size} 项前置任务阻塞；前置修复完成后才会解锁。",
                     style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
+                )
+                waitingConfirmation -> Text(
+                    "差异提案已经生成，必须先确认或放弃当前提案；不会自动越过 Canon Gate。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
                 )
                 else -> Button(
                     onClick = when (item.mode) {
@@ -229,7 +249,7 @@ private fun MigrationNextActionV9(
                         CanonMigrationExecutionMode.CHAPTER_RUNTIME -> onOpenChapter
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(15.dp),
+                    shape = RoundedCornerShape(t.radiusMd),
                 ) {
                     Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
                     Text(
@@ -256,81 +276,85 @@ private fun MigrationTaskCardV8(
     onDone: () -> Unit,
     onSkip: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val chapterRuntime = task.action == CanonMigrationAction.REWRITE_CHAPTER && task.chapterNumber != null
     val safeMemory = task.action == CanonMigrationAction.REFRESH_MEMORY
-    val blocked = item?.blockedByTaskIds.orEmpty().isNotEmpty()
+    val blockedCount = item?.blockedByTaskIds.orEmpty().size
+    val blocked = blockedCount > 0
+    val failed = task.status == CanonMigrationTaskStatus.FAILED
+    val priorityColor = when (task.priority) {
+        CanonChangeRisk.LOW -> t.success
+        CanonChangeRisk.MEDIUM -> t.warning
+        CanonChangeRisk.HIGH -> t.destructive
+    }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().squircleClip(19.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = t.card,
+        border = BorderStroke(1.dp, if (failed) t.destructive.copy(alpha = .28f) else t.border),
     ) {
         Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (task.priority == CanonChangeRisk.HIGH || task.status == CanonMigrationTaskStatus.FAILED) Icons.Rounded.WarningAmber else Icons.Rounded.EditNote,
+                    if (failed || task.priority == CanonChangeRisk.HIGH) Icons.Rounded.WarningAmber else Icons.Rounded.EditNote,
                     null,
                     Modifier.size(18.dp),
-                    tint = if (task.priority == CanonChangeRisk.HIGH || task.status == CanonMigrationTaskStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    tint = if (failed) t.destructive else priorityColor,
                 )
                 Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                    Text("${task.action.label} · ${task.label}", fontWeight = FontWeight.SemiBold)
+                    Text("${task.action.label} · ${task.label}", fontWeight = FontWeight.SemiBold, color = t.foreground)
                     Text(
                         buildString {
                             append(task.scope)
                             task.chapterNumber?.let { append(" · 第${it}章") }
-                            item?.let { append(" · ${it.phase.label} / ${it.mode.label}") }
+                            item?.let { append(" · ${it.phase.label}") }
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = t.mutedForeground,
                     )
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    PriorityBadgeV8(task.priority)
+                    item?.let { MigrationModeBadgeV8(it.mode) }
+                }
             }
 
-            Text(task.detail, style = MaterialTheme.typography.bodySmall)
-            if (blocked) {
-                Text(
-                    "等待 ${item?.blockedByTaskIds?.size ?: 0} 项前置修复完成",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            } else if (task.status == CanonMigrationTaskStatus.FAILED) {
-                Text("上次执行失败，可从这里重试。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            Text(task.detail, style = MaterialTheme.typography.bodySmall, color = t.foreground)
+            when {
+                blocked -> MigrationQueueNoticeV8("等待 $blockedCount 项前置修复完成", t.warning)
+                failed -> MigrationQueueNoticeV8("上次执行失败，可从这里按原路径重试。", t.destructive)
+                task.status == CanonMigrationTaskStatus.AWAITING_CONFIRMATION -> MigrationQueueNoticeV8("提案已生成，等待你确认或放弃。", t.warning)
             }
-            HorizontalDivider()
+            HorizontalDivider(color = t.border)
 
             when {
-                chapterRuntime -> {
-                    OutlinedButton(
-                        onClick = onOpenChapter,
-                        enabled = !blocked,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(15.dp),
-                    ) {
-                        Icon(Icons.Rounded.EditNote, null, Modifier.size(17.dp))
-                        Text("打开第${task.chapterNumber}章修复", Modifier.padding(start = 6.dp))
-                    }
+                chapterRuntime -> OutlinedButton(
+                    onClick = onOpenChapter,
+                    enabled = !blocked,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(t.radiusMd),
+                ) {
+                    Icon(Icons.Rounded.EditNote, null, Modifier.size(17.dp))
+                    Text("打开第${task.chapterNumber}章进入 Runtime", Modifier.padding(start = 6.dp))
                 }
-                safeMemory -> {
-                    OutlinedButton(
-                        onClick = onExecuteSafe,
-                        enabled = !blocked,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(15.dp),
-                    ) {
-                        Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
-                        Text("按当前 Canon 安全重建记忆", Modifier.padding(start = 6.dp))
-                    }
+                safeMemory -> OutlinedButton(
+                    onClick = onExecuteSafe,
+                    enabled = !blocked,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(t.radiusMd),
+                ) {
+                    Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
+                    Text("按当前 Canon 安全重建记忆", Modifier.padding(start = 6.dp))
                 }
-                else -> {
-                    OutlinedButton(
-                        onClick = onGenerateRepairProposal,
-                        enabled = !blocked,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(15.dp),
-                    ) {
-                        Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
-                        Text(if (task.status == CanonMigrationTaskStatus.FAILED) "重试最小修复提案" else "生成最小修复提案", Modifier.padding(start = 6.dp))
-                    }
+                else -> OutlinedButton(
+                    onClick = onGenerateRepairProposal,
+                    enabled = !blocked,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(t.radiusMd),
+                ) {
+                    Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
+                    Text(if (failed) "重试最小差异提案" else "生成最小差异提案", Modifier.padding(start = 6.dp))
                 }
             }
 
@@ -344,6 +368,56 @@ private fun MigrationTaskCardV8(
                     Text("标记完成", Modifier.padding(start = 4.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PriorityBadgeV8(risk: CanonChangeRisk) {
+    val t = LocalLanghuanUiTokens.current
+    val (label, color) = when (risk) {
+        CanonChangeRisk.LOW -> "低" to t.success
+        CanonChangeRisk.MEDIUM -> "中" to t.warning
+        CanonChangeRisk.HIGH -> "高" to t.destructive
+    }
+    MigrationSmallBadgeV8("$label风险", color)
+}
+
+@Composable
+private fun MigrationModeBadgeV8(mode: CanonMigrationExecutionMode) {
+    val t = LocalLanghuanUiTokens.current
+    val (label, color) = when (mode) {
+        CanonMigrationExecutionMode.SAFE_LOCAL -> "安全自动" to t.success
+        CanonMigrationExecutionMode.PROPOSAL_GATE -> "需确认" to t.warning
+        CanonMigrationExecutionMode.CHAPTER_RUNTIME -> "章节 Runtime" to t.accent
+    }
+    MigrationSmallBadgeV8(label, color)
+}
+
+@Composable
+private fun MigrationSmallBadgeV8(label: String, color: Color) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = color.copy(alpha = .10f),
+        border = BorderStroke(1.dp, color.copy(alpha = .18f)),
+    ) {
+        Text(label, Modifier.padding(horizontal = 7.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun MigrationQueueNoticeV8(text: String, color: Color, progress: Boolean = false) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusMd),
+        color = color.copy(alpha = .07f),
+        border = BorderStroke(1.dp, color.copy(alpha = .18f)),
+    ) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (progress) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = color)
+            else Icon(if (color == t.destructive) Icons.Rounded.WarningAmber else Icons.Rounded.HourglassTop, null, Modifier.size(17.dp), tint = color)
+            Text(text, Modifier.padding(start = 7.dp).weight(1f), style = MaterialTheme.typography.bodySmall, color = t.foreground)
         }
     }
 }
