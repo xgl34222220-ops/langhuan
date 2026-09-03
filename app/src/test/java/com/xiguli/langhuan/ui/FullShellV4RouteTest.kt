@@ -32,14 +32,17 @@ class FullShellV4RouteTest {
         assertTrue(shelf.contains("进入故事"))
         assertTrue(shelf.contains("onDeleteBook(book.id)"))
 
-        // Reader is resume-first and supports both chapter boundaries in horizontal modes.
+        // Reader is resume-first, measured-page based and supports both horizontal chapter boundaries.
         assertTrue(reader.contains("ReaderProgressStoreV11.load"))
         assertTrue(reader.contains("ReaderResumeGate"))
         assertTrue(reader.contains("WindowInsets.safeDrawing"))
         assertTrue(reader.contains("leadingPageCount"))
         assertTrue(reader.contains("trailingPageCount"))
         assertTrue(reader.contains("pagerState.settledPage"))
-        assertTrue(reader.contains("翻到边界自动进入上一章 / 下一章"))
+        assertTrue(reader.contains("左右翻页可跨章"))
+        assertTrue(reader.contains("readerDisplayChapterTitleV13"))
+        assertTrue(reader.contains("readerBodyWithoutDuplicateHeadingV13"))
+        assertTrue(reader.contains("全书 "))
 
         assertTrue(story.contains("故事设置"))
         assertTrue(story.contains("说什么，或做什么"))
