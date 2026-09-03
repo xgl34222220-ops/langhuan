@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -29,15 +28,11 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Reader V14 page surface.
+ * Reader page surface shared by V14/V15.
  *
- * The first page and ordinary pages deliberately use different vertical structures:
- * - chapter page: compact chapter heading, no duplicate running header;
- * - ordinary page: quiet running chapter header;
- * - every page: one lightweight footer with time + page/book progress.
- *
- * Paragraph spacing is rendered as real dp space instead of synthetic blank text lines, so the
- * visible layout matches the measured paginator much more closely.
+ * V15 makes every vertical chrome dimension explicit so the paginator can measure the same structure
+ * instead of subtracting a guessed body reserve. The footer stays pinned to the bottom while normal
+ * pages are allowed to use all real body height above it.
  */
 @Composable
 internal fun ReaderPagedLayoutV14(
@@ -57,13 +52,19 @@ internal fun ReaderPagedLayoutV14(
     overallFraction: Float,
     onToggleChrome: () -> Unit,
 ) {
+    val footerStyle = TextStyle(
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        fontFamily = family,
+    )
+
     Column(
         Modifier
             .fillMaxSize()
             .background(background)
             .clickable(onClick = onToggleChrome)
             .padding(horizontal = sidePadding.dp)
-            .padding(top = if (contentPage == 0) 14.dp else 10.dp, bottom = 8.dp),
+            .padding(top = if (contentPage == 0) 14.dp else 10.dp, bottom = 4.dp),
     ) {
         if (contentPage == 0) {
             Text(
@@ -100,20 +101,20 @@ internal fun ReaderPagedLayoutV14(
         )
 
         Row(
-            Modifier.fillMaxWidth().padding(top = 5.dp),
+            Modifier.fillMaxWidth().padding(top = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
-                style = MaterialTheme.typography.labelSmall,
-                color = secondary.copy(alpha = .58f),
+                style = footerStyle,
+                color = secondary.copy(alpha = .52f),
             )
             Spacer(Modifier.weight(1f))
             Text(
                 "${contentPage + 1}/${pageCount.coerceAtLeast(1)}  ·  ${(overallFraction.coerceIn(0f, 1f) * 100).roundToInt()}%",
                 textAlign = TextAlign.End,
-                style = MaterialTheme.typography.labelSmall,
-                color = secondary.copy(alpha = .64f),
+                style = footerStyle,
+                color = secondary.copy(alpha = .60f),
             )
         }
     }
