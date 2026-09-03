@@ -19,25 +19,33 @@ class ReaderMatureLayoutV14Test {
         assertFalse(reader.contains("formattedPageText(pages[contentPage]"))
         assertTrue(page.contains("contentPage == 0"))
         assertTrue(page.contains("fontSize = 12.sp"))
+        assertTrue(page.contains("lineHeight = 16.sp"))
         assertTrue(page.contains("secondary.copy(alpha = .48f)"))
         assertTrue(page.contains("ReaderPageParagraphsV14"))
         assertTrue(page.contains("Spacer(Modifier.height(paragraphSpacing.coerceIn(0f, 24f).dp))"))
         assertTrue(page.contains("${'$'}{contentPage + 1}/${'$'}{pageCount.coerceAtLeast(1)}"))
+        assertTrue(page.contains("bottom = 4.dp"))
+        assertTrue(page.contains("padding(top = 3.dp)"))
     }
 
     @Test
-    fun paginatorAndPresetsUseCompactRealParagraphSpacing() {
+    fun paginatorUsesMeasuredViewportInsteadOfFakeBottomReserve() {
         val assets = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderAssetsV10.kt").readText()
         val state = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderReadingStateV11.kt").readText()
         val migration = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderTypographyMigrationV14.kt").readText()
 
-        assertTrue(assets.contains("readerNormalizeBodyV14"))
-        assertTrue(assets.contains("heightDp - 152f"))
-        assertTrue(assets.contains("heightDp - 136f"))
+        assertTrue(assets.contains("readerViewportMetricsV15"))
+        assertTrue(assets.contains("configuration.screenHeightDp"))
+        assertTrue(assets.contains("configuration.screenWidthDp"))
+        assertTrue(assets.contains("firstHeaderPx"))
+        assertTrue(assets.contains("normalHeaderPx"))
+        assertTrue(assets.contains("footerPx"))
+        assertTrue(assets.contains("roundingGuardPx"))
         assertFalse(assets.contains("heightDp - 205f"))
         assertFalse(assets.contains("heightDp - 190f"))
+        assertFalse(assets.contains("heightDp - 152f"))
+        assertFalse(assets.contains("heightDp - 136f"))
         assertTrue(assets.contains("paragraphSpacing.coerceIn(0f, 24f)"))
-        assertFalse(assets.contains("lineEnd < normalized.length && normalized.getOrNull(lineEnd) == '\\n'"))
 
         assertTrue(state.contains("lineFactor = 1.72f"))
         assertTrue(state.contains("lineFactor = 1.70f"))
