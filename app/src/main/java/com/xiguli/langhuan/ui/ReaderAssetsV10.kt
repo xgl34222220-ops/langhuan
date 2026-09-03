@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontFamily
 import java.io.File
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToInt
 
 internal enum class ReaderPageModeV10(val key: String, val label: String, val summary: String) {
     SCROLL("scroll", "上下滚动", "连续阅读，适合长时间阅读"),
@@ -138,12 +139,40 @@ internal fun readerNormalizeBodyV14(text: String): String = text
     .replace(Regex("\\n[ \\t]*\\n+"), "\n")
     .trim()
 
+private data class ReaderViewportMetricsV15(
+    val widthDp: Float,
+    val heightDp: Float,
+    val density: Float,
+    val scaledDensity: Float,
+)
+
 /**
- * Real measured pagination for phone reading.
+ * Use Android's current configuration as the real app viewport. Unlike the old paginator this does
+ * not invent a fixed 136/152/190/205dp reserve. `screenHeightDp`/`screenWidthDp` already represent
+ * the current app configuration; display metrics are only a JVM/legacy fallback.
+ */
+private fun readerViewportMetricsV15(): ReaderViewportMetricsV15 {
+    val resources = Resources.getSystem()
+    val metrics = resources.displayMetrics
+    val density = metrics.density.coerceAtLeast(1f)
+    val scaledDensity = metrics.scaledDensity.coerceAtLeast(density)
+    val configWidth = resources.configuration.screenWidthDp.takeIf { it > 0 }?.toFloat()
+    val configHeight = resources.configuration.screenHeightDp.takeIf { it > 0 }?.toFloat()
+    return ReaderViewportMetricsV15(
+        widthDp = configWidth ?: (metrics.widthPixels / density).coerceAtLeast(320f),
+        heightDp = configHeight ?: (metrics.heightPixels / density).coerceAtLeast(480f),
+        density = density,
+        scaledDensity = scaledDensity,
+    )
+}
+
+/**
+ * V15 measured pagination.
  *
- * V14 measures real Android text lines and models paragraph gaps in dp. It no longer counts a blank
- * text row as paragraph spacing. The first page has a compact chapter heading; ordinary pages reserve
- * room for a quiet running header. Both reserve the persistent footer used by ReaderPagedLayoutV14.
+ * The page body height is derived from the actual viewport and the exact vertical structure used by
+ * `ReaderPagedLayoutV14`: outer padding + title/running-header line height + spacer + 12sp/16sp
+ * footer. This keeps paginator and renderer on the same model and removes the fake blank band that
+ * came from subtracting a guessed fixed number of dp from every device.
  */
 internal fun splitReaderPagesV10(
     text: String,
@@ -156,19 +185,26 @@ internal fun splitReaderPagesV10(
     if (normalized.isBlank()) return listOf("")
 
     return runCatching {
-        val metrics = Resources.getSystem().displayMetrics
-        val density = metrics.density.coerceAtLeast(1f)
-        val scaledDensity = metrics.scaledDensity.coerceAtLeast(density)
-        val widthDp = metrics.widthPixels / density
-        val heightDp = metrics.heightPixels / density
+        val viewport = readerViewportMetricsV15()
+        val density = viewport.density
+        val scaledDensity = viewport.scaledDensity
+        val widthPx = ((viewport.widthDp - sidePadding * 2f).coerceAtLeast(180f) * density)
+            .roundToInt()
+            .coerceAtLeast(1)
 
-        val widthPx = ((widthDp - sidePadding * 2f).coerceAtLeast(180f) * density).toInt().coerceAtLeast(1)
-        // V14 page chrome is intentionally small. The old 205/190dp reserve caused every page to
-        // stop several lines too early, leaving a large fake blank band above the footer.
-        // Keep only the real title/running-header + footer + system inset budget here.
-        val firstBodyHeightPx = ((heightDp - 152f).coerceAtLeast(300f) * density).toInt()
-        val normalBodyHeightPx = ((heightDp - 136f).coerceAtLeast(320f) * density).toInt()
-        val paragraphExtraPx = (paragraphSpacing.coerceIn(0f, 24f) * density).toInt()
+        // These are not guessed body reserves. They are the same explicit components rendered by
+        // ReaderPagedLayoutV14 and therefore scale with the current font configuration.
+        val footerPx = (16f * scaledDensity + 7f * density).roundToInt() // 16sp line + 3dp top + 4dp bottom
+        val firstHeaderPx = ((fontSize + 8f) * scaledDensity + (14f + 14f) * density).roundToInt()
+        val normalHeaderPx = (16f * scaledDensity + (10f + 12f) * density).roundToInt()
+        val viewportHeightPx = (viewport.heightDp * density).roundToInt()
+
+        // Four dp only absorbs rounding differences between StaticLayout and Compose Text. It is not
+        // a page-design reserve and cannot grow into the large bottom blank area seen in V14.
+        val roundingGuardPx = (4f * density).roundToInt()
+        val firstBodyHeightPx = (viewportHeightPx - firstHeaderPx - footerPx - roundingGuardPx).coerceAtLeast((240f * density).roundToInt())
+        val normalBodyHeightPx = (viewportHeightPx - normalHeaderPx - footerPx - roundingGuardPx).coerceAtLeast((280f * density).roundToInt())
+        val paragraphExtraPx = (paragraphSpacing.coerceIn(0f, 24f) * density).roundToInt()
 
         val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
             textSize = fontSize.coerceIn(12f, 36f) * scaledDensity
@@ -209,6 +245,8 @@ internal fun splitReaderPagesV10(
         }
         pages.ifEmpty { listOf(normalized) }
     }.getOrElse {
+        // JVM tests and very old devices can lack usable Android metrics. Keep a conservative fallback
+        // only for that exceptional path; production Android uses the measured path above.
         val fontPenalty = (fontSize / 20f).coerceIn(.7f, 2f)
         val linePenalty = (lineFactor / 1.68f).coerceIn(.75f, 1.6f)
         val widthPenalty = (1f + ((sidePadding - 24f) / 75f)).coerceIn(.72f, 1.45f)
