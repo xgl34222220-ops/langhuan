@@ -2,6 +2,8 @@ package com.xiguli.langhuan.ui
 
 import android.app.Application
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +30,9 @@ import com.xiguli.langhuan.engine.WritingSkillStore
 import com.xiguli.langhuan.engine.WritingSkillUpdateCandidate
 import com.xiguli.langhuan.engine.WritingSkillUpdateCheck
 import com.xiguli.langhuan.engine.WritingSkillUpdateClient
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -179,6 +184,7 @@ class WritingSkillViewModel(application: Application) : AndroidViewModel(applica
 @Composable
 fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val t = LocalLanghuanUiTokens.current
     val builtins = state.skills.filter { it.definition.builtin }
     val installed = state.skills.filterNot { it.definition.builtin }
     var deleting by remember { mutableStateOf<WritingSkillDefinition?>(null) }
@@ -186,20 +192,22 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         val enabledCount = state.skills.count { it.binding.enabled && it.binding.tasks.isNotEmpty() }
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.52f),
-        ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(9.dp))
-                Column {
-                    Text("当前有 $enabledCount 个 Skill 正在生效", fontWeight = FontWeight.Bold)
-                    Text("每张卡片都会明确显示开关状态和实际调用任务。", style = MaterialTheme.typography.bodySmall)
+        LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(36.dp),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.warmSurface,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.CheckCircle, null, Modifier.size(19.dp), tint = t.accent)
+                    }
                 }
+                Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                    Text("$enabledCount 个 Skill 正在生效", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                    Text("总开关 + 任务绑定同时满足才会被真正调用。", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                }
+                LanghuanBadge("ACTIVE $enabledCount", accent = enabledCount > 0)
             }
         }
 
@@ -214,14 +222,14 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
         if (installed.isNotEmpty()) {
             SkillGroup("我的 Skills", installed, viewModel, onDelete = { deleting = it })
         } else {
-            Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .4f)) {
-                Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                    Text("还没有安装自定义 Skill", fontWeight = FontWeight.Bold)
+            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 17.dp) {
+                Column {
+                    Text("还没有安装自定义 Skill", style = MaterialTheme.typography.titleMedium, color = t.foreground)
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        "点击上方“导入 Skill”选择 .json 文件。自定义 Skill 只会作为提示词方法层注入，不会执行代码。",
+                        "点击上方“导入 Skill”选择 .json 文件。自定义 Skill 只作为提示词方法层注入，不执行代码。",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = t.mutedForeground,
                     )
                 }
             }
@@ -230,9 +238,10 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
         OutlinedButton(
             onClick = viewModel::resetDefaults,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(t.radiusMd),
+            border = BorderStroke(1.dp, t.border),
         ) {
-            Icon(Icons.Rounded.Restore, null)
+            Icon(Icons.Rounded.Restore, null, Modifier.size(17.dp))
             Spacer(Modifier.width(7.dp))
             Text("恢复推荐 Skill 绑定")
         }
@@ -241,19 +250,21 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
     confirmingUpdate?.let { candidate ->
         AlertDialog(
             onDismissRequest = { if (state.updatingSkillId == null) confirmingUpdate = null },
-            icon = { Icon(Icons.Rounded.SystemUpdateAlt, null) },
-            title = { Text("更新 Skill？") },
+            shape = RoundedCornerShape(t.radiusXl),
+            containerColor = t.background,
+            icon = { Icon(Icons.Rounded.SystemUpdateAlt, null, tint = t.accent) },
+            title = { Text("更新 Skill？", color = t.foreground) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("${candidate.currentVersion} → ${candidate.remoteVersion}", fontWeight = FontWeight.Bold)
-                    candidate.changes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                    Text("${candidate.currentVersion} → ${candidate.remoteVersion}", style = MaterialTheme.typography.titleSmall, color = t.foreground)
+                    candidate.changes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = t.foreground) }
                     Text(
                         "只更新声明式写作规则，不下载或运行脚本/代码。现有启用状态与任务绑定会保留；内置 Skill 不能借更新扩大执行权限。",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = t.mutedForeground,
                     )
                     if (candidate.sourceUrl.isNotBlank()) {
-                        Text(candidate.sourceUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(candidate.sourceUrl, style = MaterialTheme.typography.labelSmall, color = t.accent)
                     }
                 }
             },
@@ -275,13 +286,15 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
     deleting?.let { skill ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("卸载 ${skill.name}？") },
-            text = { Text("只会移除这个用户 Skill 和它的任务绑定，不会影响小说数据、Canon 或正文。") },
+            shape = RoundedCornerShape(t.radiusXl),
+            containerColor = t.background,
+            title = { Text("卸载 ${skill.name}？", color = t.foreground) },
+            text = { Text("只会移除这个用户 Skill 和它的任务绑定，不会影响小说数据、Canon 或正文。", color = t.mutedForeground) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.uninstall(skill.id)
                     deleting = null
-                }) { Text("卸载", color = MaterialTheme.colorScheme.error) }
+                }) { Text("卸载", color = t.destructive) }
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } },
         )
@@ -295,51 +308,51 @@ private fun SkillUpdateCenterV8(
     onUpdate: (WritingSkillUpdateCandidate) -> Unit,
     onDismiss: (String) -> Unit,
 ) {
-    Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(
-            Modifier.fillMaxWidth().padding(15.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
+    val t = LocalLanghuanUiTokens.current
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Sync, null, tint = MaterialTheme.colorScheme.primary)
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.muted,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Sync, null, Modifier.size(18.dp), tint = t.mutedForeground)
+                    }
+                }
                 Column(Modifier.padding(start = 9.dp).weight(1f)) {
-                    Text("Skill 更新中心", fontWeight = FontWeight.Bold)
-                    Text(
-                        "拉取声明式适配规则；发现变化后由你确认，不静默覆盖。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text("Skill 更新中心", style = MaterialTheme.typography.titleSmall, color = t.foreground)
+                    Text("发现变化后由你确认，不静默覆盖。", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                 }
                 Button(
                     onClick = onCheck,
                     enabled = !state.isCheckingUpdates && state.updatingSkillId == null,
-                    shape = RoundedCornerShape(15.dp),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
                 ) {
-                    if (state.isCheckingUpdates) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Rounded.Refresh, null, Modifier.size(17.dp))
+                    if (state.isCheckingUpdates) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = t.primaryForeground)
+                    else Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
                     Text(if (state.isCheckingUpdates) "检查中" else "检查更新", Modifier.padding(start = 5.dp))
                 }
             }
 
             state.updateCandidates.values.forEach { candidate ->
                 Surface(
-                    shape = RoundedCornerShape(17.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .48f),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.warmSurface,
+                    border = BorderStroke(1.dp, t.accent.copy(alpha = .16f)),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.NewReleases, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text(
-                                candidate.skillId,
-                                Modifier.padding(start = 7.dp).weight(1f),
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text("${candidate.currentVersion} → ${candidate.remoteVersion}", style = MaterialTheme.typography.labelSmall)
+                            Icon(Icons.Rounded.NewReleases, null, Modifier.size(17.dp), tint = t.accent)
+                            Text(candidate.skillId, Modifier.padding(start = 7.dp).weight(1f), style = MaterialTheme.typography.titleSmall, color = t.foreground)
+                            LanghuanBadge("${candidate.currentVersion} → ${candidate.remoteVersion}", accent = true)
                         }
-                        Text(candidate.changes.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                        Text(candidate.changes.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { onDismiss(candidate.skillId) }) { Text("稍后") }
-                            TextButton(onClick = { onUpdate(candidate) }) { Text("查看并更新") }
+                            TextButton(onClick = { onDismiss(candidate.skillId) }) { Text("稍后", color = t.mutedForeground) }
+                            TextButton(onClick = { onUpdate(candidate) }) { Text("查看并更新", color = t.accent) }
                         }
                     }
                 }
@@ -356,51 +369,56 @@ private fun SkillGroup(
     viewModel: WritingSkillViewModel,
     onDelete: (WritingSkillDefinition) -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.titleLarge, color = t.foreground)
         items.forEach { item ->
             val skill = item.definition
             val binding = item.binding
             val activeTasks = skill.supportedTasks.filter { it in binding.tasks }
             val actuallyActive = binding.enabled && activeTasks.isNotEmpty()
 
-            Card(shape = RoundedCornerShape(24.dp)) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
+            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (actuallyActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier.size(38.dp),
+                            shape = RoundedCornerShape(t.radiusSm),
+                            color = if (actuallyActive) t.warmSurface else t.muted,
+                            border = BorderStroke(1.dp, if (actuallyActive) t.accent.copy(alpha = .16f) else t.border),
                         ) {
-                            Icon(
-                                if (actuallyActive) Icons.Rounded.AutoStories else Icons.Rounded.BookmarkBorder,
-                                null,
-                                tint = if (actuallyActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(9.dp),
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    if (actuallyActive) Icons.Rounded.AutoStories else Icons.Rounded.BookmarkBorder,
+                                    null,
+                                    Modifier.size(20.dp),
+                                    tint = if (actuallyActive) t.accent else t.mutedForeground,
+                                )
+                            }
                         }
-                        Column(Modifier.padding(start = 9.dp).weight(1f)) {
-                            Text(skill.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(skill.name, style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                                Spacer(Modifier.width(7.dp))
+                                LanghuanBadge(if (skill.builtin) "内置" else "用户", accent = !skill.builtin)
+                            }
                             Text(
                                 buildString {
                                     append(skill.version)
                                     if (skill.author.isNotBlank()) append(" · ${skill.author}")
                                     append(" · ${skill.license}")
-                                    append(if (skill.builtin) " · 内置" else " · 用户安装")
-                                    if (skill.updateUrl.isNotBlank()) append(" · 可在线更新")
+                                    if (skill.updateUrl.isNotBlank()) append(" · 可更新")
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = t.mutedForeground,
                             )
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                if (binding.enabled) "已启用" else "已关闭",
+                                if (binding.enabled) "总开关：开" else "总开关：关",
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (binding.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Medium,
+                                color = if (binding.enabled) t.accent else t.mutedForeground,
                             )
                             Switch(
                                 checked = binding.enabled,
@@ -410,17 +428,23 @@ private fun SkillGroup(
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(t.radiusSm),
                         color = when {
-                            actuallyActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                            binding.enabled -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.58f)
-                            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                            actuallyActive -> t.warmSurface
+                            binding.enabled -> t.destructive.copy(alpha = .05f)
+                            else -> t.muted
                         },
+                        border = BorderStroke(
+                            1.dp,
+                            when {
+                                actuallyActive -> t.accent.copy(alpha = .16f)
+                                binding.enabled -> t.destructive.copy(alpha = .12f)
+                                else -> t.border
+                            },
+                        ),
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        Row(Modifier.padding(horizontal = 11.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 when {
                                     actuallyActive -> Icons.Rounded.CheckCircle
@@ -428,65 +452,123 @@ private fun SkillGroup(
                                     else -> Icons.Rounded.PauseCircle
                                 },
                                 null,
-                                modifier = Modifier.size(19.dp),
-                                tint = if (actuallyActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                                tint = when {
+                                    actuallyActive -> t.accent
+                                    binding.enabled -> t.destructive
+                                    else -> t.mutedForeground
+                                },
                             )
                             Spacer(Modifier.width(7.dp))
-                            Text(
-                                when {
-                                    actuallyActive -> "实际生效：${activeTasks.joinToString("、") { it.label }}"
-                                    binding.enabled -> "已启用，但当前没有勾选任何任务，因此不会被调用"
-                                    else -> "当前关闭，不会注入任何写作任务"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = if (actuallyActive) FontWeight.SemiBold else FontWeight.Normal,
-                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    when {
+                                        actuallyActive -> "正在生效"
+                                        binding.enabled -> "不会生效"
+                                        else -> "已关闭"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = t.foreground,
+                                )
+                                Text(
+                                    when {
+                                        actuallyActive -> "实际调用任务：${activeTasks.joinToString("、") { it.label }}"
+                                        binding.enabled -> "总开关虽然已开，但没有绑定任何任务。"
+                                        else -> "当前不会注入任何写作任务。"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = t.mutedForeground,
+                                )
+                            }
                         }
                     }
 
-                    if (skill.description.isNotBlank()) Text(skill.description, style = MaterialTheme.typography.bodySmall)
-                    if (skill.sourceUrl.isNotBlank()) {
-                        Text(skill.sourceUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    }
+                    if (skill.description.isNotBlank()) Text(skill.description, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    if (skill.sourceUrl.isNotBlank()) Text(skill.sourceUrl, style = MaterialTheme.typography.labelSmall, color = t.accent)
 
-                    Text("任务绑定", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("任务绑定", style = MaterialTheme.typography.titleSmall, color = t.foreground)
+                        Spacer(Modifier.weight(1f))
+                        LanghuanBadge("${activeTasks.size}/${skill.supportedTasks.size} 已选", accent = activeTasks.isNotEmpty())
+                    }
                     Text(
-                        if (binding.enabled) "带 ✓ 的任务会真正调用这个 Skill。" else "先开启总开关，再选择要作用的任务。",
+                        if (binding.enabled) "黑色/强调状态表示真正选中；未选任务不会调用这个 Skill。" else "先开启总开关，再选择要作用的任务。",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = t.mutedForeground,
                     )
+
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
                         skill.supportedTasks.forEach { task ->
                             val selected = task in binding.tasks
-                            FilterChip(
+                            SkillTaskToggle(
+                                label = task.label,
                                 selected = selected,
                                 enabled = binding.enabled,
                                 onClick = { viewModel.setTaskEnabled(skill.id, task, !selected) },
-                                label = { Text(task.label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                        null,
-                                        Modifier.size(17.dp),
-                                    )
-                                },
                             )
                         }
                     }
 
                     if (!skill.builtin) {
-                        HorizontalDivider()
+                        Surface(Modifier.fillMaxWidth().height(1.dp), color = t.border) {}
                         TextButton(onClick = { onDelete(skill) }, modifier = Modifier.align(Alignment.End)) {
-                            Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Rounded.DeleteOutline, null, Modifier.size(17.dp), tint = t.destructive)
                             Spacer(Modifier.width(5.dp))
-                            Text("卸载", color = MaterialTheme.colorScheme.error)
+                            Text("卸载", color = t.destructive)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SkillTaskToggle(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        shape = RoundedCornerShape(t.radiusSm),
+        color = when {
+            !enabled -> t.muted
+            selected -> t.foreground
+            else -> t.card
+        },
+        contentColor = when {
+            !enabled -> t.mutedForeground
+            selected -> t.primaryForeground
+            else -> t.foreground
+        },
+        border = BorderStroke(1.dp, if (selected && enabled) t.foreground else t.border),
+    ) {
+        Row(
+            Modifier.clickable(enabled = enabled, onClick = onClick).padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                null,
+                Modifier.size(16.dp),
+                tint = when {
+                    !enabled -> t.mutedForeground
+                    selected -> t.primaryForeground
+                    else -> t.mutedForeground
+                },
+            )
+            Text(
+                label,
+                modifier = Modifier.padding(start = 5.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            )
         }
     }
 }
