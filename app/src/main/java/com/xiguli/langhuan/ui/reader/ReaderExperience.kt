@@ -219,17 +219,23 @@ private fun ReaderExperiencePage(
     val theme = ReaderExperienceTheme.entries.firstOrNull { it.key == themeKey } ?: ReaderExperienceTheme.PAPER
     val palette = readerExperiencePalette(theme, customBg, customFg)
     val family = remember(fontKey) { readerExperienceFont(fontKey) }
+    val displayTitle = remember(chapter.id, chapter.title, chapter.chapterNumber) {
+        readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber)
+    }
+    val readingText = remember(chapter.id, chapter.title, chapter.content) {
+        readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content).ifBlank { "这一章没有正文。" }
+    }
     val scrollState = rememberScrollState()
-    val pages = remember(chapter.id, chapter.content, fontSize, lineFactor, sidePadding, paragraphSpacing, fontKey) {
+    val pages = remember(chapter.id, readingText, fontSize, lineFactor, sidePadding, paragraphSpacing, fontKey) {
         splitReaderPagesV10(
-            chapter.content.ifBlank { "这一章没有正文。" },
+            readingText,
             fontSize,
             lineFactor,
             sidePadding,
             paragraphSpacing,
         )
     }
-    val pageOffsets = remember(chapter.content, pages) { readerPageStartOffsets(chapter.content, pages) }
+    val pageOffsets = remember(readingText, pages) { readerPageStartOffsets(readingText, pages) }
     val leadingPageCount = if (previous != null) 1 else 0
     val trailingPageCount = if (next != null) 1 else 0
     val totalPagerPages = (leadingPageCount + pages.size + trailingPageCount).coerceAtLeast(1)
@@ -246,14 +252,14 @@ private fun ReaderExperiencePage(
     fun currentTextOffset(): Int = when (pageMode) {
         ReaderPageModeV10.SCROLL -> {
             val fraction = if (scrollState.maxValue <= 0) 0f else scrollState.value.toFloat() / scrollState.maxValue.toFloat()
-            (chapter.content.length * fraction).roundToInt().coerceIn(0, chapter.content.length)
+            (readingText.length * fraction).roundToInt().coerceIn(0, readingText.length)
         }
-        else -> pageOffsets.getOrElse(currentContentPage()) { 0 }.coerceIn(0, chapter.content.length)
+        else -> pageOffsets.getOrElse(currentContentPage()) { 0 }.coerceIn(0, readingText.length)
     }
 
     fun currentFraction(): Float = when (pageMode) {
         ReaderPageModeV10.SCROLL -> if (scrollState.maxValue <= 0) 0f else scrollState.value.toFloat() / scrollState.maxValue.toFloat()
-        else -> if (chapter.content.isBlank()) 0f else currentTextOffset().toFloat() / chapter.content.length.toFloat()
+        else -> if (readingText.isBlank()) 0f else currentTextOffset().toFloat() / readingText.length.toFloat()
     }.coerceIn(0f, 1f)
 
     fun saveCurrentProgress() {
@@ -287,7 +293,7 @@ private fun ReaderExperiencePage(
         if (pageMode == ReaderPageModeV10.SCROLL) {
             delay(32)
             val fraction = when {
-                saved.textOffset > 0 && chapter.content.isNotBlank() -> saved.textOffset.toFloat() / chapter.content.length.toFloat()
+                saved.textOffset > 0 && readingText.isNotBlank() -> saved.textOffset.toFloat() / readingText.length.toFloat()
                 saved.positionFraction > 0f -> saved.positionFraction
                 else -> 0f
             }.coerceIn(0f, 1f)
@@ -296,7 +302,7 @@ private fun ReaderExperiencePage(
         } else {
             val contentPage = when {
                 saved.textOffset > 0 -> pageForRawTextOffset(pageOffsets, saved.textOffset)
-                saved.positionFraction > 0f -> pageForRawTextOffset(pageOffsets, (chapter.content.length * saved.positionFraction).roundToInt())
+                saved.positionFraction > 0f -> pageForRawTextOffset(pageOffsets, (readingText.length * saved.positionFraction).roundToInt())
                 saved.modeKey == pageMode.key -> saved.pageIndex.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
                 else -> 0
             }
@@ -373,8 +379,8 @@ private fun ReaderExperiencePage(
             context, book.id, chapter.chapterNumber,
             if (pageMode == ReaderPageModeV10.SCROLL) 0 else currentContentPage(),
             if (pageMode == ReaderPageModeV10.SCROLL) scrollState.value else 0,
-            chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" },
-            readerExcerptAtV11(chapter.content, fraction), fraction, currentTextOffset(),
+            displayTitle,
+            readerExcerptAtV11(readingText, fraction), fraction, currentTextOffset(),
         )
     }
 
@@ -397,7 +403,7 @@ private fun ReaderExperiencePage(
                         ReaderChapterTitle(chapter, fontSize, family, palette)
                         Spacer(Modifier.height(24.dp))
                         ReaderParagraphs(
-                            chapter.content.ifBlank { "这一章没有正文。" }, fontSize, lineFactor,
+                            readingText, fontSize, lineFactor,
                             paragraphSpacing, firstLineIndent, family, palette.foreground,
                         )
                         Spacer(Modifier.height(42.dp))
@@ -435,7 +441,7 @@ private fun ReaderExperiencePage(
                                             Spacer(Modifier.height(20.dp))
                                         }
                                         Text(
-                                            formattedPageText(pages[contentPage], firstLineIndent),
+                                            formattedPageText(pages[contentPage], firstLineIndent, paragraphSpacing),
                                             modifier = Modifier.weight(1f),
                                             fontSize = fontSize.sp,
                                             lineHeight = (fontSize * lineFactor).sp,
@@ -444,7 +450,7 @@ private fun ReaderExperiencePage(
                                             overflow = TextOverflow.Clip,
                                         )
                                         Text(
-                                            "${contentPage + 1}/${pages.size} · 第 ${chapter.chapterNumber} 章",
+                                            "${contentPage + 1}/${pages.size} · $displayTitle",
                                             Modifier.fillMaxWidth().padding(top = 4.dp),
                                             textAlign = TextAlign.End,
                                             style = MaterialTheme.typography.labelSmall,
@@ -462,9 +468,8 @@ private fun ReaderExperiencePage(
             }
 
             if (!chromeVisible) {
-                ReaderQuietFooter(
-                    Modifier.align(Alignment.BottomCenter), chapterIndex, ordered.size, currentFraction(), palette,
-                )
+                val overall = ((chapterIndex.toFloat() + currentFraction()) / ordered.size.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+                ReaderQuietFooter(Modifier.align(Alignment.BottomCenter), overall, palette)
             } else {
                 ReaderMatureChrome(
                     modifier = Modifier.align(Alignment.Center),
@@ -579,7 +584,7 @@ private fun ReaderChapterSentinel(chapter: ChapterDraft?, direction: String, pal
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = palette.secondary)
             Text(direction, Modifier.padding(top = 12.dp), color = palette.foreground, fontWeight = FontWeight.Medium)
-            Text(chapter?.title?.ifBlank { "第 ${chapter.chapterNumber} 章" } ?: "没有更多章节", Modifier.padding(top = 5.dp), color = palette.secondary)
+            Text(chapter?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) } ?: "没有更多章节", Modifier.padding(top = 5.dp), color = palette.secondary)
         }
     }
 }
@@ -618,7 +623,7 @@ private fun ReaderMatureChrome(
             Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回", tint = palette.foreground) }
                 Column(Modifier.weight(1f).padding(horizontal = 5.dp)) {
-                    Text(chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" }, maxLines = 1, overflow = TextOverflow.Ellipsis, color = palette.foreground, fontWeight = FontWeight.Medium)
+                    Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), maxLines = 1, overflow = TextOverflow.Ellipsis, color = palette.foreground, fontWeight = FontWeight.Medium)
                     Text(bookTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = palette.secondary)
                 }
                 IconButton(onClick = onBookmark) { Icon(if (bookmarked) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "书签", tint = palette.foreground) }
@@ -639,7 +644,7 @@ private fun ReaderMatureChrome(
                     TextButton(onClick = onNext, enabled = canNext) { Text("下一章") }
                 }
                 Text(
-                    "第 ${chapterIndex + 1}/$chapterCount 章 · 本章 ${(fraction * 100).roundToInt()}% · 翻到边界自动进入上一章 / 下一章",
+                    "${readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber)} · 本章 ${(fraction * 100).roundToInt()}% · 左右翻页可跨章",
                     Modifier.fillMaxWidth().padding(bottom = 6.dp), textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelSmall, color = palette.secondary,
                 )
@@ -664,11 +669,11 @@ private fun ReaderChromeAction(icon: ImageVector, label: String, color: Color, o
 }
 
 @Composable
-private fun ReaderQuietFooter(modifier: Modifier, chapterIndex: Int, chapterCount: Int, fraction: Float, palette: ReaderExperiencePalette) {
+private fun ReaderQuietFooter(modifier: Modifier, overallFraction: Float, palette: ReaderExperiencePalette) {
     Row(modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()), style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
         Spacer(Modifier.weight(1f))
-        Text("${chapterIndex + 1}/$chapterCount · ${(fraction * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
+        Text("全书 ${(overallFraction.coerceIn(0f, 1f) * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
     }
 }
 
@@ -690,7 +695,7 @@ private fun ReaderParagraphs(text: String, fontSize: Float, lineFactor: Float, p
 
 @Composable
 private fun ReaderChapterTitle(chapter: ChapterDraft, fontSize: Float, family: FontFamily, palette: ReaderExperiencePalette) {
-    Text(chapter.title.ifBlank { "第 ${chapter.chapterNumber} 章" }, fontSize = (fontSize + 5).sp, lineHeight = (fontSize + 11).sp, fontWeight = FontWeight.SemiBold, fontFamily = family, color = palette.foreground)
+    Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), fontSize = (fontSize + 5).sp, lineHeight = (fontSize + 11).sp, fontWeight = FontWeight.SemiBold, fontFamily = family, color = palette.foreground)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1226,6 +1231,15 @@ private fun pageForRawTextOffset(offsets: List<Int>, offset: Int): Int {
     return result.coerceIn(0, offsets.lastIndex)
 }
 
-private fun formattedPageText(text: String, indent: Boolean): String = if (!indent) text else text.split(Regex("\\n\\s*\\n")).joinToString("\n\n") { paragraph -> paragraph.trim().let { if (it.isBlank()) it else "　　$it" } }
+private fun formattedPageText(text: String, indent: Boolean, paragraphSpacing: Float): String {
+    val separator = when {
+        paragraphSpacing < 5f -> "\n"
+        paragraphSpacing < 19f -> "\n\n"
+        else -> "\n\n\n"
+    }
+    return text.split(Regex("\\n\\s*\\n")).joinToString(separator) { paragraph ->
+        paragraph.trim().let { if (it.isBlank() || !indent) it else "　　$it" }
+    }
+}
 private fun flattenReaderToc(nodes: List<EpubTocNodeV1>, depth: Int = 0): List<ReaderTocEntry> = buildList { nodes.forEach { node -> add(ReaderTocEntry(node.title, node.chapterNumber, depth)); addAll(flattenReaderToc(node.children, depth + 1)) } }
 private fun searchReaderSnippet(text: String, query: String): String { val index = text.indexOf(query, ignoreCase = true); if (index < 0) return text.replace('\n', ' ').take(100); val start = (index - 40).coerceAtLeast(0); val end = (index + query.length + 65).coerceAtMost(text.length); return text.substring(start, end).replace('\n', ' ').trim() }
