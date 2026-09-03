@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.dp
  * Semantic design tokens for the Langhuan UI layer.
  *
  * This intentionally mirrors the shadcn/ui model (background/foreground/card/muted/border/
- * primary/accent/destructive/ring) instead of exposing raw palette colors to feature screens.
- * Feature UI should consume these roles or MaterialTheme roles rather than hard-coded colors.
+ * primary/accent/destructive/ring) and extends it with explicit success/warning roles needed by
+ * a writing runtime. Feature UI should consume semantic roles rather than raw palette colors.
  */
 @Immutable
 data class LanghuanUiTokens(
@@ -54,6 +54,10 @@ data class LanghuanUiTokens(
     val accentForeground: Color,
     val destructive: Color,
     val destructiveForeground: Color,
+    val success: Color,
+    val successForeground: Color,
+    val warning: Color,
+    val warningForeground: Color,
     val ring: Color,
     val warmSurface: Color,
     val radiusSm: Dp = 8.dp,
@@ -78,6 +82,10 @@ val LocalLanghuanUiTokens = staticCompositionLocalOf {
         accentForeground = Color.White,
         destructive = Color(0xFFDC2626),
         destructiveForeground = Color.White,
+        success = Color(0xFF16875D),
+        successForeground = Color.White,
+        warning = Color(0xFFC87912),
+        warningForeground = Color.White,
         ring = Color(0xFFF4553D),
         warmSurface = Color(0xFFFFF6F2),
     )
