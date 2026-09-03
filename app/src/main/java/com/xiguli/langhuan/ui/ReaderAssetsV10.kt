@@ -93,19 +93,9 @@ internal fun readerColorHexV10(color: Color): String {
     return "#%02X%02X%02X%02X".format(a, r, g, b)
 }
 
-/**
- * User-facing chapter title. Imported books may use internal chapter numbers that include cover,
- * metadata or other EPUB resources, so those numbers must never replace the actual title shown to
- * the reader.
- */
 internal fun readerDisplayChapterTitleV13(title: String, chapterNumber: Int): String =
     title.replace(Regex("\\s+"), " ").trim().ifBlank { "第 $chapterNumber 章" }
 
-/**
- * Some EPUB/TXT importers keep the visible chapter heading both in ChapterDraft.title and at the
- * beginning of ChapterDraft.content. Remove only a very small, anchored duplicate heading so the
- * reading page does not show e.g. “第1章 出院 / 第1章 / 出院” three times.
- */
 internal fun readerBodyWithoutDuplicateHeadingV13(title: String, content: String): String {
     val body = content.replace("\r\n", "\n").trimStart()
     if (body.isBlank()) return body
@@ -142,27 +132,27 @@ private inline fun List<String>.indexOfFirstFromV13(start: Int, predicate: (Stri
     return -1
 }
 
+/** Normalize prose paragraphs so the paginator and renderer share one paragraph model. */
+internal fun readerNormalizeBodyV14(text: String): String = text
+    .replace("\r\n", "\n")
+    .replace(Regex("\\n[ \\t]*\\n+"), "\n")
+    .trim()
+
 /**
  * Real measured pagination for phone reading.
  *
- * The previous reader still estimated “characters per page”. That inevitably clips large fonts,
- * custom fonts and mixed Chinese/Latin text because character count is not a layout unit. This
- * version asks Android StaticLayout to perform the same kind of line breaking used by Text, then
- * cuts pages only on measured line boundaries. The first page gets a smaller body viewport because
- * the chapter title occupies vertical space.
- *
- * This remains deliberately conservative: ReaderExperience applies safeDrawing insets, title/footer
- * chrome and page padding after this function. Leaving a little vertical headroom is preferable to
- * clipping even one line at the bottom.
+ * V14 measures real Android text lines and models paragraph gaps in dp. It no longer counts a blank
+ * text row as paragraph spacing. The first page has a compact chapter heading; ordinary pages reserve
+ * room for a quiet running header. Both reserve the persistent footer used by ReaderPagedLayoutV14.
  */
 internal fun splitReaderPagesV10(
     text: String,
     fontSize: Float,
     lineFactor: Float,
     sidePadding: Float,
-    paragraphSpacing: Float = 12f,
+    paragraphSpacing: Float = 8f,
 ): List<String> {
-    val normalized = text.replace("\r\n", "\n").trim()
+    val normalized = readerNormalizeBodyV14(text)
     if (normalized.isBlank()) return listOf("")
 
     return runCatching {
@@ -173,9 +163,9 @@ internal fun splitReaderPagesV10(
         val heightDp = metrics.heightPixels / density
 
         val widthPx = ((widthDp - sidePadding * 2f).coerceAtLeast(180f) * density).toInt().coerceAtLeast(1)
-        val firstBodyHeightPx = ((heightDp - 250f).coerceAtLeast(220f) * density).toInt()
-        val normalBodyHeightPx = ((heightDp - 188f).coerceAtLeast(260f) * density).toInt()
-        val paragraphExtraPx = (paragraphSpacing.coerceIn(0f, 30f) * density).toInt()
+        val firstBodyHeightPx = ((heightDp - 205f).coerceAtLeast(240f) * density).toInt()
+        val normalBodyHeightPx = ((heightDp - 190f).coerceAtLeast(280f) * density).toInt()
+        val paragraphExtraPx = (paragraphSpacing.coerceIn(0f, 24f) * density).toInt()
 
         val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
             textSize = fontSize.coerceIn(12f, 36f) * scaledDensity
@@ -202,7 +192,7 @@ internal fun splitReaderPagesV10(
                 val lineStart = layout.getLineStart(line).coerceIn(0, normalized.length)
                 val lineEnd = layout.getLineEnd(line).coerceIn(lineStart, normalized.length)
                 val segment = normalized.substring(lineStart, lineEnd)
-                val paragraphExtra = if (segment.endsWith("\n") && lineEnd < normalized.length && normalized.getOrNull(lineEnd) == '\n') paragraphExtraPx else 0
+                val paragraphExtra = if (segment.endsWith("\n") && lineEnd < normalized.length) paragraphExtraPx else 0
                 val nextHeight = usedHeight + lineHeight + paragraphExtra
                 if (line > firstLine && nextHeight > maxHeight) break
                 usedHeight = nextHeight
@@ -216,12 +206,10 @@ internal fun splitReaderPagesV10(
         }
         pages.ifEmpty { listOf(normalized) }
     }.getOrElse {
-        // JVM/local unit tests do not provide a real Android text stack. Keep a conservative fallback
-        // there, but never impose a minimum character count that can overflow a real phone page.
         val fontPenalty = (fontSize / 20f).coerceIn(.7f, 2f)
-        val linePenalty = (lineFactor / 1.8f).coerceIn(.75f, 1.6f)
+        val linePenalty = (lineFactor / 1.68f).coerceIn(.75f, 1.6f)
         val widthPenalty = (1f + ((sidePadding - 24f) / 75f)).coerceIn(.72f, 1.45f)
-        val target = (300f / (fontPenalty * linePenalty * widthPenalty)).toInt().coerceIn(72, 420)
+        val target = (330f / (fontPenalty * linePenalty * widthPenalty)).toInt().coerceIn(80, 460)
         normalized.chunked(target).filter { it.isNotBlank() }.ifEmpty { listOf(normalized) }
     }
 }
