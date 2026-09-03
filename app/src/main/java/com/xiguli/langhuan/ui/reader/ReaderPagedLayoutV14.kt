@@ -28,11 +28,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Reader page surface shared by V14/V15.
- *
- * V15 makes every vertical chrome dimension explicit so the paginator can measure the same structure
- * instead of subtracting a guessed body reserve. The footer stays pinned to the bottom while normal
- * pages are allowed to use all real body height above it.
+ * Frozen reader page surface. V16 keeps the historical function name to avoid another route/version
+ * wrapper, but measurement and rendering now share the same Compose styles and spacing constants.
  */
 @Composable
 internal fun ReaderPagedLayoutV14(
@@ -45,6 +42,7 @@ internal fun ReaderPagedLayoutV14(
     sidePadding: Float,
     paragraphSpacing: Float,
     firstLineIndent: Boolean,
+    indentFirstParagraph: Boolean,
     family: FontFamily,
     background: Color,
     foreground: Color,
@@ -52,19 +50,13 @@ internal fun ReaderPagedLayoutV14(
     overallFraction: Float,
     onToggleChrome: () -> Unit,
 ) {
-    val footerStyle = TextStyle(
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        fontFamily = family,
-    )
-
     Column(
         Modifier
             .fillMaxSize()
             .background(background)
             .clickable(onClick = onToggleChrome)
             .padding(horizontal = sidePadding.dp)
-            .padding(top = if (contentPage == 0) 14.dp else 10.dp, bottom = 4.dp),
+            .padding(top = if (contentPage == 0) 10.dp else 8.dp, bottom = 4.dp),
     ) {
         if (contentPage == 0) {
             Text(
@@ -75,7 +67,7 @@ internal fun ReaderPagedLayoutV14(
                 fontFamily = family,
                 color = foreground,
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
         } else {
             Text(
                 displayTitle,
@@ -84,50 +76,54 @@ internal fun ReaderPagedLayoutV14(
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
                 fontFamily = family,
-                color = secondary.copy(alpha = .48f),
+                color = secondary.copy(alpha = .44f),
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
         }
 
-        ReaderPageParagraphsV14(
+        ReaderPageParagraphsV16(
             text = pageText,
             modifier = Modifier.weight(1f),
             fontSize = fontSize,
             lineFactor = lineFactor,
             paragraphSpacing = paragraphSpacing,
             firstLineIndent = firstLineIndent,
+            indentFirstParagraph = indentFirstParagraph,
             family = family,
             color = foreground,
         )
 
         Row(
-            Modifier.fillMaxWidth().padding(top = 3.dp),
+            Modifier.fillMaxWidth().padding(top = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
-                style = footerStyle,
-                color = secondary.copy(alpha = .52f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = secondary.copy(alpha = .54f),
             )
             Spacer(Modifier.weight(1f))
             Text(
                 "${contentPage + 1}/${pageCount.coerceAtLeast(1)}  ·  ${(overallFraction.coerceIn(0f, 1f) * 100).roundToInt()}%",
                 textAlign = TextAlign.End,
-                style = footerStyle,
-                color = secondary.copy(alpha = .60f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = secondary.copy(alpha = .58f),
             )
         }
     }
 }
 
 @Composable
-private fun ReaderPageParagraphsV14(
+private fun ReaderPageParagraphsV16(
     text: String,
     modifier: Modifier,
     fontSize: Float,
     lineFactor: Float,
     paragraphSpacing: Float,
     firstLineIndent: Boolean,
+    indentFirstParagraph: Boolean,
     family: FontFamily,
     color: Color,
 ) {
@@ -137,16 +133,20 @@ private fun ReaderPageParagraphsV14(
             .map { it.trim() }
             .filter { it.isNotBlank() }
     }
-    val style = TextStyle(
-        fontSize = fontSize.sp,
-        lineHeight = (fontSize * lineFactor).sp,
-        fontFamily = family,
-        color = color,
-        textIndent = TextIndent(firstLine = if (firstLineIndent) (fontSize * 2f).sp else 0.sp),
-    )
     Column(modifier.fillMaxWidth()) {
         paragraphs.forEachIndexed { index, paragraph ->
-            Text(paragraph, modifier = Modifier.fillMaxWidth(), style = style)
+            val shouldIndent = firstLineIndent && (index > 0 || indentFirstParagraph)
+            Text(
+                paragraph,
+                modifier = Modifier.fillMaxWidth(),
+                style = TextStyle(
+                    fontSize = fontSize.sp,
+                    lineHeight = (fontSize * lineFactor).sp,
+                    fontFamily = family,
+                    color = color,
+                    textIndent = TextIndent(firstLine = if (shouldIndent) (fontSize * 2f).sp else 0.sp),
+                ),
+            )
             if (index < paragraphs.lastIndex) {
                 Spacer(Modifier.height(paragraphSpacing.coerceIn(0f, 24f).dp))
             }
