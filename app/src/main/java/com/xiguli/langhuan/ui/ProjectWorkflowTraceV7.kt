@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -48,11 +49,10 @@ import com.xiguli.langhuan.engine.NovelWorkflowState
 import com.xiguli.langhuan.engine.NovelWorkflowStatus
 import com.xiguli.langhuan.engine.ProjectRuntimeReceiptState
 import com.xiguli.langhuan.engine.ProjectRuntimeSkillReceipt
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import top.yukonga.miuix.kmp.squircle.squircleClip
 
 /**
  * Compact entry shown in the normal authoring controller. The full process detail stays hidden
@@ -65,18 +65,17 @@ internal fun ProjectWorkflowTracePillV7(
     flow: WritingFlowUiState,
     onClick: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val runtime = runtimeTraceV7(flow)
     val stage = workflow?.currentStage?.label ?: "工作流"
     val status = workflow?.stageStatus?.label ?: runtime.label
     val staleCount = workflow?.staleArtifacts?.size ?: 0
+    val tone = if (staleCount > 0) t.destructive else runtime.color()
 
     Surface(
-        shape = RoundedCornerShape(99.dp),
-        color = if (staleCount > 0) {
-            MaterialTheme.colorScheme.errorContainer.copy(alpha = .62f)
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        },
+        shape = RoundedCornerShape(999.dp),
+        color = tone.copy(alpha = .08f),
+        border = BorderStroke(1.dp, tone.copy(alpha = .18f)),
         modifier = Modifier.clickable(onClick = onClick),
     ) {
         Row(
@@ -84,13 +83,13 @@ internal fun ProjectWorkflowTracePillV7(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (runtime.active) {
-                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = tone)
             } else {
                 Icon(
                     if (staleCount > 0) Icons.Rounded.WarningAmber else Icons.Rounded.AccountTree,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
-                    tint = if (staleCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    tint = tone,
                 )
             }
             Text(
@@ -99,7 +98,7 @@ internal fun ProjectWorkflowTracePillV7(
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (staleCount > 0) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface,
+                color = if (staleCount > 0) t.destructive else t.foreground,
             )
         }
     }
@@ -112,6 +111,7 @@ internal fun ProjectWorkflowTraceSheetV7(
     flow: WritingFlowUiState,
     onDismiss: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val workflow = conversation.workflow
     val runtime = runtimeTraceV7(flow)
     val capabilities = workflow?.capabilities?.enabledCapabilities.orEmpty().mapNotNull { name ->
@@ -124,7 +124,7 @@ internal fun ProjectWorkflowTraceSheetV7(
         it.sourceChapter == flow.draft?.chapterNumber && it.status == CandidateFactStatus.PENDING
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -133,13 +133,22 @@ internal fun ProjectWorkflowTraceSheetV7(
                 .padding(horizontal = 16.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AccountTree, null, tint = MaterialTheme.colorScheme.primary)
-                Column(Modifier.padding(start = 9.dp).weight(1f)) {
-                    Text("Skill OS 执行详情", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(t.radiusMd),
+                    color = t.warmSurface,
+                    border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
+                ) {
+                    Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.AccountTree, null, tint = t.accent)
+                    }
+                }
+                Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                    Text("Skill OS 执行详情", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = t.foreground)
                     Text(
-                        "路由只是候选；只有真实 RunEvent 证据才能标记为已执行",
+                        "路由是候选；只有 RunEvent / Runtime 回执才能算真实执行",
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = t.mutedForeground,
                     )
                 }
             }
@@ -152,7 +161,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                 item {
                     TraceSectionV7(title = "当前 Gate") {
                         if (workflow == null) {
-                            Text("尚未载入工作流状态", color = LocalMiuixTokens.current.textSecondary)
+                            Text("尚未载入工作流状态", color = t.mutedForeground)
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 WorkflowStatusIconV7(workflow.stageStatus)
@@ -160,22 +169,23 @@ internal fun ProjectWorkflowTraceSheetV7(
                                     Text(
                                         "${workflow.currentStage.label} · ${workflow.stageStatus.label}",
                                         fontWeight = FontWeight.SemiBold,
+                                        color = t.foreground,
                                     )
                                     if (workflow.pendingRequest.isNotBlank()) {
                                         Text(
                                             workflow.pendingRequest,
                                             modifier = Modifier.padding(top = 3.dp),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = LocalMiuixTokens.current.textSecondary,
+                                            color = t.mutedForeground,
                                         )
                                     }
                                 }
                             }
                             workflow.nextStage?.let { next ->
                                 Row(Modifier.padding(top = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text("通过后", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
-                                    Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(16.dp), tint = LocalMiuixTokens.current.textSecondary)
-                                    Text(next.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    Text("通过后", style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
+                                    Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(16.dp), tint = t.mutedForeground)
+                                    Text(next.label, style = MaterialTheme.typography.labelMedium, color = t.accent)
                                 }
                             }
                         }
@@ -185,11 +195,11 @@ internal fun ProjectWorkflowTraceSheetV7(
                 item {
                     TraceSectionV7(title = "真实执行状态") {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (runtime.active) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            if (runtime.active) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = runtime.color())
                             else Icon(runtime.icon, null, Modifier.size(19.dp), tint = runtime.color())
                             Column(Modifier.padding(start = 9.dp).weight(1f)) {
-                                Text(runtime.label, fontWeight = FontWeight.SemiBold)
-                                Text(runtime.detail, style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                                Text(runtime.label, fontWeight = FontWeight.SemiBold, color = t.foreground)
+                                Text(runtime.detail, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                             }
                         }
                         flow.runEvents.lastOrNull()?.let { event ->
@@ -197,15 +207,13 @@ internal fun ProjectWorkflowTraceSheetV7(
                                 "最近执行：${event.stage.label}${event.detail.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}",
                                 modifier = Modifier.padding(top = 8.dp),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = LocalMiuixTokens.current.textSecondary,
+                                color = t.mutedForeground,
                             )
                         }
                         if (pendingCandidates > 0) {
-                            Text(
+                            TraceInlineNoticeV7(
                                 "Candidate：还有 $pendingCandidates 条待确认/拒绝，处理前不能关闭本章 Canon Gate。",
-                                modifier = Modifier.padding(top = 7.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
+                                t.warning,
                             )
                         }
                     }
@@ -225,7 +233,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                                     if (audit.failedCount > 0) append(" · 失败 ${audit.failedCount}")
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = LocalMiuixTokens.current.textSecondary,
+                                color = t.mutedForeground,
                             )
                             audit.receipts.forEach { receipt -> ExecutionReceiptRowV9(receipt) }
                         }
@@ -240,12 +248,16 @@ internal fun ProjectWorkflowTraceSheetV7(
                                 horizontalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
                                 capabilities.forEach { capability ->
-                                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .62f)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(999.dp),
+                                        color = t.warmSurface,
+                                        border = BorderStroke(1.dp, t.accent.copy(alpha = .16f)),
+                                    ) {
                                         Text(
                                             capability.label,
                                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            color = t.accent,
                                         )
                                     }
                                 }
@@ -254,10 +266,10 @@ internal fun ProjectWorkflowTraceSheetV7(
                             if (intent.isNotBlank()) {
                                 val intentLabel = NovelIntent.entries.firstOrNull { it.name == intent }?.label ?: intent
                                 Text(
-                                    "当前意图：$intentLabel · 路由只说明本轮允许调用这些能力，实际执行以回执为准。",
+                                    "当前意图：$intentLabel · 路由只说明本轮允许调用这些能力，实际执行仍以回执为准。",
                                     modifier = Modifier.padding(top = 7.dp),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = LocalMiuixTokens.current.textSecondary,
+                                    color = t.mutedForeground,
                                 )
                             }
                         }
@@ -290,14 +302,16 @@ internal fun ProjectWorkflowTraceSheetV7(
 
                 item {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().squircleClip(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(t.radiusMd),
+                        color = t.muted,
+                        border = BorderStroke(1.dp, t.border),
                     ) {
                         Text(
-                            "这里显示的是流程状态、候选路由和真实执行证据。小说事实仍以 StorySnapshot / Candidate / Canon 管道为准；执行回执本身也不会写入 Canon。",
+                            "这里显示流程状态、候选路由和真实执行证据。小说事实仍以 StorySnapshot / Candidate / Canon 管道为准；执行回执本身不会写入 Canon。",
                             modifier = Modifier.padding(12.dp),
                             style = MaterialTheme.typography.bodySmall,
-                            color = LocalMiuixTokens.current.textSecondary,
+                            color = t.mutedForeground,
                         )
                     }
                 }
@@ -312,17 +326,20 @@ private fun TraceSectionV7(
     danger: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
+    val color = if (danger) t.destructive else t.border
     Surface(
-        modifier = Modifier.fillMaxWidth().squircleClip(20.dp),
-        color = if (danger) MaterialTheme.colorScheme.errorContainer.copy(alpha = .36f) else MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = if (danger) t.destructive.copy(alpha = .06f) else t.card,
+        border = BorderStroke(1.dp, if (danger) t.destructive.copy(alpha = .20f) else t.border),
     ) {
         Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(
                 title,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                color = if (danger) t.destructive else t.foreground,
             )
             content()
         }
@@ -330,7 +347,21 @@ private fun TraceSectionV7(
 }
 
 @Composable
+private fun TraceInlineNoticeV7(text: String, color: Color) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+        shape = RoundedCornerShape(t.radiusSm),
+        color = color.copy(alpha = .07f),
+        border = BorderStroke(1.dp, color.copy(alpha = .16f)),
+    ) {
+        Text(text, Modifier.padding(9.dp), style = MaterialTheme.typography.bodySmall, color = t.foreground)
+    }
+}
+
+@Composable
 private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
+    val t = LocalLanghuanUiTokens.current
     val icon = when (receipt.state) {
         ProjectRuntimeReceiptState.EXECUTED -> Icons.Rounded.CheckCircle
         ProjectRuntimeReceiptState.SKIPPED -> Icons.Rounded.RemoveCircleOutline
@@ -338,10 +369,10 @@ private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
         ProjectRuntimeReceiptState.FAILED -> Icons.Rounded.ErrorOutline
     }
     val tint = when (receipt.state) {
-        ProjectRuntimeReceiptState.EXECUTED -> LocalMiuixTokens.current.success
-        ProjectRuntimeReceiptState.SKIPPED -> LocalMiuixTokens.current.textSecondary
-        ProjectRuntimeReceiptState.PENDING -> MaterialTheme.colorScheme.primary
-        ProjectRuntimeReceiptState.FAILED -> MaterialTheme.colorScheme.error
+        ProjectRuntimeReceiptState.EXECUTED -> t.success
+        ProjectRuntimeReceiptState.SKIPPED -> t.mutedForeground
+        ProjectRuntimeReceiptState.PENDING -> t.warning
+        ProjectRuntimeReceiptState.FAILED -> t.destructive
     }
     Row(Modifier.fillMaxWidth().padding(top = 5.dp), verticalAlignment = Alignment.Top) {
         Icon(icon, null, Modifier.size(18.dp), tint = tint)
@@ -352,24 +383,28 @@ private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
+                    color = t.foreground,
                 )
-                Text(
-                    receipt.state.label + receipt.durationMs?.let { " · ${formatDurationV9(it)}" }.orEmpty(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tint,
-                )
+                Surface(shape = RoundedCornerShape(999.dp), color = tint.copy(alpha = .08f)) {
+                    Text(
+                        receipt.state.label + receipt.durationMs?.let { " · ${formatDurationV9(it)}" }.orEmpty(),
+                        Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tint,
+                    )
+                }
             }
             Text(
                 "${receipt.step.phase.label} · ${receipt.step.engine}",
                 style = MaterialTheme.typography.labelSmall,
-                color = LocalMiuixTokens.current.textSecondary,
+                color = t.mutedForeground,
             )
             if (receipt.state == ProjectRuntimeReceiptState.PENDING) {
                 Text(
                     "尚无专属执行证据；不会计为已执行。",
                     modifier = Modifier.padding(top = 3.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = t.mutedForeground,
                 )
             }
             if (receipt.dataInputs.isNotEmpty()) {
@@ -377,7 +412,7 @@ private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
                     "读取：${receipt.dataInputs.joinToString(" · ")}",
                     modifier = Modifier.padding(top = 3.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = t.foreground,
                 )
             }
             if (receipt.outputSummary.isNotBlank()) {
@@ -389,7 +424,7 @@ private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
                     },
                     modifier = Modifier.padding(top = 3.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (receipt.state == ProjectRuntimeReceiptState.FAILED) MaterialTheme.colorScheme.error else LocalMiuixTokens.current.textSecondary,
+                    color = if (receipt.state == ProjectRuntimeReceiptState.FAILED) t.destructive else t.mutedForeground,
                 )
             }
             receipt.evidenceTrail.takeLast(2).forEach { evidence ->
@@ -397,7 +432,7 @@ private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
                     "证据 · ${evidence.stage.label} / ${evidence.status.name}${evidence.detail.takeIf(String::isNotBlank)?.let { " · ${it.take(120)}" }.orEmpty()}",
                     modifier = Modifier.padding(top = 2.dp),
                     style = MaterialTheme.typography.labelSmall,
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = t.mutedForeground,
                 )
             }
         }
@@ -406,12 +441,14 @@ private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
 
 @Composable
 private fun ArtifactRowV7(artifact: NovelWorkflowArtifact) {
+    val t = LocalLanghuanUiTokens.current
+    val tint = if (artifact.stale) t.destructive else t.success
     Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.Top) {
         Icon(
             if (artifact.stale) Icons.Rounded.WarningAmber else Icons.Rounded.CheckCircle,
             null,
             Modifier.size(17.dp),
-            tint = if (artifact.stale) MaterialTheme.colorScheme.error else LocalMiuixTokens.current.success,
+            tint = tint,
         )
         Column(Modifier.padding(start = 8.dp).weight(1f)) {
             Text(
@@ -422,18 +459,15 @@ private fun ArtifactRowV7(artifact: NovelWorkflowArtifact) {
                 },
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Medium,
+                color = t.foreground,
             )
             if (artifact.stale && artifact.staleReason.isNotBlank()) {
-                Text(
-                    artifact.staleReason,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                Text(artifact.staleReason, style = MaterialTheme.typography.bodySmall, color = t.destructive)
             } else {
                 Text(
                     "${artifact.stage.label} · ${formatTraceTimeV7(artifact.updatedAt)}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = t.mutedForeground,
                 )
             }
         }
@@ -442,15 +476,16 @@ private fun ArtifactRowV7(artifact: NovelWorkflowArtifact) {
 
 @Composable
 private fun HistoryRowV7(entry: NovelWorkflowHistoryEntry) {
+    val t = LocalLanghuanUiTokens.current
     Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.Top) {
         WorkflowStatusIconV7(entry.status)
         Column(Modifier.padding(start = 8.dp).weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(entry.stage.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                Text(formatTraceTimeV7(entry.atMillis), style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                Text(entry.stage.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), color = t.foreground)
+                Text(formatTraceTimeV7(entry.atMillis), style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
             }
             if (entry.note.isNotBlank()) {
-                Text(entry.note, style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                Text(entry.note, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
             }
         }
     }
@@ -458,6 +493,7 @@ private fun HistoryRowV7(entry: NovelWorkflowHistoryEntry) {
 
 @Composable
 private fun WorkflowStatusIconV7(status: NovelWorkflowStatus) {
+    val t = LocalLanghuanUiTokens.current
     val icon = when (status) {
         NovelWorkflowStatus.CONFIRMED -> Icons.Rounded.CheckCircle
         NovelWorkflowStatus.NEEDS_REWORK -> Icons.Rounded.Replay
@@ -467,12 +503,12 @@ private fun WorkflowStatusIconV7(status: NovelWorkflowStatus) {
         NovelWorkflowStatus.NOT_STARTED -> Icons.Rounded.RemoveCircleOutline
     }
     val tint = when (status) {
-        NovelWorkflowStatus.CONFIRMED -> LocalMiuixTokens.current.success
-        NovelWorkflowStatus.NEEDS_REWORK -> MaterialTheme.colorScheme.error
-        NovelWorkflowStatus.AWAITING_CONFIRMATION,
-        NovelWorkflowStatus.RUNNING -> MaterialTheme.colorScheme.primary
+        NovelWorkflowStatus.CONFIRMED -> t.success
+        NovelWorkflowStatus.NEEDS_REWORK -> t.destructive
+        NovelWorkflowStatus.AWAITING_CONFIRMATION -> t.warning
+        NovelWorkflowStatus.RUNNING -> t.accent
         NovelWorkflowStatus.SKIPPED,
-        NovelWorkflowStatus.NOT_STARTED -> LocalMiuixTokens.current.textSecondary
+        NovelWorkflowStatus.NOT_STARTED -> t.mutedForeground
     }
     Icon(icon, null, Modifier.size(18.dp), tint = tint)
 }
@@ -485,11 +521,14 @@ private data class RuntimeTraceV7(
     val tone: RuntimeToneV7,
 ) {
     @Composable
-    fun color(): Color = when (tone) {
-        RuntimeToneV7.NORMAL -> MaterialTheme.colorScheme.primary
-        RuntimeToneV7.SUCCESS -> LocalMiuixTokens.current.success
-        RuntimeToneV7.WARNING -> MaterialTheme.colorScheme.error
-        RuntimeToneV7.IDLE -> LocalMiuixTokens.current.textSecondary
+    fun color(): Color {
+        val t = LocalLanghuanUiTokens.current
+        return when (tone) {
+            RuntimeToneV7.NORMAL -> t.accent
+            RuntimeToneV7.SUCCESS -> t.success
+            RuntimeToneV7.WARNING -> t.destructive
+            RuntimeToneV7.IDLE -> t.mutedForeground
+        }
     }
 }
 
