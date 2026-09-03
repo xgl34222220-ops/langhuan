@@ -1,7 +1,6 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +19,7 @@ import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,15 +29,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.RunStage
 import com.xiguli.langhuan.engine.RunStatus
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.squircle.squircleClip
 
 @Composable
 internal fun RunInspectorPanel(
@@ -45,9 +45,9 @@ internal fun RunInspectorPanel(
     title: String = "Run Inspector",
 ) {
     if (events.isEmpty()) return
-    // 建书会谈属于普通用户流程，内部 Run 调试信息不应直接铺在聊天页。
     if (title == "建书 Run Inspector") return
 
+    val t = LocalLanghuanUiTokens.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val running = events.any { it.status == RunStatus.RUNNING }
     LaunchedEffect(running) {
@@ -62,43 +62,47 @@ internal fun RunInspectorPanel(
     val current = events.lastOrNull { it.status == RunStatus.RUNNING }
     val finished = latest.values.count { it.status == RunStatus.SUCCESS || it.status == RunStatus.SKIPPED }
 
-    val shape = RoundedCornerShape(24.dp)
-    Column(
-        Modifier.fillMaxWidth()
-            .shadow(1.dp, shape)
-            .squircleClip(24.dp)
-            .background(LocalMiuixTokens.current.cardBackground.copy(alpha = .95f))
-            .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .28f), shape)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.HourglassTop, null, tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    current?.let { "当前：${it.stage.label}" } ?: "本轮阶段已记录",
-                    color = LocalMiuixTokens.current.textSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Text("$finished/${stages.size}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        }
-
-        stages.forEach { stage ->
-            val event = latest.getValue(stage)
-            val elapsed = elapsedMillis(events, stage, now)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                RunStatusIcon(event.status)
-                Column(Modifier.padding(start = 9.dp).weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(stage.label, fontWeight = if (event.status == RunStatus.RUNNING) FontWeight.Bold else FontWeight.Medium, modifier = Modifier.weight(1f))
-                        if (elapsed >= 0L) {
-                            Text(formatElapsed(elapsed), color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.labelSmall)
-                        }
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = if (running) t.warmSurface else t.muted,
+                    border = BorderStroke(1.dp, if (running) t.accent.copy(alpha = .15f) else t.border),
+                ) {
+                    androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                        if (running) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.8.dp, color = t.accent)
+                        else Icon(Icons.Rounded.HourglassTop, null, Modifier.size(17.dp), tint = t.mutedForeground)
                     }
-                    if (event.detail.isNotBlank()) {
-                        Text(event.detail, color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+                Column(Modifier.padding(start = 9.dp).weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                    Text(
+                        current?.let { "当前：${it.stage.label}" } ?: "本轮阶段已记录",
+                        color = t.mutedForeground,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                LanghuanBadge("$finished/${stages.size}", accent = running)
+            }
+
+            stages.forEach { stage ->
+                val event = latest.getValue(stage)
+                val elapsed = elapsedMillis(events, stage, now)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    RunStatusIcon(event.status)
+                    Column(Modifier.padding(start = 9.dp).weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stage.label,
+                                color = t.foreground,
+                                fontWeight = if (event.status == RunStatus.RUNNING) FontWeight.SemiBold else FontWeight.Medium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (elapsed >= 0L) Text(formatElapsed(elapsed), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (event.detail.isNotBlank()) Text(event.detail, color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -108,17 +112,17 @@ internal fun RunInspectorPanel(
 
 @Composable
 private fun RunStatusIcon(status: RunStatus) {
+    val t = LocalLanghuanUiTokens.current
     when (status) {
-        RunStatus.RUNNING -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-        RunStatus.SUCCESS -> Icon(Icons.Rounded.CheckCircle, null, tint = LocalMiuixTokens.current.success, modifier = Modifier.size(19.dp))
-        RunStatus.WARNING -> Icon(Icons.Rounded.WarningAmber, null, tint = LocalMiuixTokens.current.warning, modifier = Modifier.size(19.dp))
-        RunStatus.FAILED -> Icon(Icons.Rounded.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(19.dp))
-        RunStatus.SKIPPED -> Icon(Icons.Rounded.RemoveCircleOutline, null, tint = LocalMiuixTokens.current.textSecondary, modifier = Modifier.size(19.dp))
+        RunStatus.RUNNING -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 1.8.dp, color = t.accent)
+        RunStatus.SUCCESS -> Icon(Icons.Rounded.CheckCircle, null, tint = t.success, modifier = Modifier.size(19.dp))
+        RunStatus.WARNING -> Icon(Icons.Rounded.WarningAmber, null, tint = t.warning, modifier = Modifier.size(19.dp))
+        RunStatus.FAILED -> Icon(Icons.Rounded.ErrorOutline, null, tint = t.destructive, modifier = Modifier.size(19.dp))
+        RunStatus.SKIPPED -> Icon(Icons.Rounded.RemoveCircleOutline, null, tint = t.mutedForeground, modifier = Modifier.size(19.dp))
     }
 }
 
 private fun elapsedMillis(events: List<RunEvent>, stage: RunStage, now: Long): Long {
-    // 同一阶段可能因断点/重试多次进入 RUNNING；只按最近一次进入运行态计时。
     val start = events.lastOrNull { it.stage == stage && it.status == RunStatus.RUNNING }?.atMillis ?: return -1L
     val end = events.lastOrNull { it.stage == stage && it.status != RunStatus.RUNNING && it.atMillis >= start }?.atMillis ?: now
     return (end - start).coerceAtLeast(0L)
