@@ -2,9 +2,11 @@
 
 ## Sepia
 
-琅嬛内置的“Sepia 叙事去 AI 化”写作方法适配自
-[Nanako0129/sepia](https://github.com/Nanako0129/sepia)，固定参考版本
-`94f6dc2fc1eaff50570e735f2ae397eedbd49782`。
+琅嬛内置的“Sepia 叙事质量引擎”写作方法适配自
+[Nanako0129/sepia](https://github.com/Nanako0129/sepia)，当前适配 Sepia v0.7.0，固定参考 revision
+`a0a374014141d929edec356fb86a5191d9eae6f7`。
+
+琅嬛只采用其 fiction / narrative 路径，并保留自身 Canon、长期记忆、时间线、章节合同、Candidate 审批与 Novel Skill OS 路由边界。
 
 MIT License
 

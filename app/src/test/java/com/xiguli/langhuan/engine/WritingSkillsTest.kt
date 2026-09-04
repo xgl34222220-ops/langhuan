@@ -53,28 +53,30 @@ class WritingSkillsTest {
     }
 
     @Test
-    fun sepiaSkillKeepsAttributionAndUsesV041LayeredDiagnosis() {
-        val sepia = WritingSkillCatalog.all.first { it.id == "sepia-fiction" }
+    fun sepiaSkillKeepsAttributionAndUsesV070NarrativeQualityContract() {
+        val sepia = WritingSkillCatalog.all.first { it.id == SepiaNarrativeEngine.SKILL_ID }
 
-        assertEquals("0.4.1-adapted", sepia.version)
+        assertEquals("${SepiaNarrativeEngine.UPSTREAM_VERSION}-adapted", sepia.version)
         assertEquals("MIT", sepia.license)
         assertEquals("Nanako Tsai", sepia.author)
         assertEquals("https://github.com/Nanako0129/sepia", sepia.sourceUrl)
-        assertEquals("ac2f06e8aa3d5a7ea3052e80e5815818322d688a", sepia.sourceRevision)
+        assertEquals(SepiaNarrativeEngine.UPSTREAM_REVISION, sepia.sourceRevision)
 
         val guidance = WritingSkillCatalog.guidance(sepia, AiTaskType.EDITOR_REVIEW)
-        assertTrue(guidance.contains("叙事结构"))
-        assertTrue(guidance.contains("段落/信息推进"))
-        assertTrue(guidance.contains("词句表面"))
-        assertTrue(guidance.contains("A→E"))
+        assertTrue(guidance.contains("operation=review"))
+        assertTrue(guidance.contains("只诊断不修改"))
+        assertTrue(guidance.contains("叙事架构"))
+        assertTrue(guidance.contains("QUD"))
+        assertTrue(guidance.contains("中文校准"))
+        assertTrue(guidance.contains("句子节奏"))
         assertTrue(guidance.contains("3-5"))
-        assertTrue(guidance.contains("只诊断，不直接改"))
-        assertTrue(guidance.contains("绝不为了增加“人味”发明具体信息"))
+        assertTrue(guidance.contains("绝不根据正文猜作者模型"))
+        assertTrue(guidance.contains("绝不为了具体感发明信息"))
     }
 
     @Test
     fun sepiaIsEnabledForWritingEditingAndAutonomousPlanningByDefault() {
-        val sepia = WritingSkillCatalog.all.first { it.id == "sepia-fiction" }
+        val sepia = WritingSkillCatalog.all.first { it.id == SepiaNarrativeEngine.SKILL_ID }
         val binding = WritingSkillCatalog.defaultBinding(sepia)
 
         assertTrue(AiTaskType.PROSE_AUTHOR in binding.tasks)
