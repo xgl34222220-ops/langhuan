@@ -44,9 +44,7 @@ private data class ReaderPagePieceV16(
 /**
  * Compose-native pagination.
  *
- * The previous reader measured with Android StaticLayout/Typeface.DEFAULT and rendered with Compose
- * Text/FontFamily/TextIndent. That guaranteed drift. V16 measures the real safe window with
- * TextMeasurer and the exact body/title/header styles used by ReaderPagedLayoutV14.
+ * Measurement and rendering use the same Compose TextMeasurer/TextStyle/FontFamily/TextIndent stack.
  */
 @Composable
 internal fun rememberReaderMeasuredPaginationV16(
@@ -240,7 +238,19 @@ private fun paginateReaderV16(
                 style = style,
                 widthPx = widthPx,
             )
-            val safeEnd = splitEnd.coerceIn(cursor + 1, paragraph.end)
+
+            // Critical pagination rule: if even one complete glyph line does not fit in the
+            // remaining height, do not force a character into this page. The old fallback always
+            // returned start + 1 and produced the exact "half a line above the footer" artifact.
+            if (splitEnd <= cursor && pieces.isNotEmpty()) break
+
+            val safeEnd = if (splitEnd > cursor) {
+                splitEnd.coerceAtMost(paragraph.end)
+            } else {
+                // A completely empty page should always have enough body height for one line, but
+                // keep a progress fallback so malformed metrics can never create an infinite loop.
+                (cursor + 1).coerceAtMost(paragraph.end)
+            }
             if (gap > 0) usedHeight += gap
             pieces += ReaderPagePieceV16(cursor, safeEnd, startsParagraph)
             cursor = safeEnd
@@ -311,7 +321,7 @@ private fun findReaderSplitV16(
 ): Int {
     var low = (start + 1).coerceAtMost(end)
     var high = end
-    var best = low
+    var best = start
     while (low <= high) {
         val mid = low + (high - low) / 2
         val height = measureReaderTextHeightV16(
@@ -327,5 +337,5 @@ private fun findReaderSplitV16(
             high = mid - 1
         }
     }
-    return best.coerceIn(start + 1, end)
+    return best.coerceIn(start, end)
 }
