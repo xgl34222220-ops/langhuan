@@ -2,10 +2,7 @@ package com.xiguli.langhuan.ui
 
 import androidx.compose.runtime.Composable
 
-/**
- * Compatibility entry kept for the current root router.
- * The actual shelf is the Qingmo-inspired V6 implementation.
- */
+/** Compatibility entry kept for the current root router. */
 @Composable
 fun ShelfLibraryV5(
     state: LibraryExperienceState,
@@ -19,7 +16,7 @@ fun ShelfLibraryV5(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
-) = ShelfQingmoV6(
+) = ShelfQingmoV7(
     state = state,
     importState = importState,
     openingBookId = openingBookId,
