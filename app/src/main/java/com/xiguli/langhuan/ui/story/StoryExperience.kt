@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -25,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 /**
  * Player-facing story surface. The V3→V17 wrapper stack is temporarily kept alive invisibly so
@@ -165,7 +165,7 @@ private fun StoryImmersiveSurface(
                             minLines = 1,
                             maxLines = 4,
                             enabled = !state.busy,
-                            shape = RoundedCornerShape(t.radiusLg),
+                            shape = LanghuanShape.panel,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = t.card,
                                 unfocusedContainerColor = t.card,
@@ -202,7 +202,7 @@ private fun StoryImmersiveSurface(
                 item {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusLg),
+                        shape = LanghuanShape.panel,
                         color = t.destructive.copy(alpha = .08f),
                         border = BorderStroke(1.dp, t.destructive.copy(alpha = .2f)),
                     ) {
@@ -252,7 +252,7 @@ private fun StoryImmersiveSurface(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Surface(
                             modifier = Modifier.widthIn(max = 300.dp),
-                            shape = RoundedCornerShape(18.dp, 18.dp, 5.dp, 18.dp),
+                            shape = LanghuanShape.bubbleOutgoing,
                             color = t.foreground,
                         ) {
                             Text(
@@ -267,7 +267,7 @@ private fun StoryImmersiveSurface(
                 item(key = "story-${turn.id}") {
                     Column(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = RoundedCornerShape(99.dp), color = t.warmSurface) {
+                            Surface(shape = LanghuanShape.pill, color = t.warmSurface) {
                                 Icon(Icons.Rounded.AutoAwesome, null, Modifier.padding(7.dp).size(15.dp), tint = t.accent)
                             }
                             Text("琅嬛", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = t.foreground)
@@ -293,7 +293,7 @@ private fun StoryImmersiveSurface(
             }
             state.error?.let { error ->
                 item {
-                    Surface(shape = RoundedCornerShape(t.radiusMd), color = t.destructive.copy(alpha = .08f), border = BorderStroke(1.dp, t.destructive.copy(alpha = .2f))) {
+                    Surface(shape = LanghuanShape.card, color = t.destructive.copy(alpha = .08f), border = BorderStroke(1.dp, t.destructive.copy(alpha = .2f))) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(error, Modifier.weight(1f), color = t.destructive, style = MaterialTheme.typography.bodySmall)
                             IconButton(onClick = vm::clearError) { Icon(Icons.Rounded.Close, "关闭", tint = t.destructive) }
@@ -332,7 +332,7 @@ private fun StoryImmersiveSurface(
 @Composable
 private fun StoryContextChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
     val t = LocalLanghuanUiTokens.current
-    Surface(shape = RoundedCornerShape(99.dp), color = t.muted) {
+    Surface(shape = LanghuanShape.pill, color = t.muted) {
         Row(Modifier.padding(horizontal = 9.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(13.dp), tint = t.mutedForeground)
             Text(text, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = t.mutedForeground, maxLines = 1)
@@ -360,7 +360,7 @@ private fun StoryBranchSheet(
             sessions.sortedByDescending { it.updatedAt }.forEach { session ->
                 Surface(
                     modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onSelect(session.id) },
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                     color = if (session.id == activeId) t.warmSurface else t.card,
                     border = BorderStroke(1.dp, if (session.id == activeId) t.accent.copy(alpha = .28f) else t.border),
                 ) {
@@ -435,7 +435,7 @@ private fun StoryContextRow(label: String, value: String) {
 @Composable
 private fun StoryCountCard(label: String, value: Int, modifier: Modifier = Modifier) {
     val t = LocalLanghuanUiTokens.current
-    Surface(modifier, shape = RoundedCornerShape(t.radiusMd), color = t.muted, border = BorderStroke(1.dp, t.border)) {
+    Surface(modifier, shape = LanghuanShape.card, color = t.muted, border = BorderStroke(1.dp, t.border)) {
         Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(value.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = t.foreground)
             Text(label, style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)

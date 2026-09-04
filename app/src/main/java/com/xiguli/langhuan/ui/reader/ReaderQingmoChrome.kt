@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BookmarkAdd
@@ -46,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xiguli.langhuan.domain.ChapterDraft
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlin.math.roundToInt
 
 private enum class ReaderQingmoTab(val label: String) {
@@ -100,7 +100,7 @@ internal fun ReaderQingmoChrome(
             color = palette.chrome,
             contentColor = palette.foreground,
             shadowElevation = 4.dp,
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
                 Box(Modifier.fillMaxWidth().height(16.dp), contentAlignment = Alignment.Center) {
@@ -351,7 +351,7 @@ private fun ReaderQingmoChoice(
 ) {
     Surface(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
+        shape = LanghuanShape.chip,
         color = if (selected) palette.foreground.copy(alpha = .10f) else palette.secondary.copy(alpha = .06f),
     ) {
         Text(

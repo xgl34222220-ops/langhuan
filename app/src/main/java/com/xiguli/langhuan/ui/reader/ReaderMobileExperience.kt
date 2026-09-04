@@ -34,7 +34,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -103,6 +102,7 @@ import com.xiguli.langhuan.ui.design.ShadcnButtonSize
 import com.xiguli.langhuan.ui.design.ShadcnButtonVariant
 import com.xiguli.langhuan.ui.design.ShadcnIconButton
 import com.xiguli.langhuan.ui.design.ShadcnInput
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -695,7 +695,7 @@ private fun MobileReaderChrome(
 
         Surface(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-            shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+            shape = LanghuanShape.sheetTop,
             color = palette.chrome.copy(alpha = .99f),
             contentColor = palette.foreground,
             shadowElevation = 12.dp,
@@ -722,7 +722,7 @@ private fun MobileReaderChrome(
 @Composable
 private fun MobileChapterButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     val color = androidx.compose.material3.LocalContentColor.current
-    Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(12.dp), color = Color.Transparent) {
+    Surface(onClick = onClick, enabled = enabled, shape = LanghuanShape.cover, color = Color.Transparent) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             if (label == "上一章") Icon(Icons.Rounded.KeyboardArrowLeft, null, Modifier.size(18.dp), tint = color.copy(alpha = if (enabled) .82f else .30f))
             Text(label, style = MaterialTheme.typography.labelMedium, color = color.copy(alpha = if (enabled) .82f else .30f))
@@ -759,7 +759,7 @@ private fun MobileReaderDirectory(
     val filtered = remember(chapters, query) {
         chapters.filter { query.isBlank() || readerDisplayChapterTitleV13(it.title, it.chapterNumber).contains(query, true) }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background, shape = LanghuanShape.sheetTop) {
         Column(Modifier.fillMaxWidth().heightIn(max = 690.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -831,7 +831,7 @@ private fun MobileReaderSettings(
         Triple("green", "护眼", Color(0xFFE8F0E5)),
         Triple("night", "夜间", Color(0xFF191816)),
     )
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background, shape = LanghuanShape.sheetTop) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -869,7 +869,7 @@ private fun MobileReaderSettings(
             MobileSettingLabel("字体与字号")
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 color = t.card,
                 border = BorderStroke(1.dp, t.border),
             ) {
@@ -902,7 +902,7 @@ private fun MobileReaderSettings(
             MobileSettingLabel("排版密度")
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 color = t.card,
                 border = BorderStroke(1.dp, t.border),
             ) {
@@ -968,7 +968,7 @@ private fun MobileChoiceChip(text: String, selected: Boolean, modifier: Modifier
     Surface(
         onClick = onClick,
         modifier = modifier.height(40.dp),
-        shape = RoundedCornerShape(13.dp),
+        shape = LanghuanShape.cover,
         color = if (selected) t.foreground else t.card,
         contentColor = if (selected) t.primaryForeground else t.foreground,
         border = BorderStroke(1.dp, if (selected) t.foreground else t.border),
@@ -1003,7 +1003,7 @@ private fun MobilePresetRow(
                 Surface(
                     onClick = { onValue(value) },
                     modifier = Modifier.weight(1f).height(34.dp),
-                    shape = RoundedCornerShape(11.dp),
+                    shape = LanghuanShape.chip,
                     color = if (selected) t.muted else Color.Transparent,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -1028,17 +1028,17 @@ private fun MobileBookInfoSheet(
     val cover = remember(book.coverPath) {
         book.coverPath.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background, shape = LanghuanShape.sheetTop) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Surface(
                     modifier = Modifier.width(92.dp).aspectRatio(.70f),
-                    shape = RoundedCornerShape(13.dp),
+                    shape = LanghuanShape.cover,
                     color = t.muted,
                     border = BorderStroke(1.dp, t.border),
                 ) {
                     if (cover != null) {
-                        Image(cover.asImageBitmap(), book.title, Modifier.fillMaxSize().clip(RoundedCornerShape(13.dp)), contentScale = ContentScale.Crop)
+                        Image(cover.asImageBitmap(), book.title, Modifier.fillMaxSize().clip(LanghuanShape.cover), contentScale = ContentScale.Crop)
                     } else {
                         Box(Modifier.fillMaxSize().padding(10.dp), contentAlignment = Alignment.Center) {
                             Text(book.title, style = MaterialTheme.typography.titleSmall, color = t.foreground, fontWeight = FontWeight.SemiBold, maxLines = 4, overflow = TextOverflow.Ellipsis)

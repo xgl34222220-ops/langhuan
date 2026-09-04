@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -30,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private enum class HomeFilterV4(val label: String) { ALL("全部"), CREATED("创作"), LOCAL("本地") }
 private enum class HomeLayoutV4 { GRID, LIST }
@@ -159,7 +159,7 @@ fun LanghuanHomeV4(
             ) {
                 Box(
                     Modifier
-                        .clip(RoundedCornerShape(26.dp))
+                        .clip(LanghuanShape.sheet)
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = .94f))
                         .padding(horizontal = 24.dp, vertical = 20.dp),
                 ) {
@@ -185,7 +185,7 @@ fun LanghuanHomeV4(
         ModalBottomSheet(onDismissRequest = { actionBook = null }, containerColor = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    CoverPreviewV3(book.coverPath, book.title, Modifier.width(54.dp).height(78.dp).clip(RoundedCornerShape(10.dp)))
+                    CoverPreviewV3(book.coverPath, book.title, Modifier.width(54.dp).height(78.dp).clip(LanghuanShape.cover))
                     Column(Modifier.padding(start = 14.dp).weight(1f)) {
                         Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2)
                         Text(
@@ -239,7 +239,7 @@ fun LanghuanHomeV4(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(18.dp))
+                                .clip(LanghuanShape.card)
                                 .combinedClickable(
                                     onClick = { tavernPicker = false; onOpenTavern(book.id) },
                                     onLongClick = { actionBook = book },
@@ -247,7 +247,7 @@ fun LanghuanHomeV4(
                                 .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            CoverPreviewV3(book.coverPath, book.title, Modifier.width(48.dp).height(68.dp).clip(RoundedCornerShape(9.dp)))
+                            CoverPreviewV3(book.coverPath, book.title, Modifier.width(48.dp).height(68.dp).clip(LanghuanShape.cover))
                             Column(Modifier.padding(start = 13.dp).weight(1f)) {
                                 Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
@@ -267,7 +267,7 @@ fun LanghuanHomeV4(
     deleteBook?.let { book ->
         AlertDialog(
             onDismissRequest = { deleteBook = null },
-            shape = RoundedCornerShape(28.dp),
+            shape = LanghuanShape.sheet,
             title = { Text("删除《${book.title}》？") },
             text = { Text("会同时删除正文、章节版本、长期记忆和琅嬛保存的本地封面。这个操作不能撤销。") },
             confirmButton = {
@@ -336,9 +336,9 @@ private fun HomeHeaderV4(
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(LanghuanShape.panel)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = .72f))
-                    .border(.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f), RoundedCornerShape(22.dp))
+                    .border(.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f), LanghuanShape.panel)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -409,8 +409,8 @@ private fun HomeBookGridItemV4(book: ReaderBookUi, onOpen: () -> Unit, onMore: (
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(.68f)
-                .shadow(9.dp, RoundedCornerShape(12.dp), clip = false)
-                .clip(RoundedCornerShape(12.dp))
+                .shadow(9.dp, LanghuanShape.cover, clip = false)
+                .clip(LanghuanShape.cover)
                 .combinedClickable(onClick = onOpen, onLongClick = onMore),
         ) {
             CoverPreviewV3(book.coverPath, book.title, Modifier.fillMaxSize())
@@ -454,7 +454,7 @@ private fun HomeBookListItemV4(book: ReaderBookUi, onOpen: () -> Unit, onMore: (
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CoverPreviewV3(book.coverPath, book.title, Modifier.width(58.dp).height(84.dp).clip(RoundedCornerShape(10.dp)))
+        CoverPreviewV3(book.coverPath, book.title, Modifier.width(58.dp).height(84.dp).clip(LanghuanShape.cover))
         Column(Modifier.padding(start = 14.dp).weight(1f)) {
             Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
@@ -486,7 +486,7 @@ private fun HomeEmptyV4(query: String, onImport: () -> Unit, onCreate: () -> Uni
             Text("导入一本开始读，或者直接和 AI 聊出一本新的。", modifier = Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TextButton(onClick = onImport) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("导入") }
-                Button(onClick = onCreate, shape = RoundedCornerShape(18.dp)) { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(6.dp)); Text("开始创作") }
+                Button(onClick = onCreate, shape = LanghuanShape.card) { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(6.dp)); Text("开始创作") }
             }
         }
     }
@@ -494,7 +494,7 @@ private fun HomeEmptyV4(query: String, onImport: () -> Unit, onCreate: () -> Uni
 
 @Composable
 private fun HomeBottomNavV4(modifier: Modifier = Modifier, onCreate: () -> Unit, onTavern: () -> Unit) {
-    val shape = RoundedCornerShape(31.dp)
+    val shape = LanghuanShape.sheet
     Box(
         modifier
             .navigationBarsPadding()
@@ -524,7 +524,7 @@ private fun HomeBottomNavV4(modifier: Modifier = Modifier, onCreate: () -> Unit,
 private fun HomeNavItemV4(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
-            .clip(RoundedCornerShape(22.dp))
+            .clip(LanghuanShape.panel)
             .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onClick)
             .padding(horizontal = 15.dp, vertical = 9.dp),
@@ -548,7 +548,7 @@ private fun HomeSheetRowV4(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(LanghuanShape.card)
             .combinedClickable(onClick = onClick, onLongClick = onClick)
             .padding(horizontal = 4.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,

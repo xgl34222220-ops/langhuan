@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoFixHigh
@@ -62,6 +61,7 @@ import androidx.work.WorkManager
 import com.xiguli.langhuan.engine.ReferenceDistillationCheckpointStore
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
 import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -144,7 +144,7 @@ fun AiFirstShelf(
                     )
                 }
                 if (state.stories.isNotEmpty()) {
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                         IconButton(onClick = onCloseShelf) { Icon(Icons.Rounded.Close, "进入工作台") }
                     }
                 }
@@ -153,7 +153,7 @@ fun AiFirstShelf(
 
         item {
             Surface(
-                shape = RoundedCornerShape(28.dp),
+                shape = LanghuanShape.sheet,
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 tonalElevation = 1.dp,
             ) {
@@ -162,7 +162,7 @@ fun AiFirstShelf(
                         onClick = if (aiReady) onStartCreation else onConfigureAi,
                         modifier = Modifier.fillMaxWidth().height(58.dp),
                         enabled = !state.isBusy,
-                        shape = RoundedCornerShape(19.dp),
+                        shape = LanghuanShape.card,
                     ) {
                         Icon(if (aiReady) Icons.Rounded.AutoAwesome else Icons.Rounded.Key, null)
                         Spacer(Modifier.width(8.dp))
@@ -174,7 +174,7 @@ fun AiFirstShelf(
                             onClick = onConfigureAi,
                             modifier = Modifier.weight(1f).height(50.dp),
                             enabled = !state.isBusy,
-                            shape = RoundedCornerShape(17.dp),
+                            shape = LanghuanShape.card,
                         ) {
                             Icon(Icons.Rounded.Key, null)
                             Spacer(Modifier.width(6.dp))
@@ -184,7 +184,7 @@ fun AiFirstShelf(
                             onClick = if (aiReady) onDistillReference else onConfigureAi,
                             modifier = Modifier.weight(1f).height(50.dp),
                             enabled = !state.isBusy,
-                            shape = RoundedCornerShape(17.dp),
+                            shape = LanghuanShape.card,
                         ) {
                             Icon(Icons.Rounded.AutoFixHigh, null)
                             Spacer(Modifier.width(6.dp))
@@ -250,14 +250,14 @@ fun AiFirstShelf(
         if (state.stories.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(28.dp),
+                    shape = LanghuanShape.sheet,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
                 ) {
                     Column(
                         Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Surface(shape = LanghuanShape.panel, color = MaterialTheme.colorScheme.primaryContainer) {
                             Icon(
                                 Icons.Rounded.AutoStories,
                                 null,
@@ -290,7 +290,7 @@ fun AiFirstShelf(
 @Composable
 private fun ShelfPill(text: String) {
     Surface(
-        shape = RoundedCornerShape(99.dp),
+        shape = LanghuanShape.pill,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Text(
@@ -343,7 +343,7 @@ private fun ReferenceDistillationTaskCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = LanghuanShape.panel,
         color = when (task.state) {
             WorkInfo.State.FAILED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.42f)
             WorkInfo.State.SUCCEEDED -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.40f)
@@ -354,7 +354,7 @@ private fun ReferenceDistillationTaskCard(
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = RoundedCornerShape(13.dp),
+                    shape = LanghuanShape.cover,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                 ) {
                     Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp))
@@ -376,14 +376,14 @@ private fun ReferenceDistillationTaskCard(
                 Modifier
                     .fillMaxWidth()
                     .height(6.dp)
-                    .clip(RoundedCornerShape(99.dp))
+                    .clip(LanghuanShape.pill)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Box(
                     Modifier
                         .fillMaxHeight()
                         .fillMaxWidth(progress / 100f)
-                        .clip(RoundedCornerShape(99.dp))
+                        .clip(LanghuanShape.pill)
                         .background(MaterialTheme.colorScheme.primary)
                 )
             }
@@ -404,7 +404,7 @@ private fun ReferenceDistillationTaskCard(
                     ShelfPill("锁定模型")
                     ShelfPill(if (task.stage.startsWith("aggregate")) "聚合断点" else "批次断点")
                 }
-                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
+                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.cover) {
                     Icon(Icons.Rounded.Close, null)
                     Spacer(Modifier.width(7.dp))
                     Text("取消后台蒸馏")
@@ -418,7 +418,7 @@ private fun ReferenceDistillationTaskCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                FilledTonalButton(onClick = onOpenReport, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
+                FilledTonalButton(onClick = onOpenReport, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.cover) {
                     Icon(Icons.Rounded.AutoFixHigh, null)
                     Spacer(Modifier.width(7.dp))
                     Text("查看 Story + Style DNA")
@@ -436,7 +436,7 @@ private fun ReferenceDistillationTaskCard(
                     )
                 }
                 if (task.sourceAvailable) {
-                    FilledTonalButton(onClick = onRetry, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
+                    FilledTonalButton(onClick = onRetry, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.cover) {
                         Icon(Icons.Rounded.Refresh, null)
                         Spacer(Modifier.width(7.dp))
                         Text(
@@ -454,7 +454,7 @@ private fun ReferenceDistillationTaskCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
+                OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.cover) {
                     Icon(Icons.Rounded.DeleteOutline, null)
                     Spacer(Modifier.width(7.dp))
                     Text("删除失败记录")
@@ -528,7 +528,7 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
 private fun AiShelfBookCard(book: ReaderBookUi, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
+        shape = LanghuanShape.sheet,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 1.dp,
     ) {
@@ -575,11 +575,11 @@ private fun AiShelfCover(book: ReaderBookUi, modifier: Modifier) {
         Image(
             bitmap = bitmap,
             contentDescription = book.title,
-            modifier = modifier.clip(RoundedCornerShape(18.dp)),
+            modifier = modifier.clip(LanghuanShape.card),
             contentScale = ContentScale.Crop,
         )
     } else {
-        Surface(modifier = modifier, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+        Surface(modifier = modifier, shape = LanghuanShape.card, color = MaterialTheme.colorScheme.primaryContainer) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.MenuBook, null, tint = MaterialTheme.colorScheme.primary)

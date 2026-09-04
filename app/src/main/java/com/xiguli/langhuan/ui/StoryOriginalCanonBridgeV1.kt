@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material3.Icon
@@ -26,6 +25,7 @@ import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.engine.HybridMemoryRetriever
 import com.xiguli.langhuan.engine.MemoryCandidate
 import com.xiguli.langhuan.engine.RetrievedContextItem
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -185,7 +185,7 @@ fun StoryPlayPanelV4(
         if (session != null && (bridge.loading || bridge.items.isNotEmpty())) {
             Surface(
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = LanghuanShape.card,
                 tonalElevation = 3.dp,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {

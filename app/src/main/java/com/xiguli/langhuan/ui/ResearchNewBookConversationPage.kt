@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -32,6 +31,7 @@ import com.xiguli.langhuan.engine.ResearchFallbackEngine
 import com.xiguli.langhuan.engine.WebResearchEngine
 import com.xiguli.langhuan.engine.WebResearchSource
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.launch
 
 private const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
@@ -345,7 +345,7 @@ fun ResearchNewBookConversationPage(
                 item {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusMd),
+                        shape = LanghuanShape.card,
                         color = t.destructive.copy(alpha = .08f),
                         border = BorderStroke(1.dp, t.destructive.copy(alpha = .22f)),
                     ) {
@@ -466,7 +466,7 @@ private fun ResearchWorkspaceDock(
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusLg),
+                shape = LanghuanShape.panel,
                 color = t.card,
                 border = BorderStroke(1.dp, t.border),
             ) {
@@ -514,7 +514,7 @@ private fun ResearchDockToggle(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = if (selected) t.warmSurface else t.card,
         border = BorderStroke(1.dp, if (selected) t.accent.copy(alpha = .35f) else t.border),
     ) {
@@ -536,7 +536,7 @@ private fun ResearchDockAction(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = if (accent) t.accent else t.foreground,
         contentColor = if (accent) t.accentForeground else t.primaryForeground,
     ) {
@@ -552,7 +552,7 @@ private fun ResearchWelcomeCard(webResearchEnabled: Boolean, archiveCount: Int) 
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -681,7 +681,7 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.warmSurface,
         border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
     ) {
@@ -712,7 +712,7 @@ private fun ResearchChatBubble(message: CreationChatMessage) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Surface(
             modifier = Modifier.fillMaxWidth(if (user) .86f else .96f),
-            shape = RoundedCornerShape(t.radiusLg),
+            shape = LanghuanShape.panel,
             color = if (user) t.foreground else t.card,
             contentColor = if (user) t.primaryForeground else t.foreground,
             border = if (user) null else BorderStroke(1.dp, t.border),
@@ -729,7 +729,7 @@ private fun ResearchChatBubble(message: CreationChatMessage) {
                 message.attachments.forEach { attachment ->
                     Spacer(Modifier.height(8.dp))
                     Surface(
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         color = if (user) t.primaryForeground.copy(alpha = .08f) else t.muted,
                     ) {
                         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -755,7 +755,7 @@ private fun ResearchStatusCard(message: String, targets: List<String>, sources: 
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.warmSurface,
         border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
     ) {
@@ -779,7 +779,7 @@ private fun ResearchProposalCard(proposal: NewBookProposal, busy: Boolean, onNex
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -815,7 +815,7 @@ private fun ResearchFoundationCard(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -826,7 +826,7 @@ private fun ResearchFoundationCard(
                     Text(foundation.title, style = MaterialTheme.typography.headlineSmall, color = t.foreground)
                     Text("${foundation.genre} · ${foundation.targetWords / 10_000} 万字", color = t.mutedForeground)
                 }
-                Surface(shape = RoundedCornerShape(999.dp), color = if (outOfSync) t.warning.copy(alpha = .12f) else t.success.copy(alpha = .12f)) {
+                Surface(shape = LanghuanShape.pill, color = if (outOfSync) t.warning.copy(alpha = .12f) else t.success.copy(alpha = .12f)) {
                     Text(
                         if (outOfSync) "待同步" else "已同步",
                         Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
@@ -841,7 +841,7 @@ private fun ResearchFoundationCard(
             Text("${foundation.masterObjective}\n${foundation.masterConflict}\n${foundation.masterTurningPoint}", color = t.foreground)
             Text("角色 ${foundation.characters.size} · 分卷 ${foundation.volumes.size} · 伏笔 ${foundation.foreshadowing.size} · 圣经 ${foundation.bible.size}", color = t.mutedForeground)
             if (outOfSync) {
-                Surface(shape = RoundedCornerShape(t.radiusMd), color = t.warning.copy(alpha = .08f), border = BorderStroke(1.dp, t.warning.copy(alpha = .18f))) {
+                Surface(shape = LanghuanShape.card, color = t.warning.copy(alpha = .08f), border = BorderStroke(1.dp, t.warning.copy(alpha = .18f))) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("聊天里有新要求，当前蓝图仍是上一次同步版本。", color = t.foreground)
                         pendingProposal?.let { proposal ->

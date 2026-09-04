@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -55,6 +54,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import kotlinx.coroutines.delay
 
@@ -117,7 +117,7 @@ fun RunCenterPage(
                             ) {
                                 Surface(
                                     modifier = Modifier.size(48.dp),
-                                    shape = RoundedCornerShape(t.radiusMd),
+                                    shape = LanghuanShape.card,
                                     color = t.muted,
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
@@ -238,7 +238,7 @@ private fun RunCenterCard(
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(
                     modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = statusColor.copy(alpha = .12f),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -295,7 +295,7 @@ private fun RunCenterCard(
             if (item.preview.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.muted,
                     border = BorderStroke(1.dp, t.border),
                 ) {
@@ -321,7 +321,7 @@ private fun RunCenterCard(
                     onClick = onAbandon,
                     enabled = !isLive,
                     modifier = Modifier.weight(1f).height(42.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     border = BorderStroke(1.dp, t.border),
                 ) {
                     Icon(Icons.Rounded.DeleteOutline, null, Modifier.size(17.dp))
@@ -331,7 +331,7 @@ private fun RunCenterCard(
                 Button(
                     onClick = onOpen,
                     modifier = Modifier.weight(1f).height(42.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = t.foreground,
                         contentColor = t.primaryForeground,
@@ -351,7 +351,7 @@ private fun RunStatusPill(text: String, color: Color) {
     Surface(
         color = color.copy(alpha = .10f),
         contentColor = color,
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         border = BorderStroke(1.dp, color.copy(alpha = .20f)),
     ) {
         Text(

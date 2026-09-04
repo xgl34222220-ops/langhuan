@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -23,6 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private enum class StoryManagementSection(val label: String, val icon: ImageVector) {
     ROLE("角色", Icons.Rounded.Person),
@@ -147,7 +147,7 @@ fun StoryManagementScreen(
             StoryPlayPanelV17(book, libraryState, aiReady, onAiSetup, onAdopted)
             Surface(
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
-                shape = RoundedCornerShape(99.dp),
+                shape = LanghuanShape.pill,
                 color = t.card.copy(alpha = .96f),
                 border = BorderStroke(1.dp, t.border),
                 shadowElevation = 4.dp,
@@ -314,7 +314,7 @@ private fun StoryWorldSection(vm: StoryPlayV3ViewModel, state: StoryPlayV3UiStat
             Spacer(Modifier.width(7.dp))
             Text("保存世界状态")
         }
-        Surface(shape = RoundedCornerShape(t.radiusMd), color = t.muted, border = BorderStroke(1.dp, t.border)) {
+        Surface(shape = LanghuanShape.card, color = t.muted, border = BorderStroke(1.dp, t.border)) {
             Row(Modifier.fillMaxWidth().padding(13.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 StoryManagementStat("知识", state.runtime?.knowledge?.size ?: 0)
                 StoryManagementStat("关系", state.runtime?.relationships?.size ?: 0)
@@ -384,7 +384,7 @@ private fun StoryNpcMemorySection(
             return@LazyColumn
         }
         item {
-            Surface(shape = RoundedCornerShape(t.radiusLg), color = t.card, border = BorderStroke(1.dp, t.border)) {
+            Surface(shape = LanghuanShape.panel, color = t.card, border = BorderStroke(1.dp, t.border)) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("自动沉淀长期记忆", fontWeight = FontWeight.SemiBold, color = t.foreground)
@@ -442,7 +442,7 @@ private fun StoryNpcMemorySection(
                 item { Text("${selected} 还没有长期记忆。", color = t.mutedForeground) }
             } else {
                 items(memories, key = { it.id }) { memory ->
-                    Surface(shape = RoundedCornerShape(t.radiusMd), color = t.card, border = BorderStroke(1.dp, t.border)) {
+                    Surface(shape = LanghuanShape.card, color = t.card, border = BorderStroke(1.dp, t.border)) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("${memory.privacy.label} · 重要度 ${memory.importance}", style = MaterialTheme.typography.labelSmall, color = t.accent)
@@ -463,7 +463,7 @@ private fun StoryNpcMemorySection(
                 item { Text("暂无长期计划。", color = t.mutedForeground) }
             } else {
                 items(plans, key = { it.id }) { plan ->
-                    Surface(shape = RoundedCornerShape(t.radiusMd), color = t.card, border = BorderStroke(1.dp, t.border)) {
+                    Surface(shape = LanghuanShape.card, color = t.card, border = BorderStroke(1.dp, t.border)) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("${plan.status.label} · P${plan.priority}", style = MaterialTheme.typography.labelSmall, color = if (plan.status == NpcPlanStatusV1.ACTIVE) t.success else t.mutedForeground)
@@ -541,7 +541,7 @@ private fun StoryEntrySnapshotSection(
                 warning = snapshotState.error != null,
             )
         } else {
-            Surface(shape = RoundedCornerShape(t.radiusLg), color = t.card, border = BorderStroke(1.dp, t.border)) {
+            Surface(shape = LanghuanShape.panel, color = t.card, border = BorderStroke(1.dp, t.border)) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("自动恢复进入状态", fontWeight = FontWeight.SemiBold, color = t.foreground)
@@ -563,7 +563,7 @@ private fun StoryEntrySnapshotSection(
             if (snapshot.recentEvents.isNotEmpty()) {
                 Text("进入前最近事件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = t.foreground)
                 snapshot.recentEvents.takeLast(5).forEach { event ->
-                    Surface(shape = RoundedCornerShape(t.radiusMd), color = t.card, border = BorderStroke(1.dp, t.border)) {
+                    Surface(shape = LanghuanShape.card, color = t.card, border = BorderStroke(1.dp, t.border)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("第 ${event.chapter} 章${event.storyTime.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}", style = MaterialTheme.typography.labelSmall, color = t.accent)
                             Text(event.summary, color = t.foreground)
@@ -633,7 +633,7 @@ private fun StoryBranchesSection(
         items(state.sessions.sortedByDescending { it.updatedAt }, key = { it.id }) { session ->
             val selected = session.id == state.active?.id
             Surface(
-                shape = RoundedCornerShape(t.radiusLg),
+                shape = LanghuanShape.panel,
                 color = if (selected) t.warmSurface else t.card,
                 border = BorderStroke(1.dp, if (selected) t.accent.copy(alpha = .32f) else t.border),
             ) {
@@ -713,7 +713,7 @@ private fun StoryDraftSection(
             "把演绎整理成小说章节",
             "先生成独立候选，再对比当前正文。只有你明确点击采用，才会先永久备份原稿，再写入新的章节版本。",
         )
-        Surface(shape = RoundedCornerShape(t.radiusLg), color = t.card, border = BorderStroke(1.dp, t.border)) {
+        Surface(shape = LanghuanShape.panel, color = t.card, border = BorderStroke(1.dp, t.border)) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${session?.turns?.size ?: 0} 轮互动", style = MaterialTheme.typography.titleLarge, color = t.foreground, fontWeight = FontWeight.SemiBold)
                 Text("锚点：第 ${session?.anchorChapter ?: 1} 章 · ${session?.anchorTitle.orEmpty().ifBlank { "当前章节" }}", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
@@ -746,7 +746,7 @@ private fun StoryDraftSection(
                 color = t.mutedForeground,
             )
             Text("当前正文", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = t.foreground)
-            Surface(shape = RoundedCornerShape(t.radiusMd), color = t.muted, border = BorderStroke(1.dp, t.border)) {
+            Surface(shape = LanghuanShape.card, color = t.muted, border = BorderStroke(1.dp, t.border)) {
                 SelectionContainer {
                     Text(
                         original?.content?.ifBlank { "（当前章节暂无正文）" } ?: "（未读取到当前正文）",
@@ -757,7 +757,7 @@ private fun StoryDraftSection(
                 }
             }
             Text("候选：${candidate.title}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = t.accent)
-            Surface(shape = RoundedCornerShape(t.radiusMd), color = t.warmSurface, border = BorderStroke(1.dp, t.accent.copy(alpha = .22f))) {
+            Surface(shape = LanghuanShape.card, color = t.warmSurface, border = BorderStroke(1.dp, t.accent.copy(alpha = .22f))) {
                 SelectionContainer {
                     Text(candidate.content, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = t.foreground)
                 }
@@ -807,7 +807,7 @@ private fun storyDraftCandidateForManagement(novelId: String, session: StoryPlay
 private fun StoryManagementHeader(icon: ImageVector, title: String, description: String) {
     val t = LocalLanghuanUiTokens.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Surface(shape = RoundedCornerShape(t.radiusMd), color = t.warmSurface) {
+        Surface(shape = LanghuanShape.card, color = t.warmSurface) {
             Icon(icon, null, Modifier.padding(9.dp).size(20.dp), tint = t.accent)
         }
         Column(Modifier.padding(start = 11.dp).weight(1f)) {
@@ -841,7 +841,7 @@ private fun StoryManagementNotice(
         else -> t.accent
     }
     Surface(
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = tone.copy(alpha = .07f),
         border = BorderStroke(1.dp, tone.copy(alpha = .2f)),
     ) {
@@ -858,7 +858,7 @@ private fun StoryManagementNotice(
 @Composable
 private fun StorySnapshotField(label: String, value: String) {
     val t = LocalLanghuanUiTokens.current
-    Surface(shape = RoundedCornerShape(t.radiusMd), color = t.card, border = BorderStroke(1.dp, t.border)) {
+    Surface(shape = LanghuanShape.card, color = t.card, border = BorderStroke(1.dp, t.border)) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
             Text(value, Modifier.padding(top = 3.dp), color = t.foreground)
@@ -871,7 +871,7 @@ private fun StorySnapshotList(label: String, values: List<String>) {
     if (values.isEmpty()) return
     val t = LocalLanghuanUiTokens.current
     Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = t.foreground)
-    Surface(shape = RoundedCornerShape(t.radiusMd), color = t.card, border = BorderStroke(1.dp, t.border)) {
+    Surface(shape = LanghuanShape.card, color = t.card, border = BorderStroke(1.dp, t.border)) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             values.takeLast(12).forEach { value -> Text("• $value", style = MaterialTheme.typography.bodySmall, color = t.foreground) }
         }

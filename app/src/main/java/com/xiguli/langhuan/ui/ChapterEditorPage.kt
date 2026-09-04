@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.StoredChapterVersion
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlin.math.max
 import kotlin.math.min
 
@@ -116,7 +116,7 @@ fun ChapterEditorPage(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -179,12 +179,12 @@ fun ChapterEditorPage(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("章节标题") },
                     singleLine = true,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = LanghuanShape.card,
                 )
             }
 
             item {
-                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.EditNote, null, tint = MaterialTheme.colorScheme.primary)
@@ -204,7 +204,7 @@ fun ChapterEditorPage(
                             minLines = 20,
                             label = { Text("在这里直接修改正文") },
                             placeholder = { Text("可以手写、粘贴，也可以选中一段交给 AI 局部重写。") },
-                            shape = RoundedCornerShape(18.dp),
+                            shape = LanghuanShape.card,
                         )
                     }
                 }
@@ -215,7 +215,7 @@ fun ChapterEditorPage(
                 val learnedRules = profile?.rules.orEmpty()
                     .filter { it.active && it.confidence >= 60 }
                     .sortedByDescending { it.confidence }
-                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Tune, null, tint = MaterialTheme.colorScheme.primary)
@@ -240,7 +240,7 @@ fun ChapterEditorPage(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         learnedRules.take(4).forEach { rule ->
-                            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .28f)) {
+                            Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .28f)) {
                                 Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(rule.instruction, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                     Text("置信 ${rule.confidence} · ${rule.evidenceCount} 次证据", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -263,7 +263,7 @@ fun ChapterEditorPage(
 
             item {
                 Surface(
-                    shape = RoundedCornerShape(22.dp),
+                    shape = LanghuanShape.panel,
                     color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .34f),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -291,7 +291,7 @@ fun ChapterEditorPage(
                             val riskColor = if (chronology.overallRisk.label == "高") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
                             Text("${chronology.overallRisk.label}风险 · ${chronology.anchors.size} 个时间锚点 · ${chronology.findings.size} 个问题", color = riskColor, fontWeight = FontWeight.Bold)
                             chronology.findings.take(6).forEach { finding ->
-                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .72f)) {
+                                Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.surface.copy(alpha = .72f)) {
                                     Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                         Text("${finding.risk.label} · ${finding.code} · 第${finding.paragraph}段", fontWeight = FontWeight.SemiBold, color = if (finding.risk.label == "高") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                                         Text(finding.title, fontWeight = FontWeight.SemiBold)
@@ -321,7 +321,7 @@ fun ChapterEditorPage(
 
             if (selectedText.isNotBlank()) {
                 item {
-                    Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
+                    Surface(shape = LanghuanShape.panel, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.AutoFixHigh, null, tint = MaterialTheme.colorScheme.primary)
@@ -340,7 +340,7 @@ fun ChapterEditorPage(
                                 label = { Text("怎么改（可选）") },
                                 placeholder = { Text("例如：对白更自然；减少网文腔；加强压迫感，但不要改剧情事实") },
                                 minLines = 2,
-                                shape = RoundedCornerShape(16.dp),
+                                shape = LanghuanShape.card,
                             )
                             Button(
                                 onClick = { viewModel.rewriteSelection(selectionStart, selectionEnd, rewriteInstruction) },
@@ -358,7 +358,7 @@ fun ChapterEditorPage(
             }
 
             item {
-                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.FactCheck, null, tint = MaterialTheme.colorScheme.primary)
@@ -385,7 +385,7 @@ fun ChapterEditorPage(
                             Text("${report.overallRisk.label}风险 · 高风险 ${report.highCount} · 中风险 ${report.mediumCount} · 影响后续 ${report.downstreamChapterCount} 章", color = riskColor, fontWeight = FontWeight.Bold)
                             Text(report.recommendation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             report.all.take(8).forEach { impact ->
-                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f)) {
+                                Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f)) {
                                     Column(Modifier.fillMaxWidth().padding(10.dp)) {
                                         Text("${impact.risk.label} · ${impact.kind.label} · ${impact.title}", fontWeight = FontWeight.SemiBold)
                                         Text(impact.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -403,7 +403,7 @@ fun ChapterEditorPage(
                                 }
                             }
                             state.repairPlan?.let { plan ->
-                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .4f)) {
+                                Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .4f)) {
                                     SelectionContainer { Text(plan, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
                                 }
                             }
@@ -413,7 +413,7 @@ fun ChapterEditorPage(
             }
 
             item {
-                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.primary)
@@ -469,15 +469,15 @@ fun ChapterEditorPage(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("应用前会自动把当前原稿建立一个永久版本。AI 只被允许修时间桥、场景归属和硬时间矛盾；请仍然核对下面变化。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .4f)) {
+                    Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .4f)) {
                         SelectionContainer { Text(proposal.diagnosis, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
                     }
                     Text("原文变化段 · ${oldChanged.length} 字", fontWeight = FontWeight.Bold)
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.surfaceVariant) {
                         SelectionContainer { Text(oldChanged.ifBlank { "（无变化）" }, Modifier.padding(12.dp)) }
                     }
                     Text("修复后变化段 · ${newChanged.length} 字", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .42f)) {
+                    Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .42f)) {
                         SelectionContainer { Text(newChanged.ifBlank { "（无变化）" }, Modifier.padding(12.dp)) }
                     }
                 }
@@ -534,11 +534,11 @@ fun ChapterEditorPage(
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("共同前缀 ${comparison.prefixChars} 字 · 共同后缀 ${comparison.suffixChars} 字", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("历史版本变化段 · ${comparison.oldChanged.length} 字", fontWeight = FontWeight.Bold)
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.surfaceVariant) {
                         SelectionContainer { Text(comparison.oldChanged.ifBlank { "（这一段为空）" }, Modifier.padding(12.dp)) }
                     }
                     Text("当前稿变化段 · ${comparison.currentChanged.length} 字", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
+                    Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
                         SelectionContainer { Text(comparison.currentChanged.ifBlank { "（这一段为空）" }, Modifier.padding(12.dp)) }
                     }
                 }
@@ -592,7 +592,7 @@ private fun VersionRow(
     onCompare: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -37,6 +36,7 @@ import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.delay
 
 @Composable
@@ -67,7 +67,7 @@ internal fun RunInspectorPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(34.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = if (running) t.warmSurface else t.muted,
                     border = BorderStroke(1.dp, if (running) t.accent.copy(alpha = .15f) else t.border),
                 ) {

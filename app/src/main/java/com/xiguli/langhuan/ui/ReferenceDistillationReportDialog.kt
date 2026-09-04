@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -51,6 +50,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -78,7 +78,7 @@ fun ReferenceDistillationReportDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
-            shape = RoundedCornerShape(t.radiusXl),
+            shape = LanghuanShape.sheet,
             color = t.background,
             contentColor = t.foreground,
             border = BorderStroke(1.dp, t.border),
@@ -91,7 +91,7 @@ fun ReferenceDistillationReportDialog(
                 ) {
                     Surface(
                         modifier = Modifier.size(40.dp),
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         color = t.warmSurface,
                         contentColor = t.accent,
                         border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
@@ -168,7 +168,7 @@ fun ReferenceDistillationReportDialog(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            shape = RoundedCornerShape(t.radiusXl),
+            shape = LanghuanShape.sheet,
             containerColor = t.background,
             title = { Text("删除这份蒸馏数据？", color = t.foreground) },
             text = {
@@ -220,7 +220,7 @@ private fun DistillationReportContent(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             modifier = Modifier.size(34.dp),
-                            shape = RoundedCornerShape(t.radiusSm),
+                            shape = LanghuanShape.chip,
                             color = t.warmSurface,
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -271,7 +271,7 @@ private fun DistillationReportContent(
                         onClick = onBrowseAll,
                         enabled = retainedCount > 0,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
                     ) {
                         Icon(Icons.Rounded.DataObject, null, Modifier.size(18.dp))
@@ -311,7 +311,7 @@ private fun DistillationReportContent(
         item {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusSm),
+                shape = LanghuanShape.chip,
                 color = t.muted,
                 border = BorderStroke(1.dp, t.border),
             ) {
@@ -334,7 +334,7 @@ private fun DistillationReportContent(
 private fun ReportWarning(text: String) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = t.destructive.copy(alpha = .07f),
         border = BorderStroke(1.dp, t.destructive.copy(alpha = .16f)),
     ) {
@@ -351,7 +351,7 @@ private fun ReportWarning(text: String) {
 private fun SmallInfoPill(text: String) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = t.muted,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -374,7 +374,7 @@ private fun SectionHeader(
     Row(verticalAlignment = Alignment.CenterVertically) {
         Surface(
             modifier = Modifier.size(34.dp),
-            shape = RoundedCornerShape(t.radiusSm),
+            shape = LanghuanShape.chip,
             color = t.muted,
             border = BorderStroke(1.dp, t.border),
         ) {
@@ -426,7 +426,7 @@ private fun DistillationItemCard(item: ReferenceDistillationReportItem, story: B
             if (item.evidence.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.muted,
                     border = BorderStroke(1.dp, t.border),
                 ) {

@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private enum class StableBookRouteV9 { OVERVIEW, READER, STORY }
 private enum class StableReaderToneV9(val key: String, val label: String) {
@@ -166,7 +166,7 @@ private fun StableBookOverviewV9(
             CoverPreviewV3(
                 book.coverPath,
                 book.title,
-                Modifier.width(122.dp).height(174.dp).clip(RoundedCornerShape(13.dp)),
+                Modifier.width(122.dp).height(174.dp).clip(LanghuanShape.cover),
             )
             Text(
                 book.title,
@@ -190,7 +190,7 @@ private fun StableBookOverviewV9(
             Button(
                 onClick = onContinue,
                 enabled = state.chapters.isNotEmpty(),
-                shape = RoundedCornerShape(22.dp),
+                shape = LanghuanShape.panel,
                 modifier = Modifier.fillMaxWidth().padding(top = 24.dp).height(48.dp),
             ) {
                 Icon(Icons.Rounded.MenuBook, null, modifier = Modifier.size(18.dp))
@@ -237,7 +237,7 @@ private fun StableBookOverviewV9(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(LanghuanShape.cover)
                         .clickable { onChapter(chapter.chapterNumber) }
                         .padding(vertical = 12.dp, horizontal = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -296,7 +296,7 @@ private fun StableOverviewActionV9(
 ) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(LanghuanShape.card)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -449,7 +449,7 @@ private fun StableImmersiveReaderV9(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
                     .fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
+                shape = LanghuanShape.panel,
                 color = background.copy(alpha = .88f),
                 border = BorderStroke(.5.dp, secondary.copy(alpha = .22f)),
                 shadowElevation = 4.dp,
@@ -505,7 +505,7 @@ private fun StableImmersiveReaderV9(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(horizontal = 22.dp, vertical = 10.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = LanghuanShape.sheet,
                 color = background.copy(alpha = .88f),
                 border = BorderStroke(.5.dp, secondary.copy(alpha = .22f)),
                 shadowElevation = 4.dp,

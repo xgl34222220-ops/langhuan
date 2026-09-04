@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -17,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -641,7 +641,7 @@ private fun StoryPerceptionDialogV1(
                             if (sensed.isEmpty()) item { Text("当前没有已定位的其他角色。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             items(sensed, key = { it.first.actor }) { (actor, sense) ->
                                 val place = spatial.places.firstOrNull { it.id == actor.placeId }?.name ?: actor.rawLocation
-                                Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                                Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                     Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                         Text(actor.actor, fontWeight = FontWeight.Bold)
                                         Text("$place · 视觉=${if (sense.canSee) "可见" else "不可见"} · ${sense.audibility.label}", style = MaterialTheme.typography.bodySmall)
@@ -654,7 +654,7 @@ private fun StoryPerceptionDialogV1(
                             if (witnesses.isNotEmpty()) {
                                 item { Text("上一轮 NPC 现场感知", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp)) }
                                 items(witnesses, key = { "${it.turnId}-${it.actor}" }) { witness ->
-                                    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                                    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                         Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                             Text(witness.actor, fontWeight = FontWeight.Bold)
                                             Text("视觉=${if (witness.canSee) "可见" else "不可见"} · ${witness.audibility.label}", style = MaterialTheme.typography.bodySmall)
@@ -681,7 +681,7 @@ private fun PerceptionPlaceCardV1(
 ) {
     var lightMenu by remember { mutableStateOf(false) }
     var obscurityMenu by remember { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(17.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(11.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Place, null, Modifier.size(18.dp))
@@ -730,7 +730,7 @@ private fun PerceptionRouteCardV1(
     onReset: (String) -> Unit,
 ) {
     var stateMenu by remember { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(17.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(11.dp)) {
             Text("$from ${if (route.bidirectional) "↔" else "→"} $to", fontWeight = FontWeight.Bold)
             Text("${route.minutes} 分钟 · ${route.mode.label}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -29,6 +28,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 /**
  * Conversation-first creation shell.
@@ -137,7 +137,7 @@ fun CreationChatV4(
                             color = t.destructive.copy(alpha = .08f),
                             contentColor = t.destructive,
                             border = BorderStroke(1.dp, t.destructive.copy(alpha = .18f)),
-                            shape = RoundedCornerShape(t.radiusMd),
+                            shape = LanghuanShape.card,
                         ) {
                             Row(Modifier.padding(13.dp), verticalAlignment = Alignment.Top) {
                                 Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(18.dp), tint = t.destructive)
@@ -220,7 +220,7 @@ private fun CreationHeaderV4(
             DropdownMenu(
                 expanded = menuOpen,
                 onDismissRequest = onDismissMenu,
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 containerColor = t.card,
                 border = BorderStroke(1.dp, t.border),
             ) {
@@ -262,7 +262,7 @@ private fun CreationWelcomeV4(onAdvancedResearch: () -> Unit) {
         )
         Surface(
             modifier = Modifier.padding(top = 16.dp).clickable(onClick = onAdvancedResearch),
-            shape = RoundedCornerShape(t.radiusMd),
+            shape = LanghuanShape.card,
             color = t.warmSurface,
             contentColor = t.accent,
             border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
@@ -290,7 +290,7 @@ private fun CreationMessageV4(message: CreationChatMessage, isFirstAssistant: Bo
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Surface(
                 modifier = Modifier.widthIn(max = 320.dp),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 color = t.foreground,
                 contentColor = t.primaryForeground,
             ) {
@@ -320,7 +320,7 @@ private fun CreationAssistantTextV4(text: String, streaming: Boolean) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Surface(
             modifier = Modifier.size(30.dp),
-            shape = RoundedCornerShape(t.radiusSm),
+            shape = LanghuanShape.chip,
             color = t.warmSurface,
             contentColor = t.accent,
             border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
@@ -428,7 +428,7 @@ private fun CreationComposerV4(
                     state.pendingAttachments.forEach { attachment ->
                         Surface(
                             modifier = Modifier.clickable { onRemoveAttachment(attachment.id) },
-                            shape = RoundedCornerShape(t.radiusSm),
+                            shape = LanghuanShape.chip,
                             color = t.muted,
                             contentColor = t.foreground,
                             border = BorderStroke(1.dp, t.border),
@@ -493,7 +493,7 @@ private fun CreationComposerV4(
                     val canSend = !busy && (input.isNotBlank() || state.pendingAttachments.isNotEmpty())
                     Surface(
                         modifier = Modifier.size(40.dp),
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         color = if (canSend) t.foreground else t.muted,
                         contentColor = if (canSend) t.primaryForeground else t.mutedForeground,
                     ) {
@@ -527,7 +527,7 @@ private fun CreationStageActionV4(
     val container = if (emphasized) t.foreground else t.card
     val foreground = if (emphasized) t.primaryForeground else t.foreground
     Surface(
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = if (enabled) container else t.muted,
         contentColor = if (enabled) foreground else t.mutedForeground,
         border = BorderStroke(1.dp, if (emphasized && enabled) t.foreground else t.border),

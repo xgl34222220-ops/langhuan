@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -47,6 +46,7 @@ import com.xiguli.langhuan.engine.ChapterPlanSuggestion
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.ui.glass.liquidGlassLens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanAppearance
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import dev.chrisbanes.haze.HazeState
@@ -164,10 +164,10 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     Page("琅嬛", "多作品书架 · 长篇创作从项目开始") {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button({ showCreate = true }, Modifier.weight(1f), shape = RoundedCornerShape(18.dp)) {
+                Button({ showCreate = true }, Modifier.weight(1f), shape = LanghuanShape.card) {
                     Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("新建小说")
                 }
-                OutlinedButton(onImport, Modifier.weight(1f), shape = RoundedCornerShape(18.dp), enabled = !state.isImporting) {
+                OutlinedButton(onImport, Modifier.weight(1f), shape = LanghuanShape.card, enabled = !state.isImporting) {
                     Icon(Icons.Rounded.FileOpen, null); Spacer(Modifier.width(6.dp)); Text(if (state.isImporting) "导入中" else "导入稿件")
                 }
             }
@@ -245,7 +245,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Button(vm::generateChapter, enabled = !state.isGenerating && !state.isSaving, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) {
+            Button(vm::generateChapter, enabled = !state.isGenerating && !state.isSaving, modifier = Modifier.fillMaxWidth().height(54.dp), shape = LanghuanShape.card) {
                 if (state.isGenerating) CircularProgressIndicator(Modifier.size(19.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Rounded.AutoAwesome, null)
                 Spacer(Modifier.width(8.dp)); Text(if (state.isGenerating) "正在检索记忆并生成…" else "AI 生成本章正文")
             }
@@ -270,7 +270,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 onValueChange = { value -> editor = value; vm.setDraftContent(value.text) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp, max = 620.dp),
                 placeholder = { Text("正文会出现在这里，也可以直接手写或粘贴。") },
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
             )
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -283,13 +283,13 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             Text("AI 局部重写", style = MaterialTheme.typography.titleMedium)
             Text("先在上面的正文中选中文字，再输入要求。AI 只替换选中片段，确认前不会改正文。", color = LocalLanghuanTokens.current.textSecondary)
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(rewriteInstruction, { rewriteInstruction = it }, Modifier.fillMaxWidth(), label = { Text("改写要求") }, shape = RoundedCornerShape(16.dp))
+            OutlinedTextField(rewriteInstruction, { rewriteInstruction = it }, Modifier.fillMaxWidth(), label = { Text("改写要求") }, shape = LanghuanShape.card)
             Spacer(Modifier.height(10.dp))
             OutlinedButton(
                 onClick = { vm.requestRewrite(start, end, rewriteInstruction) },
                 enabled = selectedCount > 0 && !state.isRewriting && state.provider.ready,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(17.dp),
+                shape = LanghuanShape.card,
             ) {
                 if (state.isRewriting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.AutoFixHigh, null)
                 Spacer(Modifier.width(7.dp)); Text(if (state.isRewriting) "正在重写…" else "重写选中片段")
@@ -320,7 +320,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Button(vm::planNextChapter, enabled = state.provider.ready && !state.isPlanning && !state.isSaving, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
+            Button(vm::planNextChapter, enabled = state.provider.ready && !state.isPlanning && !state.isSaving, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.card) {
                 if (state.isPlanning) CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Rounded.AutoAwesome, null)
                 Spacer(Modifier.width(7.dp)); Text(if (state.isPlanning) "正在规划…" else "规划第${state.draft.chapterNumber + 1}章")
             }
@@ -401,13 +401,13 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         Text("章节按顺序从独立章节库读取，可导出 TXT、Markdown 或标准 EPUB。", color = LocalLanghuanTokens.current.textSecondary)
         Spacer(Modifier.height(10.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ExportFormat.entries.forEach { format -> OutlinedButton({ onExport(format) }, enabled = !state.isExporting, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Rounded.FileDownload, null); Spacer(Modifier.width(5.dp)); Text(format.name) } }
+            ExportFormat.entries.forEach { format -> OutlinedButton({ onExport(format) }, enabled = !state.isExporting, shape = LanghuanShape.card) { Icon(Icons.Rounded.FileDownload, null); Spacer(Modifier.width(5.dp)); Text(format.name) } }
         }
     } }
     if (p.savedProviders.isNotEmpty()) {
         item { Row(verticalAlignment = Alignment.CenterVertically) { Heading("已保存 AI"); Spacer(Modifier.weight(1f)); Pill("${p.savedProviders.size} 个", MaterialTheme.colorScheme.primary) } }
         items(p.savedProviders, key = { it.id }) { provider -> SavedProviderRow(provider, provider.id == p.activeProviderId, { vm.activateProvider(provider.id) }, { vm.editProvider(provider.id) }, { vm.deleteProvider(provider.id) }) }
-        item { OutlinedButton(vm::newProvider, Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(8.dp)); Text("添加新的 AI 服务") } }
+        item { OutlinedButton(vm::newProvider, Modifier.fillMaxWidth(), shape = LanghuanShape.card) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(8.dp)); Text("添加新的 AI 服务") } }
     }
     item { ProviderEditor(p, vm) }
 }
@@ -422,13 +422,13 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             }
         }
         Spacer(Modifier.height(14.dp))
-        OutlinedTextField(p.providerName, vm::setProviderName, Modifier.fillMaxWidth(), label = { Text("名称") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+        OutlinedTextField(p.providerName, vm::setProviderName, Modifier.fillMaxWidth(), label = { Text("名称") }, singleLine = true, shape = LanghuanShape.card)
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(p.baseUrl, vm::setBaseUrl, Modifier.fillMaxWidth(), label = { Text("API 地址") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+        OutlinedTextField(p.baseUrl, vm::setBaseUrl, Modifier.fillMaxWidth(), label = { Text("API 地址") }, singleLine = true, shape = LanghuanShape.card)
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(p.apiKey, vm::setApiKey, Modifier.fillMaxWidth(), label = { Text(if (p.hasStoredKey) "API Key（留空沿用已保存）" else "API Key") }, visualTransformation = PasswordVisualTransformation(), leadingIcon = { Icon(Icons.Rounded.Key, null) }, singleLine = true, shape = RoundedCornerShape(16.dp))
+        OutlinedTextField(p.apiKey, vm::setApiKey, Modifier.fillMaxWidth(), label = { Text(if (p.hasStoredKey) "API Key（留空沿用已保存）" else "API Key") }, visualTransformation = PasswordVisualTransformation(), leadingIcon = { Icon(Icons.Rounded.Key, null) }, singleLine = true, shape = LanghuanShape.card)
         Spacer(Modifier.height(10.dp))
-        Button(vm::detectProvider, enabled = p.baseUrl.isNotBlank() && !p.isDetecting, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
+        Button(vm::detectProvider, enabled = p.baseUrl.isNotBlank() && !p.isDetecting, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.card) {
             if (p.isDetecting) CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Rounded.Refresh, null)
             Spacer(Modifier.width(7.dp)); Text(if (p.isDetecting) "正在探测…" else "自动识别并获取模型")
         }
@@ -439,10 +439,10 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             Text(d.message, color = LocalLanghuanTokens.current.textSecondary)
             Spacer(Modifier.height(8.dp))
             d.models.take(12).forEach { model -> ModelRow(model, p.selectedModel == model.id) { vm.selectModel(model) }; Spacer(Modifier.height(6.dp)) }
-            OutlinedTextField(p.manualModel, vm::setManualModel, Modifier.fillMaxWidth(), label = { Text("模型名 / 部署名") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+            OutlinedTextField(p.manualModel, vm::setManualModel, Modifier.fillMaxWidth(), label = { Text("模型名 / 部署名") }, singleLine = true, shape = LanghuanShape.card)
             if (p.transientReady) {
                 Spacer(Modifier.height(10.dp))
-                Button(vm::saveProvider, enabled = !p.isSaving, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) { Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(7.dp)); Text("保存并设为当前 AI") }
+                Button(vm::saveProvider, enabled = !p.isSaving, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.card) { Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(7.dp)); Text("保存并设为当前 AI") }
             }
         }
     }
@@ -451,7 +451,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 @Composable private fun GenerationResultDialog(state: StudioUiState, result: GenerationResult, vm: StudioViewModel) {
     AlertDialog(
         onDismissRequest = vm::dismissResult,
-        shape = RoundedCornerShape(28.dp),
+        shape = LanghuanShape.sheet,
         title = { Text(if (result.canCommit) "一致性检查通过" else "发现设定冲突") },
         text = { Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(result.chapter.summary)
@@ -466,7 +466,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 @Composable private fun PlanSuggestionDialog(plan: ChapterPlanSuggestion, saving: Boolean, accept: () -> Unit, dismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = dismiss,
-        shape = RoundedCornerShape(28.dp),
+        shape = LanghuanShape.sheet,
         title = { Text("AI 下一章规划") },
         text = { Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(plan.title, style = MaterialTheme.typography.titleLarge)
@@ -482,7 +482,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 @Composable private fun RewriteSuggestionDialog(suggestion: RewriteSuggestion, accept: () -> Unit, dismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = dismiss,
-        shape = RoundedCornerShape(28.dp),
+        shape = LanghuanShape.sheet,
         title = { Text("局部重写预览") },
         text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) { Text(suggestion.replacement) } },
         confirmButton = { Button(accept) { Text("替换选中片段") } },
@@ -558,7 +558,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 @Composable private fun FormDialog(title: String, dismiss: () -> Unit, save: () -> Unit, enabled: Boolean, content: @Composable ColumnScope.() -> Unit) {
     AlertDialog(
         onDismissRequest = dismiss,
-        shape = RoundedCornerShape(28.dp),
+        shape = LanghuanShape.sheet,
         title = { Text(title) },
         text = { Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp), content = content) },
         confirmButton = { Button(save, enabled = enabled) { Text("保存") } },
@@ -566,7 +566,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     )
 }
 
-@Composable private fun Field(value: String, change: (String) -> Unit, label: String, singleLine: Boolean = true) = OutlinedTextField(value, change, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = singleLine, minLines = if (singleLine) 1 else 3, shape = RoundedCornerShape(15.dp))
+@Composable private fun Field(value: String, change: (String) -> Unit, label: String, singleLine: Boolean = true) = OutlinedTextField(value, change, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = singleLine, minLines = if (singleLine) 1 else 3, shape = LanghuanShape.cover)
 
 @Composable private fun ChapterRow(chapter: ChapterShelfUi, click: () -> Unit) = MiuixCard(onClick = click) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -616,7 +616,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 }
 
 @Composable private fun SavedProviderRow(provider: SavedProviderUi, active: Boolean, activate: () -> Unit, edit: () -> Unit, delete: () -> Unit) {
-    val shape = RoundedCornerShape(23.dp)
+    val shape = LanghuanShape.panel
     Row(Modifier.fillMaxWidth().squircleClip(23.dp).background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else LocalLanghuanTokens.current.cardBackground.copy(alpha = .94f)).border(if (active) 1.1.dp else .5.dp, if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape).clickable(onClick = activate).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(if (active) Icons.Rounded.CloudDone else Icons.Rounded.CloudQueue, null, tint = MaterialTheme.colorScheme.primary)
         Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(provider.name, fontWeight = FontWeight.Bold); Text("${provider.model} · ${provider.protocol.label}", color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -624,10 +624,10 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     }
 }
 
-@Composable private fun ModelRow(m: DiscoveredModel, selected: Boolean, click: () -> Unit) { val shape = RoundedCornerShape(18.dp); Row(Modifier.fillMaxWidth().squircleClip(18.dp).background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .13f) else LocalLanghuanTokens.current.cardBackground).border(if (selected) 1.dp else .5.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape).clickable(onClick = click).padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary); Text(m.displayName, Modifier.padding(start = 8.dp).weight(1f), fontWeight = FontWeight.Bold); if (m.reasoning) Pill("推理", MaterialTheme.colorScheme.primary); if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) } }
+@Composable private fun ModelRow(m: DiscoveredModel, selected: Boolean, click: () -> Unit) { val shape = LanghuanShape.card; Row(Modifier.fillMaxWidth().squircleClip(18.dp).background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .13f) else LocalLanghuanTokens.current.cardBackground).border(if (selected) 1.dp else .5.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape).clickable(onClick = click).padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary); Text(m.displayName, Modifier.padding(start = 8.dp).weight(1f), fontWeight = FontWeight.Bold); if (m.reasoning) Pill("推理", MaterialTheme.colorScheme.primary); if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) } }
 
 @Composable private fun MiuixCard(onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(26.dp)
+    val shape = LanghuanShape.sheet
     var modifier = Modifier.fillMaxWidth().shadow(2.dp, shape).squircleClip(26.dp).background(LocalLanghuanTokens.current.cardBackground.copy(alpha = .94f)).border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), shape)
     if (onClick != null) modifier = modifier.clickable(onClick = onClick)
     Column(modifier.padding(18.dp), content = content)
@@ -648,7 +648,7 @@ private fun ForeshadowStatus.label() = when (this) { ForeshadowStatus.PLANTED ->
 @Composable private fun MiuixDock(current: AppPage, select: (AppPage) -> Unit, haze: HazeState, backdrop: LayerBackdrop?, modifier: Modifier) {
     val dark = MaterialTheme.colorScheme.background.luminance() < .5f
     val inset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val shape = RoundedCornerShape(31.dp)
+    val shape = LanghuanShape.sheet
     val surfaceBackdrop = rememberLayerBackdrop()
     val shellTint = if (dark) MaterialTheme.colorScheme.surface.copy(alpha = .39f) else Color.White.copy(alpha = .4f)
     val shell = if (backdrop != null) Modifier.drawBackdrop(
@@ -664,7 +664,7 @@ private fun ForeshadowStatus.label() = when (this) { ForeshadowStatus.PLANTED ->
 @Composable private fun DockItems(current: AppPage, select: (AppPage) -> Unit, backdrop: LayerBackdrop?, dark: Boolean, modifier: Modifier) = BoxWithConstraints(modifier) {
     val width = maxWidth / AppPage.entries.size.toFloat()
     val x by animateDpAsState(width * current.ordinal, spring(dampingRatio = .68f, stiffness = Spring.StiffnessMediumLow), label = "dock")
-    val shape = RoundedCornerShape(23.dp)
+    val shape = LanghuanShape.panel
     val indicatorTint = MaterialTheme.colorScheme.primary.copy(alpha = .18f)
     val lens = if (backdrop != null) Modifier.drawBackdrop(backdrop, shape = { shape }, effects = { padding = maxOf(padding, 22.dp.toPx()); blur(3.dp.toPx(), 3.dp.toPx()); liquidGlassLens(13.dp.toPx(), 14.dp.toPx(), true, .08f) }, highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f) }, onDrawSurface = { drawRect(indicatorTint) }) else Modifier.background(indicatorTint.copy(alpha = .72f))
     Box(Modifier.offset(x + 3.dp).width(width - 6.dp).height(54.dp).squircleClip(23.dp).then(lens))

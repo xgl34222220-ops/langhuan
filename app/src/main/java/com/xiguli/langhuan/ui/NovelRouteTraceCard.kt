@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.engine.NovelRouteDecision
 import com.xiguli.langhuan.engine.NovelRouteStatus
 import com.xiguli.langhuan.engine.NovelSkillExecutionPlan
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 /** Compact, inspectable execution trace for the latest natural-language creation turn. */
 @Composable
@@ -49,7 +49,7 @@ internal fun NovelRouteTraceCardV4(
         NovelRouteStatus.SUCCESS -> "已完成"
         NovelRouteStatus.FAILED -> "执行失败"
     }
-    val shape = RoundedCornerShape(18.dp)
+    val shape = LanghuanShape.card
 
     Column(
         Modifier
@@ -118,7 +118,7 @@ internal fun NovelRouteTraceCardV4(
                         Text(
                             capability.label,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(LanghuanShape.cover)
                                 .background(MaterialTheme.colorScheme.surface.copy(alpha = .8f))
                                 .padding(horizontal = 9.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelSmall,

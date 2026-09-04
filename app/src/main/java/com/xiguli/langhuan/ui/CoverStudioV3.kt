@@ -12,7 +12,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -39,6 +38,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -163,7 +163,7 @@ fun CoverStudioV3(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             modifier = Modifier.size(34.dp),
-                            shape = RoundedCornerShape(t.radiusSm),
+                            shape = LanghuanShape.chip,
                             color = t.muted,
                             border = BorderStroke(1.dp, t.border),
                         ) {
@@ -231,7 +231,7 @@ private fun CoverCandidateCard(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.warmSurface,
         contentColor = t.foreground,
         border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
@@ -240,7 +240,7 @@ private fun CoverCandidateCard(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(34.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.card,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -267,7 +267,7 @@ private fun CoverCandidateCard(
                 onClick = onApply,
                 enabled = !applying,
                 modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
             ) {
                 Icon(Icons.Rounded.CheckCircle, null, Modifier.size(18.dp))
@@ -311,7 +311,7 @@ private fun CurrentCoverCard(
                 onClick = onGenerate,
                 enabled = !busy && !applying,
                 modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 1.8.dp, color = t.primaryForeground)
@@ -324,7 +324,7 @@ private fun CurrentCoverCard(
                 onClick = onExport,
                 enabled = File(path).isFile && !applying,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 border = BorderStroke(1.dp, t.border),
             ) {
                 Icon(Icons.Rounded.Download, null, Modifier.size(18.dp))
@@ -346,7 +346,7 @@ private fun CoverHistoryRow(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onRestore),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = if (active) t.warmSurface else t.card,
         border = BorderStroke(1.dp, if (active) t.accent.copy(alpha = .18f) else t.border),
     ) {
@@ -381,13 +381,13 @@ fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier) {
         Image(
             bitmap = bitmap,
             contentDescription = title,
-            modifier = modifier.clip(RoundedCornerShape(t.radiusSm)),
+            modifier = modifier.clip(LanghuanShape.cover),
             contentScale = ContentScale.Crop,
         )
     } else {
         Box(
             modifier = modifier
-                .clip(RoundedCornerShape(t.radiusSm))
+                .clip(LanghuanShape.cover)
                 .background(t.muted),
             contentAlignment = Alignment.Center,
         ) {

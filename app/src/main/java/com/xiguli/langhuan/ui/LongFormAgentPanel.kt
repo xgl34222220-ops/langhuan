@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -28,6 +27,7 @@ import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.LongFormHealthLevel
 import com.xiguli.langhuan.domain.PlotArcPhase
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
@@ -60,7 +60,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
     }
     val healthIcon = if (health.level == LongFormHealthLevel.HEALTHY) Icons.Rounded.CheckCircle else Icons.Rounded.WarningAmber
 
-    val shape = RoundedCornerShape(26.dp)
+    val shape = LanghuanShape.sheet
     Column(
         Modifier.fillMaxWidth()
             .shadow(2.dp, shape)
@@ -72,7 +72,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = LanghuanShape.card,
                 color = MaterialTheme.colorScheme.primaryContainer,
             ) {
                 Icon(
@@ -91,7 +91,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
                 )
             }
             Surface(
-                shape = RoundedCornerShape(99.dp),
+                shape = LanghuanShape.pill,
                 color = if (health.level == LongFormHealthLevel.RISK) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
             ) {
                 Row(
@@ -108,7 +108,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
         currentArc?.let { arc ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -157,7 +157,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
         if (health.warnings.isNotEmpty()) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(17.dp),
+                shape = LanghuanShape.card,
                 color = if (health.level == LongFormHealthLevel.RISK) MaterialTheme.colorScheme.errorContainer.copy(alpha = .55f)
                 else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .48f),
             ) {
@@ -182,7 +182,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
 private fun LongFormMetric(label: String, value: String, modifier: Modifier, danger: Boolean = false) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(15.dp),
+        shape = LanghuanShape.cover,
         color = if (danger) MaterialTheme.colorScheme.errorContainer.copy(alpha = .52f) else MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(Modifier.padding(horizontal = 9.dp, vertical = 8.dp)) {

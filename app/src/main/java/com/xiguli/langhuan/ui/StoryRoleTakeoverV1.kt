@@ -2,7 +2,6 @@ package com.xiguli.langhuan.ui
 
 import android.app.Application
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.*
@@ -15,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -318,7 +318,7 @@ private fun StoryRoleTakeoverDialogV1(
         },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 660.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(13.dp)) {
                         Text(
                             if (scene.canonicalRole) "原著角色 · 第 $anchorChapter 章视角" else "当前玩家身份",
@@ -361,7 +361,7 @@ private fun StoryRoleTakeoverDialogV1(
                     TakeoverSwitchV1("保留原著人格底色", "截至当前章节的人设、能力和关系继续成立，但不替你做选择。", scene.preserveCanonPersonality, onPersonality)
                 }
 
-                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                Surface(shape = LanghuanShape.card, color = MaterialTheme.colorScheme.secondaryContainer) {
                     Text(
                         "未来原著仍然锁死：AI 不会因为读过整本书就让你提前知道第 ${anchorChapter + 1} 章之后的秘密。命运改写也只改进入点之后的分支，不会覆盖原著正文。",
                         modifier = Modifier.padding(12.dp),

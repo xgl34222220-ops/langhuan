@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +31,7 @@ import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.RunStatus
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
@@ -338,7 +338,7 @@ private fun WorkspaceSkillRibbonV4(
             .padding(horizontal = 16.dp, vertical = 3.dp)
             .squircleClip(18.dp)
             .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .82f))
-            .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), RoundedCornerShape(18.dp))
+            .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), LanghuanShape.card)
             .clickable(onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -406,7 +406,7 @@ private fun WorkspaceMissionCardV4(
                     val completed = index < activeIndex
                     val current = index == activeIndex.coerceAtMost(labels.lastIndex)
                     Surface(
-                        shape = RoundedCornerShape(99.dp),
+                        shape = LanghuanShape.pill,
                         color = when {
                             completed -> MaterialTheme.colorScheme.primary.copy(alpha = .12f)
                             current -> MaterialTheme.colorScheme.surface.copy(alpha = .8f)
@@ -446,7 +446,7 @@ private fun WorkspaceSceneSummaryV4(
         color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .9f),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f)) {
+            Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f)) {
                 Icon(Icons.Rounded.Route, null, Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.primary)
             }
             Column(Modifier.padding(start = 11.dp).weight(1f)) {
@@ -488,7 +488,7 @@ private fun WorkspaceBodyCardV4(
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.primaryContainer) {
                     Icon(Icons.Rounded.AutoAwesome, null, Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.primary)
                 }
                 Column(Modifier.padding(start = 11.dp).weight(1f)) {
@@ -542,7 +542,7 @@ private fun WorkspaceBodyCardV4(
                 }
                 state.chapterCommitted && draft.content.isNotBlank() -> {
                     WorkspaceTextPreviewV4(draft.content, maxLines = 16)
-                    OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
+                    OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.card) {
                         Icon(Icons.Rounded.Edit, null)
                         Spacer(Modifier.width(7.dp))
                         Text("精修正文 · 保存后仍可反复修改")
@@ -723,7 +723,7 @@ private fun WorkspaceComposerDockV4(
                 onClick = onPrimaryAction,
                 enabled = action == WorkspacePrimaryActionV4.STOP || !state.busy,
                 modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = RoundedCornerShape(17.dp),
+                shape = LanghuanShape.card,
             ) {
                 Icon(workspacePrimaryActionIconV4(action), null, Modifier.size(19.dp))
                 Spacer(Modifier.width(7.dp))
@@ -731,7 +731,7 @@ private fun WorkspaceComposerDockV4(
             }
         }
 
-        val shape = RoundedCornerShape(28.dp)
+        val shape = LanghuanShape.sheet
         Row(
             Modifier
                 .fillMaxWidth()
@@ -800,7 +800,7 @@ private fun WorkspaceModeChipV4(
         selected -> MaterialTheme.colorScheme.primary
         else -> LocalLanghuanTokens.current.textSecondary
     }
-    Surface(shape = RoundedCornerShape(99.dp), color = background, modifier = Modifier.clickable(onClick = onClick)) {
+    Surface(shape = LanghuanShape.pill, color = background, modifier = Modifier.clickable(onClick = onClick)) {
         Text(label, modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp), style = MaterialTheme.typography.labelSmall, color = foreground, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
     }
 }
@@ -864,7 +864,7 @@ private fun WorkspaceSceneSheetV4(
                 placeholder = { Text("例如：第三场提前到傍晚；不要闪回；让配角更早入场") },
                 minLines = 2,
                 maxLines = 4,
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 enabled = !state.busy,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -872,7 +872,7 @@ private fun WorkspaceSceneSheetV4(
                     onClick = onAdjust,
                     enabled = !state.busy,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.AutoAwesome, null)
                     Spacer(Modifier.width(6.dp))
@@ -882,7 +882,7 @@ private fun WorkspaceSceneSheetV4(
                     onClick = onApply,
                     enabled = state.sceneDirty && !state.busy,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.CheckCircle, null)
                     Spacer(Modifier.width(6.dp))

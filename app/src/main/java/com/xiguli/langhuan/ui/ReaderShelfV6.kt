@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -30,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private enum class ShelfLayoutV6 { GRID, LIST }
 private enum class ShelfFilterV10(val label: String) { ALL("全部"), WRITING("创作"), LOCAL("本地") }
@@ -181,7 +181,7 @@ fun ReaderShelfV6(
                     CoverPreviewV3(
                         path = book.coverPath,
                         title = book.title,
-                        modifier = Modifier.width(52.dp).height(74.dp).clip(RoundedCornerShape(9.dp)),
+                        modifier = Modifier.width(52.dp).height(74.dp).clip(LanghuanShape.chip),
                     )
                     Column(Modifier.padding(start = 13.dp).weight(1f)) {
                         Text(
@@ -353,7 +353,7 @@ private fun ShelfSearchFieldV10(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
-            .clip(RoundedCornerShape(17.dp))
+            .clip(LanghuanShape.card)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .46f))
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -396,7 +396,7 @@ private fun ShelfSearchFieldV10(
 private fun ShelfFilterTabV10(label: String, selected: Boolean, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(LanghuanShape.chip)
             .combinedClickable(onClick = onClick, onLongClick = onClick)
             .padding(horizontal = 2.dp, vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -451,8 +451,8 @@ private fun ShelfBookV10(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(.69f)
-                .shadow(5.dp, RoundedCornerShape(13.dp), clip = false)
-                .clip(RoundedCornerShape(13.dp))
+                .shadow(5.dp, LanghuanShape.cover, clip = false)
+                .clip(LanghuanShape.cover)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .combinedClickable(
                     onClick = { onOpenBook(book.id) },
@@ -515,7 +515,7 @@ private fun ShelfListV10(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(LanghuanShape.cover)
                     .combinedClickable(
                         onClick = { onOpenBook(book.id) },
                         onLongClick = { onBookMenu(book) },
@@ -526,7 +526,7 @@ private fun ShelfListV10(
                 CoverPreviewV3(
                     book.coverPath,
                     book.title,
-                    Modifier.width(54.dp).height(78.dp).clip(RoundedCornerShape(9.dp)),
+                    Modifier.width(54.dp).height(78.dp).clip(LanghuanShape.chip),
                 )
                 Column(Modifier.padding(start = 14.dp).weight(1f)) {
                     Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -571,10 +571,10 @@ private fun ShelfDockV10(
             .navigationBarsPadding()
             .padding(horizontal = 28.dp, vertical = 10.dp)
             .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(32.dp), clip = false)
-            .clip(RoundedCornerShape(32.dp))
+            .shadow(10.dp, LanghuanShape.sheet, clip = false)
+            .clip(LanghuanShape.sheet)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = .96f))
-            .border(.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .58f), RoundedCornerShape(32.dp))
+            .border(.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .58f), LanghuanShape.sheet)
             .height(62.dp)
             .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -596,7 +596,7 @@ private fun ShelfDockItemV10(
     Row(
         modifier = Modifier
             .height(42.dp)
-            .clip(RoundedCornerShape(21.dp))
+            .clip(LanghuanShape.card)
             .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .78f) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onClick)
             .padding(horizontal = if (selected) 15.dp else 11.dp),
@@ -626,7 +626,7 @@ private fun ShelfToolRowV10(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(LanghuanShape.card)
             .combinedClickable(onClick = onClick, onLongClick = onClick)
             .padding(horizontal = 4.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -655,7 +655,7 @@ private fun ShelfActionRowV10(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(LanghuanShape.card)
             .combinedClickable(onClick = onClick, onLongClick = onClick)
             .padding(horizontal = 4.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -675,7 +675,7 @@ private fun DeleteBookDialogV10(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
+                .clip(LanghuanShape.sheet)
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(22.dp),
         ) {
@@ -695,7 +695,7 @@ private fun DeleteBookDialogV10(
                 Spacer(Modifier.width(6.dp))
                 Button(
                     onClick = onConfirm,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = LanghuanShape.card,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,
@@ -722,7 +722,7 @@ private fun EmptyShelfV10(
         verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            Modifier.size(68.dp).clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)),
+            Modifier.size(68.dp).clip(LanghuanShape.panel).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -745,12 +745,12 @@ private fun EmptyShelfV10(
         )
         if (!hasAnyBook && query.isBlank()) {
             Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onCreate, shape = RoundedCornerShape(18.dp)) {
+                Button(onClick = onCreate, shape = LanghuanShape.card) {
                     Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("开始创作")
                 }
-                OutlinedButton(onClick = onImportLocal, shape = RoundedCornerShape(18.dp)) {
+                OutlinedButton(onClick = onImportLocal, shape = LanghuanShape.card) {
                     Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("导入")

@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.domain.ChapterDraft
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -495,7 +495,7 @@ private fun DirectorySheetV9(state: LibraryExperienceState, onDismiss: () -> Uni
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
                     trailingIcon = { if (query.isNotBlank()) IconButton({ query = "" }) { Icon(Icons.Rounded.Close, "清空") } },
                     singleLine = true,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = LanghuanShape.card,
                     colors = TextFieldDefaults.colors(
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
@@ -555,7 +555,7 @@ private fun SearchBookSheetV9(state: LibraryExperienceState, onDismiss: () -> Un
                 placeholder = { Text("输入两个字以上") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 singleLine = true,
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 colors = TextFieldDefaults.colors(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
@@ -587,7 +587,7 @@ private fun BookInfoSheetV9(book: ReaderBookUi, state: LibraryExperienceState, o
     OverlayBottomSheet(show = true, title = null, onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(104.dp).clip(RoundedCornerShape(10.dp)))
+                CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(104.dp).clip(LanghuanShape.cover))
                 Column(Modifier.padding(start = 16.dp).weight(1f)) {
                     Text(book.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (author.isNotBlank()) Text(author, modifier = Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
@@ -638,7 +638,7 @@ private fun ReaderBookInfoPageV9(
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                CoverPreviewV3(book.coverPath, book.title, Modifier.width(108.dp).height(156.dp).clip(RoundedCornerShape(14.dp)))
+                CoverPreviewV3(book.coverPath, book.title, Modifier.width(108.dp).height(156.dp).clip(LanghuanShape.cover))
                 Column(Modifier.padding(start = 18.dp).weight(1f)) {
                     Text(book.title, fontSize = 25.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
                     if (author.isNotBlank()) Text(author, modifier = Modifier.padding(top = 7.dp), color = tokens.textSecondary)

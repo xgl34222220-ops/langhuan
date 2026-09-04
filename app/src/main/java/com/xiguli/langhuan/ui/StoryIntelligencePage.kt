@@ -5,7 +5,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -24,6 +23,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 @Composable
 fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
@@ -73,7 +73,7 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
                                     modifier = Modifier.size(40.dp),
-                                    shape = RoundedCornerShape(t.radiusSm),
+                                    shape = LanghuanShape.chip,
                                     color = t.warmSurface,
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
@@ -112,7 +112,7 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
                             chronologyState.report == null -> {
                                 Button(
                                     onClick = { chronologyVm.scan(snapshot.novel.id, force = true) },
-                                    shape = RoundedCornerShape(t.radiusSm),
+                                    shape = LanghuanShape.chip,
                                     colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
                                 ) { Text("扫描全书时间线") }
                             }
@@ -135,7 +135,7 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
                                     report.chapters.take(30).forEach { item ->
                                         val label = if (item.startDay == item.endDay) "第${item.startDay}天" else "第${item.startDay}-${item.endDay}天"
                                         Surface(
-                                            shape = RoundedCornerShape(t.radiusSm),
+                                            shape = LanghuanShape.chip,
                                             color = if (item.risk == ChronologyRepairRisk.HIGH) t.destructive.copy(alpha = .07f) else t.muted,
                                             border = BorderStroke(1.dp, if (item.risk == ChronologyRepairRisk.HIGH) t.destructive.copy(alpha = .18f) else t.border),
                                         ) {
@@ -152,7 +152,7 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
                                 report.conflicts.take(10).forEach { conflict ->
                                     val danger = conflict.risk == ChronologyRepairRisk.HIGH
                                     Surface(
-                                        shape = RoundedCornerShape(t.radiusSm),
+                                        shape = LanghuanShape.chip,
                                         color = if (danger) t.destructive.copy(alpha = .06f) else t.muted,
                                         border = BorderStroke(1.dp, if (danger) t.destructive.copy(alpha = .16f) else t.border),
                                     ) {
@@ -177,7 +177,7 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
                                 OutlinedButton(
                                     onClick = { chronologyVm.scan(snapshot.novel.id, force = true) },
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(t.radiusSm),
+                                    shape = LanghuanShape.chip,
                                     border = BorderStroke(1.dp, t.border),
                                 ) {
                                     Icon(Icons.Rounded.Refresh, null, Modifier.size(17.dp))
@@ -281,7 +281,7 @@ private fun MonitorCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(32.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.muted,
                     border = BorderStroke(1.dp, t.border),
                 ) {

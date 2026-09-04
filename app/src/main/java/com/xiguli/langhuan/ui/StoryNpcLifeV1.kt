@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -23,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -621,7 +621,7 @@ private fun NpcLifeDialogV1(
                     Text("立即刷新所有 NPC 状态")
                 }
                 error?.let {
-                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(12.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = LanghuanShape.cover) {
                         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             IconButton(onClearError) { Icon(Icons.Rounded.Close, "关闭") }
@@ -629,7 +629,7 @@ private fun NpcLifeDialogV1(
                     }
                 }
                 notice?.let {
-                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = LanghuanShape.cover) {
                         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             IconButton(onClearNotice) { Icon(Icons.Rounded.Close, "关闭") }
@@ -666,7 +666,7 @@ private fun NpcLifeDialogV1(
 @Composable
 private fun NpcLifeCardV1(npc: NpcLifeStateV1, beatCounter: Int, onEdit: () -> Unit) {
     val cooldown = (npc.cooldownUntilBeat - beatCounter).coerceAtLeast(0)
-    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(npc.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)

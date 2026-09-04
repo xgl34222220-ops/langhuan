@@ -1,7 +1,6 @@
 package com.xiguli.langhuan.ui
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -15,6 +14,7 @@ import com.xiguli.langhuan.domain.BookEditorIssue
 import com.xiguli.langhuan.domain.BookEditorSeverity
 import com.xiguli.langhuan.domain.LongFormHealthLevel
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 
 @Composable
@@ -93,7 +93,7 @@ private fun ScoreRow(left: String, leftScore: Int, right: String) {
 private fun EditorIssueRow(issue: BookEditorIssue) {
     val high = issue.severity == BookEditorSeverity.HIGH
     Surface(
-        shape = RoundedCornerShape(15.dp),
+        shape = LanghuanShape.cover,
         color = if (high) MaterialTheme.colorScheme.errorContainer.copy(alpha = .32f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .52f),
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
     ) {
@@ -114,7 +114,7 @@ private fun EditorIssueRow(issue: BookEditorIssue) {
 
 @Composable
 private fun AgentCardSurface(content: @Composable ColumnScope.() -> Unit) {
-    Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(16.dp), content = content)
     }
 }

@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -63,6 +62,7 @@ import com.xiguli.langhuan.ui.design.ShadcnCard
 import com.xiguli.langhuan.ui.design.ShadcnIconButton
 import com.xiguli.langhuan.ui.design.ShadcnMenuRow
 import com.xiguli.langhuan.ui.design.ShadcnSeparator
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 /**
  * Player-facing story surface. The runtime stays on StoryPlayV3ViewModel while the visual shell
@@ -164,7 +164,7 @@ fun StoryCoreExperience(
                                 minLines = 1,
                                 maxLines = 4,
                                 enabled = aiReady && !state.busy,
-                                shape = RoundedCornerShape(t.radiusMd),
+                                shape = LanghuanShape.card,
                             )
                             ShadcnButton(
                                 text = "",
@@ -226,7 +226,7 @@ fun StoryCoreExperience(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Surface(
                             modifier = Modifier.widthIn(max = 300.dp),
-                            shape = RoundedCornerShape(t.radiusLg),
+                            shape = LanghuanShape.panel,
                             color = t.primary,
                             contentColor = t.primaryForeground,
                         ) {

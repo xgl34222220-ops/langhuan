@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
@@ -48,6 +47,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private data class DnaCategory(
     val key: String,
@@ -110,7 +110,7 @@ internal fun ReferenceDistillationDataBrowserDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.96f),
-            shape = RoundedCornerShape(t.radiusXl),
+            shape = LanghuanShape.sheet,
             color = t.background,
             contentColor = t.foreground,
             border = BorderStroke(1.dp, t.border),
@@ -123,7 +123,7 @@ internal fun ReferenceDistillationDataBrowserDialog(
                 ) {
                     Surface(
                         modifier = Modifier.size(40.dp),
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         color = t.warmSurface,
                         contentColor = t.accent,
                         border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
@@ -172,7 +172,7 @@ internal fun ReferenceDistillationDataBrowserDialog(
                             onValueChange = { query = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            shape = RoundedCornerShape(t.radiusMd),
+                            shape = LanghuanShape.card,
                             leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(19.dp)) },
                             placeholder = { Text("搜索人物、关系、能力、规则、事件、地点……") },
                         )
@@ -314,7 +314,7 @@ private fun DnaMetric(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = t.muted,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -337,7 +337,7 @@ private fun DnaCategoryChip(
 ) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = if (selected) t.foreground else t.card,
         contentColor = if (selected) t.primaryForeground else t.foreground,
         border = BorderStroke(1.dp, if (selected) t.foreground else t.border),
@@ -387,7 +387,7 @@ private fun DnaBrowserItem(item: ReferenceDistillationReportItem) {
             if (item.evidence.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.muted,
                     border = BorderStroke(1.dp, t.border),
                 ) {

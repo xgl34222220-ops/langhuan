@@ -40,6 +40,8 @@ import com.xiguli.langhuan.data.EpubOriginalTocV1
 import com.xiguli.langhuan.data.EpubTocNodeV1
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanRadius
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -298,7 +300,7 @@ private fun ReaderPageV11(
                         modifier = Modifier.fillMaxSize()
                             .padding(if (pageMode == ReaderPageModeV10.COVER) 4.dp else 0.dp)
                             .clickable { chrome = !chrome },
-                        shape = RoundedCornerShape(if (pageMode == ReaderPageModeV10.COVER) 14.dp else 0.dp),
+                        shape = RoundedCornerShape(if (pageMode == ReaderPageModeV10.COVER) LanghuanRadius.cover else 0.dp),
                         color = palette.background,
                         contentColor = palette.foreground,
                     ) {
@@ -460,7 +462,7 @@ private fun BoxScope.ReaderChromeV11(
             .statusBarsPadding()
             .padding(horizontal = 10.dp, vertical = 7.dp)
             .fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = LanghuanShape.card,
         color = palette.chrome.copy(alpha = .97f),
         contentColor = palette.foreground,
         border = BorderStroke(1.dp, border),
@@ -497,7 +499,7 @@ private fun BoxScope.ReaderChromeV11(
             .navigationBarsPadding()
             .padding(horizontal = 10.dp, vertical = 8.dp)
             .fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = LanghuanShape.card,
         color = palette.chrome.copy(alpha = .985f),
         contentColor = palette.foreground,
         border = BorderStroke(1.dp, border),
@@ -883,7 +885,7 @@ private fun ReaderQuickGroupV11(title: String, items: List<ReaderQuickItemV11>) 
             gridItems(items) { item ->
                 Surface(
                     modifier = Modifier.fillMaxWidth().clickable(onClick = item.onClick),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                     color = t.card,
                     border = BorderStroke(1.dp, t.border),
                 ) {
@@ -926,7 +928,7 @@ private fun ReaderActionRowV11(icon: ImageVector, title: String, subtitle: Strin
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -952,7 +954,7 @@ private fun ReaderSelectionRowV11(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = if (selected) t.warmSurface else t.card,
         border = BorderStroke(1.dp, if (selected) t.accent.copy(alpha = .35f) else t.border),
     ) {
@@ -971,7 +973,7 @@ private fun ReaderArchiveCardV11(title: String, subtitle: String, onClick: () ->
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -997,7 +999,7 @@ private fun ReaderFontRowV11(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = if (selected) t.warmSurface else t.card,
         border = BorderStroke(1.dp, if (selected) t.accent.copy(alpha = .35f) else t.border),
     ) {
@@ -1017,7 +1019,7 @@ private fun ReaderPresetRowV11(preset: ReaderThemePresetV11, onApply: () -> Unit
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onApply),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -1041,7 +1043,7 @@ private fun ReaderThemeCardV11(theme: ReaderThemeV11, selected: Boolean, onClick
     val palette = readerPaletteV11(theme, "#FFF4F0E6", "#FF302D28")
     Surface(
         modifier = Modifier.fillMaxWidth().height(138.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = LanghuanShape.cover,
         color = palette.background,
         contentColor = palette.foreground,
         border = BorderStroke(2.dp, if (selected) LocalLanghuanUiTokens.current.accent else palette.secondary.copy(alpha = .18f)),
@@ -1050,7 +1052,7 @@ private fun ReaderThemeCardV11(theme: ReaderThemeV11, selected: Boolean, onClick
             if (selected) {
                 Surface(
                     modifier = Modifier.align(Alignment.TopEnd).size(28.dp),
-                    shape = RoundedCornerShape(999.dp),
+                    shape = LanghuanShape.pill,
                     color = LocalLanghuanUiTokens.current.accent,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -1071,7 +1073,7 @@ private fun ReaderEmptyV11(text: String) {
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.muted,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -1259,7 +1261,7 @@ private fun BookInfoSheetV11(book: ReaderBookUi, state: LibraryExperienceState, 
     ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(104.dp).clip(RoundedCornerShape(10.dp)))
+                CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(104.dp).clip(LanghuanShape.cover))
                 Column(Modifier.padding(start = 16.dp).weight(1f)) {
                     Text(book.title, style = MaterialTheme.typography.titleLarge, color = t.foreground, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (author.isNotBlank()) Text(author, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
@@ -1320,7 +1322,7 @@ private fun ReaderBookInfoPageV11(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.Top) {
-                CoverPreviewV3(book.coverPath, book.title, Modifier.width(92.dp).height(132.dp).clip(RoundedCornerShape(10.dp)))
+                CoverPreviewV3(book.coverPath, book.title, Modifier.width(92.dp).height(132.dp).clip(LanghuanShape.cover))
                 Column(Modifier.padding(start = 18.dp).weight(1f)) {
                     Text(book.title, style = MaterialTheme.typography.headlineSmall, color = t.foreground, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     Text(author.ifBlank { "佚名" }, Modifier.padding(top = 6.dp), color = t.mutedForeground)
@@ -1341,7 +1343,7 @@ private fun ReaderBookInfoPageV11(
                 Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusLg),
+                        shape = LanghuanShape.panel,
                         color = t.card,
                         border = BorderStroke(1.dp, t.border),
                     ) {
@@ -1370,7 +1372,7 @@ private fun ReaderBookInfoPageV11(
 
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusLg),
+                        shape = LanghuanShape.panel,
                         color = t.card,
                         border = BorderStroke(1.dp, t.border),
                     ) {
@@ -1388,7 +1390,7 @@ private fun ReaderBookInfoPageV11(
                     if (book.premise.isNotBlank() && !book.premise.startsWith("从外部稿件导入")) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(t.radiusLg),
+                            shape = LanghuanShape.panel,
                             color = t.card,
                             border = BorderStroke(1.dp, t.border),
                         ) {
@@ -1401,7 +1403,7 @@ private fun ReaderBookInfoPageV11(
                 }
             } else {
                 Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CoverPreviewV3(book.coverPath, book.title, Modifier.width(210.dp).height(304.dp).clip(RoundedCornerShape(10.dp)))
+                    CoverPreviewV3(book.coverPath, book.title, Modifier.width(210.dp).height(304.dp).clip(LanghuanShape.cover))
                     Text(book.title, Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleLarge, color = t.foreground)
                     Text("封面随图书保存在本机", Modifier.padding(top = 6.dp), color = t.mutedForeground)
                 }
@@ -1422,7 +1424,7 @@ private fun ReaderBookInfoPageV11(
 @Composable
 private fun ReaderMetaBadgeV11(text: String) {
     val t = LocalLanghuanUiTokens.current
-    Surface(shape = RoundedCornerShape(999.dp), color = t.muted, border = BorderStroke(1.dp, t.border)) {
+    Surface(shape = LanghuanShape.pill, color = t.muted, border = BorderStroke(1.dp, t.border)) {
         Text(text, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
     }
 }
@@ -1455,7 +1457,7 @@ private fun ReaderFloatingIconButtonV11(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = modifier.size(44.dp),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.card.copy(alpha = .94f),
         border = BorderStroke(1.dp, t.border),
         shadowElevation = 4.dp,

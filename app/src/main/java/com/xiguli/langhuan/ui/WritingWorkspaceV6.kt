@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -33,6 +32,7 @@ import com.xiguli.langhuan.engine.WorkspaceNaturalPlan
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.util.UUID
 
 private data class PendingCompoundV6(
@@ -238,7 +238,7 @@ private fun WorkspaceNaturalControllerDockV6(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             modifier = Modifier.size(28.dp),
-                            shape = RoundedCornerShape(t.radiusSm),
+                            shape = LanghuanShape.chip,
                             color = t.warmSurface,
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -294,7 +294,7 @@ private fun WorkspaceNaturalControllerDockV6(
                 quickAction?.let { action ->
                     Spacer(Modifier.width(7.dp))
                     Surface(
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         color = if (action == WorkspaceQuickActionV6.STOP) t.destructive.copy(alpha = .08f) else t.foreground,
                         contentColor = if (action == WorkspaceQuickActionV6.STOP) t.destructive else t.primaryForeground,
                         border = BorderStroke(
@@ -337,7 +337,7 @@ private fun WorkspaceNaturalControllerDockV6(
                         minLines = 1,
                         maxLines = 4,
                         enabled = !disabled,
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
                             unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -349,7 +349,7 @@ private fun WorkspaceNaturalControllerDockV6(
                     val canSend = input.isNotBlank() && !disabled
                     Surface(
                         modifier = Modifier.size(40.dp),
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         color = if (canSend) t.foreground else t.muted,
                         contentColor = if (canSend) t.primaryForeground else t.mutedForeground,
                     ) {
@@ -380,7 +380,7 @@ private fun WorkspaceToolChipV6(
 ) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = if (accent) t.warmSurface else t.card,
         contentColor = if (accent) t.accent else t.foreground,
         border = BorderStroke(1.dp, if (accent) t.accent.copy(alpha = .18f) else t.border),
@@ -451,7 +451,7 @@ private fun WorkspaceConversationHistoryV6(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = t.background,
-        shape = RoundedCornerShape(topStart = t.radiusXl, topEnd = t.radiusXl),
+        shape = LanghuanShape.sheetTop,
     ) {
         Column(
             Modifier.fillMaxWidth().fillMaxHeight(.86f).navigationBarsPadding().padding(horizontal = 18.dp),
@@ -483,7 +483,7 @@ private fun WorkspaceConversationHistoryV6(
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                             Surface(
                                 modifier = Modifier.size(28.dp),
-                                shape = RoundedCornerShape(t.radiusSm),
+                                shape = LanghuanShape.chip,
                                 color = t.warmSurface,
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -501,7 +501,7 @@ private fun WorkspaceConversationHistoryV6(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             Surface(
                                 modifier = Modifier.widthIn(max = 320.dp),
-                                shape = RoundedCornerShape(t.radiusMd),
+                                shape = LanghuanShape.card,
                                 color = t.foreground,
                                 contentColor = t.primaryForeground,
                             ) {
@@ -533,7 +533,7 @@ private fun WorkspaceConversationHistoryV6(
             state.error?.let { error ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.destructive.copy(alpha = .08f),
                     border = BorderStroke(1.dp, t.destructive.copy(alpha = .18f)),
                 ) {
@@ -547,7 +547,7 @@ private fun WorkspaceConversationHistoryV6(
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
             ) {
                 Text("回到写作继续说")

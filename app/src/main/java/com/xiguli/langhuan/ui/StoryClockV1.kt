@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -21,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -875,7 +875,7 @@ private fun StoryClockEventCardV1(
     event: StoryClockEventV1,
     onCancel: (String) -> Unit,
 ) {
-    Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(

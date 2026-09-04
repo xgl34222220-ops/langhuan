@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.*
@@ -18,6 +17,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -537,7 +537,7 @@ private fun StoryRoleEntrySnapshotDialogV1(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     item {
-                        Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 1.dp) {
+                        Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                                 Text(snapshot.roleName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text("第 ${snapshot.anchorChapter} 章进入 · 最近证据第 ${snapshot.sourceChapter.coerceAtLeast(1)} 章", color = MaterialTheme.colorScheme.primary)
@@ -567,7 +567,7 @@ private fun StoryRoleEntrySnapshotDialogV1(
                     if (snapshot.recentEvents.isNotEmpty()) {
                         item { Text("刚经历什么", fontWeight = FontWeight.Bold) }
                         items(snapshot.recentEvents.takeLast(5), key = { "${it.chapter}:${it.partIndex}:${it.summary}" }) { event ->
-                            Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                            Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                     Text("第 ${event.chapter} 章${event.storyTime.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                                     Text(event.summary, fontWeight = FontWeight.Medium)
@@ -579,7 +579,7 @@ private fun StoryRoleEntrySnapshotDialogV1(
                     if (snapshot.knownFacts.isNotEmpty()) item { SnapshotSectionV1("这个角色明确知道什么", snapshot.knownFacts.takeLast(12)) }
                     if (snapshot.relationshipHints.isNotEmpty()) item { SnapshotSectionV1("关系状态", snapshot.relationshipHints) }
                     item {
-                        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Surface(shape = LanghuanShape.card, color = MaterialTheme.colorScheme.secondaryContainer) {
                             Text(
                                 "不知道的秘密仍然不知道：未进入角色知识账本、没有亲眼看见/听见/收到的信息都不能使用；第 ${snapshot.anchorChapter + 1} 章及之后原著仍然完全锁死。",
                                 modifier = Modifier.padding(12.dp),
@@ -603,7 +603,7 @@ private fun StoryRoleEntrySnapshotDialogV1(
 @Composable
 private fun SnapshotSectionV1(title: String, lines: List<String>) {
     if (lines.isEmpty()) return
-    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(title, fontWeight = FontWeight.Bold)
             lines.filter { it.isNotBlank() }.forEach { line ->

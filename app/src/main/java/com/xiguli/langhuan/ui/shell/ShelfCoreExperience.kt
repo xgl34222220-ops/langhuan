@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -73,6 +72,7 @@ import com.xiguli.langhuan.ui.design.ShadcnIconButton
 import com.xiguli.langhuan.ui.design.ShadcnInput
 import com.xiguli.langhuan.ui.design.ShadcnMenuRow
 import com.xiguli.langhuan.ui.design.ShadcnSeparator
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private enum class ShelfCoreTab { BOOKS, SHELVES, PROFILE }
 
@@ -390,7 +390,7 @@ private fun ShelfBookTile(
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth().aspectRatio(.73f),
-            shape = RoundedCornerShape(t.radiusLg),
+            shape = LanghuanShape.panel,
             color = t.card,
             border = BorderStroke(1.dp, t.border),
             shadowElevation = 1.dp,
@@ -400,7 +400,7 @@ private fun ShelfBookTile(
                     Image(
                         bitmap = cover.asImageBitmap(),
                         contentDescription = book.title,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(t.radiusLg)),
+                        modifier = Modifier.fillMaxSize().clip(LanghuanShape.panel),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -422,7 +422,7 @@ private fun ShelfBookTile(
                 }
 
                 if (busy) {
-                    Surface(color = t.card.copy(alpha = .88f), shape = RoundedCornerShape(999.dp)) {
+                    Surface(color = t.card.copy(alpha = .88f), shape = LanghuanShape.pill) {
                         CircularProgressIndicator(Modifier.padding(10.dp).size(20.dp), strokeWidth = 2.dp, color = t.foreground)
                     }
                 }

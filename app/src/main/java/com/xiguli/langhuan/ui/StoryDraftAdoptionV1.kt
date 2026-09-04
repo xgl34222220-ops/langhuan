@@ -3,7 +3,6 @@ package com.xiguli.langhuan.ui
 import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.ChapterEditorStore
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -143,7 +143,7 @@ fun StoryPlayPanelV2(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = LanghuanShape.card,
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f),
                     ) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -172,7 +172,7 @@ fun StoryPlayPanelV2(
                     )
 
                     Text("当前正文", fontWeight = FontWeight.Bold)
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.surfaceVariant) {
                         SelectionContainer {
                             Text(
                                 original?.content?.ifBlank { "（当前章节暂无正文）" } ?: "（未读取到当前正文）",
@@ -184,7 +184,7 @@ fun StoryPlayPanelV2(
 
                     Text("候选：${parsed.title}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = LanghuanShape.cover,
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .4f),
                     ) {
                         SelectionContainer {

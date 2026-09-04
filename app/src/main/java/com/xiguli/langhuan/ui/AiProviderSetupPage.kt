@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -58,6 +57,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 @Composable
 fun AiProviderSetupPage(
@@ -97,7 +97,7 @@ fun AiProviderSetupPage(
                         Row(verticalAlignment = Alignment.Top) {
                             Surface(
                                 modifier = Modifier.size(38.dp),
-                                shape = RoundedCornerShape(t.radiusSm),
+                                shape = LanghuanShape.chip,
                                 color = t.warmSurface,
                                 contentColor = t.accent,
                             ) {
@@ -130,7 +130,7 @@ fun AiProviderSetupPage(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Surface(
                                         modifier = Modifier.size(38.dp),
-                                        shape = RoundedCornerShape(t.radiusSm),
+                                        shape = LanghuanShape.chip,
                                         color = if (active) t.warmSurface else t.muted,
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
@@ -175,7 +175,7 @@ fun AiProviderSetupPage(
                                         quickProviderId = provider.id
                                     },
                                     modifier = Modifier.fillMaxWidth().height(42.dp),
-                                    shape = RoundedCornerShape(t.radiusSm),
+                                    shape = LanghuanShape.chip,
                                 ) {
                                     Icon(Icons.Rounded.Tune, null, Modifier.size(18.dp))
                                     Spacer(Modifier.width(7.dp))
@@ -188,7 +188,7 @@ fun AiProviderSetupPage(
                         OutlinedButton(
                             onClick = vm::newProvider,
                             modifier = Modifier.fillMaxWidth().height(44.dp),
-                            shape = RoundedCornerShape(t.radiusMd),
+                            shape = LanghuanShape.card,
                             border = BorderStroke(1.dp, t.border),
                         ) {
                             Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
@@ -219,7 +219,7 @@ fun AiProviderSetupPage(
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text("名称") },
                                 singleLine = true,
-                                shape = RoundedCornerShape(t.radiusMd),
+                                shape = LanghuanShape.card,
                             )
                             OutlinedTextField(
                                 value = p.baseUrl,
@@ -227,7 +227,7 @@ fun AiProviderSetupPage(
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text("API Base URL") },
                                 singleLine = true,
-                                shape = RoundedCornerShape(t.radiusMd),
+                                shape = LanghuanShape.card,
                             )
                             OutlinedTextField(
                                 value = p.apiKey,
@@ -237,13 +237,13 @@ fun AiProviderSetupPage(
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
                                 leadingIcon = { Icon(Icons.Rounded.Key, null) },
-                                shape = RoundedCornerShape(t.radiusMd),
+                                shape = LanghuanShape.card,
                             )
                             Button(
                                 onClick = vm::detectProvider,
                                 enabled = p.baseUrl.isNotBlank() && !p.isDetecting,
                                 modifier = Modifier.fillMaxWidth().height(46.dp),
-                                shape = RoundedCornerShape(t.radiusMd),
+                                shape = LanghuanShape.card,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = t.foreground,
                                     contentColor = t.primaryForeground,
@@ -280,7 +280,7 @@ fun AiProviderSetupPage(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable { vm.selectModel(model) },
-                                        shape = RoundedCornerShape(t.radiusSm),
+                                        shape = LanghuanShape.chip,
                                         color = if (selected) t.warmSurface else t.muted,
                                         border = BorderStroke(1.dp, if (selected) t.accent.copy(alpha = .35f) else t.border),
                                     ) {
@@ -309,13 +309,13 @@ fun AiProviderSetupPage(
                                     modifier = Modifier.fillMaxWidth(),
                                     label = { Text("模型名 / 部署名（也可手填）") },
                                     singleLine = true,
-                                    shape = RoundedCornerShape(t.radiusMd),
+                                    shape = LanghuanShape.card,
                                 )
                                 Button(
                                     onClick = vm::saveProvider,
                                     enabled = p.transientReady && !p.isSaving,
                                     modifier = Modifier.fillMaxWidth().height(46.dp),
-                                    shape = RoundedCornerShape(t.radiusMd),
+                                    shape = LanghuanShape.card,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = t.foreground,
                                         contentColor = t.primaryForeground,
@@ -335,7 +335,7 @@ fun AiProviderSetupPage(
                         onClick = onDone,
                         enabled = p.ready && !p.isSaving && !p.isDetecting,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
-                        shape = RoundedCornerShape(t.radiusMd),
+                        shape = LanghuanShape.card,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = t.foreground,
                             contentColor = t.primaryForeground,

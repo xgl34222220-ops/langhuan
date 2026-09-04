@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Refresh
@@ -45,6 +44,7 @@ import com.xiguli.langhuan.engine.StoryHealthSeverity
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 @Composable
 internal fun StoryGraphHealthPillV10(
@@ -55,7 +55,7 @@ internal fun StoryGraphHealthPillV10(
     val report = state.report
     val danger = (report?.highCount ?: 0) > 0
     Surface(
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = when {
             danger -> t.destructive.copy(alpha = .08f)
             report != null && report.score >= 90 -> t.warmSurface
@@ -114,7 +114,7 @@ internal fun StoryGraphHealthSheetV10(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = t.background,
-        shape = RoundedCornerShape(topStart = t.radiusXl, topEnd = t.radiusXl),
+        shape = LanghuanShape.sheetTop,
     ) {
         Column(
             Modifier.fillMaxWidth().fillMaxHeight(.92f).padding(horizontal = 18.dp),
@@ -123,7 +123,7 @@ internal fun StoryGraphHealthSheetV10(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(40.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.warmSurface,
                     contentColor = t.accent,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
@@ -160,7 +160,7 @@ internal fun StoryGraphHealthSheetV10(
                 state.error != null && state.report == null -> {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusMd),
+                        shape = LanghuanShape.card,
                         color = t.destructive.copy(alpha = .08f),
                         border = BorderStroke(1.dp, t.destructive.copy(alpha = .18f)),
                     ) {
@@ -179,7 +179,7 @@ internal fun StoryGraphHealthSheetV10(
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
             ) {
                 Text("回到写作总控")
@@ -281,7 +281,7 @@ private fun StoryGraphHealthContentV10(
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                     color = t.warmSurface,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .16f)),
                 ) {
@@ -314,7 +314,7 @@ private fun StoryHealthIssueCardV10(
     val danger = issue.severity == StoryHealthSeverity.HIGH
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = if (danger) t.destructive.copy(alpha = .06f) else t.card,
         border = BorderStroke(1.dp, if (danger) t.destructive.copy(alpha = .18f) else t.border),
     ) {
@@ -342,7 +342,7 @@ private fun StoryHealthIssueCardV10(
                 issue.chapterNumber?.takeIf { it > 0 }?.let { chapter ->
                     OutlinedButton(
                         onClick = { onOpenChapter(chapter) },
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         border = BorderStroke(1.dp, t.border),
                     ) {
                         Text("打开第${chapter}章")

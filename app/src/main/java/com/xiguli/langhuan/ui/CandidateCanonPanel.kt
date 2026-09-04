@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.FactCheck
@@ -33,6 +32,7 @@ import com.xiguli.langhuan.domain.CandidateFactKind
 import com.xiguli.langhuan.domain.CandidateFactRisk
 import com.xiguli.langhuan.domain.CandidateFactStatus
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 @Composable
 internal fun CandidateCanonPanel(state: StudioUiState, vm: StudioViewModel) {
@@ -46,7 +46,7 @@ internal fun CandidateCanonPanel(state: StudioUiState, vm: StudioViewModel) {
     CandidatePanelCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 color = t.warmSurface,
                 border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
             ) {
@@ -71,7 +71,7 @@ internal fun CandidateCanonPanel(state: StudioUiState, vm: StudioViewModel) {
             Spacer(Modifier.height(8.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusSm),
+                shape = LanghuanShape.chip,
                 color = t.success.copy(alpha = .07f),
             ) {
                 Text(
@@ -108,7 +108,7 @@ internal fun CandidateCanonPanel(state: StudioUiState, vm: StudioViewModel) {
             if (fact.evidence.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.muted,
                 ) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -123,7 +123,7 @@ internal fun CandidateCanonPanel(state: StudioUiState, vm: StudioViewModel) {
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusSm),
+                shape = LanghuanShape.chip,
                 color = riskColor.copy(alpha = .06f),
                 border = BorderStroke(1.dp, riskColor.copy(alpha = .14f)),
             ) {
@@ -144,13 +144,13 @@ internal fun CandidateCanonPanel(state: StudioUiState, vm: StudioViewModel) {
                     onClick = { vm.rejectCandidateFact(fact.id) },
                     enabled = !state.isSaving,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 ) { Text("拒绝") }
                 Button(
                     onClick = { vm.confirmCandidateFact(fact.id) },
                     enabled = !state.isSaving,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.Check, null)
                     Spacer(Modifier.width(5.dp))
@@ -169,7 +169,7 @@ private fun CandidatePanelCard(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, borderColor ?: t.border),
     ) {
@@ -192,7 +192,7 @@ private fun CandidateFactValueV1(label: String, value: String, accent: Boolean) 
 
 @Composable
 private fun CandidateCountBadgeV1(label: String, color: Color) {
-    Surface(shape = RoundedCornerShape(999.dp), color = color.copy(alpha = .09f)) {
+    Surface(shape = LanghuanShape.pill, color = color.copy(alpha = .09f)) {
         Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = color)
     }
 }
@@ -201,7 +201,7 @@ private fun CandidateCountBadgeV1(label: String, color: Color) {
 private fun CandidateRiskBadgeV1(risk: CandidateFactRisk) {
     val color = risk.color()
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = color.copy(alpha = .10f),
         border = BorderStroke(1.dp, color.copy(alpha = .18f)),
     ) {

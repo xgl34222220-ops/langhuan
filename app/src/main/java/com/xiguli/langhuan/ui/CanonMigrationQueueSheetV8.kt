@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Block
@@ -47,6 +46,7 @@ import com.xiguli.langhuan.engine.CanonMigrationExecutionMode
 import com.xiguli.langhuan.engine.CanonMigrationTask
 import com.xiguli.langhuan.engine.CanonMigrationTaskStatus
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,7 +80,7 @@ internal fun CanonMigrationQueueSheetV8(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                     color = t.warmSurface,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
                 ) {
@@ -122,7 +122,7 @@ internal fun CanonMigrationQueueSheetV8(
             if (pending.isEmpty()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusLg),
+                    shape = LanghuanShape.panel,
                     color = t.success.copy(alpha = .08f),
                     border = BorderStroke(1.dp, t.success.copy(alpha = .18f)),
                 ) {
@@ -156,7 +156,7 @@ internal fun CanonMigrationQueueSheetV8(
                 }
             }
 
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(t.radiusMd)) {
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.card) {
                 Text("回到写作总控")
             }
             Spacer(Modifier.height(6.dp))
@@ -169,7 +169,7 @@ private fun MigrationPlanSummaryV8(summary: String) {
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -209,7 +209,7 @@ private fun MigrationNextActionV9(
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = tone.copy(alpha = .08f),
         border = BorderStroke(1.dp, tone.copy(alpha = .20f)),
     ) {
@@ -249,7 +249,7 @@ private fun MigrationNextActionV9(
                         CanonMigrationExecutionMode.CHAPTER_RUNTIME -> onOpenChapter
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
                     Text(
@@ -290,7 +290,7 @@ private fun MigrationTaskCardV8(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, if (failed) t.destructive.copy(alpha = .28f) else t.border),
     ) {
@@ -333,7 +333,7 @@ private fun MigrationTaskCardV8(
                     onClick = onOpenChapter,
                     enabled = !blocked,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.EditNote, null, Modifier.size(17.dp))
                     Text("打开第${task.chapterNumber}章进入 Runtime", Modifier.padding(start = 6.dp))
@@ -342,7 +342,7 @@ private fun MigrationTaskCardV8(
                     onClick = onExecuteSafe,
                     enabled = !blocked,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
                     Text("按当前 Canon 安全重建记忆", Modifier.padding(start = 6.dp))
@@ -351,7 +351,7 @@ private fun MigrationTaskCardV8(
                     onClick = onGenerateRepairProposal,
                     enabled = !blocked,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(17.dp))
                     Text(if (failed) "重试最小差异提案" else "生成最小差异提案", Modifier.padding(start = 6.dp))
@@ -397,7 +397,7 @@ private fun MigrationModeBadgeV8(mode: CanonMigrationExecutionMode) {
 @Composable
 private fun MigrationSmallBadgeV8(label: String, color: Color) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = color.copy(alpha = .10f),
         border = BorderStroke(1.dp, color.copy(alpha = .18f)),
     ) {
@@ -410,7 +410,7 @@ private fun MigrationQueueNoticeV8(text: String, color: Color, progress: Boolean
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = color.copy(alpha = .07f),
         border = BorderStroke(1.dp, color.copy(alpha = .18f)),
     ) {

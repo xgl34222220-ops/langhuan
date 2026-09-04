@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -50,6 +49,7 @@ import com.xiguli.langhuan.engine.NovelWorkflowStatus
 import com.xiguli.langhuan.engine.ProjectRuntimeReceiptState
 import com.xiguli.langhuan.engine.ProjectRuntimeSkillReceipt
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -73,7 +73,7 @@ internal fun ProjectWorkflowTracePillV7(
     val tone = if (staleCount > 0) t.destructive else runtime.color()
 
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = tone.copy(alpha = .08f),
         border = BorderStroke(1.dp, tone.copy(alpha = .18f)),
         modifier = Modifier.clickable(onClick = onClick),
@@ -135,7 +135,7 @@ internal fun ProjectWorkflowTraceSheetV7(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                     color = t.warmSurface,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
                 ) {
@@ -249,7 +249,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                             ) {
                                 capabilities.forEach { capability ->
                                     Surface(
-                                        shape = RoundedCornerShape(999.dp),
+                                        shape = LanghuanShape.pill,
                                         color = t.warmSurface,
                                         border = BorderStroke(1.dp, t.accent.copy(alpha = .16f)),
                                     ) {
@@ -303,7 +303,7 @@ internal fun ProjectWorkflowTraceSheetV7(
                 item {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusMd),
+                        shape = LanghuanShape.card,
                         color = t.muted,
                         border = BorderStroke(1.dp, t.border),
                     ) {
@@ -330,7 +330,7 @@ private fun TraceSectionV7(
     val color = if (danger) t.destructive else t.border
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = if (danger) t.destructive.copy(alpha = .06f) else t.card,
         border = BorderStroke(1.dp, if (danger) t.destructive.copy(alpha = .20f) else t.border),
     ) {
@@ -351,7 +351,7 @@ private fun TraceInlineNoticeV7(text: String, color: Color) {
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = color.copy(alpha = .07f),
         border = BorderStroke(1.dp, color.copy(alpha = .16f)),
     ) {
@@ -385,7 +385,7 @@ private fun ExecutionReceiptRowV9(receipt: ProjectRuntimeSkillReceipt) {
                     modifier = Modifier.weight(1f),
                     color = t.foreground,
                 )
-                Surface(shape = RoundedCornerShape(999.dp), color = tint.copy(alpha = .08f)) {
+                Surface(shape = LanghuanShape.pill, color = tint.copy(alpha = .08f)) {
                     Text(
                         receipt.state.label + receipt.durationMs?.let { " · ${formatDurationV9(it)}" }.orEmpty(),
                         Modifier.padding(horizontal = 7.dp, vertical = 3.dp),

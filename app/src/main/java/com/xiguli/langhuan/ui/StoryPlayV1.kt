@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -21,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -361,7 +361,7 @@ fun StoryPlayPanelV1(
         }
 
         if (!aiReady) {
-            Surface(Modifier.padding(horizontal = 16.dp), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.errorContainer) {
+            Surface(Modifier.padding(horizontal = 16.dp), shape = LanghuanShape.panel, color = MaterialTheme.colorScheme.errorContainer) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.CloudOff, null)
                     Text("故事模式需要先配置 AI", Modifier.padding(start = 8.dp).weight(1f))
@@ -377,7 +377,7 @@ fun StoryPlayPanelV1(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Person, null, tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.padding(start = 10.dp).weight(1f)) {
@@ -390,7 +390,7 @@ fun StoryPlayPanelV1(
             }
 
             if (session == null || session.turns.isEmpty()) item {
-                Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)) {
+                Surface(shape = LanghuanShape.sheet, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)) {
                     Column(Modifier.fillMaxWidth().padding(18.dp)) {
                         Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
                         Spacer(Modifier.height(10.dp))
@@ -403,17 +403,17 @@ fun StoryPlayPanelV1(
             session?.turns?.let { turns ->
                 items(turns, key = { it.id }) { turn ->
                     if (turn.player.isNotBlank()) {
-                        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Surface(shape = LanghuanShape.card, color = MaterialTheme.colorScheme.secondaryContainer) {
                             Text("你：${turn.player}", Modifier.fillMaxWidth().padding(14.dp))
                         }
                     }
-                    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                    Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                         Column(Modifier.fillMaxWidth().padding(16.dp)) {
                             Text(turn.narration, lineHeight = 28.sp)
                             if (turn.choices.isNotEmpty()) {
                                 Spacer(Modifier.height(12.dp))
                                 turn.choices.forEach { choice ->
-                                    OutlinedButton({ input = choice }, Modifier.fillMaxWidth().padding(vertical = 3.dp), shape = RoundedCornerShape(16.dp)) {
+                                    OutlinedButton({ input = choice }, Modifier.fillMaxWidth().padding(vertical = 3.dp), shape = LanghuanShape.card) {
                                         Text(choice, Modifier.fillMaxWidth())
                                     }
                                 }
@@ -428,14 +428,14 @@ fun StoryPlayPanelV1(
 
             if (session != null) item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ showVariables = true }, Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
+                    OutlinedButton({ showVariables = true }, Modifier.weight(1f), shape = LanghuanShape.card) {
                         Icon(Icons.Rounded.Tune, null); Spacer(Modifier.width(5.dp)); Text("变量 ${session.variables.size}")
                     }
                     Button(
                         onClick = { vm.generateChapterDraft(book); showDraft = true },
                         modifier = Modifier.weight(1f),
                         enabled = aiReady && !state.busy && session.turns.isNotEmpty(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = LanghuanShape.card,
                     ) {
                         Icon(Icons.Rounded.EditNote, null); Spacer(Modifier.width(5.dp)); Text("转章节草稿")
                     }
@@ -463,7 +463,7 @@ fun StoryPlayPanelV1(
                 OutlinedTextField(
                     input, { input = it }, Modifier.weight(1f),
                     placeholder = { Text("你要做什么、说什么……") }, minLines = 1, maxLines = 4,
-                    shape = RoundedCornerShape(22.dp), enabled = !state.busy,
+                    shape = LanghuanShape.panel, enabled = !state.busy,
                 )
                 FilledIconButton(
                     onClick = { val action = input; input = ""; vm.act(book, anchor?.content.orEmpty(), action) },
@@ -535,7 +535,7 @@ private fun VariableAccessDialog(
             if (variables.isEmpty()) Text("还没有变量。AI 发现真实状态变化后会自动创建。")
             else LazyColumn(Modifier.heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(variables, key = { "${it.subject}:${it.field}" }) { variable ->
-                    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                         Column(Modifier.fillMaxWidth().padding(12.dp)) {
                             Text("${variable.subject} · ${variable.field}", fontWeight = FontWeight.Bold)
                             Text(variable.value, color = MaterialTheme.colorScheme.onSurfaceVariant)

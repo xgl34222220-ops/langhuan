@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -33,6 +32,7 @@ import com.xiguli.langhuan.engine.WritingSkillUpdateClient
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -196,7 +196,7 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(36.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.warmSurface,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -238,7 +238,7 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
         OutlinedButton(
             onClick = viewModel::resetDefaults,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(t.radiusMd),
+            shape = LanghuanShape.card,
             border = BorderStroke(1.dp, t.border),
         ) {
             Icon(Icons.Rounded.Restore, null, Modifier.size(17.dp))
@@ -250,7 +250,7 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
     confirmingUpdate?.let { candidate ->
         AlertDialog(
             onDismissRequest = { if (state.updatingSkillId == null) confirmingUpdate = null },
-            shape = RoundedCornerShape(t.radiusXl),
+            shape = LanghuanShape.sheet,
             containerColor = t.background,
             icon = { Icon(Icons.Rounded.SystemUpdateAlt, null, tint = t.accent) },
             title = { Text("更新 Skill？", color = t.foreground) },
@@ -286,7 +286,7 @@ fun WritingSkillPanel(viewModel: WritingSkillViewModel) {
     deleting?.let { skill ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            shape = RoundedCornerShape(t.radiusXl),
+            shape = LanghuanShape.sheet,
             containerColor = t.background,
             title = { Text("卸载 ${skill.name}？", color = t.foreground) },
             text = { Text("只会移除这个用户 Skill 和它的任务绑定，不会影响小说数据、Canon 或正文。", color = t.mutedForeground) },
@@ -314,7 +314,7 @@ private fun SkillUpdateCenterV8(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(34.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.muted,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -328,7 +328,7 @@ private fun SkillUpdateCenterV8(
                 Button(
                     onClick = onCheck,
                     enabled = !state.isCheckingUpdates && state.updatingSkillId == null,
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
                 ) {
                     if (state.isCheckingUpdates) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = t.primaryForeground)
@@ -339,7 +339,7 @@ private fun SkillUpdateCenterV8(
 
             state.updateCandidates.values.forEach { candidate ->
                 Surface(
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.warmSurface,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .16f)),
                 ) {
@@ -383,7 +383,7 @@ private fun SkillGroup(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             modifier = Modifier.size(38.dp),
-                            shape = RoundedCornerShape(t.radiusSm),
+                            shape = LanghuanShape.chip,
                             color = if (actuallyActive) t.warmSurface else t.muted,
                             border = BorderStroke(1.dp, if (actuallyActive) t.accent.copy(alpha = .16f) else t.border),
                         ) {
@@ -429,7 +429,7 @@ private fun SkillGroup(
 
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = LanghuanShape.chip,
                         color = when {
                             actuallyActive -> t.warmSurface
                             binding.enabled -> t.destructive.copy(alpha = .05f)
@@ -536,7 +536,7 @@ private fun SkillTaskToggle(
 ) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         color = when {
             !enabled -> t.muted
             selected -> t.foreground

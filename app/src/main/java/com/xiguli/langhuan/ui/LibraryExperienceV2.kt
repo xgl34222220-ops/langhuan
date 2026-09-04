@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,6 +36,7 @@ import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.OutlineNode
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
@@ -213,7 +213,7 @@ private fun BookDetailV2(
         }
 
         item {
-            Surface(shape = RoundedCornerShape(28.dp), tonalElevation = 2.dp) {
+            Surface(shape = LanghuanShape.sheet, tonalElevation = 2.dp) {
                 Column(Modifier.fillMaxWidth().padding(18.dp)) {
                     Row {
                         V2CoverImage(book.coverPath, book.title, Modifier.width(126.dp).height(180.dp))
@@ -233,7 +233,7 @@ private fun BookDetailV2(
                             onClick = onContinueRead,
                             modifier = Modifier.weight(1f),
                             enabled = state.chapters.isNotEmpty(),
-                            shape = RoundedCornerShape(17.dp),
+                            shape = LanghuanShape.card,
                         ) {
                             Icon(Icons.Rounded.MenuBook, null)
                             Spacer(Modifier.width(6.dp))
@@ -242,7 +242,7 @@ private fun BookDetailV2(
                         FilledTonalButton(
                             onClick = onEnterWriting,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(17.dp),
+                            shape = LanghuanShape.card,
                         ) {
                             Icon(Icons.Rounded.EditNote, null)
                             Spacer(Modifier.width(6.dp))
@@ -255,16 +255,16 @@ private fun BookDetailV2(
 
         if (editingBook) {
             item {
-                Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("编辑作品资料", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        OutlinedTextField(bookTitle, { bookTitle = it }, Modifier.fillMaxWidth(), label = { Text("书名") }, shape = RoundedCornerShape(16.dp))
-                        OutlinedTextField(premise, { premise = it }, Modifier.fillMaxWidth(), label = { Text("作品简介") }, minLines = 4, shape = RoundedCornerShape(16.dp))
+                        OutlinedTextField(bookTitle, { bookTitle = it }, Modifier.fillMaxWidth(), label = { Text("书名") }, shape = LanghuanShape.card)
+                        OutlinedTextField(premise, { premise = it }, Modifier.fillMaxWidth(), label = { Text("作品简介") }, minLines = 4, shape = LanghuanShape.card)
                         Button(
                             onClick = { onSaveMetadata(bookTitle, premise); editingBook = false },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = bookTitle.isNotBlank() && premise.isNotBlank() && !state.isBusy,
-                            shape = RoundedCornerShape(16.dp),
+                            shape = LanghuanShape.card,
                         ) { Text("保存资料") }
                     }
                 }
@@ -272,7 +272,7 @@ private fun BookDetailV2(
         }
 
         item {
-            Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 1.dp) {
+            Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
@@ -283,15 +283,15 @@ private fun BookDetailV2(
                     Text("可重新生成书名、简介和本地合成封面，不改变小说核心设定。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onGenerateIdentity, Modifier.weight(1f), enabled = !state.isBusy, shape = RoundedCornerShape(16.dp)) { Text("AI 书名/简介") }
-                        OutlinedButton(onGenerateCover, Modifier.weight(1f), enabled = !state.isBusy, shape = RoundedCornerShape(16.dp)) { Text("AI 封面") }
+                        OutlinedButton(onGenerateIdentity, Modifier.weight(1f), enabled = !state.isBusy, shape = LanghuanShape.card) { Text("AI 书名/简介") }
+                        OutlinedButton(onGenerateCover, Modifier.weight(1f), enabled = !state.isBusy, shape = LanghuanShape.card) { Text("AI 封面") }
                     }
                     state.identitySuggestion?.let { suggestion ->
                         Spacer(Modifier.height(12.dp))
                         Text(suggestion.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(suggestion.premise, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(8.dp))
-                        Button(onApplyIdentity, enabled = !state.isBusy, shape = RoundedCornerShape(16.dp)) { Text("采用这套资料") }
+                        Button(onApplyIdentity, enabled = !state.isBusy, shape = LanghuanShape.card) { Text("采用这套资料") }
                     }
                 }
             }
@@ -303,7 +303,7 @@ private fun BookDetailV2(
                     Text("目录", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text("共 ${state.chapters.size} 章 · 长按思路改为明确的章节菜单", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
-                FilledTonalButton(onCreateChapter, enabled = !actionBusy, shape = RoundedCornerShape(16.dp)) {
+                FilledTonalButton(onCreateChapter, enabled = !actionBusy, shape = LanghuanShape.card) {
                     Icon(Icons.Rounded.Add, null)
                     Spacer(Modifier.width(5.dp))
                     Text("新章节")
@@ -336,7 +336,7 @@ private fun BookDetailV2(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("章节标题") },
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = LanghuanShape.card,
                 )
             },
             confirmButton = {
@@ -400,14 +400,14 @@ private fun ChapterDirectoryRow(
     var menu by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = LanghuanShape.card,
         tonalElevation = 1.dp,
     ) {
         Row(
             Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onRead).padding(horizontal = 16.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+            Surface(shape = LanghuanShape.cover, color = MaterialTheme.colorScheme.primaryContainer) {
                 Text(
                     chapter.chapterNumber.toString(),
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
@@ -492,13 +492,13 @@ private fun NovelReaderV2(
                         onClick = { previous?.let { onOpenChapter(it.chapterNumber) } },
                         modifier = Modifier.weight(1f),
                         enabled = previous != null,
-                        shape = RoundedCornerShape(17.dp),
+                        shape = LanghuanShape.card,
                     ) { Text("上一章") }
                     Button(
                         onClick = { next?.let { onOpenChapter(it.chapterNumber) } },
                         modifier = Modifier.weight(1f),
                         enabled = next != null,
-                        shape = RoundedCornerShape(17.dp),
+                        shape = LanghuanShape.card,
                     ) { Text("下一章") }
                 }
                 Spacer(Modifier.height(90.dp))
@@ -524,10 +524,10 @@ private fun V2CoverImage(path: String, title: String, modifier: Modifier = Modif
             ?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() }
     }
     if (bitmap != null) {
-        Image(bitmap, title, modifier.clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+        Image(bitmap, title, modifier.clip(LanghuanShape.card), contentScale = ContentScale.Crop)
     } else {
         Box(
-            modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+            modifier.clip(LanghuanShape.card).background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
             Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {

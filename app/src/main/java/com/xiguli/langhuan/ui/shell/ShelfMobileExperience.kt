@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -71,6 +70,7 @@ import com.xiguli.langhuan.ui.design.ShadcnButtonSize
 import com.xiguli.langhuan.ui.design.ShadcnButtonVariant
 import com.xiguli.langhuan.ui.design.ShadcnIconButton
 import com.xiguli.langhuan.ui.design.ShadcnInput
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private enum class MobileShelfTab { LIBRARY, ME }
 
@@ -150,7 +150,7 @@ fun ShelfMobileExperience(
                     .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 88.dp)
                     .fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = LanghuanShape.card,
                 color = t.card,
                 border = BorderStroke(1.dp, t.border),
                 shadowElevation = 8.dp,
@@ -232,7 +232,7 @@ fun ShelfMobileExperience(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             containerColor = t.card,
-            shape = RoundedCornerShape(20.dp),
+            shape = LanghuanShape.card,
             title = { Text("删除《${book.title}》？", color = t.foreground) },
             text = { Text("章节、版本和项目数据会一起删除。", color = t.mutedForeground) },
             confirmButton = {
@@ -369,7 +369,7 @@ private fun MobileBookTile(
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth().aspectRatio(.70f),
-            shape = RoundedCornerShape(14.dp),
+            shape = LanghuanShape.cover,
             color = t.muted,
             border = BorderStroke(1.dp, t.border.copy(alpha = .72f)),
             shadowElevation = 4.dp,
@@ -379,7 +379,7 @@ private fun MobileBookTile(
                     Image(
                         bitmap = cover.asImageBitmap(),
                         contentDescription = book.title,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)),
+                        modifier = Modifier.fillMaxSize().clip(LanghuanShape.cover),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -474,7 +474,7 @@ private fun MobileMePage(
             MobileSectionTitle("创作工具")
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 color = t.card,
                 border = BorderStroke(1.dp, t.border),
             ) {
@@ -501,7 +501,7 @@ private fun MobileQuickAction(
     Surface(
         onClick = onClick,
         modifier = modifier.height(84.dp),
-        shape = RoundedCornerShape(18.dp),
+        shape = LanghuanShape.card,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
@@ -523,12 +523,12 @@ private fun MobileActionCard(
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = LanghuanShape.card,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = t.muted) {
+            Surface(modifier = Modifier.size(44.dp), shape = LanghuanShape.cover, color = t.muted) {
                 Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(22.dp), tint = t.foreground) }
             }
             Column(Modifier.padding(start = 13.dp).weight(1f)) {
@@ -553,7 +553,7 @@ private fun MobileGroupedMenuRow(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 15.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(modifier = Modifier.size(30.dp), shape = RoundedCornerShape(9.dp), color = if (destructive) t.destructive.copy(alpha = .10f) else t.muted) {
+        Surface(modifier = Modifier.size(30.dp), shape = LanghuanShape.chip, color = if (destructive) t.destructive.copy(alpha = .10f) else t.muted) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(icon, null, Modifier.size(17.dp), tint = if (destructive) t.destructive else t.foreground)
             }
@@ -581,7 +581,7 @@ private fun MobileShelfDock(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = modifier.navigationBarsPadding().padding(horizontal = 46.dp, vertical = 12.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(25.dp),
+        shape = LanghuanShape.panel,
         color = t.card.copy(alpha = .97f),
         border = BorderStroke(1.dp, t.border),
         shadowElevation = 12.dp,
@@ -617,7 +617,7 @@ private fun MobileDockItem(
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxSize(),
-        shape = RoundedCornerShape(20.dp),
+        shape = LanghuanShape.card,
         color = if (selected) t.muted else Color.Transparent,
     ) {
         Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {

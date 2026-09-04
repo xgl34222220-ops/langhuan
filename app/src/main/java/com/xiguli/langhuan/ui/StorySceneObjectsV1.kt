@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -17,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -666,7 +666,7 @@ private fun StorySceneObjectsDialogV1(
                             StorySceneObjectCardV1(item, spatial, onDelete, onInteract)
                         }
                         1 -> items(scene.interactions.reversed(), key = { it.id }) { event ->
-                            Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                            Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                 Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                     Text("${event.objectName} · ${event.action.label}", fontWeight = FontWeight.Bold)
                                     Text("${event.actor} · ${if (event.accepted) "成功" else "失败"} · ${event.reason}", style = MaterialTheme.typography.bodySmall, color = if (event.accepted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
@@ -674,7 +674,7 @@ private fun StorySceneObjectsDialogV1(
                             }
                         }
                         2 -> items(scene.travelGuards.reversed(), key = { it.turnId }) { guard ->
-                            Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                            Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                 Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                     Text("${guard.objectName} 阻止移动", fontWeight = FontWeight.Bold)
                                     Text(guard.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -711,7 +711,7 @@ private fun StorySceneObjectCardV1(
         val to = spatial.places.firstOrNull { p -> p.id == it.toId }?.name ?: "?"
         "$from ↔ $to"
     }
-    Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 1.dp) {
+    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Settings, null, Modifier.size(18.dp))

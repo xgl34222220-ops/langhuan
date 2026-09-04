@@ -18,7 +18,7 @@ class ShadcnNewYorkShellTest {
         assertTrue(shelf.contains("MobileLibraryPage("))
         assertTrue(shelf.contains("MobileShelfDock("))
         assertTrue(shelf.contains("GridCells.Adaptive"))
-        assertTrue(shelf.contains("RoundedCornerShape(18.dp)"))
+        assertTrue(shelf.contains("LanghuanShape.card"))
         assertTrue(shelf.contains("CircleShape"))
         assertFalse(shelf.contains("NavigationBar("))
         assertFalse(shelf.contains("NavigationBarItem("))

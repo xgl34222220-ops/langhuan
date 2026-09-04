@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Route
@@ -31,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.domain.DriftSeverity
 import com.xiguli.langhuan.domain.ForeshadowPlanAction
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
@@ -45,7 +45,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
     val activeDebts = snapshot.longForm.narrativeDebts.filter { it.status.name != "RESOLVED" }
     val overdueDebts = activeDebts.count { it.status.name == "OVERDUE" }
     val lastExecution = snapshot.longForm.executionHistory.lastOrNull()
-    val shape = RoundedCornerShape(26.dp)
+    val shape = LanghuanShape.sheet
 
     Column(
         Modifier.fillMaxWidth()
@@ -57,7 +57,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+            Surface(shape = LanghuanShape.card, color = MaterialTheme.colorScheme.primaryContainer) {
                 Icon(Icons.Rounded.Route, null, Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.primary)
             }
             Column(Modifier.padding(start = 10.dp).weight(1f)) {
@@ -70,7 +70,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
             }
             if (highRisk > 0 || watchRisk > 0) {
                 Surface(
-                    shape = RoundedCornerShape(99.dp),
+                    shape = LanghuanShape.pill,
                     color = if (highRisk > 0) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
                 ) {
                     Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -91,7 +91,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
         lastExecution?.let { execution ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 color = if (execution.status.name == "DEVIATED") MaterialTheme.colorScheme.errorContainer.copy(alpha = .45f) else MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -106,7 +106,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
         if (activeDebts.isNotEmpty()) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 color = if (overdueDebts > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = .42f) else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .34f),
             ) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -122,7 +122,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
             onClick = { vm.refreshAutonomousPlan(6) },
             enabled = state.provider.ready && !state.isAutonomousPlanning && !state.isSaving,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(17.dp),
+            shape = LanghuanShape.card,
         ) {
             if (state.isAutonomousPlanning) {
                 CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
@@ -137,7 +137,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
             future.forEach { beat ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = LanghuanShape.card,
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
                     Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -146,7 +146,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                             Spacer(Modifier.width(8.dp))
                             Text(beat.title, Modifier.weight(1f), fontWeight = FontWeight.Bold)
                             if (beat.fixedByOutline) {
-                                Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                                Surface(shape = LanghuanShape.pill, color = MaterialTheme.colorScheme.secondaryContainer) {
                                     Text("锁定章纲", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
@@ -171,7 +171,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                 onClick = vm::planNextChapter,
                 enabled = state.provider.ready && !state.isPlanning && !state.isAutonomousPlanning && !state.isSaving,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(17.dp),
+                shape = LanghuanShape.card,
             ) {
                 Text("按自治计划细化下一章场景")
             }
@@ -206,7 +206,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
         if (plan.driftSignals.isNotEmpty()) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = LanghuanShape.card,
                 color = if (highRisk > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = .52f) else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .42f),
             ) {
                 Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {

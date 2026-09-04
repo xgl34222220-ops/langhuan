@@ -3,7 +3,6 @@ package com.xiguli.langhuan.ui
 import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -27,6 +26,7 @@ import com.xiguli.langhuan.domain.CharacterState
 import com.xiguli.langhuan.domain.TimelineEvent
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.security.MessageDigest
 import kotlin.math.max
@@ -334,7 +334,7 @@ fun OriginalCanonExtractionDialogV1(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
+                    Surface(shape = LanghuanShape.panel, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.MenuBook, null, tint = MaterialTheme.colorScheme.primary)
@@ -349,7 +349,7 @@ fun OriginalCanonExtractionDialogV1(
                     }
 
                     val fraction = if (state.totalUnits <= 0) 0f else state.processedUnits.toFloat() / state.totalUnits
-                    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                    Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("全书进度", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -365,7 +365,7 @@ fun OriginalCanonExtractionDialogV1(
                         }
                     }
 
-                    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                    Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text("抽取内容", fontWeight = FontWeight.Bold)
                             Text("• 每章 / 每片段摘要，形成完整章节索引")
@@ -381,7 +381,7 @@ fun OriginalCanonExtractionDialogV1(
                     }
 
                     if (state.previewLines.isNotEmpty()) {
-                        Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                        Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("已抽取数据预览", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -402,7 +402,7 @@ fun OriginalCanonExtractionDialogV1(
                     state.notice?.let { MessageSurfaceV1(it, false) }
 
                     if (state.busy) {
-                        OutlinedButton(vm::requestStop, Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) {
+                        OutlinedButton(vm::requestStop, Modifier.fillMaxWidth().height(54.dp), shape = LanghuanShape.card) {
                             Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(7.dp)); Text("当前批次完成后暂停")
                         }
                     } else {
@@ -410,7 +410,7 @@ fun OriginalCanonExtractionDialogV1(
                             onClick = { vm.start(book, chapters) },
                             enabled = aiReady && !state.applying && state.totalUnits > 0,
                             modifier = Modifier.fillMaxWidth().height(56.dp),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = LanghuanShape.card,
                         ) {
                             Icon(if (state.processedUnits > 0) Icons.Rounded.PlayArrow else Icons.Rounded.AutoAwesome, null)
                             Spacer(Modifier.width(7.dp))
@@ -422,7 +422,7 @@ fun OriginalCanonExtractionDialogV1(
                         onClick = { vm.applyToCanon(book.id, onApplied) },
                         enabled = !state.busy && !state.applying && state.processedUnits > 0,
                         modifier = Modifier.fillMaxWidth().height(56.dp),
-                        shape = RoundedCornerShape(18.dp),
+                        shape = LanghuanShape.card,
                     ) {
                         if (state.applying) {
                             CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
@@ -457,7 +457,7 @@ fun OriginalCanonExtractionDialogV1(
 @Composable
 private fun MessageSurfaceV1(text: String, error: Boolean) {
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = LanghuanShape.card,
         color = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
     ) {
         Text(

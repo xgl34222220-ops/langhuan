@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -42,6 +41,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 @Composable
 fun SkillsPageV3(
@@ -102,7 +102,7 @@ fun SkillsPageV3(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 modifier = Modifier.size(38.dp),
-                                shape = RoundedCornerShape(t.radiusSm),
+                                shape = LanghuanShape.chip,
                                 color = t.muted,
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -138,7 +138,7 @@ fun SkillsPageV3(
                         Button(
                             onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                             modifier = Modifier.fillMaxWidth().height(46.dp),
-                            shape = RoundedCornerShape(t.radiusMd),
+                            shape = LanghuanShape.card,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = t.foreground,
                                 contentColor = t.primaryForeground,

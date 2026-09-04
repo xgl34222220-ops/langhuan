@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -85,6 +84,7 @@ import com.xiguli.langhuan.ui.design.LanghuanMenuRow
 import com.xiguli.langhuan.ui.design.LanghuanPageHeader
 import com.xiguli.langhuan.ui.design.LanghuanSeparator
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 private enum class ReaderShelfPageV9 { BOOKS, SHELVES, PROFILE }
 
@@ -217,7 +217,7 @@ fun ReaderShelfV9(
         ModalBottomSheet(
             onDismissRequest = { showAdd = false },
             containerColor = t.background,
-            shape = RoundedCornerShape(topStart = t.radiusXl, topEnd = t.radiusXl),
+            shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)) {
                 Text(
@@ -248,7 +248,7 @@ fun ReaderShelfV9(
         ModalBottomSheet(
             onDismissRequest = { selectedBook = null },
             containerColor = t.background,
-            shape = RoundedCornerShape(topStart = t.radiusXl, topEnd = t.radiusXl),
+            shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
                 Text(
@@ -286,7 +286,7 @@ fun ReaderShelfV9(
         ModalBottomSheet(
             onDismissRequest = { movingBook = null },
             containerColor = t.background,
-            shape = RoundedCornerShape(topStart = t.radiusXl, topEnd = t.radiusXl),
+            shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
                 Text(
@@ -344,7 +344,7 @@ fun ReaderShelfV9(
                     onValueChange = { newShelfName = it },
                     label = { Text("书架名称") },
                     singleLine = true,
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 )
             },
             confirmButton = {
@@ -399,7 +399,7 @@ private fun ReaderBookGridV9(
                 placeholder = { Text("搜索书名或分类") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(19.dp)) },
                 singleLine = true,
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -435,7 +435,7 @@ private fun ReaderBookGridV9(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Surface(
                             modifier = Modifier.size(48.dp),
-                            shape = RoundedCornerShape(t.radiusMd),
+                            shape = LanghuanShape.card,
                             color = t.muted,
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -458,7 +458,7 @@ private fun ReaderBookGridV9(
                         Button(
                             onClick = onAdd,
                             modifier = Modifier.padding(top = 18.dp),
-                            shape = RoundedCornerShape(t.radiusMd),
+                            shape = LanghuanShape.card,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = t.foreground,
                                 contentColor = t.primaryForeground,
@@ -490,7 +490,7 @@ private fun ReaderBookGridV9(
                     ) {
                         Surface(
                             modifier = Modifier.fillMaxWidth().aspectRatio(.69f),
-                            shape = RoundedCornerShape(t.radiusSm),
+                            shape = LanghuanShape.chip,
                             border = BorderStroke(1.dp, t.border),
                             color = t.muted,
                             shadowElevation = 2.dp,
@@ -557,7 +557,7 @@ private fun ReaderShelfListV9(
                         ) {
                             Surface(
                                 modifier = Modifier.size(36.dp),
-                                shape = RoundedCornerShape(t.radiusSm),
+                                shape = LanghuanShape.chip,
                                 color = t.muted,
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -582,7 +582,7 @@ private fun ReaderShelfListV9(
                                             .width(64.dp)
                                             .height(92.dp)
                                             .clickable { onOpenBook(book.id) },
-                                        shape = RoundedCornerShape(6.dp),
+                                        shape = LanghuanShape.tag,
                                         border = BorderStroke(1.dp, t.border),
                                         color = t.muted,
                                     ) {
@@ -707,7 +707,7 @@ private fun ReaderBottomNavV9(
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
         shadowElevation = 8.dp,
@@ -750,7 +750,7 @@ private fun BottomNavItemV9(
     Surface(
         modifier = modifier,
         color = if (selected) t.muted else t.card,
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
     ) {
         Row(
             Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 10.dp),

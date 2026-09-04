@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -27,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.domain.BibleCategory
 import com.xiguli.langhuan.engine.AgentAction
 import com.xiguli.langhuan.engine.AgentActionKind
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
@@ -72,7 +72,7 @@ internal fun AgentPage(
                     onClick = vm::runChapterReview,
                     enabled = state.provider.ready && !state.isAgentReviewing && !state.isAuditing && state.draft.content.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(17.dp),
+                    shape = LanghuanShape.card,
                 ) {
                     if (state.isAgentReviewing) CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                     else Icon(Icons.Rounded.AutoAwesome, null)
@@ -84,7 +84,7 @@ internal fun AgentPage(
                     onClick = vm::runFullBookAudit,
                     enabled = state.provider.ready && !state.isAgentReviewing && !state.isAuditing,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(17.dp),
+                    shape = LanghuanShape.card,
                 ) {
                     if (state.isAuditing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Rounded.Timeline, null)
@@ -109,7 +109,7 @@ internal fun AgentPage(
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(styleName, { styleName = it }, Modifier.fillMaxWidth(), label = { Text("模板名称") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                OutlinedTextField(styleName, { styleName = it }, Modifier.fillMaxWidth(), label = { Text("模板名称") }, singleLine = true, shape = LanghuanShape.card)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     styleText,
@@ -117,14 +117,14 @@ internal fun AgentPage(
                     Modifier.fillMaxWidth(),
                     label = { Text("叙述语气、句式、节奏、视角距离、禁用表达等") },
                     minLines = 4,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = LanghuanShape.card,
                 )
                 Spacer(Modifier.height(9.dp))
                 Button(
                     onClick = { vm.saveStyleTemplate(styleName, styleText) },
                     enabled = styleText.isNotBlank() && !state.isSaving,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(17.dp),
+                    shape = LanghuanShape.card,
                 ) {
                     Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(7.dp)); Text("保存为当前文风")
                 }
@@ -137,10 +137,10 @@ internal fun AgentPage(
                 Text(".lhproj 保存大纲、圣经、人物、关系、时间线、伏笔和所有章节；不会包含 API Key。恢复时生成新项目，不覆盖原书。", color = LocalLanghuanTokens.current.textSecondary)
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onProjectBackup, Modifier.weight(1f), enabled = !state.isExporting, shape = RoundedCornerShape(16.dp)) {
+                    OutlinedButton(onProjectBackup, Modifier.weight(1f), enabled = !state.isExporting, shape = LanghuanShape.card) {
                         Icon(Icons.Rounded.FileDownload, null); Spacer(Modifier.width(5.dp)); Text("备份")
                     }
-                    OutlinedButton(onProjectRestore, Modifier.weight(1f), enabled = !state.isImporting, shape = RoundedCornerShape(16.dp)) {
+                    OutlinedButton(onProjectRestore, Modifier.weight(1f), enabled = !state.isImporting, shape = LanghuanShape.card) {
                         Icon(Icons.Rounded.FileOpen, null); Spacer(Modifier.width(5.dp)); Text("恢复")
                     }
                 }
@@ -209,7 +209,7 @@ internal fun AgentPage(
                             Text("冲突：${option.conflict}", color = LocalLanghuanTokens.current.textSecondary)
                             Text("转折：${option.turningPoint}", color = LocalLanghuanTokens.current.textSecondary)
                             Spacer(Modifier.height(9.dp))
-                            OutlinedButton({ vm.useAgentNextOption(index) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                            OutlinedButton({ vm.useAgentNextOption(index) }, modifier = Modifier.fillMaxWidth(), shape = LanghuanShape.card) {
                                 Text("转为章纲并预览")
                             }
                         }
@@ -234,7 +234,7 @@ private fun AgentActionCard(action: AgentAction, memory: Boolean) = AgentCard {
 
 @Composable
 private fun AgentCard(content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(26.dp)
+    val shape = LanghuanShape.sheet
     Column(
         Modifier.fillMaxWidth()
             .shadow(2.dp, shape)

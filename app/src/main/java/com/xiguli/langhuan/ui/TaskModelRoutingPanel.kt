@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -51,6 +50,7 @@ import com.xiguli.langhuan.engine.ModelRecommendation
 import com.xiguli.langhuan.engine.ModelTaskTelemetry
 import com.xiguli.langhuan.engine.ProviderAutoDetector
 import com.xiguli.langhuan.engine.TaskModelRoute
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -186,7 +186,7 @@ fun TaskModelRoutingPanel(viewModel: TaskModelRoutingViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val global = state.providers.firstOrNull { it.isDefault } ?: state.providers.firstOrNull()
 
-    Card(shape = RoundedCornerShape(24.dp)) {
+    Card(shape = LanghuanShape.panel) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Hub, null, tint = MaterialTheme.colorScheme.primary)
@@ -202,7 +202,7 @@ fun TaskModelRoutingPanel(viewModel: TaskModelRoutingViewModel) {
 
             global?.let {
                 Surface(
-                    shape = RoundedCornerShape(15.dp),
+                    shape = LanghuanShape.cover,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f),
                 ) {
                     Text(
@@ -223,7 +223,7 @@ fun TaskModelRoutingPanel(viewModel: TaskModelRoutingViewModel) {
                 val expanded = state.expandedTask == task
                 Surface(
                     modifier = Modifier.fillMaxWidth().clickable { viewModel.toggle(task) },
-                    shape = RoundedCornerShape(18.dp),
+                    shape = LanghuanShape.card,
                     color = if (route == null) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .38f)
                     else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .55f),
                 ) {
@@ -295,7 +295,7 @@ fun TaskModelRoutingPanel(viewModel: TaskModelRoutingViewModel) {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable(enabled = profile.transportSupported) { viewModel.setRoute(task, model) },
-                                        shape = RoundedCornerShape(15.dp),
+                                        shape = LanghuanShape.cover,
                                         color = when {
                                             selected -> MaterialTheme.colorScheme.primaryContainer
                                             profile.transportSupported -> MaterialTheme.colorScheme.surface.copy(alpha = .75f)

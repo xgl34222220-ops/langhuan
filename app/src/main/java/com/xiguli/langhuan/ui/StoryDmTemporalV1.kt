@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -17,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -492,7 +492,7 @@ private fun StoryDmTemporalDialogV1(
                     item { Text("等待中的因果 · ${pending.size}", fontWeight = FontWeight.Bold) }
                     if (pending.isEmpty()) item { Text("目前没有未到时的事件。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     items(pending, key = { it.id }) { event ->
-                        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                        Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                             Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(formatStoryClockTimeV1(scene.anchorTimeLabel, event.dueMinute), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)

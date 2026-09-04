@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -23,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -658,7 +658,7 @@ private fun NpcMemoryDialogV1(
                     Text("立即整理记忆与计划")
                 }
                 error?.let {
-                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(12.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = LanghuanShape.cover) {
                         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             IconButton(onClearError) { Icon(Icons.Rounded.Close, "关闭") }
@@ -666,7 +666,7 @@ private fun NpcMemoryDialogV1(
                     }
                 }
                 notice?.let {
-                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = LanghuanShape.cover) {
                         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             IconButton(onClearNotice) { Icon(Icons.Rounded.Close, "关闭") }
@@ -690,7 +690,7 @@ private fun NpcMemoryDialogV1(
                             item { Text("还没有长期记忆。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         } else {
                             items(slice.memories.sortedByDescending { it.createdAt }, key = { it.id }) { memory ->
-                                Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp) {
+                                Surface(shape = LanghuanShape.cover, tonalElevation = 1.dp) {
                                     Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.Top) {
                                         Column(Modifier.weight(1f)) {
                                             Text("${memory.privacy.label} · 重要度 ${memory.importance}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -711,7 +711,7 @@ private fun NpcMemoryDialogV1(
                             item { Text("暂无长期计划。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         } else {
                             items(plans, key = { it.id }) { plan ->
-                                Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp) {
+                                Surface(shape = LanghuanShape.cover, tonalElevation = 1.dp) {
                                     Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.Top) {
                                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                             Text("${plan.status.label} · P${plan.priority}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)

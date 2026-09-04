@@ -34,9 +34,6 @@ class DesignTokenGuardTest {
 
     // ---- 基线：只许降，不许升 ---------------------------------------------
     private companion object {
-        /** DESIGN.md §4「圆角必须锁定语义」。改用 LanghuanShape.* / LanghuanRadius.*。 */
-        const val HARDCODED_RADIUS_BASELINE = 530
-
         /** DESIGN.md §5 字体层级。改用 MaterialTheme.typography.* 或 readingTextStyle()。 */
         const val HARDCODED_FONT_SIZE_BASELINE = 56
 
@@ -50,13 +47,21 @@ class DesignTokenGuardTest {
         const val EMOJI_FILE_BASELINE = 2
     }
 
+    /**
+     * 这条已经收干净了，所以直接断言 0，不再留基线。
+     * 判据是「RoundedCornerShape 后面直接跟数字」——用 LanghuanRadius 组合出来的
+     * 条件圆角不算越界，写死的 dp 值才算。
+     */
     @Test
-    fun hardcodedCornerRadiusDoesNotGrow() {
-        val found = countMatches(Regex("""RoundedCornerShape\("""))
-        assertTrue(
-            "硬编码圆角从 $HARDCODED_RADIUS_BASELINE 涨到了 $found。" +
-                "新代码请用 LanghuanShape.card / LanghuanRadius.cover 等语义尺度（DESIGN.md §4）。",
-            found <= HARDCODED_RADIUS_BASELINE,
+    fun noHardcodedCornerRadiusOutsideTheme() {
+        val offenders = sourcesOutsideTheme()
+            .filter { Regex("""RoundedCornerShape\(\s*\d""").containsMatchIn(it.readText()) }
+            .map { it.name }
+            .sorted()
+        assertEquals(
+            "圆角必须来自 LanghuanShape.* / LanghuanRadius.*（DESIGN.md §4）。越界文件：$offenders",
+            emptyList<String>(),
+            offenders,
         )
     }
 

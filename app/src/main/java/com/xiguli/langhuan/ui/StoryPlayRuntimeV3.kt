@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -23,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -786,7 +786,7 @@ fun StoryPlayPanelV3(
         if (!aiReady) {
             Surface(
                 Modifier.padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(22.dp),
+                shape = LanghuanShape.panel,
                 color = MaterialTheme.colorScheme.errorContainer,
             ) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -805,7 +805,7 @@ fun StoryPlayPanelV3(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Person, null, tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.padding(start = 10.dp).weight(1f)) {
@@ -827,7 +827,7 @@ fun StoryPlayPanelV3(
 
             item {
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = LanghuanShape.card,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .45f),
                 ) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -847,7 +847,7 @@ fun StoryPlayPanelV3(
 
             if (session == null || session.turns.isEmpty()) item {
                 Surface(
-                    shape = RoundedCornerShape(26.dp),
+                    shape = LanghuanShape.sheet,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -870,11 +870,11 @@ fun StoryPlayPanelV3(
             session?.turns?.let { turns ->
                 items(turns, key = { it.id }) { turn ->
                     if (turn.player.isNotBlank()) {
-                        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Surface(shape = LanghuanShape.card, color = MaterialTheme.colorScheme.secondaryContainer) {
                             Text("你：${turn.player}", Modifier.fillMaxWidth().padding(14.dp))
                         }
                     }
-                    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+                    Surface(shape = LanghuanShape.panel, tonalElevation = 1.dp) {
                         Column(Modifier.fillMaxWidth().padding(16.dp)) {
                             Text(turn.narration, lineHeight = 28.sp)
                             if (turn.choices.isNotEmpty()) {
@@ -883,7 +883,7 @@ fun StoryPlayPanelV3(
                                     OutlinedButton(
                                         onClick = { input = choice },
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                        shape = RoundedCornerShape(16.dp),
+                                        shape = LanghuanShape.card,
                                     ) {
                                         Text(choice, Modifier.fillMaxWidth())
                                     }
@@ -901,7 +901,7 @@ fun StoryPlayPanelV3(
 
             if (session != null) item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ showState = true }, Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
+                    OutlinedButton({ showState = true }, Modifier.weight(1f), shape = LanghuanShape.card) {
                         Icon(Icons.Rounded.Hub, null)
                         Spacer(Modifier.width(5.dp))
                         Text("状态中心")
@@ -913,7 +913,7 @@ fun StoryPlayPanelV3(
                         },
                         modifier = Modifier.weight(1f),
                         enabled = aiReady && !state.busy && session.turns.isNotEmpty(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = LanghuanShape.card,
                     ) {
                         Icon(Icons.Rounded.EditNote, null)
                         Spacer(Modifier.width(5.dp))
@@ -959,7 +959,7 @@ fun StoryPlayPanelV3(
                     placeholder = { Text("你要做什么、说什么……") },
                     minLines = 1,
                     maxLines = 4,
-                    shape = RoundedCornerShape(22.dp),
+                    shape = LanghuanShape.panel,
                     enabled = !state.busy,
                 )
                 FilledIconButton(
@@ -1167,7 +1167,7 @@ private fun StoryStateCenterDialogV3(
                             } else {
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                                     items(knowledge, key = { it.id }) { entry ->
-                                        Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp) {
+                                        Surface(shape = LanghuanShape.cover, tonalElevation = 1.dp) {
                                             Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f)) {
                                                     Text("${entry.character} · ${entry.kind.label}", fontWeight = FontWeight.SemiBold)
@@ -1202,7 +1202,7 @@ private fun StoryStateCenterDialogV3(
                             } else {
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                                     items(relations, key = { it.id }) { relation ->
-                                        Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp) {
+                                        Surface(shape = LanghuanShape.cover, tonalElevation = 1.dp) {
                                             Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f)) {
                                                     Text("${relation.from} → ${relation.to}", fontWeight = FontWeight.SemiBold)
@@ -1224,7 +1224,7 @@ private fun StoryStateCenterDialogV3(
                         } else {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(variables, key = { "${it.subject}:${it.field}" }) { variable ->
-                                    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                                    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                         Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                             Text("${variable.subject} · ${variable.field}", fontWeight = FontWeight.Bold)
                                             Text(variable.value, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1346,7 +1346,7 @@ private fun StoryBranchManagerDialogV3(
             if (sessions.isEmpty()) Text("暂无分支")
             else LazyColumn(Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(sessions.sortedByDescending { it.updatedAt }, key = { it.id }) { session ->
-                    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
+                    Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                         Column(Modifier.fillMaxWidth().padding(10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {

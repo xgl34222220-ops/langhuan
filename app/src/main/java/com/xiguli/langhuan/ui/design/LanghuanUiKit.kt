@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 /**
  * Semantic design tokens for the Langhuan UI layer.
@@ -102,7 +102,7 @@ fun LanghuanCard(
         modifier = modifier,
         color = t.card,
         contentColor = t.cardForeground,
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         border = BorderStroke(1.dp, t.border),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -177,7 +177,7 @@ fun LanghuanIconButton(
         modifier = modifier.size(40.dp),
         color = container,
         contentColor = foreground,
-        shape = RoundedCornerShape(t.radiusSm),
+        shape = LanghuanShape.chip,
         border = BorderStroke(1.dp, if (selected) t.foreground else t.border),
     ) {
         Box(
@@ -200,7 +200,7 @@ fun LanghuanBadge(
         modifier = modifier,
         color = if (accent) t.accent else t.muted,
         contentColor = if (accent) t.accentForeground else t.mutedForeground,
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         border = BorderStroke(1.dp, t.border),
     ) {
         Text(
@@ -231,7 +231,7 @@ fun LanghuanMenuRow(
     ) {
         Surface(
             modifier = Modifier.size(34.dp),
-            shape = RoundedCornerShape(t.radiusSm),
+            shape = LanghuanShape.chip,
             color = t.muted,
             contentColor = t.foreground,
         ) {

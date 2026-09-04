@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -23,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -456,7 +456,7 @@ fun StoryPlayPanelV7(
                     .align(Alignment.TopCenter)
                     .padding(horizontal = 16.dp, vertical = 68.dp)
                     .widthIn(max = 560.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = LanghuanShape.card,
                 tonalElevation = 6.dp,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
@@ -656,7 +656,7 @@ private fun TavernDirectorDialogV1(
                             }.take(60)
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(filtered, key = { it.name }) { role ->
-                                    Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp) {
+                                    Surface(shape = LanghuanShape.cover, tonalElevation = 1.dp) {
                                         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Checkbox(
                                                 checked = role.name in scene.cast,
@@ -757,7 +757,7 @@ private fun TavernBeatDialogV1(
                             onClick = { onRespond(choice) },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !busy,
-                            shape = RoundedCornerShape(14.dp),
+                            shape = LanghuanShape.cover,
                         ) { Text(choice, Modifier.fillMaxWidth()) }
                     }
                 }

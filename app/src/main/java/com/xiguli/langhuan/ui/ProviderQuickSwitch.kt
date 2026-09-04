@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.Psychology
@@ -29,6 +28,7 @@ import com.xiguli.langhuan.data.StoredAiProvider
 import com.xiguli.langhuan.engine.AiTaskRoutingStore
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.ProviderAutoDetector
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -216,7 +216,7 @@ fun ProviderQuickSwitchSheet(
 
                 state.selectedProvider?.let { provider ->
                     Surface(
-                        shape = RoundedCornerShape(18.dp),
+                        shape = LanghuanShape.card,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
                     ) {
                         Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -262,7 +262,7 @@ fun ProviderQuickSwitchSheet(
                                         state.selectedProviderId?.let(onProviderActivated)
                                         viewModel.switchModel(model.id)
                                     },
-                                shape = RoundedCornerShape(16.dp),
+                                shape = LanghuanShape.card,
                                 color = if (selected) {
                                     MaterialTheme.colorScheme.primaryContainer
                                 } else {

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -36,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.engine.CanonChangeRisk
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +60,7 @@ internal fun CanonChangeProposalSheetV7(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                     color = t.warmSurface,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
                 ) {
@@ -94,7 +94,7 @@ internal fun CanonChangeProposalSheetV7(
             if (proposal != null) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusLg),
+                    shape = LanghuanShape.panel,
                     color = t.card,
                     border = BorderStroke(1.dp, t.border),
                 ) {
@@ -128,7 +128,7 @@ internal fun CanonChangeProposalSheetV7(
                     items(proposal.patches, key = { "${it.targetType}:${it.targetId}:${it.field}" }) { patch ->
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(t.radiusLg),
+                            shape = LanghuanShape.panel,
                             color = t.card,
                             border = BorderStroke(1.dp, t.border),
                         ) {
@@ -146,7 +146,7 @@ internal fun CanonChangeProposalSheetV7(
                                 if (patch.reason.isNotBlank()) {
                                     Surface(
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(t.radiusSm),
+                                        shape = LanghuanShape.chip,
                                         color = t.muted,
                                     ) {
                                         Text(
@@ -174,7 +174,7 @@ internal fun CanonChangeProposalSheetV7(
                         items(proposal.impacts, key = { "${it.scope}:${it.label}:${it.chapterNumber}" }) { impact ->
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(t.radiusMd),
+                                shape = LanghuanShape.card,
                                 color = t.warning.copy(alpha = .07f),
                                 border = BorderStroke(1.dp, t.warning.copy(alpha = .18f)),
                             ) {
@@ -205,7 +205,7 @@ internal fun CanonChangeProposalSheetV7(
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                     color = t.muted,
                 ) {
                     Text(
@@ -221,13 +221,13 @@ internal fun CanonChangeProposalSheetV7(
                         onClick = onDiscard,
                         enabled = !state.active,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(t.radiusMd),
+                        shape = LanghuanShape.card,
                     ) { Text("放弃提案") }
                     Button(
                         onClick = onApply,
                         enabled = !state.active,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(t.radiusMd),
+                        shape = LanghuanShape.card,
                     ) {
                         Icon(Icons.Rounded.CheckCircle, null, Modifier.size(17.dp))
                         Text("确认写入", modifier = Modifier.padding(start = 6.dp))
@@ -259,7 +259,7 @@ private fun CanonRiskBadgeV7(risk: CanonChangeRisk) {
         }
     }
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = color.copy(alpha = .10f),
         border = BorderStroke(1.dp, color.copy(alpha = .20f)),
     ) {
@@ -287,7 +287,7 @@ private fun InspectorNoticeV7(text: String, tone: InspectorToneV7, progress: Boo
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = color.copy(alpha = .07f),
         border = BorderStroke(1.dp, color.copy(alpha = .18f)),
     ) {

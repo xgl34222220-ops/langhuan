@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 enum class ShadcnButtonVariant { DEFAULT, OUTLINE, SECONDARY, GHOST, DESTRUCTIVE }
 enum class ShadcnButtonSize { XS, SM, DEFAULT, LG, ICON }
@@ -78,7 +78,7 @@ fun ShadcnButton(
             minWidth = if (size == ShadcnButtonSize.ICON) height else 0.dp,
             minHeight = height,
         ),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = if (enabled) container else container.copy(alpha = .5f),
         contentColor = if (enabled) content else content.copy(alpha = .55f),
         border = if (border == Color.Transparent) null else BorderStroke(1.dp, border),
@@ -126,7 +126,7 @@ fun ShadcnIconButton(
     Surface(
         onClick = onClick,
         modifier = modifier.size(38.dp),
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = container,
         contentColor = foreground,
         border = border,
@@ -146,7 +146,7 @@ fun ShadcnCard(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         contentColor = t.cardForeground,
         border = BorderStroke(1.dp, t.border),
@@ -186,7 +186,7 @@ fun ShadcnInput(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(t.radiusMd),
+        shape = LanghuanShape.card,
         color = t.card,
         border = BorderStroke(1.dp, t.input),
         shadowElevation = .5.dp,
@@ -229,7 +229,7 @@ fun ShadcnTabs(
     val t = LocalLanghuanUiTokens.current
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(t.radiusLg))
+            .clip(LanghuanShape.panel)
             .background(t.muted)
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -238,7 +238,7 @@ fun ShadcnTabs(
             Surface(
                 onClick = { onSelected(index) },
                 modifier = Modifier.weight(1f).height(34.dp),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 color = if (index == selectedIndex) t.card else Color.Transparent,
                 contentColor = if (index == selectedIndex) t.foreground else t.mutedForeground,
                 shadowElevation = if (index == selectedIndex) 1.dp else 0.dp,

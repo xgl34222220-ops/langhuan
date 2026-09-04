@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -55,6 +54,7 @@ import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,7 +94,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(40.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.warmSurface,
                     contentColor = t.accent,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
@@ -131,7 +131,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
 
             if (state.lastReferenceUsage.isNotBlank()) {
                 Surface(
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     color = t.warmSurface,
                     contentColor = t.accent,
                     border = BorderStroke(1.dp, t.accent.copy(alpha = .12f)),
@@ -156,7 +156,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
                 onClick = { refresh(openAfter = true) },
                 enabled = !loading,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusMd),
+                shape = LanghuanShape.card,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = t.foreground,
                     contentColor = t.primaryForeground,
@@ -195,7 +195,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
 private fun DnaBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = LanghuanShape.pill,
         color = t.muted,
         contentColor = t.mutedForeground,
         border = BorderStroke(1.dp, t.border),
@@ -228,7 +228,7 @@ private fun ReferenceTemplatePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(t.radiusXl),
+        shape = LanghuanShape.sheet,
         containerColor = t.background,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -288,7 +288,7 @@ private fun ReferenceTemplatePickerDialog(
         confirmButton = {
             Button(
                 onClick = onDismiss,
-                shape = RoundedCornerShape(t.radiusSm),
+                shape = LanghuanShape.chip,
                 colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
             ) { Text("完成") }
         },
@@ -403,7 +403,7 @@ private fun TemplateReportCard(
                 OutlinedButton(
                     onClick = { onToggle(!checked) },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     border = BorderStroke(1.dp, t.border),
                 ) {
                     Text(if (checked) "取消引用" else "引用这份 DNA")
@@ -411,7 +411,7 @@ private fun TemplateReportCard(
                 Button(
                     onClick = onView,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = LanghuanShape.chip,
                     colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
                 ) {
                     Icon(Icons.Rounded.DataObject, null, Modifier.size(17.dp))

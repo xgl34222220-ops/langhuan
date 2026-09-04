@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlin.math.max
 import kotlin.math.min
 
@@ -171,12 +171,12 @@ fun ChapterEditorExperience(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("章节标题") },
                     singleLine = true,
-                    shape = RoundedCornerShape(t.radiusMd),
+                    shape = LanghuanShape.card,
                 )
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusLg),
+                    shape = LanghuanShape.panel,
                     color = t.card,
                     border = BorderStroke(1.dp, t.border),
                 ) {
@@ -194,7 +194,7 @@ fun ChapterEditorExperience(
                             maxLines = 60,
                             placeholder = { Text("直接写正文；选中一段后，下方会出现 AI 局部精修。") },
                             textStyle = LocalTextStyle.current.copy(fontSize = 17.sp, lineHeight = 29.sp),
-                            shape = RoundedCornerShape(t.radiusMd),
+                            shape = LanghuanShape.card,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = t.background,
                                 unfocusedContainerColor = t.background,
@@ -207,7 +207,7 @@ fun ChapterEditorExperience(
 
                 if (selectedText.isNotBlank()) {
                     Surface(
-                        shape = RoundedCornerShape(t.radiusLg),
+                        shape = LanghuanShape.panel,
                         color = t.warmSurface,
                         border = BorderStroke(1.dp, t.accent.copy(alpha = .24f)),
                     ) {
@@ -273,7 +273,7 @@ private fun EditorSaveState(state: ChapterEditorUiState) {
         state.dirty -> "待自动保存" to t.accent
         else -> "已保存" to t.success
     }
-    Surface(shape = RoundedCornerShape(99.dp), color = color.copy(alpha = .10f)) {
+    Surface(shape = LanghuanShape.pill, color = color.copy(alpha = .10f)) {
         Row(Modifier.padding(horizontal = 9.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
             if (state.isSaving) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp, color = color)
             else Icon(if (state.dirty) Icons.Rounded.Edit else Icons.Rounded.Check, null, Modifier.size(13.dp), tint = color)
@@ -289,13 +289,13 @@ private fun EditorAdvancedSummary(state: ChapterEditorUiState, onOpen: () -> Uni
     val dependency = state.dependencyReport
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
+        shape = LanghuanShape.panel,
         color = t.card,
         border = BorderStroke(1.dp, t.border),
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(t.radiusMd), color = t.muted) {
+                Surface(shape = LanghuanShape.card, color = t.muted) {
                     Icon(Icons.Rounded.FactCheck, null, Modifier.padding(8.dp).size(18.dp), tint = t.foreground)
                 }
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
@@ -324,7 +324,7 @@ private fun EditorAdvancedSummary(state: ChapterEditorUiState, onOpen: () -> Uni
 
 @Composable
 private fun EditorInspectorBadge(label: String, color: androidx.compose.ui.graphics.Color) {
-    Surface(shape = RoundedCornerShape(99.dp), color = color.copy(alpha = .10f)) {
+    Surface(shape = LanghuanShape.pill, color = color.copy(alpha = .10f)) {
         Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = color)
     }
 }

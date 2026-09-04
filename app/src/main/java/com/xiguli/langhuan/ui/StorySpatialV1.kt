@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -17,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -899,7 +899,7 @@ private fun StorySpatialDialogV1(
                         0 -> items(scene.places, key = { it.id }) { place ->
                             val parent = scene.places.firstOrNull { it.id == place.parentId }
                             val actors = scene.actorLocations.filter { it.placeId == place.id && it.actor != STORY_PLAYER_ACTOR_V1 }.map { it.actor }
-                            Surface(shape = RoundedCornerShape(17.dp), tonalElevation = 1.dp) {
+                            Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                 Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(if (place.id == scene.playerPlaceId) Icons.Rounded.MyLocation else Icons.Rounded.Place, null, Modifier.size(18.dp))
@@ -924,7 +924,7 @@ private fun StorySpatialDialogV1(
                         1 -> items(scene.routes, key = { it.id }) { edge ->
                             val from = scene.places.firstOrNull { it.id == edge.fromId }?.name ?: "?"
                             val to = scene.places.firstOrNull { it.id == edge.toId }?.name ?: "?"
-                            Surface(shape = RoundedCornerShape(17.dp), tonalElevation = 1.dp) {
+                            Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                 Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                     Text("$from ${if (edge.bidirectional) "↔" else "→"} $to", fontWeight = FontWeight.Bold)
                                     Text("${edge.minutes} 分钟 · ${edge.mode.label} · ${edge.source}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -939,7 +939,7 @@ private fun StorySpatialDialogV1(
                             items(decisions, key = { it.turnId }) { d ->
                                 val from = scene.places.firstOrNull { it.id == d.fromPlaceId }?.name ?: "未定位"
                                 val to = scene.places.firstOrNull { it.id == d.toPlaceId }?.name ?: "未知目标"
-                                Surface(shape = RoundedCornerShape(17.dp), tonalElevation = 1.dp) {
+                                Surface(shape = LanghuanShape.card, tonalElevation = 1.dp) {
                                     Column(Modifier.fillMaxWidth().padding(11.dp)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Icon(if (d.accepted) Icons.Rounded.CheckCircle else Icons.Rounded.Block, null, Modifier.size(18.dp))

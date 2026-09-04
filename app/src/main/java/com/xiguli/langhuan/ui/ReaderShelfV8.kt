@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -32,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import java.util.Locale
 
@@ -130,7 +130,7 @@ fun ReaderShelfV8(
 
     if (showAdd) ModalBottomSheet(
         onDismissRequest = { showAdd = false }, containerColor = tokens.pageBackground,
-        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        shape = LanghuanShape.sheetTop,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp)) {
             Text("添加图书", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
@@ -144,7 +144,7 @@ fun ReaderShelfV8(
     selectedBook?.let { book ->
         ModalBottomSheet(
             onDismissRequest = { selectedBook = null }, containerColor = tokens.pageBackground,
-            shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+            shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 2.dp)) {
                 Text(book.title, Modifier.fillMaxWidth().padding(bottom = 14.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -153,7 +153,7 @@ fun ReaderShelfV8(
                 ReplicaMenuRowV8(Icons.Rounded.DeleteOutline, "删除图书") { selectedBook = null; pendingDelete = book }
                 Button(
                     onClick = { selectedBook = null }, modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(52.dp),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = LanghuanShape.sheet,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, contentColor = tokens.textPrimary),
                 ) { Text("取消", fontSize = 17.sp) }
                 Spacer(Modifier.navigationBarsPadding().height(10.dp))
@@ -164,7 +164,7 @@ fun ReaderShelfV8(
     movingBook?.let { book ->
         ModalBottomSheet(
             onDismissRequest = { movingBook = null }, containerColor = tokens.pageBackground,
-            shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+            shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp)) {
                 Text("移动《${book.title}》", fontSize = 21.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -229,7 +229,7 @@ private fun ReplicaBookGridV8(
                 Icon(Icons.Rounded.MenuBook, null, Modifier.size(50.dp), tint = tokens.textSecondary)
                 Text("这个书架还是空的", Modifier.padding(top = 18.dp), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
                 Text("导入一本小说，或让 AI 和你一起写一本。", Modifier.padding(top = 8.dp), color = tokens.textSecondary)
-                Button(onClick = onAdd, Modifier.padding(top = 22.dp), shape = RoundedCornerShape(24.dp)) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("添加图书") }
+                Button(onClick = onAdd, Modifier.padding(top = 22.dp), shape = LanghuanShape.panel) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("添加图书") }
             }
         } else LazyVerticalGrid(
             columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize(),
@@ -238,7 +238,7 @@ private fun ReplicaBookGridV8(
         ) {
             gridItems(books, key = { it.id }) { book ->
                 Column(Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(book.id) }, onLongClick = { onLong(book) })) {
-                    CoverPreviewV3(book.coverPath, book.title, Modifier.fillMaxWidth().aspectRatio(.69f).clip(RoundedCornerShape(3.dp)))
+                    CoverPreviewV3(book.coverPath, book.title, Modifier.fillMaxWidth().aspectRatio(.69f).clip(LanghuanShape.cover))
                     Text(book.title, Modifier.padding(top = 8.dp), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -264,7 +264,7 @@ private fun ReplicaShelfListV8(
         if (showSearch) TextField(
             value = query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
             placeholder = { Text("搜索书名、分类") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true,
-            shape = RoundedCornerShape(4.dp), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+            shape = LanghuanShape.chip, colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
         )
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
             items(shelves, key = { it }) { shelf ->
@@ -281,7 +281,7 @@ private fun ReplicaShelfListV8(
                         contentPadding = PaddingValues(horizontal = 30.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(28.dp),
                     ) {
                         items(shelfBooks.take(12), key = { it.id }) { book ->
-                            CoverPreviewV3(book.coverPath, book.title, Modifier.width(82.dp).height(118.dp).clip(RoundedCornerShape(2.dp)).clickable { onOpenBook(book.id) })
+                            CoverPreviewV3(book.coverPath, book.title, Modifier.width(82.dp).height(118.dp).clip(LanghuanShape.cover).clickable { onOpenBook(book.id) })
                         }
                     }
                 }

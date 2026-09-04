@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Badge
@@ -25,6 +24,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -404,7 +404,7 @@ private fun StoryRoleBindingDialogV1(
                 Modifier.fillMaxWidth().heightIn(max = 590.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
+                Surface(shape = LanghuanShape.card, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
                     Text(
                         "身份只读取原著第 1～$anchorChapter 章。第 ${anchorChapter + 1} 章及之后的角色设定、秘密和关系不会进入角色卡。",
                         Modifier.fillMaxWidth().padding(11.dp),
@@ -459,7 +459,7 @@ private fun StoryRoleBindingDialogV1(
                                     val isSelected = selected?.name == candidate.name
                                     Surface(
                                         modifier = Modifier.fillMaxWidth().clickable { selected = candidate },
-                                        shape = RoundedCornerShape(16.dp),
+                                        shape = LanghuanShape.card,
                                         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
                                     ) {
                                         Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
