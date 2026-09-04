@@ -1,7 +1,6 @@
 package com.xiguli.langhuan.ui
 
 import android.graphics.BitmapFactory
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,7 +20,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -69,15 +68,15 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.design.ShadcnButton
 import com.xiguli.langhuan.ui.design.ShadcnButtonSize
 import com.xiguli.langhuan.ui.design.ShadcnButtonVariant
-import com.xiguli.langhuan.ui.design.ShadcnIconButton
 import com.xiguli.langhuan.ui.design.ShadcnInput
 
 private enum class MobileShelfTab { LIBRARY, ME }
 
 /**
- * Mobile-first bookshelf. shadcn is used only as a semantic/component baseline; composition follows
- * a native reading app: books are the primary visual object, search is secondary, and navigation is
- * a compact floating control rather than a desktop/admin navigation shell.
+ * 琅嬛移动书架 V2。
+ *
+ * 目标：像真正的中文小说阅读器，而不是工具后台。
+ * 封面是主视觉，操作退到顶部和 BottomSheet；shadcn 只保留底层 primitive，不参与页面构图。
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -103,9 +102,9 @@ fun ShelfMobileExperience(
     var pendingDelete by remember { mutableStateOf<ReaderBookUi?>(null) }
 
     val books = remember(state.stories, query) {
-        state.stories.sortedByDescending { it.updatedAt }.filter {
-            query.isBlank() || it.title.contains(query, true) || it.genre.contains(query, true)
-        }
+        state.stories
+            .sortedByDescending { it.updatedAt }
+            .filter { query.isBlank() || it.title.contains(query, true) || it.genre.contains(query, true) }
     }
 
     Box(Modifier.fillMaxSize().background(t.background)) {
@@ -148,17 +147,16 @@ fun ShelfMobileExperience(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 88.dp)
+                    .padding(horizontal = 22.dp, vertical = 86.dp)
                     .fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = t.card,
-                border = BorderStroke(1.dp, t.border),
-                shadowElevation = 8.dp,
+                shape = RoundedCornerShape(22.dp),
+                color = t.card.copy(alpha = .97f),
+                shadowElevation = 10.dp,
             ) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.foreground)
-                    Column(Modifier.padding(start = 11.dp).weight(1f)) {
-                        Text("正在导入小说", style = MaterialTheme.typography.bodyMedium, color = t.foreground, fontWeight = FontWeight.Medium)
+                Row(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.primary)
+                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                        Text("正在导入小说", style = MaterialTheme.typography.bodyMedium, color = t.foreground, fontWeight = FontWeight.SemiBold)
                         Text(
                             importState.currentFileName.orEmpty(),
                             style = MaterialTheme.typography.bodySmall,
@@ -174,56 +172,51 @@ fun ShelfMobileExperience(
 
     if (showAdd) {
         ModalBottomSheet(onDismissRequest = { showAdd = false }, containerColor = t.background) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("添加小说", style = MaterialTheme.typography.titleLarge, color = t.foreground)
-                        Text("从本地导入，或让 AI 帮你创建。", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
-                    }
-                    ShadcnIconButton(Icons.Rounded.Close, "关闭", { showAdd = false })
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                Text("添加小说", style = MaterialTheme.typography.headlineSmall, color = t.foreground, fontWeight = FontWeight.Bold)
+                Text("本地阅读优先，AI 创作放在第二入口。", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                Spacer(Modifier.height(18.dp))
+                MobileActionRow(Icons.Rounded.FolderOpen, "导入本地小说", "TXT · EPUB · Markdown") {
+                    showAdd = false
+                    onImportLocal()
                 }
-                Spacer(Modifier.height(14.dp))
-                MobileActionCard(
-                    icon = Icons.Rounded.FolderOpen,
-                    title = "导入本地小说",
-                    subtitle = "支持 TXT、EPUB、Markdown",
-                    onClick = { showAdd = false; onImportLocal() },
-                )
                 Spacer(Modifier.height(10.dp))
-                MobileActionCard(
-                    icon = Icons.Rounded.AutoAwesome,
-                    title = "AI 创建小说",
-                    subtitle = "像聊天一样把想法逐步整理成一本书",
-                    onClick = { showAdd = false; onCreate() },
-                )
-                Spacer(Modifier.navigationBarsPadding().height(18.dp))
+                MobileActionRow(Icons.Rounded.AutoAwesome, "AI 创建小说", "用自然语言逐步建立一本新书") {
+                    showAdd = false
+                    onCreate()
+                }
+                Spacer(Modifier.navigationBarsPadding().height(20.dp))
             }
         }
     }
 
     actionsFor?.let { book ->
         ModalBottomSheet(onDismissRequest = { actionsFor = null }, containerColor = t.background) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-                Text(book.title, style = MaterialTheme.typography.titleLarge, color = t.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                Text(book.title, style = MaterialTheme.typography.titleLarge, color = t.foreground, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${book.genre.ifBlank { "小说" }} · 第 ${book.currentChapter.coerceAtLeast(1)} 章",
-                    Modifier.padding(top = 3.dp, bottom = 14.dp),
+                    "${book.genre.ifBlank { "小说" }} · 读到第 ${book.currentChapter.coerceAtLeast(1)} 章",
+                    Modifier.padding(top = 4.dp, bottom = 16.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = t.mutedForeground,
                 )
-                MobileGroupedMenuRow(Icons.Rounded.AutoStories, "继续阅读", "回到上次阅读位置") {
-                    actionsFor = null
-                    onOpenBook(book.id)
+                MobileMenuGroup {
+                    MobileGroupedMenuRow(Icons.Rounded.AutoStories, "继续阅读", "回到上次阅读位置") {
+                        actionsFor = null
+                        onOpenBook(book.id)
+                    }
+                    HorizontalDivider(color = t.border.copy(alpha = .65f), modifier = Modifier.padding(start = 58.dp))
+                    MobileGroupedMenuRow(Icons.Rounded.TheaterComedy, "进入故事", "从这本书进入互动故事") {
+                        actionsFor = null
+                        onOpenTavern(book.id)
+                    }
+                    HorizontalDivider(color = t.border.copy(alpha = .65f), modifier = Modifier.padding(start = 58.dp))
+                    MobileGroupedMenuRow(Icons.Rounded.DeleteOutline, "删除小说", "同时删除章节与项目数据", destructive = true) {
+                        actionsFor = null
+                        pendingDelete = book
+                    }
                 }
-                MobileGroupedMenuRow(Icons.Rounded.TheaterComedy, "进入故事模式", "从这本书开启独立互动故事") {
-                    actionsFor = null
-                    onOpenTavern(book.id)
-                }
-                MobileGroupedMenuRow(Icons.Rounded.DeleteOutline, "删除小说", "同时删除章节与本地项目数据", destructive = true) {
-                    actionsFor = null
-                    pendingDelete = book
-                }
-                Spacer(Modifier.navigationBarsPadding().height(18.dp))
+                Spacer(Modifier.navigationBarsPadding().height(20.dp))
             }
         }
     }
@@ -232,14 +225,19 @@ fun ShelfMobileExperience(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             containerColor = t.card,
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(28.dp),
             title = { Text("删除《${book.title}》？", color = t.foreground) },
             text = { Text("章节、版本和项目数据会一起删除。", color = t.mutedForeground) },
             confirmButton = {
-                ShadcnButton("删除", {
-                    pendingDelete = null
-                    onDeleteBook(book.id)
-                }, variant = ShadcnButtonVariant.DESTRUCTIVE, size = ShadcnButtonSize.SM)
+                ShadcnButton(
+                    "删除",
+                    {
+                        pendingDelete = null
+                        onDeleteBook(book.id)
+                    },
+                    variant = ShadcnButtonVariant.DESTRUCTIVE,
+                    size = ShadcnButtonSize.SM,
+                )
             },
             dismissButton = {
                 ShadcnButton("取消", { pendingDelete = null }, variant = ShadcnButtonVariant.GHOST, size = ShadcnButtonSize.SM)
@@ -265,47 +263,30 @@ private fun MobileLibraryPage(
     val t = LocalLanghuanUiTokens.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 14.dp, top = 15.dp, bottom = 10.dp),
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 14.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("琅嬛", style = MaterialTheme.typography.headlineLarge, color = t.foreground, fontWeight = FontWeight.Bold)
-                Text(
-                    if (books.isEmpty()) "你的私人书阁" else "${books.size} 本小说",
-                    Modifier.padding(top = 1.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = t.mutedForeground,
-                )
+                Text("书架", style = MaterialTheme.typography.headlineLarge, color = t.foreground, fontWeight = FontWeight.Bold)
+                if (books.isNotEmpty()) {
+                    Text("${books.size} 本小说", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                }
             }
-            Surface(
+            MobileTopIcon(
+                selected = searchOpen,
                 onClick = onToggleSearch,
-                modifier = Modifier.size(42.dp),
-                shape = CircleShape,
-                color = if (searchOpen) t.muted else Color.Transparent,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "搜索", Modifier.size(20.dp), tint = t.foreground)
-                }
-            }
-            Spacer(Modifier.width(3.dp))
-            Surface(
-                onClick = onAdd,
-                modifier = Modifier.size(42.dp),
-                shape = CircleShape,
-                color = t.foreground,
-                contentColor = t.primaryForeground,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Add, "添加小说", Modifier.size(21.dp), tint = t.primaryForeground)
-                }
-            }
+                icon = if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+                description = "搜索",
+            )
+            Spacer(Modifier.size(8.dp))
+            MobileTopIcon(onClick = onAdd, icon = Icons.Rounded.Add, description = "添加小说")
         }
 
         if (searchOpen) {
             ShadcnInput(
                 value = query,
                 onValueChange = onQuery,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 5.dp),
                 placeholder = "搜索书名或类型",
                 leadingIcon = Icons.Rounded.Search,
             )
@@ -313,27 +294,27 @@ private fun MobileLibraryPage(
 
         when {
             !libraryLoaded -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = t.foreground)
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = t.primary)
             }
 
-            books.isEmpty() -> Box(Modifier.fillMaxSize().padding(bottom = 80.dp), contentAlignment = Alignment.Center) {
+            books.isEmpty() -> Box(Modifier.fillMaxSize().padding(horizontal = 36.dp, bottom = 92.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Surface(modifier = Modifier.size(68.dp), shape = CircleShape, color = t.muted) {
+                    Surface(modifier = Modifier.size(74.dp), shape = RoundedCornerShape(24.dp), color = t.accent) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.AutoStories, null, Modifier.size(30.dp), tint = t.mutedForeground)
+                            Icon(Icons.Rounded.AutoStories, null, Modifier.size(32.dp), tint = t.accentForeground)
                         }
                     }
-                    Text("书架还是空的", Modifier.padding(top = 14.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground)
-                    Text("导入一本小说，或者从一个想法开始。", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
-                    ShadcnButton("添加第一本书", onAdd, Modifier.padding(top = 16.dp), size = ShadcnButtonSize.SM, leadingIcon = Icons.Rounded.Add)
+                    Text("还没有书", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleLarge, color = t.foreignOrForeground(), fontWeight = FontWeight.SemiBold)
+                    Text("导入本地小说，或者从一个想法开始创作。", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground)
+                    ShadcnButton("添加第一本书", onAdd, Modifier.padding(top = 20.dp), size = ShadcnButtonSize.SM, leadingIcon = Icons.Rounded.Add)
                 }
             }
 
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 148.dp),
+                columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 112.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 118.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
                 items(books, key = { it.id }) { book ->
@@ -346,6 +327,27 @@ private fun MobileLibraryPage(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MobileTopIcon(
+    selected: Boolean = false,
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(44.dp),
+        shape = CircleShape,
+        color = if (selected) t.accent else t.card,
+        shadowElevation = if (selected) 0.dp else 1.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, description, Modifier.size(21.dp), tint = if (selected) t.accentForeground else t.foreground)
         }
     }
 }
@@ -364,69 +366,75 @@ private fun MobileBookTile(
         book.coverPath.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
     }
 
-    Column(
-        Modifier.fillMaxWidth().combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick),
-    ) {
+    Column(Modifier.fillMaxWidth().combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick)) {
         Surface(
-            modifier = Modifier.fillMaxWidth().aspectRatio(.70f),
-            shape = RoundedCornerShape(14.dp),
-            color = t.muted,
-            border = BorderStroke(1.dp, t.border.copy(alpha = .72f)),
-            shadowElevation = 4.dp,
+            modifier = Modifier.fillMaxWidth().aspectRatio(.69f),
+            shape = RoundedCornerShape(18.dp),
+            color = t.card,
+            shadowElevation = 2.dp,
         ) {
             Box(Modifier.fillMaxSize()) {
                 if (cover != null) {
                     Image(
                         bitmap = cover.asImageBitmap(),
                         contentDescription = book.title,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)),
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
                     Column(
-                        Modifier.fillMaxSize().background(t.muted).padding(15.dp),
+                        Modifier.fillMaxSize().background(t.accent).padding(16.dp),
                         verticalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("琅嬛 · ${book.genre.ifBlank { "小说" }}", style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
+                        Text(book.genre.ifBlank { "小说" }, style = MaterialTheme.typography.labelSmall, color = t.accentForeground.copy(alpha = .72f))
                         Text(
                             book.title,
                             style = MaterialTheme.typography.titleLarge,
-                            color = t.foreground,
+                            color = t.accentForeground,
                             fontWeight = FontWeight.Bold,
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text("第 ${book.currentChapter.coerceAtLeast(1)} 章", style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
+                        Text("琅嬛", style = MaterialTheme.typography.labelSmall, color = t.accentForeground.copy(alpha = .65f))
                     }
                 }
+
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomStart).padding(9.dp),
+                    shape = RoundedCornerShape(50),
+                    color = t.card.copy(alpha = .88f),
+                ) {
+                    Text(
+                        "第 ${book.currentChapter.coerceAtLeast(1)} 章",
+                        Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = t.foreground,
+                    )
+                }
+
                 if (busy) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.Center),
-                        shape = CircleShape,
-                        color = t.card.copy(alpha = .92f),
-                        shadowElevation = 4.dp,
-                    ) {
-                        CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp, color = t.foreground)
+                    Surface(modifier = Modifier.align(Alignment.Center), shape = CircleShape, color = t.card.copy(alpha = .94f), shadowElevation = 5.dp) {
+                        CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp, color = t.primary)
                     }
                 }
             }
         }
+
         Text(
             book.title,
-            Modifier.padding(top = 9.dp),
+            Modifier.padding(start = 2.dp, end = 2.dp, top = 10.dp),
             style = MaterialTheme.typography.titleSmall,
             color = t.foreground,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            "读到第 ${book.currentChapter.coerceAtLeast(1)} 章 · ${book.currentWords.coerceAtLeast(0)} 字",
-            Modifier.padding(top = 3.dp),
+            book.genre.ifBlank { "小说" },
+            Modifier.padding(start = 2.dp, top = 3.dp),
             style = MaterialTheme.typography.labelSmall,
             color = t.mutedForeground,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -447,96 +455,80 @@ private fun MobileMePage(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 112.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 116.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(modifier = Modifier.size(58.dp), shape = CircleShape, color = t.foreground, contentColor = t.primaryForeground) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, Modifier.size(27.dp), tint = t.primaryForeground) }
-                }
-                Column(Modifier.padding(start = 13.dp).weight(1f)) {
-                    Text("我的琅嬛", style = MaterialTheme.typography.headlineSmall, color = t.foreground, fontWeight = FontWeight.Bold)
-                    Text("${books.size} 本作品 · $totalWords 字", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
-                }
+            Text("我的", style = MaterialTheme.typography.headlineLarge, color = t.foreground, fontWeight = FontWeight.Bold)
+            Text("${books.size} 本作品 · $totalWords 字", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+        }
+
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MobileShortcut(Modifier.weight(1f), Icons.Rounded.AutoAwesome, "AI 新建", onCreate)
+                MobileShortcut(Modifier.weight(1f), Icons.Rounded.FolderOpen, "导入", onImportLocal)
+                MobileShortcut(Modifier.weight(1f), Icons.Rounded.TheaterComedy, "进入故事") { recent?.let { onOpenTavern(it.id) } }
             }
         }
 
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MobileQuickAction(Modifier.weight(1f), Icons.Rounded.AutoAwesome, "AI 新建", onCreate)
-                MobileQuickAction(Modifier.weight(1f), Icons.Rounded.FolderOpen, "导入", onImportLocal)
-                MobileQuickAction(Modifier.weight(1f), Icons.Rounded.TheaterComedy, "故事", { recent?.let { onOpenTavern(it.id) } })
-            }
-        }
-
-        item {
-            MobileSectionTitle("创作工具")
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = t.card,
-                border = BorderStroke(1.dp, t.border),
-            ) {
-                Column {
-                    MobileGroupedMenuRow(Icons.Rounded.TaskAlt, "运行中心", "查看正在执行和已经完成的生成任务", onClick = onRunCenter)
-                    HorizontalDivider(color = t.border, modifier = Modifier.padding(start = 54.dp))
-                    MobileGroupedMenuRow(Icons.Rounded.AutoAwesome, "Skill 与写作能力", "管理琅嬛实际会调用的写作能力", onClick = onSkills)
-                    HorizontalDivider(color = t.border, modifier = Modifier.padding(start = 54.dp))
-                    MobileGroupedMenuRow(Icons.Rounded.Settings, "AI 模型与中转站", "配置模型、接口地址和连接状态", onClick = onAiSetup)
-                }
+            Text("工具", Modifier.padding(start = 4.dp, bottom = 9.dp), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+            MobileMenuGroup {
+                MobileGroupedMenuRow(Icons.Rounded.TaskAlt, "运行中心", "查看正在执行和已完成的任务", onClick = onRunCenter)
+                HorizontalDivider(color = t.border.copy(alpha = .65f), modifier = Modifier.padding(start = 58.dp))
+                MobileGroupedMenuRow(Icons.Rounded.AutoAwesome, "Skill 与写作能力", "管理实际参与写作的能力", onClick = onSkills)
+                HorizontalDivider(color = t.border.copy(alpha = .65f), modifier = Modifier.padding(start = 58.dp))
+                MobileGroupedMenuRow(Icons.Rounded.Settings, "AI 模型与中转站", "模型、接口和连接状态", onClick = onAiSetup)
             }
         }
     }
 }
 
 @Composable
-private fun MobileQuickAction(
+private fun MobileShortcut(
     modifier: Modifier,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    Surface(
-        onClick = onClick,
-        modifier = modifier.height(84.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = t.card,
-        border = BorderStroke(1.dp, t.border),
-    ) {
+    Surface(onClick = onClick, modifier = modifier.height(88.dp), shape = RoundedCornerShape(22.dp), color = t.card) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Icon(icon, null, Modifier.size(22.dp), tint = t.foreground)
-            Text(label, Modifier.padding(top = 7.dp), style = MaterialTheme.typography.labelMedium, color = t.foreground, fontWeight = FontWeight.Medium)
+            Surface(modifier = Modifier.size(38.dp), shape = RoundedCornerShape(13.dp), color = t.accent) {
+                Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(20.dp), tint = t.accentForeground) }
+            }
+            Text(label, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelMedium, color = t.foreground, fontWeight = FontWeight.Medium)
         }
     }
 }
 
 @Composable
-private fun MobileActionCard(
+private fun MobileActionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = t.card,
-        border = BorderStroke(1.dp, t.border),
-    ) {
+    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = t.card) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = t.muted) {
-                Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(22.dp), tint = t.foreground) }
+            Surface(modifier = Modifier.size(46.dp), shape = RoundedCornerShape(15.dp), color = t.accent) {
+                Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(23.dp), tint = t.accentForeground) }
             }
-            Column(Modifier.padding(start = 13.dp).weight(1f)) {
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, color = t.foreground, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
             }
             Icon(Icons.Rounded.KeyboardArrowRight, null, tint = t.mutedForeground)
         }
+    }
+}
+
+@Composable
+private fun MobileMenuGroup(content: @Composable () -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = t.card) {
+        Column(content = content)
     }
 }
 
@@ -550,26 +542,24 @@ private fun MobileGroupedMenuRow(
 ) {
     val t = LocalLanghuanUiTokens.current
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 15.dp, vertical = 13.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(modifier = Modifier.size(30.dp), shape = RoundedCornerShape(9.dp), color = if (destructive) t.destructive.copy(alpha = .10f) else t.muted) {
+        Surface(
+            modifier = Modifier.size(34.dp),
+            shape = RoundedCornerShape(11.dp),
+            color = if (destructive) t.destructive.copy(alpha = .10f) else t.accent,
+        ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, null, Modifier.size(17.dp), tint = if (destructive) t.destructive else t.foreground)
+                Icon(icon, null, Modifier.size(18.dp), tint = if (destructive) t.destructive else t.accentForeground)
             }
         }
-        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+        Column(Modifier.padding(start = 12.dp).weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, color = if (destructive) t.destructive else t.foreground, fontWeight = FontWeight.Medium)
-            Text(subtitle, Modifier.padding(top = 1.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.mutedForeground.copy(alpha = .7f))
+        Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.mutedForeground.copy(alpha = .65f))
     }
-}
-
-@Composable
-private fun MobileSectionTitle(text: String) {
-    val t = LocalLanghuanUiTokens.current
-    Text(text, Modifier.padding(start = 3.dp, bottom = 7.dp), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground, fontWeight = FontWeight.Medium)
 }
 
 @Composable
@@ -580,27 +570,18 @@ private fun MobileShelfDock(
 ) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        modifier = modifier.navigationBarsPadding().padding(horizontal = 46.dp, vertical = 12.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(25.dp),
-        color = t.card.copy(alpha = .97f),
-        border = BorderStroke(1.dp, t.border),
+        modifier = modifier.navigationBarsPadding().padding(horizontal = 58.dp, vertical = 12.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(30.dp),
+        color = t.card.copy(alpha = .96f),
         shadowElevation = 12.dp,
     ) {
-        Row(Modifier.height(54.dp).padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            MobileDockItem(
-                modifier = Modifier.weight(1f),
-                icon = Icons.Rounded.AutoStories,
-                label = "书架",
-                selected = selected == MobileShelfTab.LIBRARY,
-                onClick = { onSelected(MobileShelfTab.LIBRARY) },
-            )
-            MobileDockItem(
-                modifier = Modifier.weight(1f),
-                icon = Icons.Rounded.Person,
-                label = "我的",
-                selected = selected == MobileShelfTab.ME,
-                onClick = { onSelected(MobileShelfTab.ME) },
-            )
+        Row(Modifier.height(58.dp).padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            MobileDockItem(Modifier.weight(1f), Icons.Rounded.AutoStories, "书架", selected == MobileShelfTab.LIBRARY) {
+                onSelected(MobileShelfTab.LIBRARY)
+            }
+            MobileDockItem(Modifier.weight(1f), Icons.Rounded.Person, "我的", selected == MobileShelfTab.ME) {
+                onSelected(MobileShelfTab.ME)
+            }
         }
     }
 }
@@ -617,14 +598,20 @@ private fun MobileDockItem(
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxSize(),
-        shape = RoundedCornerShape(20.dp),
-        color = if (selected) t.muted else Color.Transparent,
+        shape = RoundedCornerShape(24.dp),
+        color = if (selected) t.accent else Color.Transparent,
     ) {
         Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(19.dp), tint = if (selected) t.foreground else t.mutedForeground)
-            if (selected) {
-                Text(label, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, color = t.foreground, fontWeight = FontWeight.SemiBold)
-            }
+            Icon(icon, null, Modifier.size(20.dp), tint = if (selected) t.accentForeground else t.mutedForeground)
+            Text(
+                label,
+                Modifier.padding(start = 7.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) t.accentForeground else t.mutedForeground,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            )
         }
     }
 }
+
+private fun com.xiguli.langhuan.ui.design.LanghuanUiTokens.foreignOrForeground(): Color = foreground
