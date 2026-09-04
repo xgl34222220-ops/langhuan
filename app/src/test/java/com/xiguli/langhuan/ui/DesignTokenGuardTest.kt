@@ -34,8 +34,12 @@ class DesignTokenGuardTest {
 
     // ---- 基线：只许降，不许升 ---------------------------------------------
     private companion object {
-        /** DESIGN.md §5 字体层级。改用 MaterialTheme.typography.* 或 readingTextStyle()。 */
-        const val HARDCODED_FONT_SIZE_BASELINE = 56
+        /**
+         * DESIGN.md §5 字体层级。改用 MaterialTheme.typography.*。
+         * 剩下 8 处是刻意保留的字面量，源码里都有注释说明：滑杆两端的「Aa」大小
+         * 示例（4 处）、字体预览（2 处）、参与分页测量算式的页眉页脚（2 处）。
+         */
+        const val HARDCODED_FONT_SIZE_BASELINE = 8
 
         /** DESIGN.md §6「不在页面散落固定 RGB」。改用 colorScheme / LanghuanUiTokens。 */
         const val HARDCODED_COLOR_BASELINE = 140

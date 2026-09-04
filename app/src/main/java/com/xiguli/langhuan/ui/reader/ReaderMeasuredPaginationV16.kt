@@ -92,6 +92,7 @@ internal fun rememberReaderMeasuredPaginationV16(
         fontWeight = FontWeight.SemiBold,
         fontFamily = family,
     )
+    // 刻意保留字面量：页眉页脚字号参与分页测量算式，跟着 Typography 漂会让翻页位置变化。
     val headerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
     val footerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
 

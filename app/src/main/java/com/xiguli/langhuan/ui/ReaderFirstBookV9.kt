@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -442,6 +443,7 @@ private fun FontCenterV9(selected: ReaderFontV9, onFont: (ReaderFontV9) -> Unit)
                     Column(Modifier.weight(1f)) {
                         Text(option.label, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
                         Text(option.summary, modifier = Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                        // 刻意保留字面量：这是字体预览，职责就是用固定字号示范某个字族。
                         Text("琅嬛书页 · ABC 123", modifier = Modifier.padding(top = 10.dp), fontFamily = family, fontSize = 18.sp, color = tokens.textPrimary)
                     }
                     if (selected == option) Icon(Icons.Rounded.CheckCircle, "已选择", tint = MaterialTheme.colorScheme.primary)
@@ -640,7 +642,7 @@ private fun ReaderBookInfoPageV9(
             Row(verticalAlignment = Alignment.Top) {
                 CoverPreviewV3(book.coverPath, book.title, Modifier.width(108.dp).height(156.dp).clip(LanghuanShape.cover))
                 Column(Modifier.padding(start = 18.dp).weight(1f)) {
-                    Text(book.title, fontSize = 25.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
+                    Text(book.title, fontSize = MaterialTheme.typography.headlineMedium.fontSize, lineHeight = MaterialTheme.typography.headlineMedium.lineHeight, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
                     if (author.isNotBlank()) Text(author, modifier = Modifier.padding(top = 7.dp), color = tokens.textSecondary)
                     Text("${state.chapters.size} 章 · ${humanWordsV9(book.currentWords)}", modifier = Modifier.padding(top = 8.dp), color = tokens.textSecondary)
                     Text("阅读 $percent% · 第 $current 章", modifier = Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)

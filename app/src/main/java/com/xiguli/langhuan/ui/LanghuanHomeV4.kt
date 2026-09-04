@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -302,7 +303,7 @@ private fun HomeHeaderV4(
     Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 18.dp, bottom = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("琅嬛", fontSize = 34.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold)
+                Text("琅嬛", fontSize = MaterialTheme.typography.displayMedium.fontSize, lineHeight = MaterialTheme.typography.displayMedium.lineHeight, fontWeight = FontWeight.Bold)
                 Text(
                     if (totalBooks == 0) "藏书 · 创作 · 故事" else "$totalBooks 本藏书",
                     modifier = Modifier.padding(top = 2.dp),

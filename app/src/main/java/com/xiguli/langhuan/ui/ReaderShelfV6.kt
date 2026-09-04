@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -262,8 +263,8 @@ private fun ShelfHeaderV10(
                 Text(
                     "书架",
                     modifier = Modifier.padding(top = 1.dp),
-                    fontSize = 30.sp,
-                    lineHeight = 36.sp,
+                    fontSize = MaterialTheme.typography.displaySmall.fontSize,
+                    lineHeight = MaterialTheme.typography.displaySmall.lineHeight,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
@@ -366,13 +367,13 @@ private fun ShelfSearchFieldV10(
             singleLine = true,
             textStyle = TextStyle(
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 15.sp,
+                fontSize = MaterialTheme.typography.titleSmall.fontSize,
             ),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             decorationBox = { inner ->
                 Box(contentAlignment = Alignment.CenterStart) {
                     if (value.isBlank()) {
-                        Text("搜索书名或类型", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        Text("搜索书名或类型", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = MaterialTheme.typography.bodySmall.fontSize)
                     }
                     inner()
                 }

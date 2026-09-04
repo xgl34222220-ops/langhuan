@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -133,10 +134,10 @@ fun ReaderShelfV8(
         shape = LanghuanShape.sheetTop,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp)) {
-            Text("添加图书", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
+            Text("添加图书", fontSize = MaterialTheme.typography.headlineSmall.fontSize, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
             ReplicaMenuRowV8(Icons.Rounded.FolderOpen, "导入本地小说") { showAdd = false; onImportLocal() }
             ReplicaMenuRowV8(Icons.Rounded.AutoAwesome, "AI 新建小说") { showAdd = false; onCreate() }
-            Text("支持 TXT、EPUB、Markdown；EPUB 会保留原书封面和目录。", Modifier.padding(vertical = 8.dp), color = tokens.textSecondary, fontSize = 13.sp)
+            Text("支持 TXT、EPUB、Markdown；EPUB 会保留原书封面和目录。", Modifier.padding(vertical = 8.dp), color = tokens.textSecondary, fontSize = MaterialTheme.typography.bodySmall.fontSize)
             Spacer(Modifier.navigationBarsPadding().height(12.dp))
         }
     }
@@ -147,7 +148,7 @@ fun ReaderShelfV8(
             shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 2.dp)) {
-                Text(book.title, Modifier.fillMaxWidth().padding(bottom = 14.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(book.title, Modifier.fillMaxWidth().padding(bottom = 14.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = MaterialTheme.typography.titleMedium.fontSize, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 ReplicaMenuRowV8(Icons.Rounded.FactCheck, "查看详情") { selectedBook = null; onOpenBookInfo(book.id) }
                 ReplicaMenuRowV8(Icons.Rounded.DriveFileMove, "移动书架") { selectedBook = null; movingBook = book }
                 ReplicaMenuRowV8(Icons.Rounded.DeleteOutline, "删除图书") { selectedBook = null; pendingDelete = book }
@@ -155,7 +156,7 @@ fun ReaderShelfV8(
                     onClick = { selectedBook = null }, modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(52.dp),
                     shape = LanghuanShape.sheet,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, contentColor = tokens.textPrimary),
-                ) { Text("取消", fontSize = 17.sp) }
+                ) { Text("取消", fontSize = MaterialTheme.typography.titleMedium.fontSize) }
                 Spacer(Modifier.navigationBarsPadding().height(10.dp))
             }
         }
@@ -167,7 +168,7 @@ fun ReaderShelfV8(
             shape = LanghuanShape.sheetTop,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp)) {
-                Text("移动《${book.title}》", fontSize = 21.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("移动《${book.title}》", fontSize = MaterialTheme.typography.headlineSmall.fontSize, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 shelves.forEach { shelf ->
                     val checked = prefs.getString("book_shelf_${book.id}", "正在阅读") == shelf
                     ReplicaMenuRowV8(if (checked) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, shelf) {
@@ -216,18 +217,18 @@ private fun ReplicaBookGridV8(
     val tokens = LocalLanghuanTokens.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().height(76.dp).padding(start = 24.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(shelfName, Modifier.weight(1f).clickable(onClick = onShelves), fontSize = 27.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
+            Text(shelfName, Modifier.weight(1f).clickable(onClick = onShelves), fontSize = MaterialTheme.typography.headlineLarge.fontSize, lineHeight = MaterialTheme.typography.headlineLarge.lineHeight, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
             IconButton(onClick = onAdd, Modifier.size(48.dp)) { Icon(Icons.Rounded.Add, "添加图书", Modifier.size(29.dp), tint = tokens.textPrimary) }
             IconButton(onClick = onProfile, Modifier.size(48.dp)) { Icon(Icons.Rounded.PersonOutline, "个人中心", Modifier.size(26.dp), tint = tokens.textPrimary) }
         }
         if (busy) {
             LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
-            Text("正在导入 $fileName", Modifier.padding(horizontal = 24.dp, vertical = 6.dp), color = tokens.textSecondary, fontSize = 12.sp)
+            Text("正在导入 $fileName", Modifier.padding(horizontal = 24.dp, vertical = 6.dp), color = tokens.textSecondary, fontSize = MaterialTheme.typography.labelSmall.fontSize)
         }
         if (books.isEmpty()) {
             Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Icon(Icons.Rounded.MenuBook, null, Modifier.size(50.dp), tint = tokens.textSecondary)
-                Text("这个书架还是空的", Modifier.padding(top = 18.dp), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
+                Text("这个书架还是空的", Modifier.padding(top = 18.dp), fontSize = MaterialTheme.typography.titleLarge.fontSize, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
                 Text("导入一本小说，或让 AI 和你一起写一本。", Modifier.padding(top = 8.dp), color = tokens.textSecondary)
                 Button(onClick = onAdd, Modifier.padding(top = 22.dp), shape = LanghuanShape.panel) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("添加图书") }
             }
@@ -239,7 +240,7 @@ private fun ReplicaBookGridV8(
             gridItems(books, key = { it.id }) { book ->
                 Column(Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(book.id) }, onLongClick = { onLong(book) })) {
                     CoverPreviewV3(book.coverPath, book.title, Modifier.fillMaxWidth().aspectRatio(.69f).clip(LanghuanShape.cover))
-                    Text(book.title, Modifier.padding(top = 8.dp), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(book.title, Modifier.padding(top = 8.dp), fontSize = MaterialTheme.typography.titleSmall.fontSize, lineHeight = MaterialTheme.typography.titleSmall.lineHeight, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -257,7 +258,7 @@ private fun ReplicaShelfListV8(
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
-            Text("书架列表", Modifier.weight(1f).padding(start = 2.dp), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
+            Text("书架列表", Modifier.weight(1f).padding(start = 2.dp), fontSize = MaterialTheme.typography.headlineLarge.fontSize, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
             IconButton(onClick = onSearch) { Icon(Icons.Rounded.Search, "搜索", Modifier.size(29.dp)) }
             IconButton(onClick = onAdd) { Icon(Icons.Rounded.Add, "新建书架", Modifier.size(31.dp)) }
         }
@@ -272,8 +273,8 @@ private fun ReplicaShelfListV8(
                 Column(Modifier.fillMaxWidth().clickable { onOpenShelf(shelf) }.padding(top = 8.dp, bottom = 16.dp)) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckBoxOutlineBlank, null, Modifier.size(25.dp), tint = tokens.textPrimary)
-                        Text(shelf, Modifier.padding(start = 18.dp).weight(1f), fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
-                        Text("(${shelfBooks.size})", color = tokens.textSecondary, fontSize = 16.sp)
+                        Text(shelf, Modifier.padding(start = 18.dp).weight(1f), fontSize = MaterialTheme.typography.headlineSmall.fontSize, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
+                        Text("(${shelfBooks.size})", color = tokens.textSecondary, fontSize = MaterialTheme.typography.bodyMedium.fontSize)
                         IconButton(onClick = { }) { Icon(Icons.Rounded.MoreHoriz, "书架菜单") }
                     }
                     HorizontalDivider(Modifier.padding(top = 14.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f))
@@ -302,7 +303,7 @@ private fun ReplicaProfileV8(
         Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(74.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, Modifier.size(44.dp), tint = tokens.textSecondary) }
             Column(Modifier.padding(start = 22.dp)) {
-                Text("游客", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
+                Text("游客", fontSize = MaterialTheme.typography.headlineMedium.fontSize, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
                 Text("$bookCount 本图书 · 本地优先", Modifier.padding(top = 6.dp), color = tokens.textSecondary)
             }
         }
@@ -325,7 +326,7 @@ private fun ReplicaProfileRowV8(icon: ImageVector, label: String, onClick: () ->
     val tokens = LocalLanghuanTokens.current
     Row(Modifier.fillMaxWidth().height(64.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(26.dp), tint = tokens.textPrimary)
-        Text(label, Modifier.padding(start = 22.dp), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = tokens.textPrimary)
+        Text(label, Modifier.padding(start = 22.dp), fontSize = MaterialTheme.typography.titleMedium.fontSize, fontWeight = FontWeight.Medium, color = tokens.textPrimary)
     }
 }
 
@@ -334,7 +335,7 @@ private fun ReplicaMenuRowV8(icon: ImageVector, label: String, onClick: () -> Un
     val tokens = LocalLanghuanTokens.current
     Row(Modifier.fillMaxWidth().height(64.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(25.dp), tint = tokens.textPrimary)
-        Text(label, Modifier.padding(start = 22.dp), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = tokens.textPrimary)
+        Text(label, Modifier.padding(start = 22.dp), fontSize = MaterialTheme.typography.titleMedium.fontSize, fontWeight = FontWeight.Medium, color = tokens.textPrimary)
     }
 }
 

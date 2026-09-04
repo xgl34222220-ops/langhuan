@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -564,14 +565,14 @@ private fun StableImmersiveReaderV9(
                 }
                 Text("字号", modifier = Modifier.padding(top = 18.dp), fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("A", fontSize = 14.sp)
+                    Text("A", fontSize = MaterialTheme.typography.bodySmall.fontSize)
                     Slider(
                         value = fontSize,
                         onValueChange = { fontSize = it },
                         valueRange = 15f..28f,
                         modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                     )
-                    Text("A", fontSize = 24.sp)
+                    Text("A", fontSize = MaterialTheme.typography.headlineMedium.fontSize)
                 }
                 Text("行距", modifier = Modifier.padding(top = 6.dp), fontWeight = FontWeight.Medium)
                 Slider(value = lineFactor, onValueChange = { lineFactor = it }, valueRange = 1.45f..2.20f)

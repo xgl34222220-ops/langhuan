@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -668,5 +669,5 @@ private fun ForeshadowStatus.label() = when (this) { ForeshadowStatus.PLANTED ->
     val indicatorTint = MaterialTheme.colorScheme.primary.copy(alpha = .18f)
     val lens = if (backdrop != null) Modifier.drawBackdrop(backdrop, shape = { shape }, effects = { padding = maxOf(padding, 22.dp.toPx()); blur(3.dp.toPx(), 3.dp.toPx()); liquidGlassLens(13.dp.toPx(), 14.dp.toPx(), true, .08f) }, highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f) }, onDrawSurface = { drawRect(indicatorTint) }) else Modifier.background(indicatorTint.copy(alpha = .72f))
     Box(Modifier.offset(x + 3.dp).width(width - 6.dp).height(54.dp).squircleClip(23.dp).then(lens))
-    Row(Modifier.fillMaxWidth()) { AppPage.entries.forEach { p -> val chosen = p == current; val c = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f); Column(Modifier.width(width).height(54.dp).clickable(remember(p) { MutableInteractionSource() }, null) { select(p) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(p.icon, p.label, tint = c, modifier = Modifier.size(21.dp)); Text(p.label, color = c, fontSize = 10.sp, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium) } } }
+    Row(Modifier.fillMaxWidth()) { AppPage.entries.forEach { p -> val chosen = p == current; val c = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f); Column(Modifier.width(width).height(54.dp).clickable(remember(p) { MutableInteractionSource() }, null) { select(p) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(p.icon, p.label, tint = c, modifier = Modifier.size(21.dp)); Text(p.label, color = c, fontSize = MaterialTheme.typography.labelSmall.fontSize, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium) } } }
 }

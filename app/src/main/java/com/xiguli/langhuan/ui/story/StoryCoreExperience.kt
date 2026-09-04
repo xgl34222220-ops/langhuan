@@ -245,8 +245,8 @@ fun StoryCoreExperience(
                         Text(
                             turn.narration,
                             Modifier.padding(top = 6.dp),
-                            fontSize = 16.sp,
-                            lineHeight = 27.sp,
+                            fontSize = MaterialTheme.typography.bodyMedium.fontSize,
+                            lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
                             color = t.foreground,
                         )
                     }

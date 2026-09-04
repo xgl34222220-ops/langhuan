@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -73,8 +74,8 @@ internal fun ReaderPagedLayoutV14(
                 displayTitle,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 1,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
+                fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                lineHeight = MaterialTheme.typography.labelSmall.lineHeight,
                 fontFamily = family,
                 color = secondary.copy(alpha = .44f),
             )
@@ -99,16 +100,16 @@ internal fun ReaderPagedLayoutV14(
         ) {
             Text(
                 SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
+                fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                lineHeight = MaterialTheme.typography.labelSmall.lineHeight,
                 color = secondary.copy(alpha = .54f),
             )
             Spacer(Modifier.weight(1f))
             Text(
                 "${contentPage + 1}/${pageCount.coerceAtLeast(1)}  ·  ${(overallFraction.coerceIn(0f, 1f) * 100).roundToInt()}%",
                 textAlign = TextAlign.End,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
+                fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                lineHeight = MaterialTheme.typography.labelSmall.lineHeight,
                 color = secondary.copy(alpha = .58f),
             )
         }

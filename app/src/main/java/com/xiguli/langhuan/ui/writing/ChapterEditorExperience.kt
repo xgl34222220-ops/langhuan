@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -193,7 +194,7 @@ fun ChapterEditorExperience(
                             minLines = 22,
                             maxLines = 60,
                             placeholder = { Text("直接写正文；选中一段后，下方会出现 AI 局部精修。") },
-                            textStyle = LocalTextStyle.current.copy(fontSize = 17.sp, lineHeight = 29.sp),
+                            textStyle = LocalTextStyle.current.copy(fontSize = MaterialTheme.typography.titleMedium.fontSize, lineHeight = MaterialTheme.typography.titleMedium.lineHeight),
                             shape = LanghuanShape.card,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = t.background,

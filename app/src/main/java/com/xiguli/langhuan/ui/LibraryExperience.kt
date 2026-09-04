@@ -738,6 +738,7 @@ private fun NovelReader(state: LibraryExperienceState, onBack: () -> Unit, onPre
         }
         Surface(tonalElevation = 3.dp) {
             Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                // 刻意保留字面量：这两个是滑杆两端的大小示例，必须等于 valueRange 的上下限。
                 Text("Aa", fontSize = 15.sp)
                 Slider(fontSize, { fontSize = it }, valueRange = 15f..26f, modifier = Modifier.padding(horizontal = 12.dp).weight(1f))
                 Text("Aa", fontSize = 23.sp)

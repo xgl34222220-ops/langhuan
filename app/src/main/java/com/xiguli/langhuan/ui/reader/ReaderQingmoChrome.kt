@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -183,7 +184,7 @@ internal fun ReaderQingmoChrome(
                                 }
                                 .padding(vertical = 9.dp),
                             color = if (quick == null && tab == item) palette.foreground else palette.secondary.copy(alpha = .62f),
-                            fontSize = 13.sp,
+                            fontSize = MaterialTheme.typography.bodySmall.fontSize,
                             fontWeight = if (quick == null && tab == item) FontWeight.SemiBold else FontWeight.Normal,
                             textAlign = TextAlign.Center,
                         )
@@ -219,7 +220,7 @@ private fun ReaderQingmoDetails(
             overflow = TextOverflow.Ellipsis,
             color = palette.foreground,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 16.sp,
+            fontSize = MaterialTheme.typography.bodyMedium.fontSize,
         )
         Text(
             "$bookTitle · ${chapterIndex + 1}/${chapterCount.coerceAtLeast(1)}",
@@ -227,10 +228,10 @@ private fun ReaderQingmoDetails(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = palette.secondary,
-            fontSize = 12.sp,
+            fontSize = MaterialTheme.typography.labelSmall.fontSize,
         )
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${(fraction.coerceIn(0f, 1f) * 100).roundToInt()}%", color = palette.secondary, fontSize = 11.sp)
+            Text("${(fraction.coerceIn(0f, 1f) * 100).roundToInt()}%", color = palette.secondary, fontSize = MaterialTheme.typography.labelSmall.fontSize)
             Slider(value = fraction.coerceIn(0f, 1f), onValueChange = onProgress, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -243,7 +244,7 @@ private fun ReaderQingmoDetails(
             "返回书架",
             Modifier.align(Alignment.CenterHorizontally).clickable(onClick = onBack).padding(8.dp),
             color = palette.secondary,
-            fontSize = 12.sp,
+            fontSize = MaterialTheme.typography.labelSmall.fontSize,
         )
     }
 }
@@ -299,13 +300,13 @@ private fun ReaderQingmoFontQuick(
     onMore: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Text("字体", color = palette.foreground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text("字体", color = palette.foreground, fontWeight = FontWeight.SemiBold, fontSize = MaterialTheme.typography.titleSmall.fontSize)
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("default" to "默认", "serif" to "衬线", "sans" to "无衬线", "mono" to "等宽").forEach { (key, label) ->
                 ReaderQingmoChoice(label, selected = fontKey == key, palette = palette, modifier = Modifier.weight(1f)) { onSelect(key) }
             }
         }
-        Text("更多字体 / 导入字体", Modifier.align(Alignment.End).clickable(onClick = onMore).padding(top = 12.dp, bottom = 4.dp), color = palette.secondary, fontSize = 12.sp)
+        Text("更多字体 / 导入字体", Modifier.align(Alignment.End).clickable(onClick = onMore).padding(top = 12.dp, bottom = 4.dp), color = palette.secondary, fontSize = MaterialTheme.typography.labelSmall.fontSize)
     }
 }
 
@@ -316,7 +317,7 @@ private fun ReaderQingmoLineQuick(
     onSelect: (Float) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Text("行距", color = palette.foreground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text("行距", color = palette.foreground, fontWeight = FontWeight.SemiBold, fontSize = MaterialTheme.typography.titleSmall.fontSize)
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(1.45f to "紧凑", 1.68f to "舒适", 1.85f to "宽松", 2.05f to "大").forEach { (value, label) ->
                 ReaderQingmoChoice(label, selected = kotlin.math.abs(lineFactor - value) < .08f, palette = palette, modifier = Modifier.weight(1f)) { onSelect(value) }
@@ -332,7 +333,7 @@ private fun ReaderQingmoPageQuick(
     onSelect: (String) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Text("翻页", color = palette.foreground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text("翻页", color = palette.foreground, fontWeight = FontWeight.SemiBold, fontSize = MaterialTheme.typography.titleSmall.fontSize)
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ReaderPageModeV10.entries.forEach { mode ->
                 ReaderQingmoChoice(mode.label, selected = pageModeKey == mode.key, palette = palette, modifier = Modifier.weight(1f)) { onSelect(mode.key) }
@@ -359,7 +360,7 @@ private fun ReaderQingmoChoice(
             Modifier.padding(horizontal = 8.dp, vertical = 11.dp),
             textAlign = TextAlign.Center,
             color = if (selected) palette.foreground else palette.secondary,
-            fontSize = 12.sp,
+            fontSize = MaterialTheme.typography.labelSmall.fontSize,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
@@ -377,7 +378,7 @@ private fun ReaderQingmoGridAction(action: ReaderQingmoAction, palette: ReaderEx
                 Icon(action.icon, null, Modifier.size(21.dp), tint = palette.foreground.copy(alpha = alpha))
             }
         }
-        Text(action.label, Modifier.padding(top = 5.dp), color = palette.secondary.copy(alpha = .82f * alpha), fontSize = 11.sp, maxLines = 1)
+        Text(action.label, Modifier.padding(top = 5.dp), color = palette.secondary.copy(alpha = .82f * alpha), fontSize = MaterialTheme.typography.labelSmall.fontSize, maxLines = 1)
     }
 }
 
@@ -394,6 +395,6 @@ private fun ReaderQingmoSmallAction(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(icon, null, Modifier.size(20.dp), tint = palette.foreground.copy(alpha = if (enabled) 1f else .28f))
-        Text(label, Modifier.padding(top = 3.dp), color = palette.secondary, fontSize = 11.sp)
+        Text(label, Modifier.padding(top = 3.dp), color = palette.secondary, fontSize = MaterialTheme.typography.labelSmall.fontSize)
     }
 }

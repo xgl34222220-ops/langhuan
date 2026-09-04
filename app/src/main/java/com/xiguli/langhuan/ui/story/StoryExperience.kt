@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -223,16 +224,16 @@ private fun StoryImmersiveSurface(
                     Column(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp)) {
                         Text(
                             session?.anchorTitle?.ifBlank { "故事从这里继续" } ?: "故事从这里继续",
-                            fontSize = 25.sp,
-                            lineHeight = 33.sp,
+                            fontSize = MaterialTheme.typography.headlineMedium.fontSize,
+                            lineHeight = MaterialTheme.typography.headlineMedium.lineHeight,
                             fontWeight = FontWeight.SemiBold,
                             color = t.foreground,
                         )
                         Text(
                             "原著正文不会被改写。你在这个独立分支里决定自己要说什么、做什么；人物知识、关系和世界状态会跟着每一轮推进。",
                             Modifier.padding(top = 12.dp),
-                            fontSize = 16.sp,
-                            lineHeight = 27.sp,
+                            fontSize = MaterialTheme.typography.bodyMedium.fontSize,
+                            lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
                             color = t.mutedForeground,
                         )
                         if (player?.name.isNullOrBlank()) {
@@ -275,8 +276,8 @@ private fun StoryImmersiveSurface(
                         Text(
                             turn.narration,
                             Modifier.padding(top = 10.dp),
-                            fontSize = 17.sp,
-                            lineHeight = 29.sp,
+                            fontSize = MaterialTheme.typography.titleMedium.fontSize,
+                            lineHeight = MaterialTheme.typography.titleMedium.lineHeight,
                             color = t.foreground,
                         )
                     }

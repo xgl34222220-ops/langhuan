@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1193,7 +1194,7 @@ private fun ReaderExperienceInfo(book: ReaderBookUi, state: LibraryExperienceSta
             }
             Surface(Modifier.fillMaxWidth(), shape = LanghuanShape.panel, color = t.card, border = BorderStroke(1.dp, t.border)) {
                 Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.Bottom) { Text("${(overall * 100).roundToInt()}%", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = t.foreground); Spacer(Modifier.weight(1f)); Text("第 ${progress.chapterNumber} 章 · 本章 ${(progress.positionFraction * 100).roundToInt()}%", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall) }
+                    Row(verticalAlignment = Alignment.Bottom) { Text("${(overall * 100).roundToInt()}%", fontSize = MaterialTheme.typography.displaySmall.fontSize, fontWeight = FontWeight.SemiBold, color = t.foreground); Spacer(Modifier.weight(1f)); Text("第 ${progress.chapterNumber} 章 · 本章 ${(progress.positionFraction * 100).roundToInt()}%", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall) }
                     LinearProgressIndicator(progress = { overall }, Modifier.fillMaxWidth().padding(top = 12.dp), color = t.accent, trackColor = t.muted)
                     Text("阅读位置按章节 + 字符锚点保存，换排版或重新进入也会继续原位置。", Modifier.padding(top = 9.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                 }

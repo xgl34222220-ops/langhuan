@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -467,6 +468,7 @@ private fun FontChoiceRowV10(label: String, summary: String, family: FontFamily,
     val tokens = LocalLanghuanTokens.current
     MiuixCard(Modifier.fillMaxWidth().padding(bottom = 10.dp), cornerRadius = 18.dp, insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp), onClick = onClick, showIndication = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // 刻意保留字面量：行内含字体预览，职责就是用固定字号示范某个字族。
             Column(Modifier.weight(1f)) { Text(label, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary); Text(summary, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary); Text("琅嬛书页 · ABC 123", Modifier.padding(top = 10.dp), fontFamily = family, fontSize = 18.sp, color = tokens.textPrimary) }
             if (selected) Icon(Icons.Rounded.CheckCircle, "已选择", tint = MaterialTheme.colorScheme.primary)
         }
@@ -585,7 +587,7 @@ private fun ReaderBookInfoPageV10(book: ReaderBookUi, state: LibraryExperienceSt
     val fileName = meta.getString("name_${book.id}", book.title).orEmpty(); val fileSize = meta.getLong("size_${book.id}", 0L); val format = meta.getString("format_${book.id}", if (isLocal) "本地" else "创作").orEmpty(); val author = meta.getString("author_${book.id}", "").orEmpty(); val importedAt = meta.getLong("imported_${book.id}", 0L); val recent = progress.getLong("last_${book.id}", 0L); val current = progress.getInt("chapter_${book.id}", book.currentChapter.coerceAtLeast(1)); val percent = if (state.chapters.isEmpty()) 0 else ((current.coerceIn(1, state.chapters.size).toFloat() / state.chapters.size) * 100f).roundToInt()
     MiuixScaffold(containerColor = tokens.pageBackground, topBar = { MiuixTopAppBar(title = "图书详情", largeTitle = "图书详情", subtitle = if (isLocal) "本地书籍" else book.genre, navigationIcon = { MiuixIconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回", tint = tokens.textPrimary) } }, actions = { if (!isLocal) MiuixIconButton(onClick = onAiSetup) { Icon(Icons.Rounded.Tune, "AI 设置", tint = tokens.textPrimary) } }) }) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.Top) { CoverPreviewV3(book.coverPath, book.title, Modifier.width(108.dp).height(156.dp).clip(LanghuanShape.cover)); Column(Modifier.padding(start = 18.dp).weight(1f)) { Text(book.title, fontSize = 25.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary); if (author.isNotBlank()) Text(author, Modifier.padding(top = 7.dp), color = tokens.textSecondary); Text("${state.chapters.size} 章 · ${humanWordsV10(book.currentWords)}", Modifier.padding(top = 8.dp), color = tokens.textSecondary); Text("阅读 $percent% · 第 $current 章", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary) } }
+            Row(verticalAlignment = Alignment.Top) { CoverPreviewV3(book.coverPath, book.title, Modifier.width(108.dp).height(156.dp).clip(LanghuanShape.cover)); Column(Modifier.padding(start = 18.dp).weight(1f)) { Text(book.title, fontSize = MaterialTheme.typography.headlineMedium.fontSize, lineHeight = MaterialTheme.typography.headlineMedium.lineHeight, fontWeight = FontWeight.Bold, color = tokens.textPrimary); if (author.isNotBlank()) Text(author, Modifier.padding(top = 7.dp), color = tokens.textSecondary); Text("${state.chapters.size} 章 · ${humanWordsV10(book.currentWords)}", Modifier.padding(top = 8.dp), color = tokens.textSecondary); Text("阅读 $percent% · 第 $current 章", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary) } }
             MiuixButton(onClick = onRead, modifier = Modifier.fillMaxWidth().padding(top = 26.dp), cornerRadius = 18.dp, colors = MiuixButtonDefaults.buttonColorsPrimary()) { Text("继续阅读 · 第 $current 章") }
             MiuixButton(onClick = onStory, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), cornerRadius = 18.dp) { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text("从当前章节进入故事") }
             SectionTitleV10("阅读信息"); MiuixCard(cornerRadius = 18.dp, insideMargin = PaddingValues(horizontal = 16.dp)) { InfoRowV10("阅读进度", "$percent%"); InfoRowV10("当前章节", "第 $current 章"); InfoRowV10("总章节", "${state.chapters.size} 章"); InfoRowV10("总字数", humanWordsV10(book.currentWords)); InfoRowV10("最近阅读", if (recent > 0L) formatTimeV10(recent) else "暂无", false) }

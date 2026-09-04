@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -1061,7 +1062,7 @@ private fun ReaderThemeCardV11(theme: ReaderThemeV11, selected: Boolean, onClick
                 }
             }
             Column(Modifier.align(Alignment.BottomStart)) {
-                Text(theme.label, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = palette.foreground)
+                Text(theme.label, fontSize = MaterialTheme.typography.titleMedium.fontSize, fontWeight = FontWeight.SemiBold, color = palette.foreground)
                 Text("正文预览", Modifier.padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, color = palette.secondary)
             }
         }
@@ -1349,7 +1350,7 @@ private fun ReaderBookInfoPageV11(
                     ) {
                         Column(Modifier.padding(16.dp)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                                Text(String.format(Locale.getDefault(), "%.1f", rawPercent), fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold, color = t.foreground)
+                                Text(String.format(Locale.getDefault(), "%.1f", rawPercent), fontSize = MaterialTheme.typography.displayMedium.fontSize, lineHeight = MaterialTheme.typography.displayMedium.lineHeight, fontWeight = FontWeight.SemiBold, color = t.foreground)
                                 Text("%", Modifier.padding(start = 3.dp, bottom = 3.dp), color = t.mutedForeground)
                                 Spacer(Modifier.weight(1f))
                                 Text("${progress.chapterNumber}/${state.chapters.size} 章", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)

@@ -204,7 +204,7 @@ fun ShadcnInput(
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                textStyle = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, color = t.foreground),
+                textStyle = TextStyle(fontSize = MaterialTheme.typography.bodySmall.fontSize, lineHeight = MaterialTheme.typography.bodySmall.lineHeight, color = t.foreground),
                 cursorBrush = SolidColor(t.ring),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
