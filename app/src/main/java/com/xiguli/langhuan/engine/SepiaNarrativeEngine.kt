@@ -42,12 +42,10 @@ object SepiaNarrativeEngine {
     fun operationFor(task: AiTaskType): SepiaOperation? = when (task) {
         AiTaskType.SCENE_DIRECTOR,
         AiTaskType.PROSE_AUTHOR,
-        AiTaskType.AUTONOMOUS_PLANNER,
-        -> SepiaOperation.WRITE
+        AiTaskType.AUTONOMOUS_PLANNER -> SepiaOperation.WRITE
 
         AiTaskType.EDITOR_REVIEW,
-        AiTaskType.FULL_BOOK_EDITOR,
-        -> SepiaOperation.REVIEW
+        AiTaskType.FULL_BOOK_EDITOR -> SepiaOperation.REVIEW
 
         AiTaskType.EDITOR_REWRITE -> SepiaOperation.REFACTOR
         AiTaskType.NOVELIZATION -> SepiaOperation.RECREATE
