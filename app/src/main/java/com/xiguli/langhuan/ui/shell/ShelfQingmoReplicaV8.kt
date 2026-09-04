@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -59,7 +60,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -362,11 +362,13 @@ private fun QingmoShelfManagerV8(books: List<ReaderBookUi>, onBack: () -> Unit, 
             }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)) {
                 item {
-                    Text("正在阅读 (${books.size})", color = ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        books.take(5).forEach { book -> QingmoMiniCoverV8(book, Modifier.width(48.dp).aspectRatio(.71f)) }
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("正在阅读 (${books.size})", Modifier.fillMaxWidth(), color = ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            books.take(5).forEach { book -> QingmoMiniCoverV8(book, Modifier.width(48.dp).aspectRatio(.71f)) }
+                        }
+                        TextButton(onClick = {}, modifier = Modifier.padding(top = 24.dp)) { Text("再次选择书籍") }
                     }
-                    TextButton(onClick = {}, modifier = Modifier.padding(top = 24.dp).align(Alignment.CenterHorizontally)) { Text("再次选择书籍") }
                 }
             }
         }
