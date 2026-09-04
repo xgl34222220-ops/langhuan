@@ -44,7 +44,7 @@ private data class ReaderPagePieceV16(
 /**
  * Compose-native pagination.
  *
- * Measurement intentionally mirrors ReaderMobileExperience's editorial page geometry. If the
+ * Measurement intentionally mirrors ReaderMobileExperience v3's editorial page geometry. If the
  * rendered title/header/footer spacing changes, update these metrics in the same PR so a page can
  * never be measured taller than the space it is actually rendered into.
  */
@@ -93,7 +93,7 @@ internal fun rememberReaderMeasuredPaginationV16(
     )
     val titleStyle = TextStyle(
         fontSize = (fontSize + 2f).sp,
-        lineHeight = (fontSize + 8f).sp,
+        lineHeight = (fontSize + 9f).sp,
         fontWeight = FontWeight.Medium,
         fontFamily = family,
     )
@@ -108,15 +108,14 @@ internal fun rememberReaderMeasuredPaginationV16(
         fontFamily = family,
     )
 
-    // Must match MobileReaderPageContent exactly:
-    // 14dp page top/bottom, +5dp before first title, 20dp title gap,
-    // 12dp subsequent-page header gap and 5dp gap before the footer row.
-    val pageTopPx = with(density) { 14.dp.roundToPx() }
-    val firstTitleTopExtraPx = with(density) { 5.dp.roundToPx() }
-    val titleGapPx = with(density) { 20.dp.roundToPx() }
-    val headerGapPx = with(density) { 12.dp.roundToPx() }
-    val footerGapPx = with(density) { 5.dp.roundToPx() }
-    val pageBottomPx = with(density) { 14.dp.roundToPx() }
+    // Must match MobileReaderPageContentV3 exactly:
+    // 22dp top, 18dp first-page title gap, 14dp later-page header gap,
+    // 7dp before the single page counter, and 10dp bottom.
+    val pageTopPx = with(density) { 22.dp.roundToPx() }
+    val titleGapPx = with(density) { 18.dp.roundToPx() }
+    val headerGapPx = with(density) { 14.dp.roundToPx() }
+    val footerGapPx = with(density) { 7.dp.roundToPx() }
+    val pageBottomPx = with(density) { 10.dp.roundToPx() }
     val paragraphGapPx = with(density) {
         paragraphSpacing.coerceIn(0f, 24f).dp.roundToPx()
     }
@@ -134,7 +133,7 @@ internal fun rememberReaderMeasuredPaginationV16(
         constraints = Constraints(maxWidth = bodyWidthPx),
     ).size.height
     val footerHeightPx = textMeasurer.measure(
-        text = "99 / 99    琅嬛",
+        text = "99 / 99",
         style = footerStyle,
         maxLines = 1,
         constraints = Constraints(maxWidth = bodyWidthPx),
@@ -143,7 +142,6 @@ internal fun rememberReaderMeasuredPaginationV16(
     val firstBodyHeightPx = (
         safeHeightPx -
             pageTopPx -
-            firstTitleTopExtraPx -
             titleHeightPx -
             titleGapPx -
             footerGapPx -
