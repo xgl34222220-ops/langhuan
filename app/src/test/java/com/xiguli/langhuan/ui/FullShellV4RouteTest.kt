@@ -14,6 +14,7 @@ class FullShellV4RouteTest {
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt").readText()
         val story = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryCoreExperience.kt").readText()
         val storyEntry = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryCleanExperience.kt").readText()
+        val tavernHub = File(root, "src/main/java/com/xiguli/langhuan/ui/TavernCharacterHubV2.kt").readText()
         val creation = File(root, "src/main/java/com/xiguli/langhuan/ui/CreationChatV4.kt").readText()
         val editor = File(root, "src/main/java/com/xiguli/langhuan/ui/writing/ChapterEditorExperience.kt").readText()
 
@@ -63,8 +64,11 @@ class FullShellV4RouteTest {
         assertTrue(story.contains("故事分支"))
         assertTrue(story.contains("世界状态"))
         assertFalse(story.contains("StoryPlayPanelV17("))
-        assertTrue(storyEntry.contains("StoryCoreExperience("))
+        assertTrue(storyEntry.contains("TavernCharacterHubV2("))
         assertFalse(storyEntry.contains("StoryPlayPanelV17("))
+        assertTrue(tavernHub.contains("StoryCoreExperience("))
+        assertTrue(tavernHub.contains("导入聊天"))
+        assertTrue(tavernHub.contains("开始聊天"))
 
         assertTrue(router.contains("CreationChatV4("))
         assertTrue(router.contains("ChapterEditorExperience("))
