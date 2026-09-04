@@ -44,7 +44,9 @@ private data class ReaderPagePieceV16(
 /**
  * Compose-native pagination.
  *
- * Measurement and rendering use the same Compose TextMeasurer/TextStyle/FontFamily/TextIndent stack.
+ * Measurement intentionally mirrors ReaderMobileExperience's editorial page geometry. If the
+ * rendered title/header/footer spacing changes, update these metrics in the same PR so a page can
+ * never be measured taller than the space it is actually rendered into.
  */
 @Composable
 internal fun rememberReaderMeasuredPaginationV16(
@@ -79,29 +81,45 @@ internal fun rememberReaderMeasuredPaginationV16(
             safeInsets.getBottom(density)
         ).coerceAtLeast(1)
     val sidePaddingPx = with(density) { sidePadding.coerceIn(10f, 60f).dp.roundToPx() }
-    val bodyWidthPx = (safeWidthPx - sidePaddingPx * 2).coerceAtLeast(with(density) { 180.dp.roundToPx() })
+    val bodyWidthPx = (
+        safeWidthPx - sidePaddingPx * 2
+        ).coerceAtLeast(with(density) { 180.dp.roundToPx() })
 
     val bodyStyle = TextStyle(
         fontSize = fontSize.coerceIn(12f, 36f).sp,
         lineHeight = (fontSize.coerceIn(12f, 36f) * lineFactor.coerceIn(1.2f, 2.6f)).sp,
         fontFamily = family,
+        fontWeight = FontWeight.Normal,
     )
     val titleStyle = TextStyle(
-        fontSize = (fontSize + 3f).sp,
+        fontSize = (fontSize + 2f).sp,
         lineHeight = (fontSize + 8f).sp,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Medium,
         fontFamily = family,
     )
-    val headerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
-    val footerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
+    val headerStyle = TextStyle(
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        fontFamily = family,
+    )
+    val footerStyle = TextStyle(
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        fontFamily = family,
+    )
 
-    val topFirstPx = with(density) { 10.dp.roundToPx() }
-    val topNormalPx = with(density) { 8.dp.roundToPx() }
-    val titleGapPx = with(density) { 10.dp.roundToPx() }
-    val headerGapPx = with(density) { 10.dp.roundToPx() }
-    val footerGapPx = with(density) { 4.dp.roundToPx() }
-    val bottomPx = with(density) { 4.dp.roundToPx() }
-    val paragraphGapPx = with(density) { paragraphSpacing.coerceIn(0f, 24f).dp.roundToPx() }
+    // Must match MobileReaderPageContent exactly:
+    // 14dp page top/bottom, +5dp before first title, 20dp title gap,
+    // 12dp subsequent-page header gap and 5dp gap before the footer row.
+    val pageTopPx = with(density) { 14.dp.roundToPx() }
+    val firstTitleTopExtraPx = with(density) { 5.dp.roundToPx() }
+    val titleGapPx = with(density) { 20.dp.roundToPx() }
+    val headerGapPx = with(density) { 12.dp.roundToPx() }
+    val footerGapPx = with(density) { 5.dp.roundToPx() }
+    val pageBottomPx = with(density) { 14.dp.roundToPx() }
+    val paragraphGapPx = with(density) {
+        paragraphSpacing.coerceIn(0f, 24f).dp.roundToPx()
+    }
 
     val titleHeightPx = textMeasurer.measure(
         text = displayTitle,
@@ -116,17 +134,30 @@ internal fun rememberReaderMeasuredPaginationV16(
         constraints = Constraints(maxWidth = bodyWidthPx),
     ).size.height
     val footerHeightPx = textMeasurer.measure(
-        text = "00:00    99/99 · 100%",
+        text = "99 / 99    琅嬛",
         style = footerStyle,
         maxLines = 1,
         constraints = Constraints(maxWidth = bodyWidthPx),
     ).size.height
 
     val firstBodyHeightPx = (
-        safeHeightPx - topFirstPx - titleHeightPx - titleGapPx - footerGapPx - footerHeightPx - bottomPx
+        safeHeightPx -
+            pageTopPx -
+            firstTitleTopExtraPx -
+            titleHeightPx -
+            titleGapPx -
+            footerGapPx -
+            footerHeightPx -
+            pageBottomPx
         ).coerceAtLeast(with(density) { 220.dp.roundToPx() })
     val normalBodyHeightPx = (
-        safeHeightPx - topNormalPx - headerHeightPx - headerGapPx - footerGapPx - footerHeightPx - bottomPx
+        safeHeightPx -
+            pageTopPx -
+            headerHeightPx -
+            headerGapPx -
+            footerGapPx -
+            footerHeightPx -
+            pageBottomPx
         ).coerceAtLeast(with(density) { 240.dp.roundToPx() })
 
     val normalized = remember(text) { readerNormalizeBodyV14(text) }
@@ -239,16 +270,15 @@ private fun paginateReaderV16(
                 widthPx = widthPx,
             )
 
-            // Critical pagination rule: if even one complete glyph line does not fit in the
-            // remaining height, do not force a character into this page. The old fallback always
-            // returned start + 1 and produced the exact "half a line above the footer" artifact.
+            // Never force a partial glyph line into the remaining viewport. This is what prevents
+            // the old "half a line above the footer" artifact at the end of a page.
             if (splitEnd <= cursor && pieces.isNotEmpty()) break
 
             val safeEnd = if (splitEnd > cursor) {
                 splitEnd.coerceAtMost(paragraph.end)
             } else {
-                // A completely empty page should always have enough body height for one line, but
-                // keep a progress fallback so malformed metrics can never create an infinite loop.
+                // Empty pages should still make forward progress if a device reports malformed
+                // metrics; this fallback is intentionally only used when there are no page pieces.
                 (cursor + 1).coerceAtMost(paragraph.end)
             }
             if (gap > 0) usedHeight += gap
