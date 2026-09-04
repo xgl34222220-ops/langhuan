@@ -16,7 +16,7 @@ fun ShelfLibraryV5(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
-) = ShelfQingmoReplicaV8(
+) = ShelfQingmoFunctionalV9(
     state = state,
     importState = importState,
     openingBookId = openingBookId,
