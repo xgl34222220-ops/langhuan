@@ -12,7 +12,7 @@ fun ReaderNativeExperienceV4(
     onOpenEditor: (String, Int) -> Unit,
     onOpenAiSetup: () -> Unit,
     startOnInfo: Boolean = false,
-) = ReaderQingmoReplicaV8(
+) = ReaderQingmoFunctionalV9(
     viewModel = viewModel,
     studioState = studioState,
     onBackToShelf = onBackToShelf,
