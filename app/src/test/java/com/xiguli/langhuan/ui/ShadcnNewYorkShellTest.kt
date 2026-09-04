@@ -16,20 +16,24 @@ class ShadcnNewYorkShellTest {
 
         // Production shelf must read as a native phone reading app, not a responsive web dashboard.
         assertTrue(shelf.contains("MobileLibraryPage("))
-        assertTrue(shelf.contains("MobileShelfDock("))
+        assertTrue(shelf.contains("MobileShelfNavigation("))
+        assertFalse(shelf.contains("MobileShelfDock("))
         assertTrue(shelf.contains("GridCells.Fixed(2)"))
-        assertTrue(shelf.contains("RoundedCornerShape(18.dp)"))
+        assertTrue(shelf.contains("RoundedCornerShape(14.dp)"))
         assertTrue(shelf.contains("CircleShape"))
         assertFalse(shelf.contains("NavigationBar("))
         assertFalse(shelf.contains("NavigationBarItem("))
         assertFalse(shelf.contains("TopAppBar("))
         assertFalse(shelf.contains("ShelfShadcnBottomBar("))
+        assertFalse(shelf.contains("ShadcnButton("))
+        assertFalse(shelf.contains("ShadcnInput("))
 
-        // Reader remains reading-native: choices and direct step controls, not web-form sliders.
+        // Reader remains reading-native: progressive settings and direct step controls.
         assertTrue(reader.contains("MobileThemeChoice("))
         assertTrue(reader.contains("MobilePresetRow("))
         assertTrue(reader.contains("MobileRoundControl("))
         assertTrue(reader.contains("MobileBookInfoSheet("))
+        assertTrue(reader.contains("var advancedOpen"))
         assertFalse(reader.contains("ReaderCoreSlider("))
         assertFalse(reader.contains("ShadcnTabs("))
         assertFalse(reader.contains("FilterChip("))
