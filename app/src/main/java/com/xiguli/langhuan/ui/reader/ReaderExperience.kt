@@ -145,7 +145,7 @@ fun ReaderExperience(
         }
 
         ReaderExperienceRoute.STORY -> Box(Modifier.fillMaxSize()) {
-            StoryExperience(
+            StoryCleanExperience(
                 book = book,
                 libraryState = state,
                 aiReady = studioState.provider.ready,
@@ -249,7 +249,9 @@ private fun ReaderExperiencePage(
     val pagerState = rememberPagerState(pageCount = { totalPagerPages })
     val saved = remember(chapter.id) { ReaderProgressStoreV11.load(context, book.id, chapter.chapterNumber) }
     val layoutKey = "$pageModeKey|$fontKey|${fontSize.roundToInt()}|${(lineFactor * 100).roundToInt()}|${sidePadding.roundToInt()}|${paragraphSpacing.roundToInt()}|$firstLineIndent|${measuredPagination.layoutToken}"
-    var progressRestored by remember(chapter.id, layoutKey) { mutableStateOf(false) }
+    var progressRestored by remember(chapter.id) { mutableStateOf(false) }
+    var reflowAnchorOffset by remember(chapter.id) { mutableIntStateOf(saved.textOffset.coerceIn(0, readingText.length)) }
+    var appliedLayoutKey by remember(chapter.id) { mutableStateOf("") }
     var crossingChapter by remember(chapter.id) { mutableStateOf(false) }
 
     fun contentPageFromPager(pagerPage: Int): Int = (pagerPage - leadingPageCount).coerceIn(0, pages.lastIndex.coerceAtLeast(0))
@@ -286,6 +288,11 @@ private fun ReaderExperiencePage(
         )
     }
 
+    fun rememberCurrentAnchor() {
+        if (progressRestored) reflowAnchorOffset = currentTextOffset().coerceIn(0, readingText.length)
+        saveCurrentProgress()
+    }
+
     fun moveChapter(target: ChapterDraft?, reset: Boolean = true, atEnd: Boolean = false) {
         target ?: return
         saveCurrentProgress()
@@ -293,29 +300,47 @@ private fun ReaderExperiencePage(
         onChapter(target.chapterNumber, reset, atEnd)
     }
 
-    // Restore from stable textOffset after layout or mode changes. This also prevents layout changes from jumping to page one.
-    LaunchedEffect(chapter.id, layoutKey, pages.size, scrollState.maxValue) {
+    // Initial chapter restore is the only operation allowed to cover the page. Layout changes after
+    // that keep the old page visible and silently remap the stable textOffset to the new layout.
+    LaunchedEffect(chapter.id, pages.size, scrollState.maxValue) {
         if (progressRestored) return@LaunchedEffect
         if (saved.chapterNumber != chapter.chapterNumber) return@LaunchedEffect
+        val restoredOffset = when {
+            saved.textOffset > 0 -> saved.textOffset.coerceIn(0, readingText.length)
+            saved.positionFraction > 0f -> (readingText.length * saved.positionFraction).roundToInt().coerceIn(0, readingText.length)
+            else -> 0
+        }
         if (pageMode == ReaderPageModeV10.SCROLL) {
-            delay(32)
-            val fraction = when {
-                saved.textOffset > 0 && readingText.isNotBlank() -> saved.textOffset.toFloat() / readingText.length.toFloat()
-                saved.positionFraction > 0f -> saved.positionFraction
-                else -> 0f
-            }.coerceIn(0f, 1f)
+            val fraction = if (readingText.isBlank()) 0f else restoredOffset.toFloat() / readingText.length.toFloat()
+            if (fraction > 0f && scrollState.maxValue <= 0) return@LaunchedEffect
             if (scrollState.maxValue > 0) scrollState.scrollTo((scrollState.maxValue * fraction).roundToInt().coerceIn(0, scrollState.maxValue))
-            progressRestored = true
         } else {
             val contentPage = when {
-                saved.textOffset > 0 -> pageForRawTextOffset(pageOffsets, saved.textOffset)
-                saved.positionFraction > 0f -> pageForRawTextOffset(pageOffsets, (readingText.length * saved.positionFraction).roundToInt())
+                restoredOffset > 0 -> pageForRawTextOffset(pageOffsets, restoredOffset)
                 saved.modeKey == pageMode.key -> saved.pageIndex.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
                 else -> 0
             }
             pagerState.scrollToPage((leadingPageCount + contentPage).coerceIn(0, totalPagerPages - 1))
-            progressRestored = true
         }
+        reflowAnchorOffset = restoredOffset
+        appliedLayoutKey = layoutKey
+        progressRestored = true
+    }
+
+    // Font/line/page-mode changes used to reset progressRestored and paint a full-page loading layer,
+    // which is the visible white flash in the recordings. Reflow now happens behind the stable page.
+    LaunchedEffect(layoutKey, progressRestored, pages.size, scrollState.maxValue) {
+        if (!progressRestored || appliedLayoutKey == layoutKey) return@LaunchedEffect
+        val anchorOffset = reflowAnchorOffset.coerceIn(0, readingText.length)
+        if (pageMode == ReaderPageModeV10.SCROLL) {
+            val fraction = if (readingText.isBlank()) 0f else anchorOffset.toFloat() / readingText.length.toFloat()
+            if (fraction > 0f && scrollState.maxValue <= 0) return@LaunchedEffect
+            if (scrollState.maxValue > 0) scrollState.scrollTo((scrollState.maxValue * fraction).roundToInt().coerceIn(0, scrollState.maxValue))
+        } else {
+            val contentPage = pageForRawTextOffset(pageOffsets, anchorOffset)
+            pagerState.scrollToPage((leadingPageCount + contentPage).coerceIn(0, totalPagerPages - 1))
+        }
+        appliedLayoutKey = layoutKey
     }
 
     // Scroll progress is deliberately debounced; the old reader did a synchronous preference commit for almost every pixel.
@@ -358,7 +383,7 @@ private fun ReaderExperiencePage(
             }
     }
 
-    DisposableEffect(chapter.id, layoutKey, progressRestored) {
+    DisposableEffect(chapter.id, progressRestored) {
         onDispose { saveCurrentProgress() }
     }
 
@@ -505,9 +530,9 @@ private fun ReaderExperiencePage(
                     onDirectory = { showDirectory = true },
                     onSearch = { showSearch = true },
                     onNight = { themeKey = if (themeKey == "night") "paper" else "night" },
-                    onFontKey = { key -> saveCurrentProgress(); fontKey = key },
-                    onLineFactor = { value -> saveCurrentProgress(); lineFactor = value },
-                    onPageMode = { key -> saveCurrentProgress(); pageModeKey = key },
+                    onFontKey = { key -> rememberCurrentAnchor(); fontKey = key },
+                    onLineFactor = { value -> rememberCurrentAnchor(); lineFactor = value },
+                    onPageMode = { key -> rememberCurrentAnchor(); pageModeKey = key },
                     onSettings = { showSettings = true },
                     onStory = onStory,
                 )
@@ -547,7 +572,7 @@ private fun ReaderExperiencePage(
             scrollY = if (pageMode == ReaderPageModeV10.SCROLL) scrollState.value else 0,
             onArchive = { archive = it },
             onApplyPreset = { preset ->
-                saveCurrentProgress()
+                rememberCurrentAnchor()
                 ReaderReadingStoreV11.applyPreset(context, book.id, preset)
                 presetBaseId = preset.id
                 themeKey = preset.themeKey
@@ -562,13 +587,13 @@ private fun ReaderExperiencePage(
                 customFg = preset.customFg
             },
             onTheme = { themeKey = it },
-            onFont = { saveCurrentProgress(); fontKey = it },
-            onPageMode = { saveCurrentProgress(); pageModeKey = it },
-            onFontSize = { saveCurrentProgress(); fontSize = it },
-            onLine = { saveCurrentProgress(); lineFactor = it },
-            onPadding = { saveCurrentProgress(); sidePadding = it },
-            onParagraph = { saveCurrentProgress(); paragraphSpacing = it },
-            onIndent = { saveCurrentProgress(); firstLineIndent = it },
+            onFont = { rememberCurrentAnchor(); fontKey = it },
+            onPageMode = { rememberCurrentAnchor(); pageModeKey = it },
+            onFontSize = { rememberCurrentAnchor(); fontSize = it },
+            onLine = { rememberCurrentAnchor(); lineFactor = it },
+            onPadding = { rememberCurrentAnchor(); sidePadding = it },
+            onParagraph = { rememberCurrentAnchor(); paragraphSpacing = it },
+            onIndent = { rememberCurrentAnchor(); firstLineIndent = it },
             onCustomBg = { customBg = it; themeKey = "custom" },
             onCustomFg = { customFg = it; themeKey = "custom" },
             onSearch = { showSettings = false; showSearch = true },
