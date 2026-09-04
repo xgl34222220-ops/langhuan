@@ -32,7 +32,7 @@ import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.RunStatus
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
 private enum class WorkspaceSheetV4 { SCENES, STORY, RUN }
@@ -121,7 +121,7 @@ fun WritingWorkspaceV4(
                         Text(
                             "读取章纲、人物状态、时间线与长期记忆",
                             style = MaterialTheme.typography.bodySmall,
-                            color = LocalMiuixTokens.current.textSecondary,
+                            color = LocalLanghuanTokens.current.textSecondary,
                         )
                     }
                 }
@@ -276,7 +276,7 @@ private fun WorkspaceHeaderV4(
                     if (chapterTitle.isNotBlank()) append(" · $chapterTitle")
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = LocalMiuixTokens.current.textSecondary,
+                color = LocalLanghuanTokens.current.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -327,9 +327,9 @@ private fun WorkspaceSkillRibbonV4(
     val tint = when {
         running != null -> MaterialTheme.colorScheme.primary
         failed > 0 -> MaterialTheme.colorScheme.error
-        warning > 0 -> LocalMiuixTokens.current.warning
-        events.isNotEmpty() -> LocalMiuixTokens.current.success
-        else -> LocalMiuixTokens.current.textSecondary
+        warning > 0 -> LocalLanghuanTokens.current.warning
+        events.isNotEmpty() -> LocalLanghuanTokens.current.success
+        else -> LocalLanghuanTokens.current.textSecondary
     }
 
     Row(
@@ -358,12 +358,12 @@ private fun WorkspaceSkillRibbonV4(
             Text(
                 providerLabel.ifBlank { "上下文、时间线、一致性与 Agent 会按项目状态自动调度" },
                 style = MaterialTheme.typography.labelSmall,
-                color = LocalMiuixTokens.current.textSecondary,
+                color = LocalLanghuanTokens.current.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Icon(Icons.Rounded.ExpandMore, "展开", Modifier.size(18.dp), tint = LocalMiuixTokens.current.textSecondary)
+        Icon(Icons.Rounded.ExpandMore, "展开", Modifier.size(18.dp), tint = LocalLanghuanTokens.current.textSecondary)
     }
 }
 
@@ -396,7 +396,7 @@ private fun WorkspaceMissionCardV4(
             val contract = draft.contract.takeIf { it.purpose.isNotBlank() || it.mustHappen.isNotEmpty() }
                 ?: snapshot.activeOutline.lastOrNull()?.chapterContract
             contract?.takeIf { it.purpose.isNotBlank() }?.let {
-                Text("章节合同 · ${it.purpose}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                Text("章节合同 · ${it.purpose}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
             }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -425,7 +425,7 @@ private fun WorkspaceMissionCardV4(
                                 label,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (current) FontWeight.Bold else FontWeight.Medium,
-                                color = if (completed || current) MaterialTheme.colorScheme.primary else LocalMiuixTokens.current.textSecondary,
+                                color = if (completed || current) MaterialTheme.colorScheme.primary else LocalLanghuanTokens.current.textSecondary,
                             )
                         }
                     }
@@ -458,13 +458,13 @@ private fun WorkspaceSceneSummaryV4(
                         else -> "${scenes.size} 个场景 · 已进入本章上下文"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = LocalLanghuanTokens.current.textSecondary,
                 )
             }
             if (dirty) {
                 AssistChip(onClick = onClick, label = { Text("待确认") })
             } else {
-                Icon(Icons.Rounded.ExpandMore, null, tint = LocalMiuixTokens.current.textSecondary)
+                Icon(Icons.Rounded.ExpandMore, null, tint = LocalLanghuanTokens.current.textSecondary)
             }
         }
     }
@@ -505,7 +505,7 @@ private fun WorkspaceBodyCardV4(
                     Text(
                         workspaceBodyHintV4(state, hasPendingResult, blocking.size, warnings.size),
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = LocalLanghuanTokens.current.textSecondary,
                     )
                 }
             }
@@ -517,7 +517,7 @@ private fun WorkspaceBodyCardV4(
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Text("正在读取上下文并生成正文…", modifier = Modifier.padding(start = 9.dp), color = LocalMiuixTokens.current.textSecondary)
+                            Text("正在读取上下文并生成正文…", modifier = Modifier.padding(start = 9.dp), color = LocalLanghuanTokens.current.textSecondary)
                         }
                     }
                 }
@@ -537,7 +537,7 @@ private fun WorkspaceBodyCardV4(
                         }
                     }
                     if (blocking.isEmpty() && warnings.isNotEmpty()) {
-                        Text("有 ${warnings.size} 条编辑建议，但不会阻止保存。", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                        Text("有 ${warnings.size} 条编辑建议，但不会阻止保存。", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
                     }
                 }
                 state.chapterCommitted && draft.content.isNotBlank() -> {
@@ -607,7 +607,7 @@ private fun WorkspaceMemoryCardV4(
                             else -> "本章记忆已整理完成"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = LocalLanghuanTokens.current.textSecondary,
                     )
                 }
             }
@@ -640,7 +640,7 @@ private fun WorkspaceMemoryCardV4(
                 }
             }
             if (pending.size > 5) {
-                Text("还有 ${pending.size - 5} 条候选事实，可继续逐条确认。", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                Text("还有 ${pending.size - 5} 条候选事实，可继续逐条确认。", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
             }
         }
     }
@@ -677,7 +677,7 @@ private fun WorkspaceMetricV4(label: String, value: String, modifier: Modifier =
     Surface(modifier = modifier.squircleClip(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .52f)) {
         Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(value, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
         }
     }
 }
@@ -798,7 +798,7 @@ private fun WorkspaceModeChipV4(
     val foreground = when {
         warning -> MaterialTheme.colorScheme.onErrorContainer
         selected -> MaterialTheme.colorScheme.primary
-        else -> LocalMiuixTokens.current.textSecondary
+        else -> LocalLanghuanTokens.current.textSecondary
     }
     Surface(shape = RoundedCornerShape(99.dp), color = background, modifier = Modifier.clickable(onClick = onClick)) {
         Text(label, modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp), style = MaterialTheme.typography.labelSmall, color = foreground, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
@@ -825,7 +825,7 @@ private fun WorkspaceSceneSheetV4(
             Text("本章场景", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
                 if (state.sceneDirty) "AI 已调整 ${scenes.size} 个场景；确认前不会覆盖正式章节结构。" else "这里是本章真实 ScenePlan，正文生成会直接读取它。",
-                color = LocalMiuixTokens.current.textSecondary,
+                color = LocalLanghuanTokens.current.textSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
             if (state.sceneNote.isNotBlank()) {
@@ -839,7 +839,7 @@ private fun WorkspaceSceneSheetV4(
                     item(key = "scene-${scene.order}") { WorkspaceSceneCardV4(scene) }
                 }
                 if (scenes.isEmpty()) {
-                    item { Text("还没有场景计划。输入要求后让 AI 生成。", color = LocalMiuixTokens.current.textSecondary) }
+                    item { Text("还没有场景计划。输入要求后让 AI 生成。", color = LocalLanghuanTokens.current.textSecondary) }
                 }
                 if (state.sceneConversation.isNotEmpty()) {
                     item {
@@ -850,7 +850,7 @@ private fun WorkspaceSceneSheetV4(
                             Text(
                                 (if (message.role == "user") "你 · " else "琅嬛 · ") + message.text,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = LocalMiuixTokens.current.textSecondary,
+                                color = LocalLanghuanTokens.current.textSecondary,
                             )
                         }
                     }
@@ -901,11 +901,11 @@ private fun WorkspaceSceneCardV4(scene: ScenePlan) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("场景 ${scene.order}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
-                if (scene.location.isNotBlank()) Text(scene.location, style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                if (scene.location.isNotBlank()) Text(scene.location, style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
             }
             if (scene.purpose.isNotBlank()) Text(scene.purpose, fontWeight = FontWeight.SemiBold)
-            if (scene.conflict.isNotBlank()) Text("冲突 · ${scene.conflict}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
-            if (scene.outcome.isNotBlank()) Text("结果 · ${scene.outcome}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+            if (scene.conflict.isNotBlank()) Text("冲突 · ${scene.conflict}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
+            if (scene.outcome.isNotBlank()) Text("结果 · ${scene.outcome}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
         }
     }
 }
@@ -926,22 +926,22 @@ private fun WorkspaceStorySheetV4(
         ) {
             item {
                 Text("故事状态", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("这是本章实际可读的项目上下文，不是 Skill 开关。", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                Text("这是本章实际可读的项目上下文，不是 Skill 开关。", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
             }
             snapshot.activeOutline.lastOrNull()?.let { outline ->
                 item {
                     WorkspaceSheetSectionV4("当前章纲") {
                         Text(outline.title, fontWeight = FontWeight.Bold)
                         if (outline.objective.isNotBlank()) Text("目标 · ${outline.objective}", style = MaterialTheme.typography.bodySmall)
-                        if (outline.conflict.isNotBlank()) Text("冲突 · ${outline.conflict}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
-                        if (outline.turningPoint.isNotBlank()) Text("转折 · ${outline.turningPoint}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                        if (outline.conflict.isNotBlank()) Text("冲突 · ${outline.conflict}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
+                        if (outline.turningPoint.isNotBlank()) Text("转折 · ${outline.turningPoint}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
                     }
                 }
             }
             item {
                 WorkspaceSheetSectionV4("人物 · ${snapshot.characters.size}") {
                     if (snapshot.characters.isEmpty()) {
-                        Text("暂无人物状态", color = LocalMiuixTokens.current.textSecondary)
+                        Text("暂无人物状态", color = LocalLanghuanTokens.current.textSecondary)
                     } else {
                         snapshot.characters.take(8).forEach { character ->
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -949,23 +949,23 @@ private fun WorkspaceStorySheetV4(
                                 Text(
                                     listOf(character.location, character.emotionalState, character.goal).filter(String::isNotBlank).joinToString(" · "),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = LocalMiuixTokens.current.textSecondary,
+                                    color = LocalLanghuanTokens.current.textSecondary,
                                 )
                             }
                         }
-                        if (snapshot.characters.size > 8) Text("另有 ${snapshot.characters.size - 8} 名人物状态", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                        if (snapshot.characters.size > 8) Text("另有 ${snapshot.characters.size - 8} 名人物状态", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
                     }
                 }
             }
             item {
                 WorkspaceSheetSectionV4("最近时间线 · ${snapshot.recentTimeline.size}") {
                     if (snapshot.recentTimeline.isEmpty()) {
-                        Text("暂无时间线事件", color = LocalMiuixTokens.current.textSecondary)
+                        Text("暂无时间线事件", color = LocalLanghuanTokens.current.textSecondary)
                     } else {
                         snapshot.recentTimeline.takeLast(6).forEach { event ->
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text("第${event.chapter}章 · ${event.storyTime.ifBlank { event.timeOfDay.ifBlank { "时间未锁定" } }}", fontWeight = FontWeight.SemiBold)
-                                Text(event.summary, style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                                Text(event.summary, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
                             }
                         }
                     }
@@ -974,12 +974,12 @@ private fun WorkspaceStorySheetV4(
             item {
                 WorkspaceSheetSectionV4("相关伏笔 · ${snapshot.relevantForeshadowing.size}") {
                     if (snapshot.relevantForeshadowing.isEmpty()) {
-                        Text("本章没有需要触碰的伏笔", color = LocalMiuixTokens.current.textSecondary)
+                        Text("本章没有需要触碰的伏笔", color = LocalLanghuanTokens.current.textSecondary)
                     } else {
                         snapshot.relevantForeshadowing.take(6).forEach { clue ->
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(clue.title, fontWeight = FontWeight.SemiBold)
-                                Text(clue.detail, style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Text(clue.detail, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -988,12 +988,12 @@ private fun WorkspaceStorySheetV4(
             item {
                 WorkspaceSheetSectionV4("Candidate · ${pending.size}") {
                     if (pending.isEmpty()) {
-                        Text("当前章节没有待确认事实", color = LocalMiuixTokens.current.textSecondary)
+                        Text("当前章节没有待确认事实", color = LocalLanghuanTokens.current.textSecondary)
                     } else {
                         pending.take(8).forEach { fact ->
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(fact.subject, fontWeight = FontWeight.SemiBold)
-                                Text(fact.after, style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                                Text(fact.after, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
                             }
                         }
                     }
@@ -1030,11 +1030,11 @@ private fun WorkspaceRunSheetV4(events: List<RunEvent>, onDismiss: () -> Unit) {
             Text(
                 "这里只展示真实 RunEvent。已执行、主动跳过、失败和未执行不会混成同一个“已启用”。",
                 style = MaterialTheme.typography.bodySmall,
-                color = LocalMiuixTokens.current.textSecondary,
+                color = LocalLanghuanTokens.current.textSecondary,
             )
             if (events.isEmpty()) {
                 Surface(modifier = Modifier.fillMaxWidth().squircleClip(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Text("本章还没有运行记录。开始生成后，V3 Runtime 的计划与回执会出现在这里。", modifier = Modifier.padding(16.dp), color = LocalMiuixTokens.current.textSecondary)
+                    Text("本章还没有运行记录。开始生成后，V3 Runtime 的计划与回执会出现在这里。", modifier = Modifier.padding(16.dp), color = LocalLanghuanTokens.current.textSecondary)
                 }
             } else {
                 RunInspectorPanel(events, "本章执行轨迹")

@@ -32,7 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.EpubOriginalTocV1
 import com.xiguli.langhuan.data.EpubTocNodeV1
 import com.xiguli.langhuan.domain.ChapterDraft
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -423,7 +423,7 @@ private fun ThemeCenterV10(selected: ReaderThemeV10, customBg: String, customFg:
         Text("自定义颜色", Modifier.padding(top = 8.dp, bottom = 8.dp), style = MaterialTheme.typography.labelLarge)
         OutlinedTextField(customBg, onValueChange = onCustomBg, modifier = Modifier.fillMaxWidth(), label = { Text("背景色") }, placeholder = { Text("#FFF4F0E6") }, singleLine = true)
         OutlinedTextField(customFg, onValueChange = onCustomFg, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("正文色") }, placeholder = { Text("#FF302D28") }, singleLine = true)
-        Text("支持 #RRGGBB 或 #AARRGGBB，输入有效颜色后会立即预览。", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+        Text("支持 #RRGGBB 或 #AARRGGBB，输入有效颜色后会立即预览。", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
     }
 }
 
@@ -440,7 +440,7 @@ private fun ThemeRowV10(option: ReaderThemeV10, palette: ReaderPaletteV10, selec
 @Composable
 private fun FontCenterV10(bookId: String, selected: String, onFont: (String) -> Unit) {
     val context = LocalContext.current
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     var refresh by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
     val assets = remember(refresh) { ReaderFontStoreV10.list(context) }
@@ -464,7 +464,7 @@ private fun FontCenterV10(bookId: String, selected: String, onFont: (String) -> 
 
 @Composable
 private fun FontChoiceRowV10(label: String, summary: String, family: FontFamily, selected: Boolean, onClick: () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     MiuixCard(Modifier.fillMaxWidth().padding(bottom = 10.dp), cornerRadius = 18.dp, insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp), onClick = onClick, showIndication = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text(label, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary); Text(summary, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary); Text("琅嬛书页 · ABC 123", Modifier.padding(top = 10.dp), fontFamily = family, fontSize = 18.sp, color = tokens.textPrimary) }
@@ -475,7 +475,7 @@ private fun FontChoiceRowV10(label: String, summary: String, family: FontFamily,
 
 @Composable
 private fun PageModeCenterV10(selected: ReaderPageModeV10, onSelect: (ReaderPageModeV10) -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
         ReaderPageModeV10.entries.forEach { mode ->
             MiuixCard(Modifier.fillMaxWidth().padding(bottom = 10.dp), cornerRadius = 18.dp, insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp), onClick = { onSelect(mode) }, showIndication = true) {
@@ -491,14 +491,14 @@ private fun PageModeCenterV10(selected: ReaderPageModeV10, onSelect: (ReaderPage
 
 @Composable
 private fun SettingSliderV10(label: String, value: Float, range: ClosedFloatingPointRange<Float>, valueText: (Float) -> String, onValue: (Float) -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Row(Modifier.fillMaxWidth().padding(top = 17.dp), verticalAlignment = Alignment.CenterVertically) { Text(label, style = MaterialTheme.typography.labelLarge, color = tokens.textPrimary); Text(valueText(value), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary) }
     Slider(value = value, onValueChange = onValue, valueRange = range)
 }
 
 @Composable
 private fun ReaderSheetActionV10(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, summary: String, onClick: () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(22.dp), tint = tokens.textSecondary)
         Column(Modifier.padding(start = 16.dp).weight(1f)) { Text(title, color = tokens.textPrimary, fontWeight = FontWeight.Medium); Text(summary, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary) }
@@ -518,7 +518,7 @@ private fun DirectorySheetV10(bookId: String, state: LibraryExperienceState, onD
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var descending by remember { mutableStateOf(false) }
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     val original = remember(bookId) { EpubOriginalTocV1.load(context, bookId) }
     val originalEntries = remember(original, query, descending) {
         val flat = flattenTocV10(original).filter { query.isBlank() || it.title.contains(query, true) }
@@ -561,7 +561,7 @@ private fun DirectorySheetV10(bookId: String, state: LibraryExperienceState, onD
 
 @Composable
 private fun SearchBookSheetV10(state: LibraryExperienceState, onDismiss: () -> Unit, onChapter: (Int) -> Unit) {
-    var query by remember { mutableStateOf("") }; val tokens = LocalMiuixTokens.current
+    var query by remember { mutableStateOf("") }; val tokens = LocalLanghuanTokens.current
     val results = remember(state.chapters, query) { if (query.trim().length < 2) emptyList() else state.chapters.filter { it.title.contains(query, true) || it.content.contains(query, true) }.take(120) }
     OverlayBottomSheet(show = true, title = "全文搜索", onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth()) {
@@ -574,13 +574,13 @@ private fun SearchBookSheetV10(state: LibraryExperienceState, onDismiss: () -> U
 
 @Composable
 private fun BookInfoSheetV10(book: ReaderBookUi, state: LibraryExperienceState, onDismiss: () -> Unit, onOpenFull: () -> Unit) {
-    val context = LocalContext.current; val tokens = LocalMiuixTokens.current; val meta = remember { context.getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE) }; val author = meta.getString("author_${book.id}", "").orEmpty()
+    val context = LocalContext.current; val tokens = LocalLanghuanTokens.current; val meta = remember { context.getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE) }; val author = meta.getString("author_${book.id}", "").orEmpty()
     OverlayBottomSheet(show = true, title = null, onDismissRequest = onDismiss) { Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { CoverPreviewV3(book.coverPath, book.title, Modifier.width(72.dp).height(104.dp).clip(RoundedCornerShape(10.dp))); Column(Modifier.padding(start = 16.dp).weight(1f)) { Text(book.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis); if (author.isNotBlank()) Text(author, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary); Text("${state.chapters.size} 章 · ${humanWordsV10(book.currentWords)}", Modifier.padding(top = 6.dp), color = tokens.textSecondary) } }; MiuixButton(onClick = { onDismiss(); onOpenFull() }, modifier = Modifier.fillMaxWidth().padding(top = 20.dp), cornerRadius = 18.dp) { Text("查看完整详情") } } }
 }
 
 @Composable
 private fun ReaderBookInfoPageV10(book: ReaderBookUi, state: LibraryExperienceState, isLocal: Boolean, onBack: () -> Unit, onRead: () -> Unit, onStory: () -> Unit, onWriting: () -> Unit, onAiSetup: () -> Unit) {
-    val context = LocalContext.current; val tokens = LocalMiuixTokens.current
+    val context = LocalContext.current; val tokens = LocalLanghuanTokens.current
     val meta = remember { context.getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE) }; val progress = remember { context.getSharedPreferences("reader_progress_v1", Context.MODE_PRIVATE) }
     val fileName = meta.getString("name_${book.id}", book.title).orEmpty(); val fileSize = meta.getLong("size_${book.id}", 0L); val format = meta.getString("format_${book.id}", if (isLocal) "本地" else "创作").orEmpty(); val author = meta.getString("author_${book.id}", "").orEmpty(); val importedAt = meta.getLong("imported_${book.id}", 0L); val recent = progress.getLong("last_${book.id}", 0L); val current = progress.getInt("chapter_${book.id}", book.currentChapter.coerceAtLeast(1)); val percent = if (state.chapters.isEmpty()) 0 else ((current.coerceIn(1, state.chapters.size).toFloat() / state.chapters.size) * 100f).roundToInt()
     MiuixScaffold(containerColor = tokens.pageBackground, topBar = { MiuixTopAppBar(title = "图书详情", largeTitle = "图书详情", subtitle = if (isLocal) "本地书籍" else book.genre, navigationIcon = { MiuixIconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回", tint = tokens.textPrimary) } }, actions = { if (!isLocal) MiuixIconButton(onClick = onAiSetup) { Icon(Icons.Rounded.Tune, "AI 设置", tint = tokens.textPrimary) } }) }) { inner ->
@@ -596,8 +596,8 @@ private fun ReaderBookInfoPageV10(book: ReaderBookUi, state: LibraryExperienceSt
     }
 }
 
-@Composable private fun SectionTitleV10(text: String) { val t = LocalMiuixTokens.current; Text(text, Modifier.padding(top = 28.dp, bottom = 10.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = t.textPrimary) }
-@Composable private fun InfoRowV10(label: String, value: String, divider: Boolean = true) { val t = LocalMiuixTokens.current; Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.Top) { Text(label, Modifier.width(86.dp), color = t.textSecondary, style = MaterialTheme.typography.bodyMedium); Text(value, Modifier.weight(1f), textAlign = TextAlign.End, color = t.textPrimary, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }; if (divider) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .32f)) }
+@Composable private fun SectionTitleV10(text: String) { val t = LocalLanghuanTokens.current; Text(text, Modifier.padding(top = 28.dp, bottom = 10.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = t.textPrimary) }
+@Composable private fun InfoRowV10(label: String, value: String, divider: Boolean = true) { val t = LocalLanghuanTokens.current; Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.Top) { Text(label, Modifier.width(86.dp), color = t.textSecondary, style = MaterialTheme.typography.bodyMedium); Text(value, Modifier.weight(1f), textAlign = TextAlign.End, color = t.textPrimary, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }; if (divider) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .32f)) }
 
 private data class ReaderPaletteV10(val background: Color, val foreground: Color, val secondary: Color, val chrome: Color)
 private fun customThemeV10(bg: String, fg: String): ReaderCustomThemeV10 { val b = parseReaderHexColorV10(bg) ?: Color(0xFFF4F0E6); val f = parseReaderHexColorV10(fg) ?: Color(0xFF302D28); return ReaderCustomThemeV10(b, f, f.copy(alpha = .58f), blendV10(b, f, .06f)) }

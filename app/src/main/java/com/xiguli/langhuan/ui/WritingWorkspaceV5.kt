@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
 /**
@@ -113,7 +113,7 @@ private fun ProjectConversationSheetV5(
                 Text(
                     if (inheritedCount > 0) "已承接建书阶段 $inheritedCount 条消息 · 当前项目事实优先" else "当前项目会话 · 讨论不会自动写入 Canon",
                     style = MaterialTheme.typography.bodySmall,
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = LocalLanghuanTokens.current.textSecondary,
                 )
             }
         }
@@ -126,7 +126,7 @@ private fun ProjectConversationSheetV5(
                 "你可以继续像建书时一样聊人物、世界观、逻辑、下一章和伏笔。普通聊天只讨论；真正改正文或场景仍由工作台的写作动作执行。",
                 modifier = Modifier.padding(13.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = LocalMiuixTokens.current.textSecondary,
+                color = LocalLanghuanTokens.current.textSecondary,
             )
         }
 
@@ -159,7 +159,7 @@ private fun ProjectConversationSheetV5(
                             state.routeSummary.ifBlank { "正在结合当前项目继续思考…" },
                             modifier = Modifier.padding(start = 9.dp),
                             style = MaterialTheme.typography.bodySmall,
-                            color = LocalMiuixTokens.current.textSecondary,
+                            color = LocalLanghuanTokens.current.textSecondary,
                         )
                     }
                 }

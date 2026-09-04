@@ -32,7 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import java.util.Locale
 
 enum class ReaderShelfLayoutV8(val key: String) { GRID("grid"), LIST("list") }
@@ -63,7 +63,7 @@ fun ReaderShelfV8(
     onSkills: () -> Unit,
 ) {
     val context = LocalContext.current
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     val progress = remember { context.getSharedPreferences("reader_progress_v1", Context.MODE_PRIVATE) }
     val meta = remember { context.getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE) }
     val prefs = remember { context.getSharedPreferences("reader_shelf_v3", Context.MODE_PRIVATE) }
@@ -213,7 +213,7 @@ private fun ReplicaBookGridV8(
     onShelves: () -> Unit, onAdd: () -> Unit, onProfile: () -> Unit,
     onOpen: (String) -> Unit, onLong: (ReaderBookUi) -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().height(76.dp).padding(start = 24.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(shelfName, Modifier.weight(1f).clickable(onClick = onShelves), fontSize = 27.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, color = tokens.textPrimary)
@@ -253,7 +253,7 @@ private fun ReplicaShelfListV8(
     onQuery: (String) -> Unit, onAdd: () -> Unit, onOpenShelf: (String) -> Unit,
     onOpenBook: (String) -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
@@ -296,7 +296,7 @@ private fun ReplicaProfileV8(
     onImport: () -> Unit, onCreate: () -> Unit, onTavern: () -> Unit,
     onSkills: () -> Unit, onTasks: () -> Unit, onSettings: () -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState())) {
         IconButton(onClick = onBack, Modifier.padding(start = 10.dp, top = 8.dp)) { Icon(Icons.Rounded.ArrowBack, "返回", Modifier.size(28.dp)) }
         Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -322,7 +322,7 @@ private fun ReplicaProfileV8(
 
 @Composable
 private fun ReplicaProfileRowV8(icon: ImageVector, label: String, onClick: () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Row(Modifier.fillMaxWidth().height(64.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(26.dp), tint = tokens.textPrimary)
         Text(label, Modifier.padding(start = 22.dp), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = tokens.textPrimary)
@@ -331,7 +331,7 @@ private fun ReplicaProfileRowV8(icon: ImageVector, label: String, onClick: () ->
 
 @Composable
 private fun ReplicaMenuRowV8(icon: ImageVector, label: String, onClick: () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     Row(Modifier.fillMaxWidth().height(64.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(25.dp), tint = tokens.textPrimary)
         Text(label, Modifier.padding(start = 22.dp), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = tokens.textPrimary)

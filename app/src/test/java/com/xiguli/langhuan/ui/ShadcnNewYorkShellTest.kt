@@ -12,7 +12,7 @@ class ShadcnNewYorkShellTest {
         val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfMobileExperience.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt").readText()
         val kit = File(root, "src/main/java/com/xiguli/langhuan/ui/design/ShadcnCompose.kt").readText()
-        val theme = File(root, "src/main/java/com/xiguli/langhuan/ui/theme/LanghuanStableTheme.kt").readText()
+        val theme = File(root, "src/main/java/com/xiguli/langhuan/ui/theme/LanghuanTheme.kt").readText()
 
         // The shelf is book-first, not a desktop dashboard copied onto a phone.
         assertTrue(shelf.contains("MobileLibraryPage("))
@@ -39,6 +39,6 @@ class ShadcnNewYorkShellTest {
         assertTrue(kit.contains("enum class ShadcnButtonVariant"))
         assertTrue(kit.contains("fun ShadcnInput("))
         assertTrue(theme.contains("accent = colors.surfaceContainerHigh"))
-        assertTrue(theme.contains("radiusMd = 8.dp"))
+        assertTrue(theme.contains("radiusMd = LanghuanRadius.card"))
     }
 }

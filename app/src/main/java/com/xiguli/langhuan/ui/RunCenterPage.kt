@@ -55,7 +55,7 @@ import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import kotlinx.coroutines.delay
 
 @Composable
@@ -121,7 +121,7 @@ fun RunCenterPage(
                                     color = t.muted,
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Rounded.TaskAlt, null, Modifier.size(24.dp), tint = LocalMiuixTokens.current.success)
+                                        Icon(Icons.Rounded.TaskAlt, null, Modifier.size(24.dp), tint = LocalLanghuanTokens.current.success)
                                     }
                                 }
                                 Text("没有待恢复的 Run", style = MaterialTheme.typography.titleLarge, color = t.foreground)
@@ -208,7 +208,7 @@ private fun RunCenterCard(
     onAbandon: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val legacy = LocalMiuixTokens.current
+    val legacy = LocalLanghuanTokens.current
     val statusText = when {
         isLive -> "后台执行中"
         item.phase == DurableRunPhase.GENERATING -> "上次运行可能被中断"

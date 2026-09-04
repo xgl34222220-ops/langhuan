@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.domain.DriftSeverity
 import com.xiguli.langhuan.domain.ForeshadowPlanAction
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
 @Composable
@@ -51,7 +51,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
         Modifier.fillMaxWidth()
             .shadow(2.dp, shape)
             .squircleClip(26.dp)
-            .background(LocalMiuixTokens.current.cardBackground.copy(alpha = .94f))
+            .background(LocalLanghuanTokens.current.cardBackground.copy(alpha = .94f))
             .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), shape)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -64,7 +64,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                 Text("长篇自治规划", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     if (future.isEmpty()) "还没有未来滚动计划" else "未来 ${future.size} 章 · 第 ${plan.generation} 代计划",
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = LocalLanghuanTokens.current.textSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -85,7 +85,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
         Text(
             "它只维护未来提案，不会直接修改锁定总纲、卷纲、圣经或信息边界。已有锁定章纲永远优先。",
             style = MaterialTheme.typography.bodySmall,
-            color = LocalMiuixTokens.current.textSecondary,
+            color = LocalLanghuanTokens.current.textSecondary,
         )
 
         lastExecution?.let { execution ->
@@ -97,8 +97,8 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("最近计划执行 · 第${execution.chapterNumber}章 · ${execution.completionScore}分", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                     Text("状态：${execution.status.name}｜实际：${execution.actualSummary}", style = MaterialTheme.typography.bodySmall)
-                    if (execution.affectedFutureChapters.isNotEmpty()) Text("受影响后续：${execution.affectedFutureChapters.joinToString("、") { "第${it}章" }}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
-                    if (execution.repairHint.isNotBlank()) Text("最小修复：${execution.repairHint}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                    if (execution.affectedFutureChapters.isNotEmpty()) Text("受影响后续：${execution.affectedFutureChapters.joinToString("、") { "第${it}章" }}", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
+                    if (execution.repairHint.isNotBlank()) Text("最小修复：${execution.repairHint}", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
                 }
             }
         }
@@ -152,16 +152,16 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                             }
                         }
                         Text("目标：${beat.objective}", style = MaterialTheme.typography.bodySmall)
-                        Text("冲突：${beat.conflict}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
-                        Text("转折：${beat.turningPoint}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
-                        if (beat.characterFocus.isNotEmpty()) Text("人物：${beat.characterFocus.joinToString("、")}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
-                        if (beat.foreshadowingTargets.isNotEmpty()) Text("伏笔：${beat.foreshadowingTargets.joinToString("、")}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                        Text("冲突：${beat.conflict}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
+                        Text("转折：${beat.turningPoint}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
+                        if (beat.characterFocus.isNotEmpty()) Text("人物：${beat.characterFocus.joinToString("、")}", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
+                        if (beat.foreshadowingTargets.isNotEmpty()) Text("伏笔：${beat.foreshadowingTargets.joinToString("、")}", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
                         if (beat.guardrail.isNotBlank()) Text("护栏：${beat.guardrail}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                         val budget = beat.revealBudget
                         Text(
                             "揭露预算：完整≤${budget.maxFullReveals} · 部分/暗示≤${budget.maxPartialReveals}${if (budget.forbiddenBoundaryIds.isEmpty()) "" else " · ${budget.forbiddenBoundaryIds.size}条禁止揭底"}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = LocalMiuixTokens.current.textSecondary,
+                            color = LocalLanghuanTokens.current.textSecondary,
                         )
                     }
                 }
@@ -184,7 +184,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                     Text(
                         "• ${target.name} → 第${target.targetChapter}章：${target.desiredChange}${if (target.pressure.isBlank()) "" else "｜压力=${target.pressure}"}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = LocalLanghuanTokens.current.textSecondary,
                     )
                 }
             }
@@ -197,7 +197,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                     Text(
                         "• 第${cadence.targetChapter}章 ${cadence.title}：${cadence.action.zhLabel()}${if (cadence.reason.isBlank()) "" else "｜${cadence.reason}"}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = LocalLanghuanTokens.current.textSecondary,
                     )
                 }
             }
@@ -218,7 +218,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
                             DriftSeverity.INFO -> "提示"
                         }
                         Text("• [$prefix] ${signal.message}", style = MaterialTheme.typography.bodySmall)
-                        if (signal.repair.isNotBlank()) Text("  修复：${signal.repair}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                        if (signal.repair.isNotBlank()) Text("  修复：${signal.repair}", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
                     }
                 }
             }
@@ -227,7 +227,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
         if (plan.correctionStrategy.isNotBlank()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("最小纠偏策略", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Text(plan.correctionStrategy, style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                Text(plan.correctionStrategy, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
             }
         }
 
@@ -236,7 +236,7 @@ internal fun AutonomousPlanPanel(state: StudioUiState, vm: StudioViewModel) {
             Text(
                 "生成后会持续保留未来 3–10 章因果链；计划不足 3 章、跨过 2 个章节或出现高风险偏航时，正式保存章节后会自动尝试刷新。",
                 style = MaterialTheme.typography.labelSmall,
-                color = LocalMiuixTokens.current.textSecondary,
+                color = LocalLanghuanTokens.current.textSecondary,
             )
         }
     }

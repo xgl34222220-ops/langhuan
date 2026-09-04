@@ -12,7 +12,7 @@ class StartupSafeRouteV2Test {
         val shelfUi = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderShelfV6.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderFirstBookV7.kt").readText()
         val stableReader = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderFirstBookStableV9.kt").readText()
-        val theme = File(root, "src/main/java/com/xiguli/langhuan/ui/theme/Theme.kt").readText()
+        val theme = File(root, "src/main/java/com/xiguli/langhuan/ui/theme/LanghuanTheme.kt").readText()
 
         assertTrue(shelf.contains("ReaderShelfV6("))
         assertTrue(shelf.contains("onDeleteBook = onDeleteBook"))

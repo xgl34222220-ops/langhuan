@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.domain.BibleCategory
 import com.xiguli.langhuan.engine.AgentAction
 import com.xiguli.langhuan.engine.AgentActionKind
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
 @Composable
@@ -51,8 +51,8 @@ internal fun AgentPage(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("创作 Agent", style = MaterialTheme.typography.displaySmall, color = LocalMiuixTokens.current.textPrimary)
-                    Text("自动复盘章节 · 全书主编 · 未来滚动自治规划 · 结构化长期记忆", color = LocalMiuixTokens.current.textSecondary)
+                    Text("创作 Agent", style = MaterialTheme.typography.displaySmall, color = LocalLanghuanTokens.current.textPrimary)
+                    Text("自动复盘章节 · 全书主编 · 未来滚动自治规划 · 结构化长期记忆", color = LocalLanghuanTokens.current.textSecondary)
                 }
                 IconButton(onClose) { Icon(Icons.Rounded.Close, "关闭 Agent") }
             }
@@ -64,7 +64,7 @@ internal fun AgentPage(
                     Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
                     Column(Modifier.padding(start = 10.dp).weight(1f)) {
                         Text("小说创作 Agent", style = MaterialTheme.typography.titleMedium)
-                        Text("分析默认只生成建议；事实记忆必须确认后才写入。", color = LocalMiuixTokens.current.textSecondary)
+                        Text("分析默认只生成建议；事实记忆必须确认后才写入。", color = LocalLanghuanTokens.current.textSecondary)
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -105,7 +105,7 @@ internal fun AgentPage(
                     Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.padding(start = 9.dp).weight(1f)) {
                         Text("文风模板", style = MaterialTheme.typography.titleMedium)
-                        Text("作为“怎么写”的硬约束，不会覆盖总纲和事实设定。", color = LocalMiuixTokens.current.textSecondary)
+                        Text("作为“怎么写”的硬约束，不会覆盖总纲和事实设定。", color = LocalLanghuanTokens.current.textSecondary)
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -134,7 +134,7 @@ internal fun AgentPage(
         item {
             AgentCard {
                 Text("项目备份", style = MaterialTheme.typography.titleMedium)
-                Text(".lhproj 保存大纲、圣经、人物、关系、时间线、伏笔和所有章节；不会包含 API Key。恢复时生成新项目，不覆盖原书。", color = LocalMiuixTokens.current.textSecondary)
+                Text(".lhproj 保存大纲、圣经、人物、关系、时间线、伏笔和所有章节；不会包含 API Key。恢复时生成新项目，不覆盖原书。", color = LocalLanghuanTokens.current.textSecondary)
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onProjectBackup, Modifier.weight(1f), enabled = !state.isExporting, shape = RoundedCornerShape(16.dp)) {
@@ -151,7 +151,7 @@ internal fun AgentPage(
             item {
                 AgentCard {
                     Text("还没有复盘报告", style = MaterialTheme.typography.titleMedium)
-                    Text("正文保存后会自动尝试生成一次章节复盘；也可以在这里手动运行。", color = LocalMiuixTokens.current.textSecondary)
+                    Text("正文保存后会自动尝试生成一次章节复盘；也可以在这里手动运行。", color = LocalLanghuanTokens.current.textSecondary)
                 }
             }
         }
@@ -167,7 +167,7 @@ internal fun AgentPage(
                         }
                     }
                     if (report.metrics.isNotBlank()) {
-                        Spacer(Modifier.height(9.dp)); Text(report.metrics, color = LocalMiuixTokens.current.textSecondary)
+                        Spacer(Modifier.height(9.dp)); Text(report.metrics, color = LocalLanghuanTokens.current.textSecondary)
                     }
                     if (report.summary.isNotBlank()) {
                         Spacer(Modifier.height(9.dp)); Text(report.summary)
@@ -189,11 +189,11 @@ internal fun AgentPage(
                             Icon(Icons.Rounded.Memory, null, tint = MaterialTheme.colorScheme.primary)
                             Column(Modifier.padding(start = 9.dp).weight(1f)) {
                                 Text("本次提取的候选事实", style = MaterialTheme.typography.titleMedium)
-                                Text("${report.memoryActions.size} 项结构化事实。先加入 Candidate；只有通过本地证明或你确认后才会进入 Canon。", color = LocalMiuixTokens.current.textSecondary)
+                                Text("${report.memoryActions.size} 项结构化事实。先加入 Candidate；只有通过本地证明或你确认后才会进入 Canon。", color = LocalLanghuanTokens.current.textSecondary)
                             }
                         }
                         Spacer(Modifier.height(8.dp))
-                        Text("这些提取项已经自动进入 Candidate 候选区；这里的报告本身不会直接改 Canon。", color = LocalMiuixTokens.current.textSecondary)
+                        Text("这些提取项已经自动进入 Candidate 候选区；这里的报告本身不会直接改 Canon。", color = LocalLanghuanTokens.current.textSecondary)
                     }
                 }
                 items(report.memoryActions.take(16)) { action -> AgentActionCard(action, true) }
@@ -206,8 +206,8 @@ internal fun AgentPage(
                         AgentCard {
                             Text(option.title, style = MaterialTheme.typography.titleMedium)
                             Text("目标：${option.objective}", modifier = Modifier.padding(top = 6.dp))
-                            Text("冲突：${option.conflict}", color = LocalMiuixTokens.current.textSecondary)
-                            Text("转折：${option.turningPoint}", color = LocalMiuixTokens.current.textSecondary)
+                            Text("冲突：${option.conflict}", color = LocalLanghuanTokens.current.textSecondary)
+                            Text("转折：${option.turningPoint}", color = LocalLanghuanTokens.current.textSecondary)
                             Spacer(Modifier.height(9.dp))
                             OutlinedButton({ vm.useAgentNextOption(index) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                                 Text("转为章纲并预览")
@@ -223,13 +223,13 @@ internal fun AgentPage(
 @Composable
 private fun AgentActionCard(action: AgentAction, memory: Boolean) = AgentCard {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(action.kind.label(), color = if (memory) MaterialTheme.colorScheme.primary else LocalMiuixTokens.current.warning, fontWeight = FontWeight.Bold)
+        Text(action.kind.label(), color = if (memory) MaterialTheme.colorScheme.primary else LocalLanghuanTokens.current.warning, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(8.dp))
         Text(action.subject, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
-    if (action.before.isNotBlank()) Text("现状：${action.before}", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+    if (action.before.isNotBlank()) Text("现状：${action.before}", color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
     if (action.after.isNotBlank()) Text("建议/结果：${action.after}", modifier = Modifier.padding(top = 4.dp))
-    if (action.evidence.isNotBlank()) Text("依据：${action.evidence}", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+    if (action.evidence.isNotBlank()) Text("依据：${action.evidence}", color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
 }
 
 @Composable
@@ -239,7 +239,7 @@ private fun AgentCard(content: @Composable ColumnScope.() -> Unit) {
         Modifier.fillMaxWidth()
             .shadow(2.dp, shape)
             .squircleClip(26.dp)
-            .background(LocalMiuixTokens.current.cardBackground.copy(alpha = .94f))
+            .background(LocalLanghuanTokens.current.cardBackground.copy(alpha = .94f))
             .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), shape)
             .padding(18.dp),
         content = content,

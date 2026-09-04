@@ -28,7 +28,7 @@ import com.xiguli.langhuan.data.local.StartupDatabaseGate
 import com.xiguli.langhuan.engine.PostStartupInitializer
 import com.xiguli.langhuan.ui.LanghuanRootV3
 import com.xiguli.langhuan.ui.StudioViewModel
-import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
+import com.xiguli.langhuan.ui.theme.LanghuanTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,7 +70,7 @@ private fun StartupDatabaseRoot() {
         is LauncherState.Failed -> LauncherFailureScreen(state.status)
         is LauncherState.Ready -> {
             // Visual styling and noncritical background work begin only after startup is proven safe.
-            LanghuanStableTheme {
+            LanghuanTheme {
                 LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
                 val studioViewModel: StudioViewModel = viewModel()
                 LanghuanRootV3(studioViewModel)

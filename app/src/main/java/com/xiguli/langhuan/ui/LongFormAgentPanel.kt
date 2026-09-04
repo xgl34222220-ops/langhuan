@@ -28,7 +28,7 @@ import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.LongFormHealthLevel
 import com.xiguli.langhuan.domain.PlotArcPhase
 import com.xiguli.langhuan.domain.StorySnapshot
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
 @Composable
@@ -65,7 +65,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
         Modifier.fillMaxWidth()
             .shadow(2.dp, shape)
             .squircleClip(26.dp)
-            .background(LocalMiuixTokens.current.cardBackground.copy(alpha = .94f))
+            .background(LocalLanghuanTokens.current.cardBackground.copy(alpha = .94f))
             .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), shape)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -86,7 +86,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
                 Text("超长篇导航", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     if (state.config.enabled) "百万 / 两百万字连续性引擎已启用" else "超长篇连续性引擎已关闭",
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = LocalLanghuanTokens.current.textSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -120,13 +120,13 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
                     )
                     Text(arc.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text("阶段：${arc.phase.zhLabel()} · 已推进到第${arc.lastUpdatedChapter.coerceAtLeast(chapter)}章", style = MaterialTheme.typography.bodySmall)
-                    if (arc.objective.isNotBlank()) Text("目标：${arc.objective}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
-                    if (arc.expectedPayoff.isNotBlank()) Text("预计收束：${arc.expectedPayoff}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+                    if (arc.objective.isNotBlank()) Text("目标：${arc.objective}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
+                    if (arc.expectedPayoff.isNotBlank()) Text("预计收束：${arc.expectedPayoff}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
                 }
             }
         } ?: Text(
             "写完并正式提交第一章后，会自动建立 20–40 章滚动剧情弧。",
-            color = LocalMiuixTokens.current.textSecondary,
+            color = LocalLanghuanTokens.current.textSecondary,
             style = MaterialTheme.typography.bodySmall,
         )
 
@@ -148,7 +148,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
                     Text(
                         "${growth.name} · ${growth.stage} · 最近转折第${growth.lastTurningChapter.coerceAtLeast(0)}章",
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalMiuixTokens.current.textSecondary,
+                        color = LocalLanghuanTokens.current.textSecondary,
                     )
                 }
             }
@@ -172,7 +172,7 @@ internal fun LongFormAgentPanel(snapshot: StorySnapshot) {
 
         Text(
             "系统只保存剧情弧、角色成长、中期摘要和结构化事实；旧正文按需由 RAG 召回，不会把数百万字全文反复塞给模型。",
-            color = LocalMiuixTokens.current.textSecondary,
+            color = LocalLanghuanTokens.current.textSecondary,
             style = MaterialTheme.typography.labelSmall,
         )
     }
@@ -187,7 +187,7 @@ private fun LongFormMetric(label: String, value: String, modifier: Modifier, dan
     ) {
         Column(Modifier.padding(horizontal = 9.dp, vertical = 8.dp)) {
             Text(value, fontWeight = FontWeight.Black, color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
         }
     }
 }

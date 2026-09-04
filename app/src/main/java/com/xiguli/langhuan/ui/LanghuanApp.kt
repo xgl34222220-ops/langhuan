@@ -48,7 +48,7 @@ import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.ui.glass.liquidGlassLens
 import com.xiguli.langhuan.ui.theme.LocalLanghuanAppearance
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
@@ -137,7 +137,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 
 @Composable private fun Backdrop() {
     val scheme = MaterialTheme.colorScheme
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalLanghuanTokens.current
     val dark = scheme.background.luminance() < .5f
     Box(Modifier.fillMaxSize().background(tokens.pageBackground).drawBehind {
         drawRect(Brush.radialGradient(listOf(scheme.primary.copy(alpha = if (dark) .09f else .12f), Color.Transparent), Offset(size.width * .92f, 0f), size.width * .92f))
@@ -152,8 +152,8 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Text(title, style = MaterialTheme.typography.displaySmall, color = LocalMiuixTokens.current.textPrimary)
-            Text(subtitle, color = LocalMiuixTokens.current.textSecondary)
+            Text(title, style = MaterialTheme.typography.displaySmall, color = LocalLanghuanTokens.current.textPrimary)
+            Text(subtitle, color = LocalLanghuanTokens.current.textSecondary)
         }
         content()
     }
@@ -182,9 +182,9 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(story.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (active) { Spacer(Modifier.width(8.dp)); Pill("当前", LocalMiuixTokens.current.success) }
+                            if (active) { Spacer(Modifier.width(8.dp)); Pill("当前", LocalLanghuanTokens.current.success) }
                         }
-                        Text("${story.genre} · 第${story.currentChapter}章", color = LocalMiuixTokens.current.textSecondary)
+                        Text("${story.genre} · 第${story.currentChapter}章", color = LocalLanghuanTokens.current.textSecondary)
                     }
                     Text("${story.currentWords / 1000.0}k", fontWeight = FontWeight.Bold)
                 }
@@ -226,7 +226,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 Column(Modifier.weight(1f)) {
                     Text("第 ${state.draft.chapterNumber} 章", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Text(state.draft.title, style = MaterialTheme.typography.headlineSmall)
-                    Text(state.draft.objective, color = LocalMiuixTokens.current.textSecondary)
+                    Text(state.draft.objective, color = LocalLanghuanTokens.current.textSecondary)
                 }
                 Pill("v${state.draft.version}", MaterialTheme.colorScheme.primary)
             }
@@ -238,10 +238,10 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         } }
         item { MiuixCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (state.provider.ready) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff, null, tint = if (state.provider.ready) LocalMiuixTokens.current.success else LocalMiuixTokens.current.textSecondary)
+                Icon(if (state.provider.ready) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff, null, tint = if (state.provider.ready) LocalLanghuanTokens.current.success else LocalLanghuanTokens.current.textSecondary)
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text(if (state.provider.ready) state.provider.activeProviderLabel else "离线体验模式", fontWeight = FontWeight.Bold)
-                    Text(if (state.provider.ready) state.provider.generationModel else "真实生成请到设置添加 AI", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(if (state.provider.ready) state.provider.generationModel else "真实生成请到设置添加 AI", color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -262,7 +262,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Heading("正文编辑器")
                 Spacer(Modifier.weight(1f))
-                if (state.isDraftDirty) Pill("未保存", LocalMiuixTokens.current.warning) else Pill("已保存", LocalMiuixTokens.current.success)
+                if (state.isDraftDirty) Pill("未保存", LocalLanghuanTokens.current.warning) else Pill("已保存", LocalLanghuanTokens.current.success)
             }
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
@@ -274,14 +274,14 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             )
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${editor.text.length} 字 · 已选 $selectedCount 字", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("${editor.text.length} 字 · 已选 $selectedCount 字", color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.weight(1f))
                 TextButton(vm::saveDraftVersion, enabled = state.isDraftDirty && !state.isSaving) { Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(4.dp)); Text("保存版本") }
             }
         } }
         item { MiuixCard {
             Text("AI 局部重写", style = MaterialTheme.typography.titleMedium)
-            Text("先在上面的正文中选中文字，再输入要求。AI 只替换选中片段，确认前不会改正文。", color = LocalMiuixTokens.current.textSecondary)
+            Text("先在上面的正文中选中文字，再输入要求。AI 只替换选中片段，确认前不会改正文。", color = LocalLanghuanTokens.current.textSecondary)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(rewriteInstruction, { rewriteInstruction = it }, Modifier.fillMaxWidth(), label = { Text("改写要求") }, shape = RoundedCornerShape(16.dp))
             Spacer(Modifier.height(10.dp))
@@ -316,7 +316,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
                 Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("AI 规划下一章", style = MaterialTheme.typography.titleMedium)
-                    Text("读取当前大纲、人物、伏笔与历史剧情后给出章纲和场景", color = LocalMiuixTokens.current.textSecondary)
+                    Text("读取当前大纲、人物、伏笔与历史剧情后给出章纲和场景", color = LocalLanghuanTokens.current.textSecondary)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -380,7 +380,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 
         if (state.snapshot.longTermSummary.isNotBlank()) item { MiuixCard {
             Text("折叠长期摘要", style = MaterialTheme.typography.titleMedium)
-            Text(state.snapshot.longTermSummary, color = LocalMiuixTokens.current.textSecondary, maxLines = 12, overflow = TextOverflow.Ellipsis)
+            Text(state.snapshot.longTermSummary, color = LocalLanghuanTokens.current.textSecondary, maxLines = 12, overflow = TextOverflow.Ellipsis)
         } }
     }
 
@@ -398,7 +398,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
     val p = state.provider
     item { MiuixCard {
         Text("整书导出", style = MaterialTheme.typography.titleMedium)
-        Text("章节按顺序从独立章节库读取，可导出 TXT、Markdown 或标准 EPUB。", color = LocalMiuixTokens.current.textSecondary)
+        Text("章节按顺序从独立章节库读取，可导出 TXT、Markdown 或标准 EPUB。", color = LocalLanghuanTokens.current.textSecondary)
         Spacer(Modifier.height(10.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ExportFormat.entries.forEach { format -> OutlinedButton({ onExport(format) }, enabled = !state.isExporting, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Rounded.FileDownload, null); Spacer(Modifier.width(5.dp)); Text(format.name) } }
@@ -418,7 +418,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             Icon(Icons.Rounded.Hub, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
             Column(Modifier.padding(start = 11.dp)) {
                 Text(if (p.editingProviderId == null) "添加 AI 服务" else "编辑 AI 服务", style = MaterialTheme.typography.titleMedium)
-                Text("OpenAI · Claude · Gemini · Azure · Ollama", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("OpenAI · Claude · Gemini · Azure · Ollama", color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -436,7 +436,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         p.discovery?.let { d ->
             Spacer(Modifier.height(12.dp))
             Text("${d.providerLabel} · ${d.protocol.label}", fontWeight = FontWeight.Bold)
-            Text(d.message, color = LocalMiuixTokens.current.textSecondary)
+            Text(d.message, color = LocalLanghuanTokens.current.textSecondary)
             Spacer(Modifier.height(8.dp))
             d.models.take(12).forEach { model -> ModelRow(model, p.selectedModel == model.id) { vm.selectModel(model) }; Spacer(Modifier.height(6.dp)) }
             OutlinedTextField(p.manualModel, vm::setManualModel, Modifier.fillMaxWidth(), label = { Text("模型名 / 部署名") }, singleLine = true, shape = RoundedCornerShape(16.dp))
@@ -455,7 +455,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
         title = { Text(if (result.canCommit) "一致性检查通过" else "发现设定冲突") },
         text = { Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(result.chapter.summary)
-            if (result.issues.isEmpty()) Pill("0 个冲突 · 可以保存", LocalMiuixTokens.current.success)
+            if (result.issues.isEmpty()) Pill("0 个冲突 · 可以保存", LocalLanghuanTokens.current.success)
             result.issues.forEach { IssueRow(it) }
         } },
         confirmButton = { Button(if (result.canCommit) vm::commitResult else vm::dismissResult, enabled = !state.isSaving) { Text(if (result.canCommit) "保存正文与记忆" else "返回修改") } },
@@ -472,7 +472,7 @@ fun LanghuanApp(viewModel: StudioViewModel) {
             Text(plan.title, style = MaterialTheme.typography.titleLarge)
             LabelValue("唯一目标", plan.objective); LabelValue("主要冲突", plan.conflict); LabelValue("章末转折", plan.turningPoint)
             Text("场景计划", fontWeight = FontWeight.Bold)
-            plan.scenes.forEach { scene -> Text("${scene.order}. ${scene.viewpoint} · ${scene.location}\n${scene.purpose} → ${scene.conflict} → ${scene.outcome}", color = LocalMiuixTokens.current.textSecondary) }
+            plan.scenes.forEach { scene -> Text("${scene.order}. ${scene.viewpoint} · ${scene.location}\n${scene.purpose} → ${scene.conflict} → ${scene.outcome}", color = LocalLanghuanTokens.current.textSecondary) }
         } },
         confirmButton = { Button(accept, enabled = !saving) { Text("创建这一章") } },
         dismissButton = { TextButton(dismiss) { Text("放弃") } },
@@ -571,8 +571,8 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 @Composable private fun ChapterRow(chapter: ChapterShelfUi, click: () -> Unit) = MiuixCard(onClick = click) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(42.dp).squircleClip(14.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)), contentAlignment = Alignment.Center) { Text(chapter.number.toString(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
-        Column(Modifier.padding(start = 11.dp).weight(1f)) { Text(chapter.title, fontWeight = FontWeight.Bold); Text(chapter.objective, color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-        if (chapter.selected) Pill("当前", LocalMiuixTokens.current.success) else Text("${chapter.words}字", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+        Column(Modifier.padding(start = 11.dp).weight(1f)) { Text(chapter.title, fontWeight = FontWeight.Bold); Text(chapter.objective, color = LocalLanghuanTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        if (chapter.selected) Pill("当前", LocalLanghuanTokens.current.success) else Text("${chapter.words}字", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
     }
 }
 
@@ -580,55 +580,55 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 
 @Composable private fun OutlineRow(node: OutlineNode, active: Boolean, edit: () -> Unit, delete: (() -> Unit)?) = MiuixCard {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Pill(node.level.label(), if (active) LocalMiuixTokens.current.success else MaterialTheme.colorScheme.primary)
-        Column(Modifier.padding(horizontal = 10.dp).weight(1f)) { Text("${node.order}. ${node.title}", fontWeight = FontWeight.Bold); Text(node.objective, color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        Pill(node.level.label(), if (active) LocalLanghuanTokens.current.success else MaterialTheme.colorScheme.primary)
+        Column(Modifier.padding(horizontal = 10.dp).weight(1f)) { Text("${node.order}. ${node.title}", fontWeight = FontWeight.Bold); Text(node.objective, color = LocalLanghuanTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; delete?.let { IconButton(it) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
     }
     if (node.conflict.isNotBlank()) { Spacer(Modifier.height(8.dp)); Text("冲突：${node.conflict}", style = MaterialTheme.typography.bodySmall) }
-    if (node.turningPoint.isNotBlank()) Text("转折：${node.turningPoint}", style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+    if (node.turningPoint.isNotBlank()) Text("转折：${node.turningPoint}", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
 }
 
 @Composable private fun SceneRow(scene: ScenePlan, edit: () -> Unit, delete: (() -> Unit)?) = MiuixCard {
-    Row(verticalAlignment = Alignment.CenterVertically) { Pill("场景 ${scene.order}", MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text("${scene.viewpoint} · ${scene.location}", fontWeight = FontWeight.Bold); Text(scene.purpose, color = LocalMiuixTokens.current.textSecondary) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; delete?.let { IconButton(it) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } } }
+    Row(verticalAlignment = Alignment.CenterVertically) { Pill("场景 ${scene.order}", MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text("${scene.viewpoint} · ${scene.location}", fontWeight = FontWeight.Bold); Text(scene.purpose, color = LocalLanghuanTokens.current.textSecondary) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; delete?.let { IconButton(it) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } } }
     Text("${scene.conflict} → ${scene.outcome}", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable private fun CharacterRow(item: CharacterState, edit: () -> Unit, delete: () -> Unit) = MiuixCard {
-    Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(44.dp).squircleClip(15.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, tint = MaterialTheme.colorScheme.primary) }; Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(item.name, fontWeight = FontWeight.Bold); Text("${item.location} · ${item.emotionalState} · 目标：${item.goal}", color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
+    Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(44.dp).squircleClip(15.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, tint = MaterialTheme.colorScheme.primary) }; Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(item.name, fontWeight = FontWeight.Bold); Text("${item.location} · ${item.emotionalState} · 目标：${item.goal}", color = LocalLanghuanTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
     if (item.relationshipNotes.isNotEmpty()) Text("关系：${item.relationshipNotes.entries.joinToString("；") { "${it.key}=${it.value}" }}", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable private fun TimelineRow(item: TimelineEvent, edit: () -> Unit, delete: () -> Unit) = MiuixCard {
-    Row(verticalAlignment = Alignment.CenterVertically) { Pill("第${item.chapter}章", MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(item.summary, fontWeight = FontWeight.Bold); Text("${item.storyTime} · ${item.location} · ${item.participants.joinToString("、")}", color = LocalMiuixTokens.current.textSecondary) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
+    Row(verticalAlignment = Alignment.CenterVertically) { Pill("第${item.chapter}章", MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(item.summary, fontWeight = FontWeight.Bold); Text("${item.storyTime} · ${item.location} · ${item.participants.joinToString("、")}", color = LocalLanghuanTokens.current.textSecondary) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
 }
 
 @Composable private fun ForeshadowRow(item: Foreshadowing, edit: () -> Unit, delete: () -> Unit) = MiuixCard {
-    Row(verticalAlignment = Alignment.CenterVertically) { Pill(item.status.label(), if (item.status == ForeshadowStatus.RESOLVED) LocalMiuixTokens.current.success else MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(item.title, fontWeight = FontWeight.Bold); Text(item.detail, color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
+    Row(verticalAlignment = Alignment.CenterVertically) { Pill(item.status.label(), if (item.status == ForeshadowStatus.RESOLVED) LocalLanghuanTokens.current.success else MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(item.title, fontWeight = FontWeight.Bold); Text(item.detail, color = LocalLanghuanTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
     Text("埋设 ${item.plantedChapter} · 预计 ${item.expectedChapterStart}-${item.expectedChapterEnd} 章回收：${item.expectedPayoff}", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable private fun BibleRow(item: BibleEntry, edit: () -> Unit, delete: () -> Unit) = MiuixCard {
-    Row(verticalAlignment = Alignment.CenterVertically) { Icon(if (item.locked) Icons.Rounded.Lock else Icons.Rounded.Edit, null, tint = MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text("${item.category.label()} · ${item.name}", fontWeight = FontWeight.Bold); Text(item.content, color = LocalMiuixTokens.current.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
+    Row(verticalAlignment = Alignment.CenterVertically) { Icon(if (item.locked) Icons.Rounded.Lock else Icons.Rounded.Edit, null, tint = MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text("${item.category.label()} · ${item.name}", fontWeight = FontWeight.Bold); Text(item.content, color = LocalLanghuanTokens.current.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis) }; IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) } }
 }
 
 @Composable private fun VersionRow(version: ChapterVersionUi, restoring: Boolean, restore: () -> Unit) = MiuixCard {
-    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text("v${version.version} · ${version.title}", fontWeight = FontWeight.Bold); Text("${version.content.length} 字 · ${version.summary}", color = LocalMiuixTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }; TextButton(restore, enabled = !restoring) { Text("恢复") } }
+    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.primary); Column(Modifier.padding(start = 10.dp).weight(1f)) { Text("v${version.version} · ${version.title}", fontWeight = FontWeight.Bold); Text("${version.content.length} 字 · ${version.summary}", color = LocalLanghuanTokens.current.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }; TextButton(restore, enabled = !restoring) { Text("恢复") } }
 }
 
 @Composable private fun SavedProviderRow(provider: SavedProviderUi, active: Boolean, activate: () -> Unit, edit: () -> Unit, delete: () -> Unit) {
     val shape = RoundedCornerShape(23.dp)
-    Row(Modifier.fillMaxWidth().squircleClip(23.dp).background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else LocalMiuixTokens.current.cardBackground.copy(alpha = .94f)).border(if (active) 1.1.dp else .5.dp, if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape).clickable(onClick = activate).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().squircleClip(23.dp).background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else LocalLanghuanTokens.current.cardBackground.copy(alpha = .94f)).border(if (active) 1.1.dp else .5.dp, if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape).clickable(onClick = activate).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(if (active) Icons.Rounded.CloudDone else Icons.Rounded.CloudQueue, null, tint = MaterialTheme.colorScheme.primary)
-        Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(provider.name, fontWeight = FontWeight.Bold); Text("${provider.model} · ${provider.protocol.label}", color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        Column(Modifier.padding(start = 10.dp).weight(1f)) { Text(provider.name, fontWeight = FontWeight.Bold); Text("${provider.model} · ${provider.protocol.label}", color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         IconButton(edit) { Icon(Icons.Rounded.Edit, "编辑") }; IconButton(delete) { Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) }
     }
 }
 
-@Composable private fun ModelRow(m: DiscoveredModel, selected: Boolean, click: () -> Unit) { val shape = RoundedCornerShape(18.dp); Row(Modifier.fillMaxWidth().squircleClip(18.dp).background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .13f) else LocalMiuixTokens.current.cardBackground).border(if (selected) 1.dp else .5.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape).clickable(onClick = click).padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary); Text(m.displayName, Modifier.padding(start = 8.dp).weight(1f), fontWeight = FontWeight.Bold); if (m.reasoning) Pill("推理", MaterialTheme.colorScheme.primary); if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) } }
+@Composable private fun ModelRow(m: DiscoveredModel, selected: Boolean, click: () -> Unit) { val shape = RoundedCornerShape(18.dp); Row(Modifier.fillMaxWidth().squircleClip(18.dp).background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .13f) else LocalLanghuanTokens.current.cardBackground).border(if (selected) 1.dp else .5.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape).clickable(onClick = click).padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary); Text(m.displayName, Modifier.padding(start = 8.dp).weight(1f), fontWeight = FontWeight.Bold); if (m.reasoning) Pill("推理", MaterialTheme.colorScheme.primary); if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) } }
 
 @Composable private fun MiuixCard(onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(26.dp)
-    var modifier = Modifier.fillMaxWidth().shadow(2.dp, shape).squircleClip(26.dp).background(LocalMiuixTokens.current.cardBackground.copy(alpha = .94f)).border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), shape)
+    var modifier = Modifier.fillMaxWidth().shadow(2.dp, shape).squircleClip(26.dp).background(LocalLanghuanTokens.current.cardBackground.copy(alpha = .94f)).border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), shape)
     if (onClick != null) modifier = modifier.clickable(onClick = onClick)
     Column(modifier.padding(18.dp), content = content)
 }
@@ -636,9 +636,9 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 @Composable private fun Heading(t: String) = Text(t, style = MaterialTheme.typography.titleLarge)
 @Composable private fun Pill(t: String, c: Color) = Surface(shape = CircleShape, color = c.copy(alpha = .13f)) { Text(t, color = c, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)) }
 @Composable private fun ProgressBar(progress: Float) = Box(Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .15f), CircleShape)) { Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape)) }
-@Composable private fun EmptyCard(text: String) = MiuixCard { Text(text, color = LocalMiuixTokens.current.textSecondary) }
-@Composable private fun LabelValue(label: String, value: String) { Text(label, fontWeight = FontWeight.Bold); Text(value, color = LocalMiuixTokens.current.textSecondary) }
-@Composable private fun IssueRow(i: ConsistencyIssue) { val c = if (i.severity == IssueSeverity.BLOCKING) MaterialTheme.colorScheme.error else LocalMiuixTokens.current.warning; Column { Pill(i.severity.name, c); Text(i.message); if (i.repairInstruction.isNotBlank()) Text(i.repairInstruction, color = LocalMiuixTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall) } }
+@Composable private fun EmptyCard(text: String) = MiuixCard { Text(text, color = LocalLanghuanTokens.current.textSecondary) }
+@Composable private fun LabelValue(label: String, value: String) { Text(label, fontWeight = FontWeight.Bold); Text(value, color = LocalLanghuanTokens.current.textSecondary) }
+@Composable private fun IssueRow(i: ConsistencyIssue) { val c = if (i.severity == IssueSeverity.BLOCKING) MaterialTheme.colorScheme.error else LocalLanghuanTokens.current.warning; Column { Pill(i.severity.name, c); Text(i.message); if (i.repairInstruction.isNotBlank()) Text(i.repairInstruction, color = LocalLanghuanTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall) } }
 
 private fun OutlineLevel.label() = when (this) { OutlineLevel.MASTER -> "总纲"; OutlineLevel.VOLUME -> "卷纲"; OutlineLevel.CHAPTER -> "章纲" }
 private fun BibleCategory.label() = when (this) { BibleCategory.WORLD -> "世界"; BibleCategory.RULE -> "规则"; BibleCategory.CHARACTER -> "人物"; BibleCategory.FACTION -> "势力"; BibleCategory.LOCATION -> "地点"; BibleCategory.ITEM -> "物品"; BibleCategory.STYLE -> "文风"; BibleCategory.FORBIDDEN -> "禁止" }

@@ -15,7 +15,7 @@ import com.xiguli.langhuan.domain.BookEditorIssue
 import com.xiguli.langhuan.domain.BookEditorSeverity
 import com.xiguli.langhuan.domain.LongFormHealthLevel
 import com.xiguli.langhuan.domain.StorySnapshot
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
+import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 
 @Composable
 internal fun FullBookEditorPanel(snapshot: StorySnapshot) {
@@ -27,7 +27,7 @@ internal fun FullBookEditorPanel(snapshot: StorySnapshot) {
                 Text("全书主编", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     if (report.lastAuditChapter > 0) "最近巡检到第${report.lastAuditChapter}章 · 扫描${report.scannedChapterCount}章" else "尚未形成全书主编报告",
-                    color = LocalMiuixTokens.current.textSecondary,
+                    color = LocalLanghuanTokens.current.textSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -43,7 +43,7 @@ internal fun FullBookEditorPanel(snapshot: StorySnapshot) {
         if (report.lastAuditChapter <= 0) {
             Text(
                 "保存章节后会按长篇巡检周期自动做本地扫描；上面的“全书一致性巡检”会再调用当前模型做语义级深度检查。两者都只给诊断，不自动改正文或 Canon。",
-                color = LocalMiuixTokens.current.textSecondary,
+                color = LocalLanghuanTokens.current.textSecondary,
             )
             return@AgentCardSurface
         }
@@ -68,13 +68,13 @@ internal fun FullBookEditorPanel(snapshot: StorySnapshot) {
             report.issues.take(6).forEach { issue -> EditorIssueRow(issue) }
         } else {
             Spacer(Modifier.height(8.dp))
-            Text("当前没有达到提醒阈值的全书级模式问题。", color = LocalMiuixTokens.current.textSecondary)
+            Text("当前没有达到提醒阈值的全书级模式问题。", color = LocalLanghuanTokens.current.textSecondary)
         }
 
         if (report.aiSummary.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             Text("AI 深度巡检补充", fontWeight = FontWeight.Bold)
-            Text(report.aiSummary.take(700), style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+            Text(report.aiSummary.take(700), style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
         }
     }
 }
@@ -82,10 +82,10 @@ internal fun FullBookEditorPanel(snapshot: StorySnapshot) {
 @Composable
 private fun ScoreRow(left: String, leftScore: Int, right: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(left, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+        Text(left, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
         Text(leftScore.toString(), fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.width(14.dp))
-        Text(right, style = MaterialTheme.typography.bodySmall, color = LocalMiuixTokens.current.textSecondary)
+        Text(right, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanTokens.current.textSecondary)
     }
 }
 
@@ -104,7 +104,7 @@ private fun EditorIssueRow(issue: BookEditorIssue) {
                 Text("${issue.severity} · ${issue.title}", fontWeight = FontWeight.SemiBold)
             }
             if (issue.chapterStart > 0) {
-                Text("影响：第${issue.chapterStart}-${issue.chapterEnd.coerceAtLeast(issue.chapterStart)}章 · ${issue.source}", style = MaterialTheme.typography.labelSmall, color = LocalMiuixTokens.current.textSecondary)
+                Text("影响：第${issue.chapterStart}-${issue.chapterEnd.coerceAtLeast(issue.chapterStart)}章 · ${issue.source}", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanTokens.current.textSecondary)
             }
             if (issue.evidence.isNotBlank()) Text(issue.evidence, style = MaterialTheme.typography.bodySmall)
             if (issue.minimalRepair.isNotBlank()) Text("最小修复：${issue.minimalRepair}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
