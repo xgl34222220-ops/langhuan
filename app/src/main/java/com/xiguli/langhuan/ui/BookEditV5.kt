@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.Button
@@ -36,7 +34,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +45,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -116,7 +112,7 @@ class BookEditViewModelV5(application: Application) : AndroidViewModel(applicati
             runCatching {
                 val app = getApplication<Application>()
                 val covers = File(app.filesDir, "covers").apply { mkdirs() }
-                val target = File(covers, "$bookId-user-cover.jpg")
+                val target = File(covers, "$bookId-user-cover")
                 app.contentResolver.openInputStream(uri)?.use { input ->
                     target.outputStream().use { output -> input.copyTo(output) }
                 } ?: error("无法读取封面图片")
@@ -143,15 +139,11 @@ class BookEditViewModelV5(application: Application) : AndroidViewModel(applicati
 @Composable
 fun BookEditPageV5(
     book: ReaderBookUi,
-    libraryViewModel: LibraryExperienceViewModel,
     editViewModel: BookEditViewModelV5,
-    aiReady: Boolean,
-    onConfigureAi: () -> Unit,
     onClose: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     val editState by editViewModel.state.collectAsStateWithLifecycle()
-    val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
     var title by remember(book.id, book.title) { mutableStateOf(book.title) }
     var genre by remember(book.id, book.genre) { mutableStateOf(book.genre) }
     var premise by remember(book.id, book.premise) { mutableStateOf(book.premise) }
@@ -162,7 +154,6 @@ fun BookEditPageV5(
     val coverLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) editViewModel.setLocalCover(book.id, uri)
     }
-    val busy = editState.busy || libraryState.isBusy
 
     Surface(Modifier.fillMaxSize(), color = t.background) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -173,7 +164,7 @@ fun BookEditPageV5(
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "返回", tint = t.foreground) }
                 Column(Modifier.weight(1f)) {
                     Text("编辑书籍", style = MaterialTheme.typography.titleLarge, color = t.foreground, fontWeight = FontWeight.SemiBold)
-                    Text("书名、封面和简介都会同步到书架", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    Text("书名、封面、类型和简介", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                 }
             }
 
@@ -182,7 +173,7 @@ fun BookEditPageV5(
             ) {
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.Top) {
                     Surface(
-                        modifier = Modifier.width(132.dp).aspectRatio(.68f),
+                        modifier = Modifier.width(136.dp).aspectRatio(.68f),
                         shape = RoundedCornerShape(16.dp),
                         color = t.muted,
                         shadowElevation = 2.dp,
@@ -200,29 +191,20 @@ fun BookEditPageV5(
                             }
                         }
                     }
-                    Column(Modifier.padding(start = 16.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Column(Modifier.padding(start = 16.dp).weight(1f)) {
                         Button(
                             onClick = { coverLauncher.launch("image/*") },
-                            enabled = !busy,
+                            enabled = !editState.busy,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
                         ) {
                             Icon(Icons.Rounded.FolderOpen, null, Modifier.size(18.dp))
-                            Text("本地封面", Modifier.padding(start = 7.dp))
-                        }
-                        TextButton(
-                            onClick = {
-                                if (aiReady) libraryViewModel.generateCover() else onConfigureAi()
-                            },
-                            enabled = !busy,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
-                            Text(if (aiReady) "AI 生成封面" else "配置 AI 后生成", Modifier.padding(start = 7.dp))
+                            Text("更换封面", Modifier.padding(start = 7.dp))
                         }
                         Text(
-                            "建议使用 2:3 左右的竖版图片",
-                            style = MaterialTheme.typography.labelSmall,
+                            "从相册或文件选择竖版图片，保存后立即同步到书架。",
+                            Modifier.padding(top = 9.dp),
+                            style = MaterialTheme.typography.bodySmall,
                             color = t.mutedForeground,
                         )
                     }
@@ -257,14 +239,14 @@ fun BookEditPageV5(
 
                 Button(
                     onClick = { editViewModel.save(book.id, title, genre, premise) },
-                    enabled = !busy && title.isNotBlank(),
+                    enabled = !editState.busy && title.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = t.primary, contentColor = t.primaryForeground),
                 ) {
-                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.primaryForeground)
+                    if (editState.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.primaryForeground)
                     else Icon(Icons.Rounded.Save, null, Modifier.size(18.dp))
-                    Text(if (busy) "正在保存" else "保存修改", Modifier.padding(start = 8.dp))
+                    Text(if (editState.busy) "正在保存" else "保存修改", Modifier.padding(start = 8.dp))
                 }
 
                 editState.message?.let {
@@ -272,12 +254,6 @@ fun BookEditPageV5(
                 }
                 editState.error?.let {
                     Text(it, Modifier.padding(top = 12.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall)
-                }
-                libraryState.message?.let {
-                    Text(it, Modifier.padding(top = 12.dp), color = t.success, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                libraryState.error?.let {
-                    Text(it, Modifier.padding(top = 12.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.navigationBarsPadding().height(28.dp))
             }
