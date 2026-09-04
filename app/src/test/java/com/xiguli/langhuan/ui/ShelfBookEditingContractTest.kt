@@ -7,18 +7,25 @@ import org.junit.Test
 
 class ShelfBookEditingContractTest {
     @Test
-    fun shelfUsesQuietThreeColumnLayoutWithoutLosingBookEditing() {
+    fun shelfUsesRefinedQingmoThreeColumnLayoutWithoutLosingBookEditing() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val router = File(root, "src/main/java/com/xiguli/langhuan/ui/LanghuanRootV4.kt").readText()
         val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfLibraryV5.kt").readText()
-        val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfQingmoV6.kt").readText()
+        val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfQingmoV7.kt").readText()
         val editor = File(root, "src/main/java/com/xiguli/langhuan/ui/BookEditV5.kt").readText()
 
         assertTrue(router.contains("ShelfLibraryV5("))
-        assertTrue(entry.contains("ShelfQingmoV6("))
+        assertTrue(entry.contains("ShelfQingmoV7("))
         assertFalse(router.contains("ShelfNativeExperienceV4("))
 
+        assertTrue(shelf.contains("text = \"正在阅读\""))
         assertTrue(shelf.contains("GridCells.Fixed(3)"))
+        assertTrue(shelf.contains("Arrangement.spacedBy(24.dp)"))
+        assertTrue(shelf.contains("RoundedCornerShape(1.dp)"))
+        assertTrue(shelf.contains("fontSize = 14.sp"))
+        assertTrue(shelf.contains("textAlign = TextAlign.Center"))
+        assertTrue(shelf.contains("Color(0xFFFDFDFD)"))
+        assertTrue(shelf.contains("Icons.Outlined.Person"))
         assertTrue(shelf.contains("combinedClickable"))
         assertTrue(shelf.contains("onLongClick = onLongPress"))
         assertTrue(shelf.contains("编辑书籍"))
