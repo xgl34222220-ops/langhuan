@@ -22,69 +22,65 @@ import com.xiguli.langhuan.ui.design.LanghuanUiTokens
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
- * 琅嬛稳定主题：shadcn-inspired semantic design system for Compose.
- *
- * 不是照搬网页样式，而是保留「纸白阅读感 + 暖橙品牌色」，同时引入统一的
- * background / foreground / card / muted / border / accent / destructive / success / warning /
- * ring 语义层。业务页不应再自行发明颜色和边框。
+ * Compose translation of shadcn/ui's neutral semantic theme.
+ * Neutral ink/surface/border roles drive ordinary UI. The warm red-orange is a Langhuan brand
+ * accent only; it is not used as a generic container color for every selected control.
  */
-private val AccentLight = Color(0xFFF4553D)
-private val AccentDark = Color(0xFFFF7A66)
-private val InkLight = Color(0xFF18181B)
-private val InkDark = Color(0xFFF4F4F5)
-private val SuccessLight = Color(0xFF16875D)
-private val SuccessDark = Color(0xFF4FD39B)
-private val WarningLight = Color(0xFFC87912)
-private val WarningDark = Color(0xFFF5B95C)
+private val BrandLight = Color(0xFFE84C34)
+private val BrandDark = Color(0xFFFF735E)
+private val SuccessLight = Color(0xFF15815D)
+private val SuccessDark = Color(0xFF55D6A3)
+private val WarningLight = Color(0xFFB76A0A)
+private val WarningDark = Color(0xFFF0B85B)
 
-private val PaperLightColors = lightColorScheme(
-    primary = InkLight,
+private val ShadcnLightColors = lightColorScheme(
+    primary = Color(0xFF18181B),
     onPrimary = Color(0xFFFAFAFA),
-    primaryContainer = Color(0xFFF0EFED),
-    onPrimaryContainer = InkLight,
+    primaryContainer = Color(0xFFF4F4F5),
+    onPrimaryContainer = Color(0xFF18181B),
     secondary = Color(0xFF52525B),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFF4F4F2),
-    onSecondaryContainer = InkLight,
-    tertiary = AccentLight,
+    onSecondary = Color(0xFFFAFAFA),
+    secondaryContainer = Color(0xFFF4F4F5),
+    onSecondaryContainer = Color(0xFF27272A),
+    tertiary = BrandLight,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFE8E2),
-    onTertiaryContainer = Color(0xFF6A1D11),
-    background = Color(0xFFFCFCFB),
-    onBackground = InkLight,
+    tertiaryContainer = Color(0xFFFFE9E5),
+    onTertiaryContainer = Color(0xFF6E1D11),
+    background = Color(0xFFFAFAFA),
+    onBackground = Color(0xFF18181B),
     surface = Color(0xFFFFFFFF),
-    onSurface = InkLight,
-    surfaceVariant = Color(0xFFF4F4F2),
+    onSurface = Color(0xFF18181B),
+    surfaceVariant = Color(0xFFF4F4F5),
     onSurfaceVariant = Color(0xFF71717A),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFAFAF9),
-    surfaceContainer = Color(0xFFF6F6F4),
-    surfaceContainerHigh = Color(0xFFF0EFED),
-    surfaceContainerHighest = Color(0xFFE9E8E5),
-    outline = Color(0xFFD6D3D1),
-    outlineVariant = Color(0xFFE7E5E4),
+    surfaceContainerLow = Color(0xFFFAFAFA),
+    surfaceContainer = Color(0xFFF4F4F5),
+    surfaceContainerHigh = Color(0xFFEFEFF0),
+    surfaceContainerHighest = Color(0xFFE4E4E7),
+    outline = Color(0xFFD4D4D8),
+    outlineVariant = Color(0xFFE4E4E7),
     error = Color(0xFFDC2626),
     onError = Color.White,
 )
 
-private val PaperDarkColors = darkColorScheme(
-    primary = InkDark,
-    onPrimary = Color(0xFF111113),
+private val ShadcnDarkColors = darkColorScheme(
+    primary = Color(0xFFFAFAFA),
+    onPrimary = Color(0xFF18181B),
     primaryContainer = Color(0xFF27272A),
-    onPrimaryContainer = InkDark,
+    onPrimaryContainer = Color(0xFFFAFAFA),
     secondary = Color(0xFFD4D4D8),
     onSecondary = Color(0xFF18181B),
     secondaryContainer = Color(0xFF27272A),
-    onSecondaryContainer = InkDark,
-    tertiary = AccentDark,
-    onTertiary = Color(0xFF3A0F08),
-    tertiaryContainer = Color(0xFF5A241A),
-    onTertiaryContainer = Color(0xFFFFDAD3),
-    background = Color(0xFF0B0B0C),
-    onBackground = InkDark,
+    onSecondaryContainer = Color(0xFFF4F4F5),
+    tertiary = BrandDark,
+    onTertiary = Color(0xFF3D1009),
+    tertiaryContainer = Color(0xFF542018),
+    onTertiaryContainer = Color(0xFFFFD9D2),
+    background = Color(0xFF09090B),
+    onBackground = Color(0xFFFAFAFA),
     surface = Color(0xFF111113),
-    onSurface = InkDark,
-    surfaceVariant = Color(0xFF1C1C1F),
+    onSurface = Color(0xFFFAFAFA),
+    surfaceVariant = Color(0xFF18181B),
     onSurfaceVariant = Color(0xFFA1A1AA),
     surfaceContainerLowest = Color(0xFF09090B),
     surfaceContainerLow = Color(0xFF111113),
@@ -97,26 +93,26 @@ private val PaperDarkColors = darkColorScheme(
     onError = Color(0xFF450A0A),
 )
 
-private val StableShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(20.dp),
+private val ShadcnShapes = Shapes(
+    extraSmall = RoundedCornerShape(5.dp),
+    small = RoundedCornerShape(6.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(10.dp),
+    extraLarge = RoundedCornerShape(12.dp),
 )
 
-private val StableTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 39.sp, fontWeight = FontWeight.SemiBold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold),
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 31.sp, fontWeight = FontWeight.SemiBold),
-    headlineSmall = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+private val ShadcnTypography = Typography(
+    displaySmall = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold),
+    headlineLarge = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold),
+    headlineMedium = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+    headlineSmall = TextStyle(fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
     titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 25.sp, fontWeight = FontWeight.Normal),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp, fontWeight = FontWeight.Normal),
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.Normal),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
-    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
+    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
     labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
     labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium),
 )
@@ -131,15 +127,16 @@ fun LanghuanStableTheme(
     val colors = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else {
-        if (dark) PaperDarkColors else PaperLightColors
+        if (dark) ShadcnDarkColors else ShadcnLightColors
     }
+    val brand = if (dark) BrandDark else BrandLight
     val success = if (dark) SuccessDark else SuccessLight
     val warning = if (dark) WarningDark else WarningLight
 
     val legacyTokens = MiuixTokens(
         pageBackground = colors.background,
         cardBackground = colors.surfaceContainer,
-        elevatedCardBackground = colors.surfaceContainerLowest,
+        elevatedCardBackground = colors.surface,
         textPrimary = colors.onSurface,
         textSecondary = colors.onSurfaceVariant,
         success = success,
@@ -157,22 +154,26 @@ fun LanghuanStableTheme(
         input = colors.outlineVariant,
         primary = colors.primary,
         primaryForeground = colors.onPrimary,
-        accent = colors.tertiary,
-        accentForeground = colors.onTertiary,
+        accent = brand,
+        accentForeground = if (dark) Color(0xFF3D1009) else Color.White,
         destructive = colors.error,
         destructiveForeground = colors.onError,
         success = success,
         successForeground = if (dark) Color(0xFF052E20) else Color.White,
         warning = warning,
         warningForeground = if (dark) Color(0xFF3A2400) else Color.White,
-        ring = colors.tertiary,
-        warmSurface = if (dark) Color(0xFF281713) else Color(0xFFFFF4F0),
+        ring = colors.onSurface.copy(alpha = if (dark) .70f else .58f),
+        warmSurface = if (dark) Color(0xFF211412) else Color(0xFFFFF4F1),
+        radiusSm = 6.dp,
+        radiusMd = 8.dp,
+        radiusLg = 10.dp,
+        radiusXl = 12.dp,
     )
 
     MaterialTheme(
         colorScheme = colors,
-        shapes = StableShapes,
-        typography = StableTypography,
+        shapes = ShadcnShapes,
+        typography = ShadcnTypography,
     ) {
         CompositionLocalProvider(
             LocalMiuixTokens provides legacyTokens,
