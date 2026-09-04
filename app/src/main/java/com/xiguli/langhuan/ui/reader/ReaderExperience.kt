@@ -55,7 +55,7 @@ private enum class ReaderExperienceTheme(val key: String, val label: String) {
     SYSTEM("system", "默认"), PAPER("paper", "纸张"), WARM("warm", "暖黄"),
     GREEN("green", "护眼"), NIGHT("night", "夜间"), CUSTOM("custom", "自定义")
 }
-private data class ReaderExperiencePalette(val background: Color, val foreground: Color, val secondary: Color, val chrome: Color)
+internal data class ReaderExperiencePalette(val background: Color, val foreground: Color, val secondary: Color, val chrome: Color)
 private data class ReaderTocEntry(val title: String, val chapterNumber: Int?, val depth: Int)
 
 /**
@@ -471,7 +471,7 @@ private fun ReaderExperiencePage(
                 val overall = ((chapterIndex.toFloat() + currentFraction()) / ordered.size.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
                 ReaderQuietFooter(Modifier.align(Alignment.BottomCenter), overall, palette)
             } else if (chromeVisible) {
-                ReaderMatureChrome(
+                ReaderQingmoChrome(
                     modifier = Modifier.align(Alignment.Center),
                     bookTitle = book.title,
                     chapter = chapter,
