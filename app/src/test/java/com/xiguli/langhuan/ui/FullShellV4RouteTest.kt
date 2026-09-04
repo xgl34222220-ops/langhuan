@@ -28,7 +28,8 @@ class FullShellV4RouteTest {
         assertFalse(router.contains("ReaderShelfV9("))
         assertFalse(router.contains("ReaderExperienceEntryGuard("))
 
-        assertTrue(shelf.contains("MobileShelfNavigation("))
+        assertTrue(shelf.contains("MobileShelfNavigationV3("))
+        assertTrue(shelf.contains("ContinueReadingHeroV3("))
         assertFalse(shelf.contains("MobileShelfDock("))
         assertTrue(shelf.contains("GridCells.Fixed(2)"))
         assertTrue(shelf.contains("book.coverPath"))
@@ -50,6 +51,7 @@ class FullShellV4RouteTest {
         assertTrue(reader.contains("pagerState.settledPage"))
         assertTrue(reader.contains("detectTapGestures"))
         assertTrue(reader.contains("appliedLayoutKey"))
+        assertTrue(reader.contains("MobileReaderSettingsV3("))
         assertFalse(reader.contains("ReaderCoreBoundary("))
         assertFalse(reader.contains("val leading ="))
         assertFalse(reader.contains("val trailing ="))
