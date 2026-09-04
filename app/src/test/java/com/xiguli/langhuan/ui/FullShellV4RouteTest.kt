@@ -29,7 +29,7 @@ class FullShellV4RouteTest {
         assertFalse(router.contains("ReaderExperienceEntryGuard("))
 
         assertTrue(shelf.contains("MobileShelfDock("))
-        assertTrue(shelf.contains("GridCells.Adaptive"))
+        assertTrue(shelf.contains("GridCells.Fixed(2)"))
         assertTrue(shelf.contains("book.coverPath"))
         assertTrue(shelf.contains("AI 创建小说"))
         assertTrue(shelf.contains("导入本地小说"))
