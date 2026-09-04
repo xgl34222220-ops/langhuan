@@ -34,9 +34,9 @@ import androidx.compose.ui.unit.dp
 /**
  * Semantic design tokens for the Langhuan UI layer.
  *
- * This intentionally mirrors the shadcn/ui model (background/foreground/card/muted/border/
- * primary/accent/destructive/ring) and extends it with explicit success/warning roles needed by
- * a writing runtime. Feature UI should consume semantic roles rather than raw palette colors.
+ * This mirrors shadcn/ui's role model: background/foreground/card/muted/border/input/primary/
+ * accent/destructive/ring. Accent is intentionally neutral; explicit brand color lives in the
+ * Material tertiary role instead of leaking into every selected or hover state.
  */
 @Immutable
 data class LanghuanUiTokens(
@@ -60,34 +60,34 @@ data class LanghuanUiTokens(
     val warningForeground: Color,
     val ring: Color,
     val warmSurface: Color,
-    val radiusSm: Dp = 8.dp,
-    val radiusMd: Dp = 12.dp,
-    val radiusLg: Dp = 16.dp,
-    val radiusXl: Dp = 20.dp,
+    val radiusSm: Dp = 6.dp,
+    val radiusMd: Dp = 8.dp,
+    val radiusLg: Dp = 10.dp,
+    val radiusXl: Dp = 12.dp,
 )
 
 val LocalLanghuanUiTokens = staticCompositionLocalOf {
     LanghuanUiTokens(
-        background = Color(0xFFFCFCFB),
+        background = Color(0xFFFAFAFA),
         foreground = Color(0xFF18181B),
         card = Color(0xFFFFFFFF),
         cardForeground = Color(0xFF18181B),
-        muted = Color(0xFFF4F4F2),
+        muted = Color(0xFFF4F4F5),
         mutedForeground = Color(0xFF71717A),
-        border = Color(0xFFE7E5E4),
-        input = Color(0xFFE7E5E4),
+        border = Color(0xFFE4E4E7),
+        input = Color(0xFFE4E4E7),
         primary = Color(0xFF18181B),
         primaryForeground = Color(0xFFFAFAFA),
-        accent = Color(0xFFF4553D),
-        accentForeground = Color.White,
+        accent = Color(0xFFEFEFF0),
+        accentForeground = Color(0xFF18181B),
         destructive = Color(0xFFDC2626),
         destructiveForeground = Color.White,
-        success = Color(0xFF16875D),
+        success = Color(0xFF15815D),
         successForeground = Color.White,
-        warning = Color(0xFFC87912),
+        warning = Color(0xFFB76A0A),
         warningForeground = Color.White,
-        ring = Color(0xFFF4553D),
-        warmSurface = Color(0xFFFFF6F2),
+        ring = Color(0xFF71717A),
+        warmSurface = Color(0xFFFAFAFA),
     )
 }
 
@@ -198,10 +198,10 @@ fun LanghuanBadge(
     val t = LocalLanghuanUiTokens.current
     Surface(
         modifier = modifier,
-        color = if (accent) t.warmSurface else t.muted,
-        contentColor = if (accent) t.accent else t.mutedForeground,
+        color = if (accent) t.accent else t.muted,
+        contentColor = if (accent) t.accentForeground else t.mutedForeground,
         shape = RoundedCornerShape(999.dp),
-        border = BorderStroke(1.dp, if (accent) t.accent.copy(alpha = .16f) else t.border),
+        border = BorderStroke(1.dp, t.border),
     ) {
         Text(
             text = text,
@@ -230,20 +230,20 @@ fun LanghuanMenuRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
-            modifier = Modifier.size(36.dp),
+            modifier = Modifier.size(34.dp),
             shape = RoundedCornerShape(t.radiusSm),
             color = t.muted,
             contentColor = t.foreground,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, null, Modifier.size(19.dp), tint = t.foreground)
+                Icon(icon, null, Modifier.size(18.dp), tint = t.foreground)
             }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = t.foreground,
                 fontWeight = FontWeight.Medium,
             )
