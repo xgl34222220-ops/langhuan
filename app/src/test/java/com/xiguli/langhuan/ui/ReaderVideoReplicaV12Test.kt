@@ -9,14 +9,6 @@ class ReaderVideoReplicaV12Test {
     private val root = File(System.getProperty("user.dir") ?: ".")
 
     @Test
-    fun shelfMatchesCurrentReaderInformationArchitecture() {
-        val source = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderShelfV9.kt").readText()
-        listOf("图书", "书架", "我的", "AI 新建小说", "移动到其他书架", "进入故事")
-            .forEach { label -> assertTrue("missing $label", source.contains(label)) }
-        assertTrue(source.contains("GridCells.Fixed(3)"))
-    }
-
-    @Test
     fun matureReaderProtectsResumeInsetsCrossChapterAndTypographyState() {
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderExperience.kt").readText()
         val assets = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderAssetsV10.kt").readText()

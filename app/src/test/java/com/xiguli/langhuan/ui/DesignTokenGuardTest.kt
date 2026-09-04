@@ -36,16 +36,16 @@ class DesignTokenGuardTest {
     private companion object {
         /**
          * DESIGN.md §5 字体层级。改用 MaterialTheme.typography.*。
-         * 剩下 8 处是刻意保留的字面量，源码里都有注释说明：滑杆两端的「Aa」大小
-         * 示例（4 处）、字体预览（2 处）、参与分页测量算式的页眉页脚（2 处）。
+         * 剩下 4 处是刻意保留的字面量，源码里都有注释说明：滑杆两端的「Aa」大小
+         * 示例（2 处）、参与分页测量算式的页眉页脚（2 处）。
          */
-        const val HARDCODED_FONT_SIZE_BASELINE = 8
+        const val HARDCODED_FONT_SIZE_BASELINE = 4
 
         /** DESIGN.md §6「不在页面散落固定 RGB」。改用 colorScheme / LanghuanUiTokens。 */
-        const val HARDCODED_COLOR_BASELINE = 140
+        const val HARDCODED_COLOR_BASELINE = 55
 
         /** DESIGN.md §2「优先 Material 3，不混多套设计语言」。 */
-        const val MIUIX_FILE_BASELINE = 9
+        const val MIUIX_FILE_BASELINE = 5
 
         /** DESIGN.md §3「UI Chrome 中 Emoji：0」。当前是 2 个文件拿符号当状态图标。 */
         const val EMOJI_FILE_BASELINE = 2
