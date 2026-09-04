@@ -32,10 +32,6 @@ private enum class RootRouteV4 {
     SKILLS,
 }
 
-/**
- * V4 keeps the proven transaction/navigation behavior and changes only the primary reading surfaces.
- * This is intentionally separate from V3 while the new shelf/reader are under device review.
- */
 @Composable
 fun LanghuanRootV4(studioVm: StudioViewModel) {
     val studioState by studioVm.state.collectAsStateWithLifecycle()
@@ -176,7 +172,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV4.SHELF -> {
-                    ShelfNativeExperienceV4(
+                    ShelfLibraryV5(
                         state = libraryState,
                         importState = localImportState,
                         openingBookId = pendingBookId,
