@@ -3,12 +3,10 @@ package com.xiguli.langhuan.ui.design
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,11 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,7 +32,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -52,6 +49,7 @@ fun ShadcnButton(
     leadingIcon: ImageVector? = null,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val inheritedContent = LocalContentColor.current
     val height = when (size) {
         ShadcnButtonSize.XS -> 30.dp
         ShadcnButtonSize.SM -> 34.dp
@@ -70,13 +68,16 @@ fun ShadcnButton(
         ShadcnButtonVariant.DEFAULT -> Triple(t.primary, t.primaryForeground, t.primary)
         ShadcnButtonVariant.OUTLINE -> Triple(t.card, t.foreground, t.border)
         ShadcnButtonVariant.SECONDARY -> Triple(t.muted, t.foreground, Color.Transparent)
-        ShadcnButtonVariant.GHOST -> Triple(Color.Transparent, t.foreground, Color.Transparent)
+        ShadcnButtonVariant.GHOST -> Triple(Color.Transparent, inheritedContent, Color.Transparent)
         ShadcnButtonVariant.DESTRUCTIVE -> Triple(t.destructive, t.destructiveForeground, t.destructive)
     }
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.defaultMinSize(minHeight = height),
+        modifier = modifier.defaultMinSize(
+            minWidth = if (size == ShadcnButtonSize.ICON) height else 0.dp,
+            minHeight = height,
+        ),
         shape = RoundedCornerShape(t.radiusMd),
         color = if (enabled) container else container.copy(alpha = .5f),
         contentColor = if (enabled) content else content.copy(alpha = .55f),
@@ -114,23 +115,25 @@ fun ShadcnIconButton(
     selected: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val inheritedContent = LocalContentColor.current
     val container = when {
         selected -> t.muted
         variant == ShadcnButtonVariant.OUTLINE -> t.card
         else -> Color.Transparent
     }
+    val foreground = if (variant == ShadcnButtonVariant.GHOST && !selected) inheritedContent else t.foreground
     val border = if (variant == ShadcnButtonVariant.OUTLINE) BorderStroke(1.dp, t.border) else null
     Surface(
         onClick = onClick,
         modifier = modifier.size(38.dp),
         shape = RoundedCornerShape(t.radiusMd),
         color = container,
-        contentColor = t.foreground,
+        contentColor = foreground,
         border = border,
         shadowElevation = if (variant == ShadcnButtonVariant.OUTLINE) .5.dp else 0.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription, Modifier.size(18.dp), tint = t.foreground)
+            Icon(icon, contentDescription, Modifier.size(18.dp), tint = foreground)
         }
     }
 }
