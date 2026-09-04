@@ -69,6 +69,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -78,7 +79,6 @@ fun ShelfLibraryV5(
     importState: LocalBookImportUiStateV1,
     openingBookId: String?,
     onOpenBook: (String) -> Unit,
-    onEditBook: (String) -> Unit,
     onOpenTavern: (String) -> Unit,
     onImportLocal: () -> Unit,
     onDeleteBook: (String) -> Unit,
@@ -88,12 +88,27 @@ fun ShelfLibraryV5(
     onSkills: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val editViewModel: BookEditViewModelV5 = viewModel()
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var addOpen by remember { mutableStateOf(false) }
     var toolsOpen by remember { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<ReaderBookUi?>(null) }
     var pendingDelete by remember { mutableStateOf<ReaderBookUi?>(null) }
+    var editingBookId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val editingBook = editingBookId?.let { id -> state.stories.firstOrNull { it.id == id } }
+    if (editingBook != null) {
+        BookEditPageV5(
+            book = editingBook,
+            editViewModel = editViewModel,
+            onClose = {
+                editViewModel.clearFeedback()
+                editingBookId = null
+            },
+        )
+        return
+    }
 
     val books = remember(state.stories, query) {
         state.stories.sortedByDescending { it.updatedAt }
@@ -256,7 +271,8 @@ fun ShelfLibraryV5(
                 }
                 Spacer(Modifier.height(10.dp))
                 ShelfV5Action(Icons.Rounded.Edit, "编辑书籍", "修改书名、类型、简介和封面") {
-                    actionsFor = null; onEditBook(book.id)
+                    actionsFor = null
+                    editingBookId = book.id
                 }
                 HorizontalDivider(color = t.border.copy(alpha = .30f), modifier = Modifier.padding(start = 40.dp))
                 ShelfV5Action(Icons.Rounded.AutoStories, "继续阅读", "回到上次阅读位置") {
