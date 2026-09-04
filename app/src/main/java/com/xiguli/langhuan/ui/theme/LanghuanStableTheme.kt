@@ -18,108 +18,105 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xiguli.langhuan.ui.design.LanghuanUiTokens
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
- * 琅嬛「纸白」主题。
- *
- * 设计取向：近乎单色的纸白底 + 高对比正文 + 单一暖橙强调色，圆角克制，
- * 让封面和正文本身成为页面上唯一的颜色来源。
+ * Compose translation of shadcn/ui's neutral semantic theme.
+ * Neutral ink/surface/border roles drive ordinary UI. Brand color stays in Material tertiary and
+ * is reserved for explicit brand moments rather than generic hover/selected states.
  */
+private val BrandLight = Color(0xFFE84C34)
+private val BrandDark = Color(0xFFFF735E)
+private val SuccessLight = Color(0xFF15815D)
+private val SuccessDark = Color(0xFF55D6A3)
+private val WarningLight = Color(0xFFB76A0A)
+private val WarningDark = Color(0xFFF0B85B)
 
-/** 暖橙强调色：选中态下划线、徽标、可点击强调文字。 */
-private val AccentLight = Color(0xFFF4553D)
-private val AccentDark = Color(0xFFFF7A66)
-
-private val PaperLightColors = lightColorScheme(
-    primary = AccentLight,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFE6E1),
-    onPrimaryContainer = Color(0xFF5C1A10),
-    secondary = Color(0xFF5A5A5F),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFF0F0F2),
-    onSecondaryContainer = Color(0xFF1A1A1C),
-    tertiary = Color(0xFFC8912F),
+private val ShadcnLightColors = lightColorScheme(
+    primary = Color(0xFF18181B),
+    onPrimary = Color(0xFFFAFAFA),
+    primaryContainer = Color(0xFFF4F4F5),
+    onPrimaryContainer = Color(0xFF18181B),
+    secondary = Color(0xFF52525B),
+    onSecondary = Color(0xFFFAFAFA),
+    secondaryContainer = Color(0xFFF4F4F5),
+    onSecondaryContainer = Color(0xFF27272A),
+    tertiary = BrandLight,
     onTertiary = Color.White,
-    background = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF1A1A1C),
+    tertiaryContainer = Color(0xFFFFE9E5),
+    onTertiaryContainer = Color(0xFF6E1D11),
+    background = Color(0xFFFAFAFA),
+    onBackground = Color(0xFF18181B),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1A1C),
-    surfaceVariant = Color(0xFFF5F5F7),
-    onSurfaceVariant = Color(0xFF9A9AA0),
+    onSurface = Color(0xFF18181B),
+    surfaceVariant = Color(0xFFF4F4F5),
+    onSurfaceVariant = Color(0xFF71717A),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFAFAFB),
-    surfaceContainer = Color(0xFFF5F5F7),
-    surfaceContainerHigh = Color(0xFFEFEFF2),
-    surfaceContainerHighest = Color(0xFFE9E9ED),
-    outline = Color(0xFFC6C6CC),
-    outlineVariant = Color(0xFFEDEDF0),
-    error = Color(0xFFD93025),
+    surfaceContainerLow = Color(0xFFFAFAFA),
+    surfaceContainer = Color(0xFFF4F4F5),
+    surfaceContainerHigh = Color(0xFFEFEFF0),
+    surfaceContainerHighest = Color(0xFFE4E4E7),
+    outline = Color(0xFFD4D4D8),
+    outlineVariant = Color(0xFFE4E4E7),
+    error = Color(0xFFDC2626),
     onError = Color.White,
 )
 
-private val PaperDarkColors = darkColorScheme(
-    primary = AccentDark,
-    onPrimary = Color(0xFF3A0F08),
-    primaryContainer = Color(0xFF5C2419),
-    onPrimaryContainer = Color(0xFFFFDAD3),
-    secondary = Color(0xFFB6B6BC),
-    onSecondary = Color(0xFF1A1A1C),
-    secondaryContainer = Color(0xFF2A2A2E),
-    onSecondaryContainer = Color(0xFFEDEDEF),
-    tertiary = Color(0xFFE2BC6E),
-    onTertiary = Color(0xFF3A2D08),
-    background = Color(0xFF0F0F10),
-    onBackground = Color(0xFFEDEDEF),
-    surface = Color(0xFF0F0F10),
-    onSurface = Color(0xFFEDEDEF),
-    surfaceVariant = Color(0xFF232326),
-    onSurfaceVariant = Color(0xFF8A8A90),
-    surfaceContainerLowest = Color(0xFF0A0A0B),
-    surfaceContainerLow = Color(0xFF141416),
-    surfaceContainer = Color(0xFF1A1A1C),
-    surfaceContainerHigh = Color(0xFF232326),
-    surfaceContainerHighest = Color(0xFF2C2C30),
-    outline = Color(0xFF5A5A60),
-    outlineVariant = Color(0xFF2A2A2E),
-    error = Color(0xFFFF6B5E),
-    onError = Color(0xFF3A0A06),
+private val ShadcnDarkColors = darkColorScheme(
+    primary = Color(0xFFFAFAFA),
+    onPrimary = Color(0xFF18181B),
+    primaryContainer = Color(0xFF27272A),
+    onPrimaryContainer = Color(0xFFFAFAFA),
+    secondary = Color(0xFFD4D4D8),
+    onSecondary = Color(0xFF18181B),
+    secondaryContainer = Color(0xFF27272A),
+    onSecondaryContainer = Color(0xFFF4F4F5),
+    tertiary = BrandDark,
+    onTertiary = Color(0xFF3D1009),
+    tertiaryContainer = Color(0xFF542018),
+    onTertiaryContainer = Color(0xFFFFD9D2),
+    background = Color(0xFF09090B),
+    onBackground = Color(0xFFFAFAFA),
+    surface = Color(0xFF111113),
+    onSurface = Color(0xFFFAFAFA),
+    surfaceVariant = Color(0xFF18181B),
+    onSurfaceVariant = Color(0xFFA1A1AA),
+    surfaceContainerLowest = Color(0xFF09090B),
+    surfaceContainerLow = Color(0xFF111113),
+    surfaceContainer = Color(0xFF18181B),
+    surfaceContainerHigh = Color(0xFF202023),
+    surfaceContainerHighest = Color(0xFF27272A),
+    outline = Color(0xFF3F3F46),
+    outlineVariant = Color(0xFF27272A),
+    error = Color(0xFFF87171),
+    onError = Color(0xFF450A0A),
 )
 
-/** 圆角收敛：封面 4dp、卡片 8/12dp、面板 16dp、底部弹层 20dp。 */
-private val StableShapes = Shapes(
-    extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(20.dp),
+private val ShadcnShapes = Shapes(
+    extraSmall = RoundedCornerShape(5.dp),
+    small = RoundedCornerShape(6.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(10.dp),
+    extraLarge = RoundedCornerShape(12.dp),
 )
 
-/** 字阶：标题重、正文松、次要信息小而灰，拉开层级而不靠颜色。 */
-private val StableTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 23.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold),
-    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 25.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
-    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+private val ShadcnTypography = Typography(
+    displaySmall = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold),
+    headlineLarge = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold),
+    headlineMedium = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+    headlineSmall = TextStyle(fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.Normal),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
+    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
     labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
     labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium),
 )
 
-/**
- * Stable theme used only after StartupDatabaseGate succeeds.
- *
- * 默认使用固定的纸白配色，让应用有稳定的视觉身份；把 [dynamicColor] 置为 true
- * 可以退回 Android 12+ 的系统 Monet 取色。无论走哪条分支，都会向下提供
- * [LocalMiuixTokens]，因此所有读 tokens 的页面都会跟随明暗模式，而不再固定
- * 落在浅色默认值上。
- */
 @Composable
 fun LanghuanStableTheme(
     dynamicColor: Boolean = false,
@@ -130,26 +127,56 @@ fun LanghuanStableTheme(
     val colors = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else {
-        if (dark) PaperDarkColors else PaperLightColors
+        if (dark) ShadcnDarkColors else ShadcnLightColors
     }
+    val success = if (dark) SuccessDark else SuccessLight
+    val warning = if (dark) WarningDark else WarningLight
 
-    val tokens = MiuixTokens(
+    val legacyTokens = MiuixTokens(
         pageBackground = colors.background,
-        cardBackground = if (dark) colors.surfaceContainer else colors.surfaceVariant,
-        elevatedCardBackground = if (dark) colors.surfaceContainerHigh else colors.surfaceContainerLowest,
+        cardBackground = colors.surfaceContainer,
+        elevatedCardBackground = colors.surface,
         textPrimary = colors.onSurface,
         textSecondary = colors.onSurfaceVariant,
-        success = if (dark) Color(0xFF4FD39B) else Color(0xFF1E9E6A),
-        warning = if (dark) Color(0xFFF5B95C) else Color(0xFFD98A16),
+        success = success,
+        warning = warning,
+    )
+
+    val uiTokens = LanghuanUiTokens(
+        background = colors.background,
+        foreground = colors.onBackground,
+        card = colors.surface,
+        cardForeground = colors.onSurface,
+        muted = colors.surfaceContainer,
+        mutedForeground = colors.onSurfaceVariant,
+        border = colors.outlineVariant,
+        input = colors.outlineVariant,
+        primary = colors.primary,
+        primaryForeground = colors.onPrimary,
+        accent = colors.surfaceContainerHigh,
+        accentForeground = colors.onSurface,
+        destructive = colors.error,
+        destructiveForeground = colors.onError,
+        success = success,
+        successForeground = if (dark) Color(0xFF052E20) else Color.White,
+        warning = warning,
+        warningForeground = if (dark) Color(0xFF3A2400) else Color.White,
+        ring = colors.onSurface.copy(alpha = if (dark) .72f else .60f),
+        warmSurface = colors.surfaceContainerLow,
+        radiusSm = 6.dp,
+        radiusMd = 8.dp,
+        radiusLg = 10.dp,
+        radiusXl = 12.dp,
     )
 
     MaterialTheme(
         colorScheme = colors,
-        shapes = StableShapes,
-        typography = StableTypography,
+        shapes = ShadcnShapes,
+        typography = ShadcnTypography,
     ) {
         CompositionLocalProvider(
-            LocalMiuixTokens provides tokens,
+            LocalMiuixTokens provides legacyTokens,
+            LocalLanghuanUiTokens provides uiTokens,
             content = content,
         )
     }

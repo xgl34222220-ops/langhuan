@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,12 +9,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.LibraryBooks
@@ -24,7 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +52,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.engine.BuiltInReferenceLibraryInstaller
 import com.xiguli.langhuan.engine.ReferenceDistillationReport
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +65,7 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
     val context = LocalContext.current.applicationContext
     val store = remember(context) { ReferenceDistillationReportStore(context) }
     val scope = rememberCoroutineScope()
+    val t = LocalLanghuanUiTokens.current
     var reports by remember { mutableStateOf(emptyList<ReferenceDistillationReport>()) }
     var open by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
@@ -80,70 +87,88 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
     val selected = state.selectedReferenceTemplateIds
     val selectedReports = reports.filter { it.taskId in selected }
     val totalSearchable = selectedReports.sumOf(store::retainedItemCount)
+    val selectedWithStory = selectedReports.count(store::hasStoryDna)
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.52f),
-        tonalElevation = 1.dp,
-    ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)) {
-                    Icon(Icons.Rounded.LibraryBooks, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp))
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.warmSurface,
+                    contentColor = t.accent,
+                    border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
+                ) {
+                    androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.LibraryBooks, null, Modifier.size(21.dp), tint = t.accent)
+                    }
                 }
-                Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                    Text("Reference DNA", fontWeight = FontWeight.Bold)
+                Column(Modifier.padding(start = 11.dp).weight(1f)) {
+                    Text("Reference DNA", style = MaterialTheme.typography.titleMedium, color = t.foreground)
                     Text(
                         when {
                             loading -> "正在校验内置参考库……"
-                            selectedReports.isEmpty() -> "共 ${reports.size} 本 · 本次创作未绑定参考"
-                            selectedReports.size == 1 -> "共 ${reports.size} 本 · 《${selectedReports.first().title}》 · 可检索 $totalSearchable 条"
-                            else -> "共 ${reports.size} 本 · 已选 ${selectedReports.size} 本 · 可检索 $totalSearchable 条 DNA"
+                            selectedReports.isEmpty() -> "共 ${reports.size} 本参考 · 本次创作尚未绑定"
+                            selectedReports.size == 1 -> "已绑定《${selectedReports.first().title}》 · $totalSearchable 条可检索 DNA"
+                            else -> "已绑定 ${selectedReports.size} 本 · $totalSearchable 条可检索 DNA"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = t.mutedForeground,
                     )
                 }
+                if (selectedReports.isNotEmpty()) LanghuanBadge("${selectedReports.size} 已选", accent = true)
             }
 
             if (selectedReports.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    MiniDnaBadge(Icons.Rounded.AutoAwesome, "Style / 方法")
-                    MiniDnaBadge(Icons.Rounded.MenuBook, if (selectedReports.any(store::hasStoryDna)) "Story / 事实" else "无 Story")
-                    MiniDnaBadge(Icons.Rounded.Search, "$totalSearchable 条")
+                    DnaBadge(Icons.Rounded.AutoAwesome, "Style 方法")
+                    DnaBadge(Icons.Rounded.MenuBook, "Story $selectedWithStory/${selectedReports.size}")
+                    DnaBadge(Icons.Rounded.Search, "$totalSearchable 条")
                 }
             }
 
             if (state.lastReferenceUsage.isNotBlank()) {
-                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f)) {
+                Surface(
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.warmSurface,
+                    contentColor = t.accent,
+                    border = BorderStroke(1.dp, t.accent.copy(alpha = .12f)),
+                ) {
                     Text(
                         state.lastReferenceUsage,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 9.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
+                        color = t.accent,
+                        fontWeight = FontWeight.Medium,
                     )
                 }
             }
 
             Text(
-                "现在每份参考都可以直接打开蒸馏数据库，查看人物、规则、能力、副本、事件、谜团、Style 与全部可检索 DNA。",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                "每份参考都可以单独打开完整蒸馏数据库，查看 Story / Style DNA 与全部可检索条目；选择参考和查看数据是两个独立动作。",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
             )
 
-            FilledTonalButton(
+            Button(
                 onClick = { refresh(openAfter = true) },
                 enabled = !loading,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(15.dp),
+                shape = RoundedCornerShape(t.radiusMd),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = t.foreground,
+                    contentColor = t.primaryForeground,
+                ),
             ) {
-                Icon(Icons.Rounded.Tune, null)
-                Spacer(Modifier.width(6.dp))
-                Text(if (loading) "正在刷新……" else "选择 / 查看参考 DNA")
+                if (loading) {
+                    CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = t.primaryForeground)
+                } else {
+                    Icon(Icons.Rounded.Tune, null, Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(7.dp))
+                Text(if (loading) "正在刷新……" else "选择参考 / 查看完整 DNA")
             }
         }
     }
@@ -167,10 +192,19 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
 }
 
 @Composable
-private fun MiniDnaBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
-    Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)) {
-        Row(modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+private fun DnaBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = t.muted,
+        contentColor = t.mutedForeground,
+        border = BorderStroke(1.dp, t.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, Modifier.size(14.dp), tint = t.mutedForeground)
             Spacer(Modifier.width(4.dp))
             Text(text, style = MaterialTheme.typography.labelSmall)
         }
@@ -186,6 +220,7 @@ private fun ReferenceTemplatePickerDialog(
     onDelete: (ReferenceDistillationReport) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     var deleteTarget by remember { mutableStateOf<ReferenceDistillationReport?>(null) }
     var browseTarget by remember { mutableStateOf<ReferenceDistillationReport?>(null) }
     val builtIns = reports.filter { it.taskId.startsWith("builtin:") }
@@ -193,57 +228,81 @@ private fun ReferenceTemplatePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(t.radiusXl),
+        containerColor = t.background,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Reference DNA · 共 ${reports.size} 本")
-                Text("内置 ${builtIns.size} 本 · 我的蒸馏 ${userReports.size} 本 · 可先查看数据再选择", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Reference DNA", style = MaterialTheme.typography.titleLarge, color = t.foreground)
+                Text(
+                    "共 ${reports.size} 本 · 内置 ${builtIns.size} · 我的蒸馏 ${userReports.size} · 已选 ${selectedIds.size}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
+                )
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                if (reports.isEmpty()) {
-                    Text("没有找到参考 DNA。")
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (builtIns.isNotEmpty()) {
-                            item { Text("内置参考", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
-                            items(builtIns, key = { it.taskId }) { report ->
-                                TemplateReportCard(
-                                    report = report,
-                                    checked = report.taskId in selectedIds,
-                                    store = store,
-                                    deletable = false,
-                                    onToggle = { value -> onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId) },
-                                    onView = { browseTarget = report },
-                                    onDelete = {},
-                                )
-                            }
+            if (reports.isEmpty()) {
+                LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 18.dp) {
+                    Text("没有找到参考 DNA。", color = t.mutedForeground)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    if (builtIns.isNotEmpty()) {
+                        item { DnaSectionLabel("内置参考", "随琅嬛提供，可直接选择和查看") }
+                        items(builtIns, key = { it.taskId }) { report ->
+                            TemplateReportCard(
+                                report = report,
+                                checked = report.taskId in selectedIds,
+                                store = store,
+                                deletable = false,
+                                onToggle = { value ->
+                                    onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
+                                },
+                                onView = { browseTarget = report },
+                                onDelete = {},
+                            )
                         }
-                        if (userReports.isNotEmpty()) {
-                            item { Text("我的蒸馏", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
-                            items(userReports, key = { it.taskId }) { report ->
-                                TemplateReportCard(
-                                    report = report,
-                                    checked = report.taskId in selectedIds,
-                                    store = store,
-                                    deletable = true,
-                                    onToggle = { value -> onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId) },
-                                    onView = { browseTarget = report },
-                                    onDelete = { deleteTarget = report },
-                                )
-                            }
+                    }
+                    if (userReports.isNotEmpty()) {
+                        item { DnaSectionLabel("我的蒸馏", "由你导入的作品生成") }
+                        items(userReports, key = { it.taskId }) { report ->
+                            TemplateReportCard(
+                                report = report,
+                                checked = report.taskId in selectedIds,
+                                store = store,
+                                deletable = true,
+                                onToggle = { value ->
+                                    onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
+                                },
+                                onView = { browseTarget = report },
+                                onDelete = { deleteTarget = report },
+                            )
                         }
                     }
                 }
             }
         },
-        confirmButton = { Button(onClick = onDismiss, shape = RoundedCornerShape(14.dp)) { Text("完成") } },
-        dismissButton = { TextButton(onClick = { onSelectedIds(emptyList()) }) { Text("清空选择") } },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(t.radiusSm),
+                colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+            ) { Text("完成") }
+        },
+        dismissButton = {
+            TextButton(onClick = { onSelectedIds(emptyList()) }) { Text("清空选择", color = t.mutedForeground) }
+        },
     )
 
     browseTarget?.let { report ->
-        ReferenceDistillationDataBrowserDialog(report = report, store = store, onDismiss = { browseTarget = null })
+        ReferenceDistillationDataBrowserDialog(
+            report = report,
+            store = store,
+            onDismiss = { browseTarget = null },
+        )
     }
 
     deleteTarget?.let { report ->
@@ -254,11 +313,20 @@ private fun ReferenceTemplatePickerDialog(
             confirmButton = {
                 Button(
                     onClick = { onDelete(report); deleteTarget = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.buttonColors(containerColor = t.destructive, contentColor = t.destructiveForeground),
                 ) { Text("删除") }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
         )
+    }
+}
+
+@Composable
+private fun DnaSectionLabel(title: String, subtitle: String) {
+    val t = LocalLanghuanUiTokens.current
+    Column(Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 1.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, color = t.foreground)
+        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
     }
 }
 
@@ -272,46 +340,84 @@ private fun TemplateReportCard(
     onView: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val searchable = store.retainedItemCount(report)
     val counts = store.kindCounts(report)
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable { onToggle(!checked) },
-        shape = RoundedCornerShape(18.dp),
-        color = if (checked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f) else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
-        tonalElevation = if (checked) 2.dp else 0.dp,
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    val storyCount = counts["STORY"] ?: 0
+    val styleCount = counts["STYLE"] ?: 0
+
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = checked, onCheckedChange = onToggle)
                 Column(Modifier.weight(1f)) {
-                    Text(report.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            report.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = t.foreground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (checked) {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                "已选择",
+                                modifier = Modifier.padding(start = 6.dp).size(16.dp),
+                                tint = t.accent,
+                            )
+                        }
+                    }
                     Text(
-                        "${if (report.taskId.startsWith("builtin:")) "内置 · " else ""}${store.coverageLabel(report)} · ${report.chapters} 章 · 可检索 $searchable 条",
+                        "${if (report.taskId.startsWith("builtin:")) "内置 · " else ""}${store.coverageLabel(report)} · ${report.chapters} 章 · $searchable 条可检索",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = t.mutedForeground,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 if (deletable) {
                     IconButton(onClick = onDelete) {
-                        Icon(Icons.Rounded.DeleteOutline, "删除蒸馏数据", tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Rounded.DeleteOutline, "删除蒸馏数据", tint = t.destructive)
                     }
                 }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                counts["STORY"]?.takeIf { it > 0 }?.let { MiniDnaBadge(Icons.Rounded.MenuBook, "Story $it") }
-                counts["STYLE"]?.takeIf { it > 0 }?.let { MiniDnaBadge(Icons.Rounded.AutoAwesome, "Style $it") }
-                MiniDnaBadge(Icons.Rounded.Search, if (report.retrievalItems.isNotEmpty()) "V2" else "旧版")
+                DnaBadge(Icons.Rounded.MenuBook, "Story $storyCount")
+                DnaBadge(Icons.Rounded.AutoAwesome, "Style $styleCount")
+                DnaBadge(Icons.Rounded.Search, if (report.retrievalItems.isNotEmpty()) "Retrieval V2" else "旧版索引")
             }
 
             if (report.summary.isNotBlank()) {
-                Text(report.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    report.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = t.mutedForeground,
+                )
             }
 
-            OutlinedButton(onClick = onView, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                Icon(Icons.Rounded.DataObject, null)
-                Spacer(Modifier.width(6.dp))
-                Text("查看蒸馏数据 · $searchable 条")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { onToggle(!checked) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    border = BorderStroke(1.dp, t.border),
+                ) {
+                    Text(if (checked) "取消引用" else "引用这份 DNA")
+                }
+                Button(
+                    onClick = onView,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+                ) {
+                    Icon(Icons.Rounded.DataObject, null, Modifier.size(17.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("查看全部数据")
+                }
             }
         }
     }

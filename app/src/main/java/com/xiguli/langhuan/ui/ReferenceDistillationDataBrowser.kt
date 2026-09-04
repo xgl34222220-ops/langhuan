@@ -1,12 +1,17 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,11 +20,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -38,6 +44,10 @@ import androidx.compose.ui.window.Dialog
 import com.xiguli.langhuan.engine.ReferenceDistillationReport
 import com.xiguli.langhuan.engine.ReferenceDistillationReportItem
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 private data class DnaCategory(
     val key: String,
@@ -60,12 +70,20 @@ private val DnaCategories = listOf(
     DnaCategory("AVOID", "AVOID", kinds = setOf("AVOID")),
 )
 
+/**
+ * Full Reference DNA inspector.
+ *
+ * This is intentionally a data browser, not a one-line summary. It exposes the retained
+ * character/relationship, rule, event, mystery, world and style items so users can verify what
+ * distillation actually produced before binding a reference to a new project.
+ */
 @Composable
 internal fun ReferenceDistillationDataBrowserDialog(
     report: ReferenceDistillationReport,
     store: ReferenceDistillationReportStore,
     onDismiss: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     var query by remember(report.taskId) { mutableStateOf("") }
     var categoryKey by remember(report.taskId) { mutableStateOf("ALL") }
 
@@ -77,6 +95,7 @@ internal fun ReferenceDistillationDataBrowserDialog(
     val categoryCounts = remember(allItems) {
         DnaCategories.drop(1).associate { category -> category.key to allItems.count { matchesCategory(it, category) } }
     }
+    val kindCounts = remember(report) { store.kindCounts(report) }
     val filtered = remember(allItems, query, categoryKey) {
         val q = query.trim()
         allItems.filter { item ->
@@ -91,101 +110,253 @@ internal fun ReferenceDistillationDataBrowserDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.96f),
-            shape = RoundedCornerShape(30.dp),
-            tonalElevation = 8.dp,
+            shape = RoundedCornerShape(t.radiusXl),
+            color = t.background,
+            contentColor = t.foreground,
+            border = BorderStroke(1.dp, t.border),
+            shadowElevation = 12.dp,
         ) {
             Column(Modifier.fillMaxWidth()) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 18.dp, top = 14.dp, end = 8.dp, bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 18.dp, top = 14.dp, end = 14.dp, bottom = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                        Icon(Icons.Rounded.DataObject, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp))
+                    Surface(
+                        modifier = Modifier.size(40.dp),
+                        shape = RoundedCornerShape(t.radiusSm),
+                        color = t.warmSurface,
+                        contentColor = t.accent,
+                        border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.DataObject, null, Modifier.size(21.dp), tint = t.accent)
+                        }
                     }
-                    Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                        Text(report.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Column(Modifier.padding(start = 11.dp).weight(1f)) {
                         Text(
-                            "蒸馏数据库 · 共 ${allItems.size} 条 · ${if (builtin) "内置参考" else "我的蒸馏"}",
+                            report.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = t.foreground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "完整蒸馏数据库 · ${allItems.size} 条可浏览数据",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = t.mutedForeground,
                         )
                     }
-                    IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, "关闭") }
-                }
-
-                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
-                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(
-                                if (builtin) {
-                                    "${store.coverageLabel(report)} · 全书 ${report.chapters} 章 · 全章结构索引 ${report.samples} 章"
-                                } else {
-                                    "${store.coverageLabel(report)} · 全书 ${report.chapters} 章 · AI 深读 ${report.samples} 章"
-                                },
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                "人物/关系 ${categoryCounts["CHARACTER"] ?: 0} · 能力/规则 ${categoryCounts["POWER"] ?: 0} · 副本/任务 ${categoryCounts["INSTANCE"] ?: 0}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                "剧情/事件 ${categoryCounts["PLOT"] ?: 0} · 谜团/伏笔 ${categoryCounts["MYSTERY"] ?: 0} · 世界/势力/地点 ${categoryCounts["WORLD"] ?: 0}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                "STYLE ${store.kindCounts(report)["STYLE"] ?: 0} · KEEP ${store.kindCounts(report)["KEEP"] ?: 0} · TRANSFORM ${store.kindCounts(report)["TRANSFORM"] ?: 0} · AVOID ${store.kindCounts(report)["AVOID"] ?: 0}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(18.dp),
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                        label = { Text("搜索人物、副本、能力、规则、事件……") },
-                    )
-
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        items(DnaCategories, key = { it.key }) { category ->
-                            val selected = category.key == categoryKey
-                            val count = if (category.key == "ALL") allItems.size else categoryCounts[category.key] ?: 0
-                            AssistChip(
-                                onClick = { categoryKey = category.key },
-                                label = { Text("${category.label} $count") },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                ),
-                            )
-                        }
-                    }
-
-                    Text("命中 ${filtered.size} 条", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    LanghuanBadge(if (builtin) "内置" else "我的蒸馏", accent = builtin)
+                    Spacer(Modifier.width(7.dp))
+                    LanghuanIconButton(Icons.Rounded.Close, "关闭", onDismiss)
                 }
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    item {
+                        DnaCoverageCard(
+                            report = report,
+                            store = store,
+                            builtin = builtin,
+                            categoryCounts = categoryCounts,
+                            kindCounts = kindCounts,
+                        )
+                    }
+
+                    item {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(t.radiusMd),
+                            leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(19.dp)) },
+                            placeholder = { Text("搜索人物、关系、能力、规则、事件、地点……") },
+                        )
+                    }
+
+                    item {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            items(DnaCategories, key = { it.key }) { category ->
+                                val selected = category.key == categoryKey
+                                val count = if (category.key == "ALL") allItems.size else categoryCounts[category.key] ?: 0
+                                DnaCategoryChip(
+                                    label = category.label,
+                                    count = count,
+                                    selected = selected,
+                                    onClick = { categoryKey = category.key },
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                active.label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = t.foreground,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                " · 命中 ${filtered.size} 条",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = t.mutedForeground,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            if (query.isNotBlank()) LanghuanBadge("搜索中", accent = true)
+                        }
+                    }
+
                     if (filtered.isEmpty()) {
                         item {
-                            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                                Text("当前分类/关键词没有命中数据。", modifier = Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 18.dp) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Rounded.Search, null, Modifier.size(24.dp), tint = t.mutedForeground)
+                                    Text(
+                                        "当前分类或关键词没有命中数据",
+                                        Modifier.padding(top = 9.dp),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = t.foreground,
+                                    )
+                                    Text(
+                                        "换一个分类，或搜索角色名、能力、规则、地点和事件关键词。",
+                                        Modifier.padding(top = 3.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = t.mutedForeground,
+                                    )
+                                }
                             }
                         }
                     } else {
                         items(filtered, key = { itemKey(it) }) { item -> DnaBrowserItem(item) }
                     }
-                    item { Spacer(Modifier.width(1.dp)) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DnaCoverageCard(
+    report: ReferenceDistillationReport,
+    store: ReferenceDistillationReportStore,
+    builtin: Boolean,
+    categoryCounts: Map<String, Int>,
+    kindCounts: Map<String, Int>,
+) {
+    val t = LocalLanghuanUiTokens.current
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                if (builtin) {
+                    "${store.coverageLabel(report)} · 全书 ${report.chapters} 章 · 结构索引 ${report.samples} 章"
+                } else {
+                    "${store.coverageLabel(report)} · 全书 ${report.chapters} 章 · AI 深读 ${report.samples} 章"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DnaMetric(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.Group,
+                    label = "人物 / 关系",
+                    value = categoryCounts["CHARACTER"] ?: 0,
+                )
+                DnaMetric(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.Hub,
+                    label = "规则 / 能力",
+                    value = categoryCounts["POWER"] ?: 0,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DnaMetric(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.MenuBook,
+                    label = "剧情 / 事件",
+                    value = categoryCounts["PLOT"] ?: 0,
+                )
+                DnaMetric(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.Style,
+                    label = "Style DNA",
+                    value = categoryCounts["STYLE"] ?: 0,
+                )
+            }
+
+            Text(
+                "副本/任务 ${categoryCounts["INSTANCE"] ?: 0} · 谜团/伏笔 ${categoryCounts["MYSTERY"] ?: 0} · 世界/势力/地点 ${categoryCounts["WORLD"] ?: 0}",
+                style = MaterialTheme.typography.labelMedium,
+                color = t.mutedForeground,
+            )
+            Text(
+                "KEEP ${kindCounts["KEEP"] ?: 0} · TRANSFORM ${kindCounts["TRANSFORM"] ?: 0} · AVOID ${kindCounts["AVOID"] ?: 0}",
+                style = MaterialTheme.typography.labelSmall,
+                color = t.mutedForeground,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DnaMetric(
+    modifier: Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: Int,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(t.radiusSm),
+        color = t.muted,
+        border = BorderStroke(1.dp, t.border),
+    ) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(17.dp), tint = t.mutedForeground)
+            Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelSmall, color = t.mutedForeground, maxLines = 1)
+                Text(value.toString(), style = MaterialTheme.typography.titleMedium, color = t.foreground)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DnaCategoryChip(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        shape = RoundedCornerShape(t.radiusSm),
+        color = if (selected) t.foreground else t.card,
+        contentColor = if (selected) t.primaryForeground else t.foreground,
+        border = BorderStroke(1.dp, if (selected) t.foreground else t.border),
+    ) {
+        Row(
+            Modifier.clickable(onClick = onClick).padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) t.primaryForeground else t.foreground,
+            )
+            Text(
+                count.toString(),
+                modifier = Modifier.padding(start = 5.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) t.primaryForeground.copy(alpha = .72f) else t.mutedForeground,
+            )
         }
     }
 }
@@ -199,23 +370,34 @@ private fun matchesCategory(item: ReferenceDistillationReportItem, category: Dna
 
 @Composable
 private fun DnaBrowserItem(item: ReferenceDistillationReportItem) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f),
-        tonalElevation = 1.dp,
-    ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val t = LocalLanghuanUiTokens.current
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 13.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                    Text(item.kind.ifBlank { "DNA" }, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(7.dp))
-                Text(browserDimensionLabel(item.dimension), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                LanghuanBadge(item.kind.ifBlank { "DNA" }, accent = item.kind.equals("STYLE", true))
+                Text(
+                    browserDimensionLabel(item.dimension),
+                    modifier = Modifier.padding(start = 7.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = t.mutedForeground,
+                )
             }
-            Text(item.value, style = MaterialTheme.typography.bodyMedium)
+            Text(item.value, style = MaterialTheme.typography.bodyMedium, color = t.foreground)
             if (item.evidence.isNotBlank()) {
-                Text("依据：${item.evidence}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.muted,
+                    border = BorderStroke(1.dp, t.border),
+                ) {
+                    Text(
+                        "依据：${item.evidence}",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
             }
         }
     }

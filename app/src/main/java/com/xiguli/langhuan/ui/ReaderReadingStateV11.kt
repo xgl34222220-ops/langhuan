@@ -12,6 +12,8 @@ internal data class ReaderBookmarkV11(
     val chapterNumber: Int,
     val pageIndex: Int = 0,
     val scrollY: Int = 0,
+    val positionFraction: Float = 0f,
+    val textOffset: Int = 0,
     val title: String = "",
     val excerpt: String = "",
     val createdAt: Long = System.currentTimeMillis(),
@@ -23,6 +25,8 @@ internal data class ReaderAnnotationV11(
     val chapterNumber: Int,
     val pageIndex: Int = 0,
     val scrollY: Int = 0,
+    val positionFraction: Float = 0f,
+    val textOffset: Int = 0,
     val quote: String = "",
     val note: String,
     val createdAt: Long = System.currentTimeMillis(),
@@ -39,6 +43,8 @@ internal data class ReaderThemePresetV11(
     val fontSize: Float,
     val lineFactor: Float,
     val sidePadding: Float,
+    val paragraphSpacing: Float = 8f,
+    val firstLineIndent: Boolean = true,
     val customBg: String,
     val customFg: String,
     val createdAt: Long = System.currentTimeMillis(),
@@ -53,10 +59,17 @@ internal data class ReaderReadingArchiveV11(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+/**
+ * Reading progress deliberately stores both old layout coordinates and stable anchors.
+ * pageIndex/scrollY make same-layout restoration exact; textOffset/fraction survive font,
+ * spacing, page-mode and device-size changes much better.
+ */
 internal data class ReaderProgressV11(
     val chapterNumber: Int,
     val pageIndex: Int = 0,
     val scrollY: Int = 0,
+    val positionFraction: Float = 0f,
+    val textOffset: Int = 0,
     val modeKey: String = ReaderPageModeV10.SCROLL.key,
     val updatedAt: Long = System.currentTimeMillis(),
 )
@@ -85,10 +98,15 @@ internal object ReaderReadingStoreV11 {
         scrollY: Int,
         title: String,
         excerpt: String,
+        positionFraction: Float = 0f,
+        textOffset: Int = 0,
     ): ReaderReadingArchiveV11 {
         val current = load(context, bookId)
         val existing = current.bookmarks.firstOrNull {
-            it.chapterNumber == chapterNumber && it.pageIndex == pageIndex && kotlin.math.abs(it.scrollY - scrollY) <= 80
+            it.chapterNumber == chapterNumber && (
+                (textOffset > 0 && kotlin.math.abs(it.textOffset - textOffset) <= 48) ||
+                    (it.pageIndex == pageIndex && kotlin.math.abs(it.scrollY - scrollY) <= 80)
+                )
         }
         val next = if (existing != null) {
             current.copy(bookmarks = current.bookmarks.filterNot { it.id == existing.id })
@@ -98,6 +116,8 @@ internal object ReaderReadingStoreV11 {
                 chapterNumber = chapterNumber,
                 pageIndex = pageIndex.coerceAtLeast(0),
                 scrollY = scrollY.coerceAtLeast(0),
+                positionFraction = positionFraction.coerceIn(0f, 1f),
+                textOffset = textOffset.coerceAtLeast(0),
                 title = title.trim(),
                 excerpt = excerpt.cleanExcerptV11(),
             )
@@ -119,6 +139,8 @@ internal object ReaderReadingStoreV11 {
         scrollY: Int,
         quote: String,
         note: String,
+        positionFraction: Float = 0f,
+        textOffset: Int = 0,
     ): ReaderReadingArchiveV11 {
         require(note.trim().isNotBlank()) { "批注内容不能为空" }
         val current = load(context, bookId)
@@ -127,6 +149,8 @@ internal object ReaderReadingStoreV11 {
             chapterNumber = chapterNumber,
             pageIndex = pageIndex.coerceAtLeast(0),
             scrollY = scrollY.coerceAtLeast(0),
+            positionFraction = positionFraction.coerceIn(0f, 1f),
+            textOffset = textOffset.coerceAtLeast(0),
             quote = quote.cleanExcerptV11(220),
             note = note.trim().take(1600),
         )
@@ -173,8 +197,10 @@ internal object ReaderReadingStoreV11 {
             fontKey = prefs.getString("family_$bookId", "default") ?: "default",
             pageModeKey = prefs.getString("page_mode_$bookId", ReaderPageModeV10.SCROLL.key) ?: ReaderPageModeV10.SCROLL.key,
             fontSize = prefs.getFloat("font_$bookId", 19f),
-            lineFactor = prefs.getFloat("line_$bookId", 1.82f),
+            lineFactor = prefs.getFloat("line_$bookId", 1.68f),
             sidePadding = prefs.getFloat("padding_$bookId", 24f),
+            paragraphSpacing = prefs.getFloat("paragraph_$bookId", 8f),
+            firstLineIndent = prefs.getBoolean("indent_$bookId", true),
             customBg = prefs.getString("custom_bg_$bookId", "#FFF4F0E6") ?: "#FFF4F0E6",
             customFg = prefs.getString("custom_fg_$bookId", "#FF302D28") ?: "#FF302D28",
         )
@@ -188,6 +214,8 @@ internal object ReaderReadingStoreV11 {
             .putFloat("font_$bookId", preset.fontSize.coerceIn(14f, 30f))
             .putFloat("line_$bookId", preset.lineFactor.coerceIn(1.42f, 2.25f))
             .putFloat("padding_$bookId", preset.sidePadding.coerceIn(14f, 44f))
+            .putFloat("paragraph_$bookId", preset.paragraphSpacing.coerceIn(0f, 30f))
+            .putBoolean("indent_$bookId", preset.firstLineIndent)
             .putString("custom_bg_$bookId", preset.customBg)
             .putString("custom_fg_$bookId", preset.customFg)
             .apply()
@@ -206,6 +234,8 @@ internal object ReaderProgressStoreV11 {
             chapterNumber = prefs.getInt("chapter_$bookId", fallbackChapter.coerceAtLeast(1)),
             pageIndex = prefs.getInt("page_$bookId", 0).coerceAtLeast(0),
             scrollY = prefs.getInt("scroll_$bookId", 0).coerceAtLeast(0),
+            positionFraction = prefs.getFloat("fraction_$bookId", 0f).coerceIn(0f, 1f),
+            textOffset = prefs.getInt("offset_$bookId", 0).coerceAtLeast(0),
             modeKey = prefs.getString("mode_$bookId", ReaderPageModeV10.SCROLL.key) ?: ReaderPageModeV10.SCROLL.key,
             updatedAt = prefs.getLong("updated_$bookId", 0L),
         )
@@ -216,19 +246,105 @@ internal object ReaderProgressStoreV11 {
             .putInt("chapter_$bookId", progress.chapterNumber.coerceAtLeast(1))
             .putInt("page_$bookId", progress.pageIndex.coerceAtLeast(0))
             .putInt("scroll_$bookId", progress.scrollY.coerceAtLeast(0))
+            .putFloat("fraction_$bookId", progress.positionFraction.coerceIn(0f, 1f))
+            .putInt("offset_$bookId", progress.textOffset.coerceAtLeast(0))
             .putString("mode_$bookId", progress.modeKey)
             .putLong("updated_$bookId", System.currentTimeMillis())
-            .apply()
+            .commit()
         context.getSharedPreferences("reader_progress_v1", Context.MODE_PRIVATE).edit()
             .putInt("chapter_$bookId", progress.chapterNumber.coerceAtLeast(1))
             .putLong("last_$bookId", System.currentTimeMillis())
             .apply()
     }
 
-    fun moveTo(context: Context, bookId: String, chapterNumber: Int, pageIndex: Int, scrollY: Int, modeKey: String) {
-        save(context, bookId, ReaderProgressV11(chapterNumber, pageIndex, scrollY, modeKey))
+    fun moveTo(
+        context: Context,
+        bookId: String,
+        chapterNumber: Int,
+        pageIndex: Int,
+        scrollY: Int,
+        modeKey: String,
+        positionFraction: Float = 0f,
+        textOffset: Int = 0,
+    ) {
+        save(
+            context,
+            bookId,
+            ReaderProgressV11(
+                chapterNumber = chapterNumber,
+                pageIndex = pageIndex,
+                scrollY = scrollY,
+                positionFraction = positionFraction,
+                textOffset = textOffset,
+                modeKey = modeKey,
+            ),
+        )
     }
 }
+
+/** Built-in typography profiles inspired by common Chinese novel-reader reading densities. */
+internal fun readerBuiltInPresetsV12(): List<ReaderThemePresetV11> = listOf(
+    ReaderThemePresetV11(
+        id = "builtin-langhuan",
+        name = "琅嬛 · 沉浸",
+        themeKey = "paper",
+        fontKey = "serif",
+        pageModeKey = ReaderPageModeV10.COVER.key,
+        fontSize = 20f,
+        lineFactor = 1.72f,
+        sidePadding = 24f,
+        paragraphSpacing = 8f,
+        firstLineIndent = true,
+        customBg = "#FFF4F0E6",
+        customFg = "#FF302D28",
+        createdAt = 0L,
+    ),
+    ReaderThemePresetV11(
+        id = "builtin-tomato",
+        name = "番茄灵感 · 舒展",
+        themeKey = "warm",
+        fontKey = "default",
+        pageModeKey = ReaderPageModeV10.COVER.key,
+        fontSize = 21f,
+        lineFactor = 1.70f,
+        sidePadding = 21f,
+        paragraphSpacing = 8f,
+        firstLineIndent = true,
+        customBg = "#FFF3E5C9",
+        customFg = "#FF362D23",
+        createdAt = 0L,
+    ),
+    ReaderThemePresetV11(
+        id = "builtin-weread",
+        name = "微信读书灵感 · 清朗",
+        themeKey = "system",
+        fontKey = "serif",
+        pageModeKey = ReaderPageModeV10.PAGE.key,
+        fontSize = 19f,
+        lineFactor = 1.68f,
+        sidePadding = 27f,
+        paragraphSpacing = 9f,
+        firstLineIndent = true,
+        customBg = "#FFF9F7F1",
+        customFg = "#FF252525",
+        createdAt = 0L,
+    ),
+    ReaderThemePresetV11(
+        id = "builtin-qidian",
+        name = "起点灵感 · 网文",
+        themeKey = "paper",
+        fontKey = "default",
+        pageModeKey = ReaderPageModeV10.PAGE.key,
+        fontSize = 19f,
+        lineFactor = 1.62f,
+        sidePadding = 19f,
+        paragraphSpacing = 7f,
+        firstLineIndent = true,
+        customBg = "#FFF4F0E6",
+        customFg = "#FF302D28",
+        createdAt = 0L,
+    ),
+)
 
 internal fun deleteReaderFontV11(context: Context, asset: ReaderFontAssetV10): Boolean {
     val deleted = ReaderFontStoreV10.delete(asset)

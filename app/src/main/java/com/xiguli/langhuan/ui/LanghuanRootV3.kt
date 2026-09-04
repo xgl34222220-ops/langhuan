@@ -33,8 +33,10 @@ private enum class RootRouteV3 {
 }
 
 /**
- * Reader-first root. The cold-start safety boundary stays unchanged: only shelf-critical
- * ViewModels are created here; feature ViewModels remain route-lazy.
+ * Book opening is a transaction: request -> load -> resolve chapter -> route. Same-book reloads
+ * (especially editor -> reader) must observe the fresh load clearing readingChapter before they can
+ * resolve. Without that gate, stale chapters satisfy the request one frame too early and the later
+ * openBook completion clears the reader back to null.
  */
 @Composable
 fun LanghuanRootV3(studioVm: StudioViewModel) {
@@ -56,6 +58,9 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     var coverStoryId by remember { mutableStateOf<String?>(null) }
     var openBookOnInfo by remember { mutableStateOf(false) }
     var tavernStoryId by remember { mutableStateOf<String?>(null) }
+    var pendingBookId by remember { mutableStateOf<String?>(null) }
+    var pendingBookRoute by remember { mutableStateOf<RootRouteV3?>(null) }
+    var pendingBookFreshReload by remember { mutableStateOf(false) }
 
     val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) localImportVm.importUri(uri)
@@ -67,47 +72,26 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         if (uri != null) studioVm.importDocument(uri)
     }
 
-    LaunchedEffect(libraryState.openedBook?.id) {
-        libraryState.openedBook?.id?.let { id -> studioVm.selectStory(id) }
-    }
-
-    LaunchedEffect(localImportState.importedBookId, libraryState.stories) {
-        val id = localImportState.importedBookId ?: return@LaunchedEffect
-        if (libraryState.stories.any { it.id == id }) {
-            libraryVm.openBook(id)
-            studioVm.selectStory(id)
-            localImportVm.consumeImportedBook()
-            route = RootRouteV3.BOOK
-        }
-    }
-
-    LaunchedEffect(route, libraryState.openedBook?.id, coverStoryId, tavernStoryId) {
-        when {
-            route == RootRouteV3.BOOK && libraryState.openedBook == null -> route = RootRouteV3.SHELF
-            route == RootRouteV3.COVER_STUDIO && coverStoryId == null && libraryState.openedBook == null -> route = RootRouteV3.SHELF
-            route == RootRouteV3.TAVERN && tavernStoryId == null && libraryState.openedBook == null -> route = RootRouteV3.SHELF
-        }
-    }
-
-    fun openBook(id: String) {
-        openBookOnInfo = false
-        libraryVm.openBook(id)
+    fun requestBook(id: String, target: RootRouteV3, showInfo: Boolean = false) {
+        if (pendingBookId != null || libraryState.isBusy) return
+        openBookOnInfo = showInfo
+        pendingBookFreshReload = libraryState.openedBook?.id == id && libraryState.readingChapter != null
+        pendingBookId = id
+        pendingBookRoute = target
+        if (target == RootRouteV3.TAVERN) tavernStoryId = id
         studioVm.selectStory(id)
-        route = RootRouteV3.BOOK
+        libraryVm.openBook(id)
     }
 
-    fun openBookInfo(id: String) {
-        openBook(id)
-        openBookOnInfo = true
-    }
+    fun openBook(id: String) = requestBook(id, RootRouteV3.BOOK, showInfo = false)
 
     fun openTavern(id: String) {
         tavernStoryId = id
-        libraryVm.openBook(id)
         studioVm.selectStory(id)
         if (studioState.provider.ready) {
-            route = RootRouteV3.TAVERN
+            requestBook(id, RootRouteV3.TAVERN, showInfo = false)
         } else {
+            libraryVm.openBook(id)
             returnAfterAiSetup = RootRouteV3.TAVERN
             route = RootRouteV3.AI_SETUP
         }
@@ -115,12 +99,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
     fun backToBook() {
         val id = libraryState.openedBook?.id ?: writingStoryId
-        if (id != null) {
-            libraryVm.openBook(id)
-            route = RootRouteV3.BOOK
-        } else {
-            route = RootRouteV3.SHELF
-        }
+        if (id != null) openBook(id) else route = RootRouteV3.SHELF
     }
 
     fun openAiSetup(from: RootRouteV3) {
@@ -143,15 +122,70 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         route = RootRouteV3.WRITING
     }
 
+    // A fresh same-book load has one unmistakable completion signal in LibraryExperienceViewModel:
+    // openBook replaces the chapter list and clears readingChapter. Wait for that state before using
+    // the list. This prevents the editor-return stale-state race seen in the 2026-09-04 recording.
+    LaunchedEffect(
+        pendingBookId,
+        pendingBookRoute,
+        pendingBookFreshReload,
+        libraryState.openedBook?.id,
+        libraryState.chapters,
+        libraryState.readingChapter?.id,
+        libraryState.isBusy,
+    ) {
+        val id = pendingBookId ?: return@LaunchedEffect
+        val targetRoute = pendingBookRoute ?: return@LaunchedEffect
+        if (pendingBookFreshReload) {
+            if (libraryState.isBusy) return@LaunchedEffect
+            if (libraryState.readingChapter != null) return@LaunchedEffect
+        }
+        val book = libraryState.openedBook?.takeIf { it.id == id } ?: return@LaunchedEffect
+        val chapters = libraryState.chapters.sortedBy { it.chapterNumber }
+        if (chapters.isNotEmpty()) {
+            val saved = ReaderProgressStoreV11.load(appContext, id, book.currentChapter.coerceAtLeast(1))
+            val requestedEditorChapter = editorChapter?.takeIf { targetRoute == RootRouteV3.BOOK }
+            val target = requestedEditorChapter?.let { number -> chapters.firstOrNull { it.chapterNumber == number } }
+                ?: chapters.firstOrNull { it.chapterNumber == saved.chapterNumber }
+                ?: chapters.firstOrNull { it.chapterNumber == book.currentChapter }
+                ?: chapters.first()
+            libraryVm.openReader(target.chapterNumber)
+        }
+        pendingBookFreshReload = false
+        pendingBookId = null
+        pendingBookRoute = null
+        route = targetRoute
+    }
+
+    LaunchedEffect(libraryState.error, pendingBookId) {
+        if (pendingBookId != null && libraryState.error != null) {
+            pendingBookFreshReload = false
+            pendingBookId = null
+            pendingBookRoute = null
+        }
+    }
+
+    LaunchedEffect(libraryState.openedBook?.id) {
+        libraryState.openedBook?.id?.let { id -> studioVm.selectStory(id) }
+    }
+
+    LaunchedEffect(localImportState.importedBookId, libraryState.stories) {
+        val id = localImportState.importedBookId ?: return@LaunchedEffect
+        if (libraryState.stories.any { it.id == id }) {
+            localImportVm.consumeImportedBook()
+            openBook(id)
+        }
+    }
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    ReaderShelfV8(
+                    ShelfMobileExperience(
                         state = libraryState,
                         importState = localImportState,
+                        openingBookId = pendingBookId,
                         onOpenBook = ::openBook,
-                        onOpenBookInfo = ::openBookInfo,
                         onOpenTavern = ::openTavern,
                         onImportLocal = { localBookLauncher.launch(arrayOf("*/*")) },
                         onDeleteBook = libraryVm::deleteBook,
@@ -167,11 +201,12 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.BOOK -> {
                     if (libraryState.openedBook != null) {
-                        ReaderFirstBookV11(
+                        ReaderMobileExperience(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
                                 libraryVm.closeBook()
+                                editorChapter = null
                                 route = RootRouteV3.SHELF
                             },
                             onEnterWriting = { id ->
@@ -216,21 +251,12 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 RootRouteV3.TAVERN -> {
                     val book = libraryState.openedBook
                     if (book == null) {
-                        Column(
-                            Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(strokeWidth = 2.dp)
-                            Text(
-                                "正在进入世界…",
-                                modifier = Modifier.padding(top = 12.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                         }
                     } else {
                         Box(Modifier.fillMaxSize()) {
-                            StoryPlayPanelV17(
+                            StoryCleanExperience(
                                 book = book,
                                 libraryState = libraryState,
                                 aiReady = studioState.provider.ready,
@@ -238,10 +264,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                                 onAdopted = { libraryVm.openBook(book.id) },
                             )
                             Surface(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .statusBarsPadding()
-                                    .padding(12.dp),
+                                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
                                 shape = CircleShape,
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = .88f),
                                 shadowElevation = 5.dp,
@@ -252,9 +275,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                                         libraryVm.closeBook()
                                         route = RootRouteV3.SHELF
                                     }
-                                ) {
-                                    Icon(Icons.Rounded.ArrowBack, "返回书架")
-                                }
+                                ) { Icon(Icons.Rounded.ArrowBack, "返回书架") }
                             }
                         }
                     }
@@ -266,10 +287,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                     WritingFlowPage(
                         novelId = id,
                         viewModel = writingVm,
-                        onClose = {
-                            libraryVm.openBook(id)
-                            route = RootRouteV3.BOOK
-                        },
+                        onClose = { openBook(id) },
                         onEditChapter = { storyId, chapter ->
                             editorStoryId = storyId
                             editorChapter = chapter
@@ -283,16 +301,19 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                     val editorVm: ChapterEditorViewModel = viewModel()
                     val writingVm: WritingFlowViewModel = viewModel()
                     val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
-                    ChapterEditorPage(
+                    ChapterEditorExperience(
                         novelId = id,
                         initialChapter = editorChapter,
                         viewModel = editorVm,
                         onClose = {
                             if (returnAfterEditor == RootRouteV3.WRITING) {
                                 writingVm.invalidateAfterExternalEdit(id)
+                                route = RootRouteV3.WRITING
+                            } else {
+                                // Keep EDITOR mounted until requestBook has observed a fresh same-book
+                                // load. The BOOK route is changed only by the transaction effect above.
+                                openBook(id)
                             }
-                            libraryVm.openBook(id)
-                            route = returnAfterEditor
                         },
                     )
                 }
@@ -325,9 +346,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                     }
                     RunCenterPage(
                         viewModel = runCenterVm,
-                        onClose = {
-                            route = if (libraryState.openedBook != null) RootRouteV3.BOOK else RootRouteV3.SHELF
-                        },
+                        onClose = { route = if (libraryState.openedBook != null) RootRouteV3.BOOK else RootRouteV3.SHELF },
                     )
                 }
 

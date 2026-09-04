@@ -2,6 +2,9 @@ package com.xiguli.langhuan.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,8 +16,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.StoryFoundation
@@ -25,6 +31,7 @@ import com.xiguli.langhuan.engine.ReferenceResearchGroup
 import com.xiguli.langhuan.engine.ResearchFallbackEngine
 import com.xiguli.langhuan.engine.WebResearchEngine
 import com.xiguli.langhuan.engine.WebResearchSource
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.launch
 
 private const val RESEARCH_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
@@ -40,6 +47,7 @@ fun ResearchNewBookConversationPage(
     onCreated: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val t = LocalLanghuanUiTokens.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var followConversationTail by remember { mutableStateOf(true) }
@@ -67,7 +75,6 @@ fun ResearchNewBookConversationPage(
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress && initialTailPositioned) {
-            // User touch/drag takes priority over automatic streaming follow.
             followConversationTail = false
         } else if (!listState.isScrollInProgress && initialTailPositioned) {
             val layout = listState.layoutInfo
@@ -126,16 +133,11 @@ fun ResearchNewBookConversationPage(
         }
 
         scope.launch {
-            val primary = runCatching {
-                research.researchForCreation(text, preResolvedTargets = detected)
-            }.getOrNull()
+            val primary = runCatching { research.researchForCreation(text, preResolvedTargets = detected) }.getOrNull()
             var bundle = primary
-
             if (bundle?.hasSources != true) {
                 val fallbackTargets = primary?.groups?.map { it.target }.orEmpty().ifEmpty { detected }
-                val fallback = runCatching {
-                    fallbackResearch.supplement(text, fallbackTargets)
-                }.getOrNull()
+                val fallback = runCatching { fallbackResearch.supplement(text, fallbackTargets) }.getOrNull()
                 if (fallback?.hasSources == true) {
                     bundle = if (primary != null && primary.groups.size == fallback.groups.size) {
                         CreationResearchBundle(
@@ -144,9 +146,7 @@ fun ResearchNewBookConversationPage(
                                 ReferenceResearchGroup(oldGroup.target, newGroup.result)
                             },
                         )
-                    } else {
-                        fallback
-                    }
+                    } else fallback
                 }
             }
 
@@ -160,15 +160,15 @@ fun ResearchNewBookConversationPage(
 
             val archived = archiveStore.contextFor(targets, archiveState)
             val hidden = buildResearchPrompt(text, bundle, archived)
-            if (sources.isEmpty()) {
-                researchMessage = if (archived.isBlank()) {
+            researchMessage = if (sources.isEmpty()) {
+                if (archived.isBlank()) {
                     "这轮两个公开搜索入口都没有拿到新证据；这只代表网页补搜失败。AI 仍会使用自身已有知识和你明确提供的作者/作品关系继续分析。"
                 } else {
                     "本轮没有新增可靠网页，但长期研究档案仍在；不会再把一次搜索失败误判成‘这个作者/作品完全不知道’。"
                 }
             } else {
                 val deep = bundle?.deepReadCount ?: 0
-                researchMessage = if (targets.size > 1) {
+                if (targets.size > 1) {
                     "新增 ${sources.size} 条公开线索、深读 $deep 个页面；已并入 ${archiveState.entries.size} 个长期研究档案。"
                 } else {
                     "新增 ${sources.size} 条公开线索、深读 $deep 个页面；主角、能力、主题、剧情与规则会从累计档案继续交叉核对。"
@@ -178,50 +178,58 @@ fun ResearchNewBookConversationPage(
         }
     }
 
+    fun syncBlueprint() {
+        when {
+            state.foundation != null && !state.blueprintDirty -> scope.launch {
+                withFrameNanos { }
+                val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
+            }
+            else -> {
+                retryFoundation = true
+                viewModel.generateFoundation(false)
+            }
+        }
+    }
+
+    val busy = state.isBusy || researching || state.isLoadingAttachments
+
     Scaffold(
+        containerColor = t.background,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("和 AI 聊出一本小说", fontWeight = FontWeight.SemiBold)
+                        Text("高级研究建书", style = MaterialTheme.typography.titleLarge, color = t.foreground)
                         Text(
                             when {
                                 researching -> "正在补全长期研究档案"
-                                state.foundation != null && state.blueprintDirty -> "继续正常聊天 · 当前蓝图有新要求待同步"
-                                state.foundation != null -> "继续正常聊天修改，满意后正式建书"
-                                state.proposal != null -> "方案已整理 · 可继续聊天，满意后再生成蓝图"
-                                archiveState.entries.isNotEmpty() -> "已记住 ${archiveState.entries.size} 个作者 / 作品研究档案"
-                                else -> "可查作品/作者，也可融合多本小说的高层设定方法"
+                                state.foundation != null && state.blueprintDirty -> "蓝图有新要求待同步"
+                                state.foundation != null -> "继续聊天修改，满意后正式建书"
+                                state.proposal != null -> "方案已整理，可继续修改"
+                                archiveState.entries.isNotEmpty() -> "${archiveState.entries.size} 个长期研究档案可复用"
+                                else -> "联网研究 + Reference DNA + 正常 AI 会谈"
                             },
                             style = MaterialTheme.typography.labelSmall,
+                            color = t.mutedForeground,
                         )
                     }
                 },
                 navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "返回") } },
                 actions = {
-                    IconButton(onClick = onSwitchModel) {
-                        Icon(Icons.Rounded.Tune, "切换 AI 服务 / 模型")
-                    }
+                    IconButton(onClick = onSwitchModel) { Icon(Icons.Rounded.Tune, "切换 AI 服务 / 模型") }
                     Box {
-                        IconButton(onClick = { topMenuExpanded = true }) {
-                            Icon(Icons.Rounded.MoreVert, "更多")
-                        }
-                        DropdownMenu(
-                            expanded = topMenuExpanded,
-                            onDismissRequest = { topMenuExpanded = false },
-                        ) {
+                        IconButton(onClick = { topMenuExpanded = true }) { Icon(Icons.Rounded.MoreVert, "更多") }
+                        DropdownMenu(expanded = topMenuExpanded, onDismissRequest = { topMenuExpanded = false }) {
                             DropdownMenuItem(
                                 text = { Text("AI 服务") },
                                 leadingIcon = { Icon(Icons.Rounded.Key, null) },
-                                onClick = {
-                                    topMenuExpanded = false
-                                    onConfigureAi()
-                                },
+                                onClick = { topMenuExpanded = false; onConfigureAi() },
                             )
                             DropdownMenuItem(
                                 text = { Text("重新开始") },
                                 leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
-                                enabled = !state.isBusy && !researching,
+                                enabled = !busy,
                                 onClick = {
                                     topMenuExpanded = false
                                     viewModel.reset()
@@ -236,105 +244,44 @@ fun ResearchNewBookConversationPage(
                         }
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = t.background),
             )
         },
         bottomBar = {
-            Surface(
-                tonalElevation = 2.dp,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (state.pendingAttachments.isNotEmpty()) {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            state.pendingAttachments.forEach { attachment ->
-                                InputChip(
-                                    selected = true,
-                                    onClick = { viewModel.removePendingAttachment(attachment.id) },
-                                    label = { Text(attachment.fileName, maxLines = 1) },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description,
-                                            null,
-                                        )
-                                    },
-                                    trailingIcon = { Icon(Icons.Rounded.Close, "移除附件") },
-                                )
-                            }
-                        }
+            ResearchWorkspaceDock(
+                input = input,
+                onInput = { input = it },
+                state = state,
+                researching = researching,
+                webResearchEnabled = webResearchEnabled,
+                archiveCount = archiveState.entries.size,
+                referenceOpen = showReferenceTools,
+                memoryOpen = showResearchMemory,
+                onToggleWeb = {
+                    webResearchEnabled = it
+                    researchPrefs.edit().putBoolean("web_research_enabled", it).apply()
+                    if (!it) {
+                        lastSources = emptyList()
+                        lastTargets = emptyList()
+                        researchMessage = null
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        FilterChip(
-                            selected = webResearchEnabled,
-                            onClick = {
-                                val checked = !webResearchEnabled
-                                webResearchEnabled = checked
-                                researchPrefs.edit().putBoolean("web_research_enabled", checked).apply()
-                                if (!checked) {
-                                    lastSources = emptyList()
-                                    lastTargets = emptyList()
-                                    researchMessage = null
-                                }
-                            },
-                            enabled = !researching,
-                            label = { Text(if (webResearchEnabled) "联网开" else "联网关") },
-                            leadingIcon = { Icon(Icons.Rounded.TravelExplore, null, Modifier.size(18.dp)) },
+                },
+                onToggleReference = { showReferenceTools = !showReferenceTools },
+                onToggleMemory = { showResearchMemory = !showResearchMemory },
+                onAttach = {
+                    attachmentLauncher.launch(
+                        arrayOf(
+                            "text/*", "application/json", "application/pdf", "application/epub+zip",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*",
                         )
-                        if (archiveState.entries.isNotEmpty()) {
-                            AssistChip(
-                                onClick = { showResearchMemory = !showResearchMemory },
-                                label = { Text("${archiveState.entries.size} 条记忆") },
-                                leadingIcon = { Icon(Icons.Rounded.Memory, null, Modifier.size(18.dp)) },
-                            )
-                        }
-                    }
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text(if (state.foundation == null) "说要求，或上传小说资料……" else "继续聊天修改这本书……")
-                        },
-                        minLines = 1,
-                        maxLines = 4,
-                        enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
-                        shape = RoundedCornerShape(24.dp),
-                        leadingIcon = {
-                            IconButton(
-                                onClick = {
-                                    attachmentLauncher.launch(
-                                        arrayOf(
-                                            "text/*", "application/json", "application/pdf", "application/epub+zip",
-                                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*",
-                                        )
-                                    )
-                                },
-                                enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
-                            ) {
-                                Icon(Icons.Rounded.AttachFile, "上传文件")
-                            }
-                        },
-                        trailingIcon = {
-                            IconButton(
-                                onClick = { submit(input) },
-                                enabled = (input.isNotBlank() || state.pendingAttachments.isNotEmpty()) &&
-                                    !state.isBusy && !researching && !state.isLoadingAttachments,
-                            ) {
-                                Icon(if (researching) Icons.Rounded.TravelExplore else Icons.Rounded.Send, "发送")
-                            }
-                        },
                     )
-                }
-            }
+                },
+                onRemoveAttachment = viewModel::removePendingAttachment,
+                onSend = { submit(input) },
+                onProposal = viewModel::syncConversationProposal,
+                onBlueprint = ::syncBlueprint,
+                onCreate = viewModel::createCurrentFoundation,
+            )
         },
     ) { padding ->
         LazyColumn(
@@ -343,69 +290,12 @@ fun ResearchNewBookConversationPage(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { Spacer(Modifier.height(4.dp)) }
-            if (state.messages.none { it.role == "user" }) item {
-                Text(
-                    "直接说你的想法，或上传设定文件开始。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            item {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    AssistChip(
-                        onClick = { showReferenceTools = !showReferenceTools },
-                        label = { Text(if (showReferenceTools) "收起参考" else "参考 DNA") },
-                        leadingIcon = { Icon(Icons.Rounded.AutoStories, null, Modifier.size(18.dp)) },
+            if (state.messages.none { it.role == "user" }) {
+                item {
+                    ResearchWelcomeCard(
+                        webResearchEnabled = webResearchEnabled,
+                        archiveCount = archiveState.entries.size,
                     )
-                    if (archiveState.entries.isNotEmpty()) {
-                        AssistChip(
-                            onClick = { showResearchMemory = !showResearchMemory },
-                            label = { Text(if (showResearchMemory) "收起记忆" else "研究记忆") },
-                            leadingIcon = { Icon(Icons.Rounded.Memory, null, Modifier.size(18.dp)) },
-                        )
-                    }
-                    if (state.foundation == null && state.messages.any { it.role == "user" }) {
-                        FilledTonalButton(
-                            onClick = viewModel::syncConversationProposal,
-                            enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
-                        ) {
-                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (state.proposal == null) "整理方案" else "同步方案")
-                        }
-                    }
-                    if (state.messages.any { it.role == "user" }) {
-                        FilledTonalButton(
-                            onClick = {
-                                when {
-                                    state.foundation != null && !state.blueprintDirty -> scope.launch {
-                                        withFrameNanos { }
-                                        val lastIndex = listState.layoutInfo.totalItemsCount - 1
-                                        if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
-                                    }
-                                    else -> {
-                                        retryFoundation = true
-                                        viewModel.generateFoundation(false)
-                                    }
-                                }
-                            },
-                            enabled = !state.isBusy && !researching && !state.isLoadingAttachments,
-                        ) {
-                            Icon(Icons.Rounded.AccountTree, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                when {
-                                    state.foundation == null -> "建书蓝图"
-                                    state.blueprintDirty -> "同步蓝图"
-                                    else -> "查看蓝图"
-                                }
-                            )
-                        }
-                    }
                 }
             }
             if (showReferenceTools) item { ReferenceTemplateSelectionPanel(viewModel) }
@@ -414,25 +304,17 @@ fun ResearchNewBookConversationPage(
             if (state.streamingReply.isNotBlank()) item {
                 ResearchChatBubble(CreationChatMessage("assistant", state.streamingReply))
             }
-            if (state.runEvents.isNotEmpty() && (state.isBusy || state.runEvents.map { it.stage }.distinct().size > 1)) item {
-                RunInspectorPanel(state.runEvents, "建书 Run Inspector")
-            }
             researchMessage?.let { message -> item { ResearchStatusCard(message, lastTargets, lastSources) } }
 
             if (state.foundation == null) {
                 state.proposal?.let { proposal ->
-                    item {
-                        ResearchProposalCard(proposal, state.isBusy || researching) {
-                            retryFoundation = true
-                            viewModel.generateFoundation(false)
-                        }
-                    }
+                    item { ResearchProposalCard(proposal, busy) { syncBlueprint() } }
                 }
             } else {
                 item {
                     ResearchFoundationCard(
-                        state.foundation!!,
-                        state.isBusy || researching,
+                        foundation = state.foundation!!,
+                        busy = busy,
                         outOfSync = state.blueprintDirty,
                         pendingProposal = state.proposal,
                         onSync = {
@@ -448,12 +330,10 @@ fun ResearchNewBookConversationPage(
                 }
             }
 
-            if (researching || state.isLoadingAttachments || (state.isBusy && state.runEvents.isEmpty())) item {
-                Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        when {
+            if (researching || state.isLoadingAttachments || (state.isBusy && state.runEvents.isEmpty())) {
+                item {
+                    ResearchBusyRow(
+                        text = when {
                             state.isLoadingAttachments -> "正在读取附件……"
                             researching -> "正在补全作品研究档案……"
                             else -> state.busyLabel.ifBlank { "AI 正在处理……" }
@@ -461,28 +341,247 @@ fun ResearchNewBookConversationPage(
                     )
                 }
             }
-            state.error?.let { error -> item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(friendlyResearchError(error), color = MaterialTheme.colorScheme.onErrorContainer)
-                        if (!state.isBusy && !researching && retryFoundation && state.proposal != null) {
-                            OutlinedButton(onClick = { viewModel.generateFoundation(state.foundation != null) }) {
-                                Icon(Icons.Rounded.Refresh, null)
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (state.foundation == null) "重试生成蓝图" else "重试重构蓝图")
-                            }
-                        } else if (lastSubmitted.isNotBlank() && !state.isBusy && !researching) {
-                            OutlinedButton(onClick = { submit(lastSubmitted) }) {
-                                Icon(Icons.Rounded.Refresh, null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("重试上一句")
+            state.error?.let { error ->
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(t.radiusMd),
+                        color = t.destructive.copy(alpha = .08f),
+                        border = BorderStroke(1.dp, t.destructive.copy(alpha = .22f)),
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(friendlyResearchError(error), color = t.destructive)
+                            if (!state.isBusy && !researching && retryFoundation && state.proposal != null) {
+                                OutlinedButton(onClick = { viewModel.generateFoundation(state.foundation != null) }) {
+                                    Icon(Icons.Rounded.Refresh, null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (state.foundation == null) "重试生成蓝图" else "重试重构蓝图")
+                                }
+                            } else if (lastSubmitted.isNotBlank() && !state.isBusy && !researching) {
+                                OutlinedButton(onClick = { submit(lastSubmitted) }) {
+                                    Icon(Icons.Rounded.Refresh, null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("重试上一句")
+                                }
                             }
                         }
                     }
                 }
-            } }
+            }
             item { Spacer(Modifier.height(16.dp)) }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ResearchWorkspaceDock(
+    input: String,
+    onInput: (String) -> Unit,
+    state: NewBookConversationState,
+    researching: Boolean,
+    webResearchEnabled: Boolean,
+    archiveCount: Int,
+    referenceOpen: Boolean,
+    memoryOpen: Boolean,
+    onToggleWeb: (Boolean) -> Unit,
+    onToggleReference: () -> Unit,
+    onToggleMemory: () -> Unit,
+    onAttach: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onSend: () -> Unit,
+    onProposal: () -> Unit,
+    onBlueprint: () -> Unit,
+    onCreate: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val busy = state.isBusy || researching || state.isLoadingAttachments
+    val hasConversation = state.messages.any { it.role == "user" }
+    Surface(
+        modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+        color = t.background,
+        border = BorderStroke(1.dp, t.border),
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            if (state.pendingAttachments.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    state.pendingAttachments.forEach { attachment ->
+                        InputChip(
+                            selected = true,
+                            onClick = { onRemoveAttachment(attachment.id) },
+                            label = { Text(attachment.fileName, maxLines = 1) },
+                            leadingIcon = {
+                                Icon(if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description, null)
+                            },
+                            trailingIcon = { Icon(Icons.Rounded.Close, "移除附件") },
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ResearchDockToggle(
+                    icon = Icons.Rounded.TravelExplore,
+                    label = if (webResearchEnabled) "联网研究 开" else "联网研究 关",
+                    selected = webResearchEnabled,
+                    enabled = !researching,
+                    onClick = { onToggleWeb(!webResearchEnabled) },
+                )
+                ResearchDockToggle(Icons.Rounded.AutoStories, "Reference DNA", referenceOpen, !busy, onToggleReference)
+                if (archiveCount > 0) {
+                    ResearchDockToggle(Icons.Rounded.Memory, "研究记忆 $archiveCount", memoryOpen, !busy, onToggleMemory)
+                }
+                if (hasConversation && state.foundation == null) {
+                    ResearchDockAction(
+                        label = if (state.proposal == null) "整理方案" else "同步方案",
+                        icon = Icons.Rounded.AutoAwesome,
+                        enabled = !busy,
+                        onClick = onProposal,
+                    )
+                }
+                if (hasConversation) {
+                    ResearchDockAction(
+                        label = when {
+                            state.foundation == null -> "建书蓝图"
+                            state.blueprintDirty -> "同步蓝图"
+                            else -> "查看蓝图"
+                        },
+                        icon = Icons.Rounded.AccountTree,
+                        enabled = !busy,
+                        onClick = onBlueprint,
+                    )
+                }
+                if (state.foundation != null && !state.blueprintDirty) {
+                    ResearchDockAction("正式建书", Icons.Rounded.CheckCircle, !busy, onCreate, accent = true)
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusLg),
+                color = t.card,
+                border = BorderStroke(1.dp, t.border),
+            ) {
+                Row(
+                    Modifier.padding(start = 4.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    IconButton(onClick = onAttach, enabled = !busy) { Icon(Icons.Rounded.AttachFile, "上传文件", tint = t.mutedForeground) }
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = onInput,
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text(if (state.foundation == null) "继续说你的要求……" else "继续聊天修改这本书……") },
+                        minLines = 1,
+                        maxLines = 4,
+                        enabled = !busy,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledBorderColor = Color.Transparent,
+                        ),
+                    )
+                    FilledIconButton(
+                        onClick = onSend,
+                        enabled = (input.isNotBlank() || state.pendingAttachments.isNotEmpty()) && !busy,
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+                    ) {
+                        if (researching) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = t.primaryForeground)
+                        else Icon(Icons.Rounded.Send, "发送")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResearchDockToggle(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = if (selected) t.warmSurface else t.card,
+        border = BorderStroke(1.dp, if (selected) t.accent.copy(alpha = .35f) else t.border),
+    ) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(15.dp), tint = if (selected) t.accent else t.mutedForeground)
+            Text(label, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelSmall, color = if (selected) t.accent else t.foreground)
+        }
+    }
+}
+
+@Composable
+private fun ResearchDockAction(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    accent: Boolean = false,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = if (accent) t.accent else t.foreground,
+        contentColor = if (accent) t.accentForeground else t.primaryForeground,
+    ) {
+        Row(Modifier.padding(horizontal = 11.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(15.dp))
+            Text(label, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun ResearchWelcomeCard(webResearchEnabled: Boolean, archiveCount: Int) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = t.card,
+        border = BorderStroke(1.dp, t.border),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.TravelExplore, null, tint = t.accent)
+                Text("高级研究模式", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground)
+            }
+            Text(
+                "像普通 AI 一样直接聊天。需要核对公开资料时再联网；Reference DNA 和长期研究档案会作为隐藏上下文参与，不会把搜索摘要铺满对话。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = t.mutedForeground,
+            )
+            Text(
+                "联网研究：${if (webResearchEnabled) "开启" else "关闭"} · 长期档案：$archiveCount",
+                style = MaterialTheme.typography.labelSmall,
+                color = t.accent,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResearchBusyRow(text: String) {
+    val t = LocalLanghuanUiTokens.current
+    Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.accent)
+        Spacer(Modifier.width(9.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
     }
 }
 
@@ -579,58 +678,65 @@ private fun friendlyResearchError(raw: String): String {
 
 @Composable
 private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusMd),
+        color = t.warmSurface,
+        border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Memory, null)
+                Icon(Icons.Rounded.Memory, null, tint = t.accent)
                 Spacer(Modifier.width(6.dp))
-                Text("长期研究记忆", fontWeight = FontWeight.SemiBold)
+                Text("长期研究记忆", fontWeight = FontWeight.SemiBold, color = t.foreground)
             }
-            archive.lastAuthorTarget?.let { Text("当前作者：$it", style = MaterialTheme.typography.bodySmall) }
+            archive.lastAuthorTarget?.let { Text("当前作者：$it", style = MaterialTheme.typography.bodySmall, color = t.foreground) }
             if (archive.lastWorkTargets.isNotEmpty()) {
-                Text("当前作品：${archive.lastWorkTargets.take(5).joinToString("、")}", style = MaterialTheme.typography.bodySmall)
+                Text("当前作品：${archive.lastWorkTargets.take(5).joinToString("、")}", style = MaterialTheme.typography.bodySmall, color = t.foreground)
             }
             Text(
-                "已归档 ${archive.entries.size} 个作者/作品；退出 App 后仍保留。本轮搜索失败不会再把以前的资料清零。",
+                "已归档 ${archive.entries.size} 个作者/作品；退出 App 后仍保留。本轮搜索失败不会把以前的资料清零。",
                 style = MaterialTheme.typography.labelSmall,
+                color = t.mutedForeground,
             )
         }
     }
 }
 
-@Composable private fun ResearchStarterChip(text: String, onClick: (String) -> Unit) {
-    AssistChip(onClick = { onClick(text) }, label = { Text(text) }, leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null) })
-}
-
-@Composable private fun ResearchChatBubble(message: CreationChatMessage) {
+@Composable
+private fun ResearchChatBubble(message: CreationChatMessage) {
+    val t = LocalLanghuanUiTokens.current
     val user = message.role == "user"
     val display = if (user) message.text.substringBefore(RESEARCH_MARKER) else message.text
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
-        Card(
-            modifier = Modifier.fillMaxWidth(0.88f),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = if (user) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant),
+        Surface(
+            modifier = Modifier.fillMaxWidth(if (user) .86f else .96f),
+            shape = RoundedCornerShape(t.radiusLg),
+            color = if (user) t.foreground else t.card,
+            contentColor = if (user) t.primaryForeground else t.foreground,
+            border = if (user) null else BorderStroke(1.dp, t.border),
         ) {
-            Column(Modifier.padding(14.dp)) {
-                Text(if (user) "你" else "琅嬛 AI", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(5.dp)); Text(display, style = MaterialTheme.typography.bodyLarge)
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Text(
+                    if (user) "你" else "琅嬛 AI",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (user) t.primaryForeground.copy(alpha = .72f) else t.accent,
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(display, style = MaterialTheme.typography.bodyLarge)
                 message.attachments.forEach { attachment ->
                     Spacer(Modifier.height(8.dp))
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(t.radiusSm),
+                        color = if (user) t.primaryForeground.copy(alpha = .08f) else t.muted,
                     ) {
                         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description,
-                                null,
-                            )
+                            Icon(if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description, null)
                             Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text(attachment.fileName, fontWeight = FontWeight.SemiBold)
+                            Column(Modifier.weight(1f)) {
+                                Text(attachment.fileName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
                                     if (attachment.extractedText.isNotBlank()) "已读取文本内容" else "已作为原生附件发送",
                                     style = MaterialTheme.typography.labelSmall,
@@ -644,39 +750,60 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
     }
 }
 
-@Composable private fun ResearchStatusCard(message: String, targets: List<String>, sources: List<WebResearchSource>) {
-    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+@Composable
+private fun ResearchStatusCard(message: String, targets: List<String>, sources: List<WebResearchSource>) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusMd),
+        color = t.warmSurface,
+        border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.TravelExplore, null); Spacer(Modifier.width(6.dp)); Text(message, fontWeight = FontWeight.SemiBold)
+                Icon(Icons.Rounded.TravelExplore, null, tint = t.accent)
+                Spacer(Modifier.width(6.dp))
+                Text(message, fontWeight = FontWeight.SemiBold, color = t.foreground)
             }
-            if (targets.isNotEmpty()) {
-                Text("参考对象：${targets.joinToString(" · ")}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
-            }
+            if (targets.isNotEmpty()) Text("参考对象：${targets.joinToString(" · ")}", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
             sources.take(3).forEach { source ->
-                Text("• ${source.title}${if (source.detail.isNotBlank()) " · 已深读" else ""}", style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Text("• ${source.title}${if (source.detail.isNotBlank()) " · 已深读" else ""}", style = MaterialTheme.typography.bodySmall, color = t.foreground, maxLines = 1)
             }
-            if (sources.size > 3) Text("另有 ${sources.size - 3} 条线索已归档，不在对话里展开。", style = MaterialTheme.typography.labelSmall)
-            if (sources.isNotEmpty()) Text("资料已交给 AI 归纳；对话只显示结论，不再铺满搜索摘要。", style = MaterialTheme.typography.labelSmall)
+            if (sources.size > 3) Text("另有 ${sources.size - 3} 条线索已归档。", style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
         }
     }
 }
 
-@Composable private fun ResearchProposalCard(proposal: NewBookProposal, busy: Boolean, onNext: () -> Unit) {
-    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("新书方案", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(proposal.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("${proposal.genre} · 目标 ${proposal.targetWords / 10_000} 万字")
-            Text("简介", fontWeight = FontWeight.SemiBold); Text(proposal.premise)
-            Text("核心钩子", fontWeight = FontWeight.SemiBold); Text(proposal.coreHook)
-            Text("主题", fontWeight = FontWeight.SemiBold); Text(proposal.theme)
-            Button(onClick = onNext, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text("下一步：生成建书蓝图") }
+@Composable
+private fun ResearchProposalCard(proposal: NewBookProposal, busy: Boolean, onNext: () -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = t.card,
+        border = BorderStroke(1.dp, t.border),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text("新书方案", style = MaterialTheme.typography.labelMedium, color = t.accent)
+            Text(proposal.title, style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+            Text("${proposal.genre} · 目标 ${proposal.targetWords / 10_000} 万字", color = t.mutedForeground)
+            Text("简介", fontWeight = FontWeight.SemiBold, color = t.foreground)
+            Text(proposal.premise, color = t.foreground)
+            Text("核心钩子", fontWeight = FontWeight.SemiBold, color = t.foreground)
+            Text(proposal.coreHook, color = t.foreground)
+            Text("主题", fontWeight = FontWeight.SemiBold, color = t.foreground)
+            Text(proposal.theme, color = t.foreground)
+            OutlinedButton(onClick = onNext, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.AccountTree, null)
+                Spacer(Modifier.width(8.dp))
+                Text("生成建书蓝图")
+            }
         }
     }
 }
 
-@Composable private fun ResearchFoundationCard(
+@Composable
+private fun ResearchFoundationCard(
     foundation: StoryFoundation,
     busy: Boolean,
     outOfSync: Boolean,
@@ -685,37 +812,49 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
     onRegenerate: () -> Unit,
     onCreate: () -> Unit,
 ) {
-    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("建书蓝图", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(foundation.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("${foundation.genre} · ${foundation.targetWords / 10_000} 万字")
-            Text("故事承诺", fontWeight = FontWeight.SemiBold); Text(foundation.storyPromise)
-            Text("总纲", fontWeight = FontWeight.SemiBold); Text("${foundation.masterObjective}\n${foundation.masterConflict}\n${foundation.masterTurningPoint}")
-            Text("核心角色 · ${foundation.characters.size} 人", fontWeight = FontWeight.SemiBold)
-            foundation.characters.take(8).forEach { Text("${it.name}｜目标：${it.goal}", style = MaterialTheme.typography.bodyMedium) }
-            Text("分卷 · ${foundation.volumes.size} 卷 / 第一卷 ${foundation.volumes.firstOrNull()?.chapters?.size ?: 0} 章详细章纲", fontWeight = FontWeight.SemiBold)
-            Text("伏笔 · ${foundation.foreshadowing.size} 条 / 圣经 · ${foundation.bible.size} 条", style = MaterialTheme.typography.bodyMedium)
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(t.radiusLg),
+        color = t.card,
+        border = BorderStroke(1.dp, t.border),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("建书蓝图", style = MaterialTheme.typography.labelMedium, color = t.accent)
+                    Text(foundation.title, style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+                    Text("${foundation.genre} · ${foundation.targetWords / 10_000} 万字", color = t.mutedForeground)
+                }
+                Surface(shape = RoundedCornerShape(999.dp), color = if (outOfSync) t.warning.copy(alpha = .12f) else t.success.copy(alpha = .12f)) {
+                    Text(
+                        if (outOfSync) "待同步" else "已同步",
+                        Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (outOfSync) t.warning else t.success,
+                    )
+                }
+            }
+            Text("故事承诺", fontWeight = FontWeight.SemiBold, color = t.foreground)
+            Text(foundation.storyPromise, color = t.foreground)
+            Text("总纲", fontWeight = FontWeight.SemiBold, color = t.foreground)
+            Text("${foundation.masterObjective}\n${foundation.masterConflict}\n${foundation.masterTurningPoint}", color = t.foreground)
+            Text("角色 ${foundation.characters.size} · 分卷 ${foundation.volumes.size} · 伏笔 ${foundation.foreshadowing.size} · 圣经 ${foundation.bible.size}", color = t.mutedForeground)
             if (outOfSync) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("你刚才在聊天里提出了新要求。这里暂时显示上一次同步的蓝图；聊天不会被打断，也不会每说一句就强制重跑整套蓝图。")
+                Surface(shape = RoundedCornerShape(t.radiusMd), color = t.warning.copy(alpha = .08f), border = BorderStroke(1.dp, t.warning.copy(alpha = .18f))) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("聊天里有新要求，当前蓝图仍是上一次同步版本。", color = t.foreground)
                         pendingProposal?.let { proposal ->
-                            Text("聊天中的当前方案", fontWeight = FontWeight.SemiBold)
-                            Text(proposal.title, style = MaterialTheme.typography.titleMedium)
-                            Text(proposal.premise, style = MaterialTheme.typography.bodyMedium)
+                            Text(proposal.title, fontWeight = FontWeight.SemiBold, color = t.foreground)
+                            Text(proposal.premise, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 4, overflow = TextOverflow.Ellipsis)
                         }
-                        Button(onClick = onSync, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.Sync, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("同步当前聊天到蓝图")
-                        }
+                        Button(onClick = onSync, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("同步当前聊天到蓝图") }
                     }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onRegenerate, enabled = !busy, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Refresh, null); Text("整套重做") }
-                Button(onClick = onCreate, enabled = !outOfSync, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.CheckCircle, null); Text("正式建书") }
+                OutlinedButton(onClick = onRegenerate, enabled = !busy, modifier = Modifier.weight(1f)) { Text("整套重做") }
+                Button(onClick = onCreate, enabled = !outOfSync && !busy, modifier = Modifier.weight(1f)) { Text("正式建书") }
             }
         }
     }

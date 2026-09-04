@@ -1,19 +1,24 @@
 package com.xiguli.langhuan.ui
 
 import android.content.Context
+import android.content.res.Resources
 import android.graphics.Typeface
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import java.io.File
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToInt
 
 internal enum class ReaderPageModeV10(val key: String, val label: String, val summary: String) {
     SCROLL("scroll", "上下滚动", "连续阅读，适合长时间阅读"),
-    PAGE("page", "左右滑页", "正文按页切分，横向翻页"),
-    COVER("cover", "覆盖翻页", "整页切换，减少连续滚动干扰"),
+    PAGE("page", "左右滑页", "整页横向滑动，支持跨章前后翻"),
+    COVER("cover", "覆盖翻页", "整页覆盖切换，保持稳定阅读区域"),
 }
 
 internal data class ReaderCustomThemeV10(
@@ -89,30 +94,163 @@ internal fun readerColorHexV10(color: Color): String {
     return "#%02X%02X%02X%02X".format(a, r, g, b)
 }
 
-internal fun splitReaderPagesV10(text: String, fontSize: Float, lineFactor: Float, sidePadding: Float): List<String> {
-    val normalized = text.trim()
-    if (normalized.isBlank()) return listOf("")
-    val densityPenalty = (fontSize / 19f).coerceIn(.72f, 1.7f) * (lineFactor / 1.8f).coerceIn(.75f, 1.45f) * (1f + ((sidePadding - 24f) / 90f))
-    val target = (920f / densityPenalty).toInt().coerceIn(420, 1500)
-    val paragraphs = normalized.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
-    val pages = mutableListOf<String>()
-    val buffer = StringBuilder()
-    fun flush() {
-        if (buffer.isNotBlank()) pages += buffer.toString().trim()
-        buffer.clear()
+internal fun readerDisplayChapterTitleV13(title: String, chapterNumber: Int): String =
+    title.replace(Regex("\\s+"), " ").trim().ifBlank { "第 $chapterNumber 章" }
+
+internal fun readerBodyWithoutDuplicateHeadingV13(title: String, content: String): String {
+    val body = content.replace("\r\n", "\n").trimStart()
+    if (body.isBlank()) return body
+    val displayTitle = title.replace(Regex("\\s+"), " ").trim()
+    if (displayTitle.isBlank()) return body
+
+    val compactBody = body.replaceFirst(Regex("^[\\uFEFF\\s]*"), "")
+    if (compactBody.startsWith(displayTitle, ignoreCase = true)) {
+        return compactBody.drop(displayTitle.length).trimStart('\n', '\r', ' ', '\t')
     }
-    paragraphs.forEach { paragraph ->
-        if (paragraph.length > target * 2) {
-            flush()
-            paragraph.chunked(target).forEach { pages += it.trim() }
-        } else if (buffer.length + paragraph.length + 2 > target && buffer.isNotEmpty()) {
-            flush()
-            buffer.append(paragraph)
-        } else {
-            if (buffer.isNotEmpty()) buffer.append("\n\n")
-            buffer.append(paragraph)
+
+    val chapterPrefix = Regex("^(第\\s*[0-9０-９一二三四五六七八九十百千万零〇两]+\\s*[章节回卷])(?:\\s+|$)")
+        .find(displayTitle)?.groupValues?.getOrNull(1)?.trim()
+    val suffix = chapterPrefix?.let { displayTitle.removePrefix(it).trim() }.orEmpty()
+    if (!chapterPrefix.isNullOrBlank()) {
+        val lines = compactBody.lines()
+        val firstIndex = lines.indexOfFirst { it.isNotBlank() }
+        if (firstIndex >= 0 && lines[firstIndex].trim().replace(Regex("\\s+"), " ").equals(chapterPrefix.replace(Regex("\\s+"), " "), true)) {
+            var endIndex = firstIndex + 1
+            if (suffix.isNotBlank()) {
+                val secondIndex = lines.indexOfFirstFromV13(firstIndex + 1) { it.isNotBlank() }
+                if (secondIndex >= 0 && lines[secondIndex].trim().replace(Regex("\\s+"), " ").equals(suffix, true)) {
+                    endIndex = secondIndex + 1
+                }
+            }
+            return lines.drop(endIndex).joinToString("\n").trimStart()
         }
     }
-    flush()
-    return pages.ifEmpty { listOf(normalized) }
+    return compactBody
+}
+
+private inline fun List<String>.indexOfFirstFromV13(start: Int, predicate: (String) -> Boolean): Int {
+    for (index in start.coerceAtLeast(0)..lastIndex) if (predicate(this[index])) return index
+    return -1
+}
+
+/** Normalize prose paragraphs so the paginator and renderer share one paragraph model. */
+internal fun readerNormalizeBodyV14(text: String): String = text
+    .replace("\r\n", "\n")
+    .replace(Regex("\\n[ \\t]*\\n+"), "\n")
+    .trim()
+
+private data class ReaderViewportMetricsV15(
+    val widthDp: Float,
+    val heightDp: Float,
+    val density: Float,
+    val scaledDensity: Float,
+)
+
+/**
+ * Use Android's current configuration as the real app viewport. Unlike the old paginator this does
+ * not invent a fixed 136/152/190/205dp reserve. `screenHeightDp`/`screenWidthDp` already represent
+ * the current app configuration; display metrics are only a JVM/legacy fallback.
+ */
+private fun readerViewportMetricsV15(): ReaderViewportMetricsV15 {
+    val resources = Resources.getSystem()
+    val metrics = resources.displayMetrics
+    val density = metrics.density.coerceAtLeast(1f)
+    val scaledDensity = metrics.scaledDensity.coerceAtLeast(density)
+    val configWidth = resources.configuration.screenWidthDp.takeIf { it > 0 }?.toFloat()
+    val configHeight = resources.configuration.screenHeightDp.takeIf { it > 0 }?.toFloat()
+    return ReaderViewportMetricsV15(
+        widthDp = configWidth ?: (metrics.widthPixels / density).coerceAtLeast(320f),
+        heightDp = configHeight ?: (metrics.heightPixels / density).coerceAtLeast(480f),
+        density = density,
+        scaledDensity = scaledDensity,
+    )
+}
+
+/**
+ * V15 measured pagination.
+ *
+ * The page body height is derived from the actual viewport and the exact vertical structure used by
+ * `ReaderPagedLayoutV14`: outer padding + title/running-header line height + spacer + 12sp/16sp
+ * footer. This keeps paginator and renderer on the same model and removes the fake blank band that
+ * came from subtracting a guessed fixed number of dp from every device.
+ */
+internal fun splitReaderPagesV10(
+    text: String,
+    fontSize: Float,
+    lineFactor: Float,
+    sidePadding: Float,
+    paragraphSpacing: Float = 8f,
+): List<String> {
+    val normalized = readerNormalizeBodyV14(text)
+    if (normalized.isBlank()) return listOf("")
+
+    return runCatching {
+        val viewport = readerViewportMetricsV15()
+        val density = viewport.density
+        val scaledDensity = viewport.scaledDensity
+        val widthPx = ((viewport.widthDp - sidePadding * 2f).coerceAtLeast(180f) * density)
+            .roundToInt()
+            .coerceAtLeast(1)
+
+        // These are not guessed body reserves. They are the same explicit components rendered by
+        // ReaderPagedLayoutV14 and therefore scale with the current font configuration.
+        val footerPx = (16f * scaledDensity + 7f * density).roundToInt() // 16sp line + 3dp top + 4dp bottom
+        val firstHeaderPx = ((fontSize + 8f) * scaledDensity + (14f + 14f) * density).roundToInt()
+        val normalHeaderPx = (16f * scaledDensity + (10f + 12f) * density).roundToInt()
+        val viewportHeightPx = (viewport.heightDp * density).roundToInt()
+
+        // Four dp only absorbs rounding differences between StaticLayout and Compose Text. It is not
+        // a page-design reserve and cannot grow into the large bottom blank area seen in V14.
+        val roundingGuardPx = (4f * density).roundToInt()
+        val firstBodyHeightPx = (viewportHeightPx - firstHeaderPx - footerPx - roundingGuardPx).coerceAtLeast((240f * density).roundToInt())
+        val normalBodyHeightPx = (viewportHeightPx - normalHeaderPx - footerPx - roundingGuardPx).coerceAtLeast((280f * density).roundToInt())
+        val paragraphExtraPx = (paragraphSpacing.coerceIn(0f, 24f) * density).roundToInt()
+
+        val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
+            textSize = fontSize.coerceIn(12f, 36f) * scaledDensity
+            typeface = Typeface.DEFAULT
+        }
+        val baseFontHeight = (paint.fontMetrics.bottom - paint.fontMetrics.top).coerceAtLeast(1f)
+        val requestedLineHeight = fontSize.coerceIn(12f, 36f) * lineFactor.coerceIn(1.2f, 2.6f) * scaledDensity
+        val spacingMultiplier = (requestedLineHeight / baseFontHeight).coerceIn(.8f, 2.6f)
+
+        val layout = StaticLayout.Builder.obtain(normalized, 0, normalized.length, paint, widthPx)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setIncludePad(false)
+            .setLineSpacing(0f, spacingMultiplier)
+            .build()
+
+        val pages = mutableListOf<String>()
+        var line = 0
+        while (line < layout.lineCount) {
+            val firstLine = line
+            val maxHeight = if (pages.isEmpty()) firstBodyHeightPx else normalBodyHeightPx
+            var usedHeight = 0
+            while (line < layout.lineCount) {
+                val lineHeight = (layout.getLineBottom(line) - layout.getLineTop(line)).coerceAtLeast(1)
+                val lineStart = layout.getLineStart(line).coerceIn(0, normalized.length)
+                val lineEnd = layout.getLineEnd(line).coerceIn(lineStart, normalized.length)
+                val segment = normalized.substring(lineStart, lineEnd)
+                val paragraphExtra = if (segment.endsWith("\n") && lineEnd < normalized.length) paragraphExtraPx else 0
+                val nextHeight = usedHeight + lineHeight + paragraphExtra
+                if (line > firstLine && nextHeight > maxHeight) break
+                usedHeight = nextHeight
+                line++
+            }
+            if (line == firstLine) line++
+            val startOffset = layout.getLineStart(firstLine).coerceIn(0, normalized.length)
+            val endOffset = layout.getLineEnd((line - 1).coerceAtLeast(firstLine)).coerceIn(startOffset, normalized.length)
+            val page = normalized.substring(startOffset, endOffset).trim()
+            if (page.isNotBlank()) pages += page
+        }
+        pages.ifEmpty { listOf(normalized) }
+    }.getOrElse {
+        // JVM tests and very old devices can lack usable Android metrics. Keep a conservative fallback
+        // only for that exceptional path; production Android uses the measured path above.
+        val fontPenalty = (fontSize / 20f).coerceIn(.7f, 2f)
+        val linePenalty = (lineFactor / 1.68f).coerceIn(.75f, 1.6f)
+        val widthPenalty = (1f + ((sidePadding - 24f) / 75f)).coerceIn(.72f, 1.45f)
+        val target = (330f / (fontPenalty * linePenalty * widthPenalty)).toInt().coerceIn(80, 460)
+        normalized.chunked(target).filter { it.isNotBlank() }.ifEmpty { listOf(normalized) }
+    }
 }

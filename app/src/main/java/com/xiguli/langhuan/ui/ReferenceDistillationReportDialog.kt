@@ -1,6 +1,8 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,14 +19,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,6 +47,10 @@ import androidx.compose.ui.window.Dialog
 import com.xiguli.langhuan.engine.ReferenceDistillationReport
 import com.xiguli.langhuan.engine.ReferenceDistillationReportItem
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -56,9 +64,11 @@ fun ReferenceDistillationReportDialog(
 ) {
     val context = LocalContext.current.applicationContext
     val store = remember(context) { ReferenceDistillationReportStore(context) }
+    val t = LocalLanghuanUiTokens.current
     var report by remember(taskId, title) { mutableStateOf<ReferenceDistillationReport?>(null) }
     var loaded by remember(taskId, title) { mutableStateOf(false) }
     var confirmDelete by remember(taskId) { mutableStateOf(false) }
+    var showDataBrowser by remember(taskId) { mutableStateOf(false) }
 
     LaunchedEffect(taskId, title) {
         report = withContext(Dispatchers.IO) { store.loadOrArchiveFallback(taskId, title) }
@@ -68,57 +78,111 @@ fun ReferenceDistillationReportDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
-            shape = RoundedCornerShape(30.dp),
-            tonalElevation = 8.dp,
+            shape = RoundedCornerShape(t.radiusXl),
+            color = t.background,
+            contentColor = t.foreground,
+            border = BorderStroke(1.dp, t.border),
+            shadowElevation = 12.dp,
         ) {
             Column {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 16.dp, end = 8.dp, bottom = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 18.dp, top = 14.dp, end = 14.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                        Icon(Icons.Rounded.Science, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp))
-                    }
-                    Column(Modifier.padding(start = 11.dp).weight(1f)) {
-                        Text("双层蒸馏报告", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (report != null && !report!!.taskId.startsWith("builtin:")) {
-                        IconButton(onClick = { confirmDelete = true }) {
-                            Icon(Icons.Rounded.DeleteOutline, "删除蒸馏数据", tint = MaterialTheme.colorScheme.error)
+                    Surface(
+                        modifier = Modifier.size(40.dp),
+                        shape = RoundedCornerShape(t.radiusSm),
+                        color = t.warmSurface,
+                        contentColor = t.accent,
+                        border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Science, null, Modifier.size(21.dp), tint = t.accent)
                         }
                     }
-                    IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, "关闭") }
+                    Column(Modifier.padding(start = 11.dp).weight(1f)) {
+                        Text("蒸馏报告", style = MaterialTheme.typography.titleLarge, color = t.foreground)
+                        Text(title, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    }
+                    if (report != null && !report!!.taskId.startsWith("builtin:")) {
+                        LanghuanIconButton(
+                            icon = Icons.Rounded.DeleteOutline,
+                            contentDescription = "删除蒸馏数据",
+                            onClick = { confirmDelete = true },
+                        )
+                        Spacer(Modifier.width(7.dp))
+                    }
+                    LanghuanIconButton(Icons.Rounded.Close, "关闭", onDismiss)
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
 
                 when {
-                    !loaded -> Column(Modifier.padding(24.dp)) { Text("正在读取 Style DNA / Story DNA……") }
-                    report == null -> Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("没有找到可读取的蒸馏结果", fontWeight = FontWeight.Bold)
-                        Text(
-                            "这个任务可能来自更早版本，当时没有保存完整报告。重新蒸馏后会永久保存 Story DNA、Style DNA、覆盖度和可检索 DNA。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    !loaded -> {
+                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = t.accent)
+                                Text(
+                                    "正在读取 Story DNA / Style DNA……",
+                                    Modifier.padding(top = 10.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = t.mutedForeground,
+                                )
+                            }
+                        }
                     }
-                    else -> DistillationReportContent(report!!, store, fallbackProvider, fallbackModel)
+
+                    report == null -> {
+                        Box(Modifier.fillMaxWidth().weight(1f).padding(18.dp), contentAlignment = Alignment.Center) {
+                            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 20.dp) {
+                                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    Text("没有找到完整蒸馏结果", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                                    Text(
+                                        "这个任务可能来自更早版本，当时没有保存完整报告。重新蒸馏后会永久保存 Story DNA、Style DNA、覆盖度和可检索 DNA。",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = t.mutedForeground,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    else -> DistillationReportContent(
+                        report = report!!,
+                        store = store,
+                        fallbackProvider = fallbackProvider,
+                        fallbackModel = fallbackModel,
+                        onBrowseAll = { showDataBrowser = true },
+                    )
                 }
             }
         }
     }
 
+    report?.takeIf { showDataBrowser }?.let { current ->
+        ReferenceDistillationDataBrowserDialog(
+            report = current,
+            store = store,
+            onDismiss = { showDataBrowser = false },
+        )
+    }
+
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            shape = RoundedCornerShape(28.dp),
-            title = { Text("删除这份蒸馏数据？") },
-            text = { Text("《${report?.title ?: title}》的 Story DNA、Style DNA 和可检索数据会从本机删除。原始 EPUB 文件不会被删除。") },
+            shape = RoundedCornerShape(t.radiusXl),
+            containerColor = t.background,
+            title = { Text("删除这份蒸馏数据？", color = t.foreground) },
+            text = {
+                Text(
+                    "《${report?.title ?: title}》的 Story DNA、Style DNA 和可检索数据会从本机删除。原始 EPUB 文件不会被删除。",
+                    color = t.mutedForeground,
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     report?.taskId?.let(store::delete) ?: store.delete(taskId)
                     confirmDelete = false
                     onDismiss()
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text("删除", color = t.destructive) }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
         )
@@ -131,7 +195,9 @@ private fun DistillationReportContent(
     store: ReferenceDistillationReportStore,
     fallbackProvider: String,
     fallbackModel: String,
+    onBrowseAll: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val provider = report.provider.ifBlank { fallbackProvider }
     val model = report.model.ifBlank { fallbackModel }
     val storyItems = report.items.filter { it.kind == "STORY" }
@@ -144,137 +210,234 @@ private fun DistillationReportContent(
     val counts = store.kindCounts(report)
 
     LazyColumn(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 18.dp, end = 18.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Spacer(Modifier.height(4.dp)) }
         item {
-            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(7.dp))
-                        Text(if (report.retrievalItems.isNotEmpty()) "V2 可检索 DNA 已保存" else "已进入长期研究档案", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.weight(1f))
-                        Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)) {
-                            Text(
-                                store.coverageLabel(report),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                        Surface(
+                            modifier = Modifier.size(34.dp),
+                            shape = RoundedCornerShape(t.radiusSm),
+                            color = t.warmSurface,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.CheckCircle, null, Modifier.size(18.dp), tint = t.accent)
+                            }
                         }
+                        Column(Modifier.padding(start = 9.dp).weight(1f)) {
+                            Text(
+                                if (report.retrievalItems.isNotEmpty()) "V2 可检索 DNA 已保存" else "已进入长期研究档案",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = t.foreground,
+                            )
+                            Text(store.coverageDescription(report), style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
+                        }
+                        LanghuanBadge(store.coverageLabel(report), accent = true)
                     }
-                    Text(store.coverageDescription(report), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         SmallInfoPill("全书 ${report.chapters.coerceAtLeast(0)} 章")
-                        SmallInfoPill("AI 深读 ${report.samples.coerceAtLeast(0)} 章")
+                        SmallInfoPill("深读 ${report.samples.coerceAtLeast(0)} 章")
                         SmallInfoPill("可检索 $retainedCount 条")
                     }
+
                     if (retainedCount > 0) {
                         Text(
                             listOf("STORY", "STYLE", "KEEP", "TRANSFORM", "AVOID")
                                 .mapNotNull { kind -> counts[kind]?.takeIf { it > 0 }?.let { "$kind $it" } }
                                 .joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
+                            color = t.mutedForeground,
                         )
                     }
                     if (provider.isNotBlank() || model.isNotBlank()) {
-                        Text("${provider.ifBlank { "未知服务" }} · ${model.ifBlank { "未知模型" }}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "${provider.ifBlank { "未知服务" }} · ${model.ifBlank { "未知模型" }}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = t.mutedForeground,
+                        )
                     }
+
                     when {
-                        report.legacySummaryOnly -> Text("旧版任务只留下摘要，没有批次级可检索 DNA。重新蒸馏一次即可升级到 V2。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        report.retrievalItems.isEmpty() -> Text("这份报告来自旧版蒸馏：最终 DNA 仍可使用，但之前被压缩掉的批次观察无法恢复。重新蒸馏一次可获得完整 V2 知识库。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        !hasStory -> Text("这份 V2 报告暂未提取到可靠 Story DNA；事实问答会明确提示未确认，不会编造。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        report.legacySummaryOnly -> ReportWarning("旧版任务只留下摘要，没有批次级可检索 DNA。重新蒸馏一次即可升级到 V2。")
+                        report.retrievalItems.isEmpty() -> ReportWarning("这份报告来自旧版蒸馏：最终 DNA 仍可使用，但被压缩掉的批次观察无法恢复。重新蒸馏可获得完整 V2 知识库。")
+                        !hasStory -> ReportWarning("这份 V2 报告暂未提取到可靠 Story DNA；事实问答会明确提示未确认，不会编造。")
+                    }
+
+                    Button(
+                        onClick = onBrowseAll,
+                        enabled = retainedCount > 0,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(t.radiusSm),
+                        colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+                    ) {
+                        Icon(Icons.Rounded.DataObject, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text("查看全部 $retainedCount 条 DNA 数据")
                     }
                 }
             }
         }
 
         if (hasStory || report.overview.isNotBlank()) {
-            item { SectionHeader(Icons.Rounded.MenuBook, "Story DNA · 作品结构", "理解主角、世界观、规则、人物关系与剧情阶段") }
+            item { SectionHeader(Icons.Rounded.MenuBook, "Story DNA · 作品结构", "主角、群像、世界观、规则、人物关系与剧情阶段") }
             if (report.overview.isNotBlank()) item { ReportTextSection("作品结构总览", report.overview, story = true) }
             items(storyItems) { item -> DistillationItemCard(item, story = true) }
         }
 
         if (report.summary.isNotBlank() || styleItems.isNotEmpty()) {
-            item { SectionHeader(Icons.Rounded.AutoAwesome, "Style DNA · 写法", "理解视角、节奏、悬念、信息释放与叙事组织") }
+            item { SectionHeader(Icons.Rounded.AutoAwesome, "Style DNA · 写法", "视角、节奏、悬念、信息释放与叙事组织") }
             if (report.summary.isNotBlank()) item { ReportTextSection("写法摘要", report.summary, story = false) }
             items(styleItems) { item -> DistillationItemCard(item, story = false) }
         }
 
         if (report.localMetrics.isNotBlank()) item { ReportTextSection("全书本地结构统计", report.localMetrics, story = false) }
         if (keepItems.isNotEmpty()) {
-            item { Text("KEEP · 可借鉴的高层机制", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            item { SectionText("KEEP · 可借鉴的高层机制") }
             items(keepItems) { item -> DistillationItemCard(item, story = false) }
         }
         if (transformItems.isNotEmpty()) {
-            item { Text("TRANSFORM · 必须原创化改造", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            item { SectionText("TRANSFORM · 必须原创化改造") }
             items(transformItems) { item -> DistillationItemCard(item, story = false) }
         }
         if (avoidItems.isNotEmpty()) {
-            item { Text("AVOID · 禁止照搬", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            item { SectionText("AVOID · 禁止照搬") }
             items(avoidItems) { item -> DistillationItemCard(item, story = false) }
         }
 
-        if (!report.legacySummaryOnly) {
-            item {
-                FilledTonalButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (report.retrievalItems.isNotEmpty()) "V2 DNA 已就绪 · 对话和写作会按当前任务主动检索" else "旧版 DNA 可继续用 · 建议重新蒸馏升级 V2")
-                }
+        item {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusSm),
+                color = t.muted,
+                border = BorderStroke(1.dp, t.border),
+            ) {
+                Text(
+                    if (report.retrievalItems.isNotEmpty()) {
+                        "V2 DNA 已就绪 · 对话和写作会按当前任务主动检索"
+                    } else {
+                        "旧版 DNA 可继续使用 · 建议重新蒸馏升级 V2"
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = t.mutedForeground,
+                )
             }
         }
-        item { Spacer(Modifier.height(18.dp)) }
+    }
+}
+
+@Composable
+private fun ReportWarning(text: String) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        shape = RoundedCornerShape(t.radiusSm),
+        color = t.destructive.copy(alpha = .07f),
+        border = BorderStroke(1.dp, t.destructive.copy(alpha = .16f)),
+    ) {
+        Text(
+            text,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = t.destructive,
+        )
     }
 }
 
 @Composable
 private fun SmallInfoPill(text: String) {
-    Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.66f)) {
-        Text(text, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = t.muted,
+        border = BorderStroke(1.dp, t.border),
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = t.mutedForeground,
+        )
     }
 }
 
 @Composable
-private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String) {
+private fun SectionHeader(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+) {
+    val t = LocalLanghuanUiTokens.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(8.dp))
+        Surface(
+            modifier = Modifier.size(34.dp),
+            shape = RoundedCornerShape(t.radiusSm),
+            color = t.muted,
+            border = BorderStroke(1.dp, t.border),
+        ) {
+            Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(18.dp), tint = t.foreground) }
         }
         Column(Modifier.padding(start = 9.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = MaterialTheme.typography.titleMedium, color = t.foreground)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
         }
     }
+}
+
+@Composable
+private fun SectionText(text: String) {
+    val t = LocalLanghuanUiTokens.current
+    Text(text, style = MaterialTheme.typography.titleMedium, color = t.foreground)
 }
 
 @Composable
 private fun ReportTextSection(title: String, text: String, story: Boolean) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = if (story) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Text(text, style = MaterialTheme.typography.bodyMedium)
+    val t = LocalLanghuanUiTokens.current
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LanghuanBadge(if (story) "STORY" else "STYLE", accent = story)
+                Text(title, Modifier.padding(start = 7.dp), style = MaterialTheme.typography.titleSmall, color = t.foreground)
+            }
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = t.foreground)
         }
     }
 }
 
 @Composable
 private fun DistillationItemCard(item: ReferenceDistillationReportItem, story: Boolean) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        tonalElevation = 1.dp,
-        color = if (story) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(dimensionLabel(item.dimension), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Text(item.value)
-            if (item.evidence.isNotBlank()) Text("依据：${item.evidence}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val t = LocalLanghuanUiTokens.current
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 13.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LanghuanBadge(item.kind.ifBlank { if (story) "STORY" else "DNA" }, accent = story)
+                Text(
+                    dimensionLabel(item.dimension),
+                    modifier = Modifier.padding(start = 7.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = t.mutedForeground,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            Text(item.value, style = MaterialTheme.typography.bodyMedium, color = t.foreground)
+            if (item.evidence.isNotBlank()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.muted,
+                    border = BorderStroke(1.dp, t.border),
+                ) {
+                    Text(
+                        "依据：${item.evidence}",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
+            }
         }
     }
 }

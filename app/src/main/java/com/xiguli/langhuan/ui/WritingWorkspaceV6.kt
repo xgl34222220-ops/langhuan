@@ -1,19 +1,19 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Route
-import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,8 +30,9 @@ import com.xiguli.langhuan.engine.CanonMigrationTaskStatus
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
 import com.xiguli.langhuan.engine.WorkspaceNaturalLanguageRouter
 import com.xiguli.langhuan.engine.WorkspaceNaturalPlan
-import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
-import top.yukonga.miuix.kmp.squircle.squircleClip
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.util.UUID
 
 private data class PendingCompoundV6(
@@ -213,6 +214,7 @@ private fun WorkspaceNaturalControllerDockV6(
     onQuickAction: (WorkspaceQuickActionV6) -> Unit,
     onSend: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val quickAction = workspaceQuickActionV6(flow)
     val latestAssistant = conversation.streamingReply.takeIf(String::isNotBlank)
         ?: conversation.messages.lastOrNull { it.role == "assistant" }?.text.orEmpty()
@@ -220,30 +222,44 @@ private fun WorkspaceNaturalControllerDockV6(
 
     Surface(
         modifier = modifier.fillMaxWidth().navigationBarsPadding(),
-        color = MaterialTheme.colorScheme.background,
-        tonalElevation = 5.dp,
-        shadowElevation = 10.dp,
+        color = t.background,
+        contentColor = t.foreground,
+        shadowElevation = 8.dp,
     ) {
         Column(
-            Modifier.padding(start = 12.dp, end = 12.dp, top = 9.dp, bottom = 8.dp),
+            Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             if (latestAssistant.isNotBlank() || conversation.isBusy) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().squircleClip(17.dp).clickable(onClick = onHistory),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                LanghuanCard(
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onHistory),
+                    contentPadding = 10.dp,
                 ) {
-                    Row(Modifier.padding(horizontal = 11.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (conversation.isBusy) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            modifier = Modifier.size(28.dp),
+                            shape = RoundedCornerShape(t.radiusSm),
+                            color = t.warmSurface,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (conversation.isBusy) {
+                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.7.dp, color = t.accent)
+                                } else {
+                                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(15.dp), tint = t.accent)
+                                }
+                            }
+                        }
                         Text(
-                            if (conversation.isBusy && latestAssistant.isBlank()) conversation.routeSummary.ifBlank { "琅嬛正在结合当前项目分析…" } else latestAssistant,
-                            modifier = Modifier.padding(start = 7.dp).weight(1f),
+                            if (conversation.isBusy && latestAssistant.isBlank()) {
+                                conversation.routeSummary.ifBlank { "琅嬛正在结合当前项目分析…" }
+                            } else latestAssistant,
+                            modifier = Modifier.padding(start = 9.dp).weight(1f),
                             style = MaterialTheme.typography.bodySmall,
+                            color = t.foreground,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Icon(Icons.Rounded.History, "会话记录", Modifier.size(17.dp), tint = LocalMiuixTokens.current.textSecondary)
+                        Icon(Icons.Rounded.History, "会话记录", Modifier.size(17.dp), tint = t.mutedForeground)
                     }
                 }
             }
@@ -254,76 +270,65 @@ private fun WorkspaceNaturalControllerDockV6(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(99.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .68f),
-                        modifier = Modifier.clickable(onClick = onHistory),
-                    ) {
-                        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.History, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text("会话", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
+                    WorkspaceToolChipV6(
+                        icon = Icons.Rounded.History,
+                        label = "会话",
+                        onClick = onHistory,
+                    )
                     ProjectWorkflowTracePillV7(
                         workflow = conversation.workflow,
                         flow = flow,
                         onClick = onTrace,
                     )
                     if (migrationCount > 0) {
-                        Surface(
-                            shape = RoundedCornerShape(99.dp),
-                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .75f),
-                            modifier = Modifier.clickable(onClick = onMigrationQueue),
-                        ) {
-                            Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Route, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.tertiary)
-                                Text(
-                                    "修复队列 $migrationCount",
-                                    modifier = Modifier.padding(start = 4.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
+                        WorkspaceToolChipV6(
+                            icon = Icons.Rounded.Route,
+                            label = "修复队列 $migrationCount",
+                            accent = true,
+                            onClick = onMigrationQueue,
+                        )
                     }
-                    lastPlan?.let { plan ->
-                        Surface(shape = RoundedCornerShape(99.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                            Text(
-                                plan.summary,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+                    lastPlan?.let { plan -> LanghuanBadge(plan.summary) }
                 }
+
                 quickAction?.let { action ->
                     Spacer(Modifier.width(7.dp))
-                    AssistChip(
-                        onClick = { onQuickAction(action) },
-                        enabled = action == WorkspaceQuickActionV6.STOP || !flow.busy,
-                        label = { Text(action.label) },
-                        leadingIcon = {
+                    Surface(
+                        shape = RoundedCornerShape(t.radiusSm),
+                        color = if (action == WorkspaceQuickActionV6.STOP) t.destructive.copy(alpha = .08f) else t.foreground,
+                        contentColor = if (action == WorkspaceQuickActionV6.STOP) t.destructive else t.primaryForeground,
+                        border = BorderStroke(
+                            1.dp,
+                            if (action == WorkspaceQuickActionV6.STOP) t.destructive.copy(alpha = .22f) else t.foreground,
+                        ),
+                    ) {
+                        Row(
+                            Modifier
+                                .clickable(
+                                    enabled = action == WorkspaceQuickActionV6.STOP || !flow.busy,
+                                    onClick = { onQuickAction(action) },
+                                )
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Icon(
                                 if (action == WorkspaceQuickActionV6.STOP) Icons.Rounded.StopCircle else Icons.Rounded.CheckCircle,
                                 null,
                                 Modifier.size(16.dp),
                             )
-                        },
-                    )
+                            Text(
+                                action.label,
+                                modifier = Modifier.padding(start = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    }
                 }
             }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth().squircleClip(25.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 2.dp,
-            ) {
-                Row(
-                    Modifier.padding(start = 8.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
+            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 5.dp) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     OutlinedTextField(
                         value = input,
                         onValueChange = onInput,
@@ -332,24 +337,65 @@ private fun WorkspaceNaturalControllerDockV6(
                         minLines = 1,
                         maxLines = 4,
                         enabled = !disabled,
-                        shape = RoundedCornerShape(19.dp),
+                        shape = RoundedCornerShape(t.radiusSm),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                            disabledBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        ),
                     )
-                    Spacer(Modifier.width(6.dp))
+                    val canSend = input.isNotBlank() && !disabled
                     Surface(
-                        modifier = Modifier.size(46.dp),
-                        shape = CircleShape,
-                        color = if (input.isNotBlank() && !disabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.size(40.dp),
+                        shape = RoundedCornerShape(t.radiusSm),
+                        color = if (canSend) t.foreground else t.muted,
+                        contentColor = if (canSend) t.primaryForeground else t.mutedForeground,
                     ) {
-                        IconButton(onClick = onSend, enabled = input.isNotBlank() && !disabled) {
+                        Box(
+                            Modifier.clickable(enabled = canSend, onClick = onSend),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Icon(
-                                Icons.Rounded.Send,
+                                Icons.Rounded.ArrowUpward,
                                 "发送",
-                                tint = if (input.isNotBlank() && !disabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                Modifier.size(19.dp),
+                                tint = if (canSend) t.primaryForeground else t.mutedForeground,
                             )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceToolChipV6(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    accent: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(
+        shape = RoundedCornerShape(t.radiusSm),
+        color = if (accent) t.warmSurface else t.card,
+        contentColor = if (accent) t.accent else t.foreground,
+        border = BorderStroke(1.dp, if (accent) t.accent.copy(alpha = .18f) else t.border),
+    ) {
+        Row(
+            Modifier.clickable(onClick = onClick).padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, Modifier.size(15.dp), tint = if (accent) t.accent else t.mutedForeground)
+            Text(
+                label,
+                modifier = Modifier.padding(start = 5.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (accent) t.accent else t.foreground,
+            )
         }
     }
 }
@@ -400,37 +446,71 @@ private fun WorkspaceConversationHistoryV6(
     onDismiss: () -> Unit,
     onClearError: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val inherited = state.messages.count { it.origin == ProjectConversationOrigin.CREATION }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = t.background,
+        shape = RoundedCornerShape(topStart = t.radiusXl, topEnd = t.radiusXl),
+    ) {
         Column(
-            Modifier.fillMaxWidth().fillMaxHeight(.86f).navigationBarsPadding().padding(horizontal = 16.dp),
+            Modifier.fillMaxWidth().fillMaxHeight(.86f).navigationBarsPadding().padding(horizontal = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("连续创作会话", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(
-                if (inherited > 0) "承接建书阶段 $inherited 条消息 · 项目事实始终高于旧讨论" else "讨论与执行指令都保留在这里，但不会自动成为 Canon",
-                style = MaterialTheme.typography.bodySmall,
-                color = LocalMiuixTokens.current.textSecondary,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("连续创作会话", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+                    Text(
+                        if (inherited > 0) {
+                            "承接建书阶段 $inherited 条消息 · 项目事实始终高于旧讨论"
+                        } else {
+                            "讨论与执行指令会保留，但不会自动成为 Canon"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
+                LanghuanBadge("${state.messages.size} 条")
+            }
 
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(state.messages, key = { it.id }) { message ->
                     if (message.role == "assistant") {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text(message.text, modifier = Modifier.padding(start = 8.dp).weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Surface(
+                                modifier = Modifier.size(28.dp),
+                                shape = RoundedCornerShape(t.radiusSm),
+                                color = t.warmSurface,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(15.dp), tint = t.accent)
+                                }
+                            }
+                            Text(
+                                message.text,
+                                modifier = Modifier.padding(start = 9.dp).weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = t.foreground,
+                            )
                         }
                     } else {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             Surface(
-                                modifier = Modifier.widthIn(max = 320.dp).squircleClip(18.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .78f),
+                                modifier = Modifier.widthIn(max = 320.dp),
+                                shape = RoundedCornerShape(t.radiusMd),
+                                color = t.foreground,
+                                contentColor = t.primaryForeground,
                             ) {
-                                Text(message.text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp))
+                                Text(
+                                    message.text,
+                                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = t.primaryForeground,
+                                )
                             }
                         }
                     }
@@ -438,24 +518,39 @@ private fun WorkspaceConversationHistoryV6(
                 if (state.streamingReply.isNotBlank()) {
                     item {
                         Row(verticalAlignment = Alignment.Top) {
-                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Text(state.streamingReply, modifier = Modifier.padding(start = 8.dp).weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.8.dp, color = t.accent)
+                            Text(
+                                state.streamingReply,
+                                modifier = Modifier.padding(start = 8.dp).weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = t.foreground,
+                            )
                         }
                     }
                 }
             }
 
             state.error?.let { error ->
-                Surface(modifier = Modifier.fillMaxWidth().squircleClip(16.dp), color = MaterialTheme.colorScheme.errorContainer) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.destructive.copy(alpha = .08f),
+                    border = BorderStroke(1.dp, t.destructive.copy(alpha = .18f)),
+                ) {
                     Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(error, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = onClearError) { Text("知道了") }
+                        Text(error, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = t.destructive)
+                        TextButton(onClick = onClearError) { Text("知道了", color = t.destructive) }
                     }
                 }
             }
 
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
-                Text("回到总控继续说")
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusMd),
+                colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+            ) {
+                Text("回到写作继续说")
             }
             Spacer(Modifier.height(4.dp))
         }
