@@ -72,7 +72,7 @@ fun ReaderNativeExperienceV4(
     }
 
     key(chapterKey) {
-        ReaderQingmoHeroV12(
+        ReaderQingmoHeroV13(
             viewModel = viewModel,
             studioState = studioState,
             onBackToShelf = onBackToShelf,
