@@ -59,19 +59,38 @@ class QingmoReplicaReaderContractTest {
         val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoFunctionalV9.kt").readText()
 
-        // A pager retained across chapter changes reuses the old page index: last->next lands at tail,
-        // first->previous lands at head. The reader subtree therefore has to be keyed by chapter id.
         assertTrue(entry.contains("val chapterKey = state.readingChapter?.id"))
         assertTrue(entry.contains("key(chapterKey)"))
-
-        // Forward crossing must start the next chapter from its head.
         assertTrue(reader.contains("else jumpChapter(next, false)"))
-
-        // Backward crossing must open the previous chapter at its tail.
         assertTrue(reader.contains("else jumpChapter(previous, true)"))
-
-        // The stored stable anchor is what the freshly-created pager restores.
         assertTrue(reader.contains("if (atEnd) 1f else 0f"))
         assertTrue(reader.contains("if (atEnd) Int.MAX_VALUE else 0"))
+    }
+
+    @Test
+    fun paginationMatchesRenderedQingmoGeometryAndNeverAcceptsBottomHalfLine() {
+        val root = File(System.getProperty("user.dir") ?: ".")
+        val paginator = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV16.kt").readText()
+
+        assertTrue(paginator.contains("val pageInsetPx = with(density) { 18.dp.roundToPx() }"))
+        assertTrue(paginator.contains("val firstHeaderGapPx = with(density) { 22.dp.roundToPx() }"))
+        assertTrue(paginator.contains("val continuationHeaderGapPx = with(density) { 13.dp.roundToPx() }"))
+        assertTrue(paginator.contains("fontSize = 12.sp"))
+        assertTrue(paginator.contains("fontSize = 10.sp"))
+        assertTrue(paginator.contains("fontSize = 9.sp"))
+        assertTrue(paginator.contains("val rasterGuardPx = with(density) { 4.dp.roundToPx() }"))
+        assertTrue(paginator.contains("val shouldIndent = firstLineIndent && (startsParagraph || pieces.isEmpty())"))
+    }
+
+    @Test
+    fun backgroundResumeCannotAdvancePager() {
+        val root = File(System.getProperty("user.dir") ?: ".")
+        val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
+
+        assertTrue(entry.contains("Lifecycle.Event.ON_PAUSE"))
+        assertTrue(entry.contains("Lifecycle.Event.ON_STOP"))
+        assertTrue(entry.contains("readerMounted = false"))
+        assertTrue(entry.contains("delay(120)"))
+        assertTrue(entry.contains("Lifecycle.State.RESUMED"))
     }
 }
