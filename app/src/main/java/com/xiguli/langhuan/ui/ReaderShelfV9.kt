@@ -165,6 +165,7 @@ fun ReaderShelfV9(
                         ReaderShelfPageV9.BOOKS -> ReaderBookGridV9(
                             shelfName = selectedShelf,
                             books = visibleBooks,
+                            libraryLoaded = state.libraryLoaded,
                             query = query,
                             searchVisible = searchVisible,
                             busy = importState.busy,
@@ -371,6 +372,7 @@ fun ReaderShelfV9(
 private fun ReaderBookGridV9(
     shelfName: String,
     books: List<ReaderBookUi>,
+    libraryLoaded: Boolean,
     query: String,
     searchVisible: Boolean,
     busy: Boolean,
@@ -384,9 +386,8 @@ private fun ReaderBookGridV9(
     val t = LocalLanghuanUiTokens.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LanghuanPageHeader(
-            eyebrow = "琅嬛 · 阅读",
             title = shelfName,
-            subtitle = "${books.size} 本 · 本地优先",
+            subtitle = if (libraryLoaded) "${books.size} 本" else "正在载入书架",
             actions = {
                 LanghuanIconButton(Icons.Rounded.Search, "搜索", onToggleSearch, selected = searchVisible)
                 LanghuanIconButton(Icons.Rounded.Add, "添加图书", onAdd)
@@ -416,7 +417,22 @@ private fun ReaderBookGridV9(
             )
         }
 
-        if (books.isEmpty()) {
+        if (!libraryLoaded) {
+            Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.width(88.dp).height(2.dp),
+                        color = t.accent,
+                    )
+                    Text(
+                        "正在载入书架",
+                        Modifier.padding(top = 14.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = t.mutedForeground,
+                    )
+                }
+            }
+        } else if (books.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
                 LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 24.dp) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

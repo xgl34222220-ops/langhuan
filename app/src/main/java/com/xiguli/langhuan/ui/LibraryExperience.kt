@@ -90,6 +90,7 @@ data class LibraryExperienceState(
     val requestActivityReload: Boolean = false,
     val message: String? = null,
     val error: String? = null,
+    val libraryLoaded: Boolean = false,
 )
 
 class LibraryExperienceViewModel(application: Application) : AndroidViewModel(application) {
@@ -124,7 +125,7 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
                 }
                 _state.update { current ->
                     val opened = current.openedBook?.id?.let { id -> books.firstOrNull { it.id == id } }
-                    current.copy(stories = books, openedBook = opened)
+                    current.copy(stories = books, openedBook = opened, libraryLoaded = true)
                 }
             }
         }
