@@ -14,8 +14,8 @@ class ReadingFirstDesignContractTest {
             root,
             "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt",
         ).readText()
-        val chrome = reader.substringAfter("private fun MobileReaderChrome(")
-            .substringBefore("private fun ReaderChromeIcon(")
+        val chrome = reader.substringAfter("private fun MobileReaderChromeV3(")
+            .substringBefore("private fun ReaderChromeIconV3(")
 
         assertTrue(chrome.contains("\"目录\""))
         assertTrue(chrome.contains("\"A−\""))
@@ -38,6 +38,7 @@ class ReadingFirstDesignContractTest {
         ).readText()
 
         assertTrue(reader.contains("advancedOpen"))
+        assertTrue(reader.contains("if (!advancedOpen)"))
         assertTrue(reader.contains("\"高级排版\""))
         assertTrue(reader.contains("color = if (selected) t.accent else t.card"))
         assertFalse(reader.contains("color = if (selected) t.foreground else t.card"))
@@ -55,7 +56,7 @@ class ReadingFirstDesignContractTest {
         assertTrue(reader.contains("24f"))
         assertTrue(reader.contains("6f"))
         assertTrue(reader.contains("index > 0 || indentFirstParagraph"))
-        assertTrue(reader.contains("reader_mobile_settings_v2"))
+        assertTrue(reader.contains("reader_mobile_settings_v3"))
     }
 
     @Test
@@ -64,7 +65,9 @@ class ReadingFirstDesignContractTest {
         assertTrue(design.exists())
         val text = design.readText()
         assertTrue(text.contains("Content first, chrome recedes"))
-        assertTrue(text.contains("禁止") && text.contains("AI / 编辑 / 故事"))
+        assertTrue(text.contains("阅读底栏 6+ 一级操作"))
         assertTrue(text.contains("用“CI 通过”代替 UI/交互验收"))
+        assertTrue(text.contains("HeroUI Native"))
+        assertTrue(text.contains("Ponytail"))
     }
 }
