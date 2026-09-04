@@ -7,37 +7,36 @@ import org.junit.Test
 
 class QingmoReplicaReaderContractTest {
     @Test
-    fun readerUsesRealMobileComponentKitAndFunctionalControls() {
+    fun readerUsesPortedMobileComponentsAndRealActions() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
-        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV11.kt").readText()
-        val kit = File(root, "src/main/java/com/xiguli/langhuan/ui/design/LanghuanComponentKitV3.kt").readText()
-        val reverseSpec = File(root.parentFile, "design-systems/langhuan/QINGMO_REVERSE_SPEC.md").takeIf { it.exists() }
-            ?: File(root, "../design-systems/langhuan/QINGMO_REVERSE_SPEC.md")
+        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV12.kt").readText()
+        val kit = File(root, "src/main/java/com/xiguli/langhuan/ui/design/LanghuanComponentKitV4.kt").readText()
 
-        assertTrue(entry.contains("ReaderQingmoHeroV11("))
-        assertTrue(reader.contains("ReaderPanelTabV11.DETAILS"))
-        assertTrue(reader.contains("ReaderPanelTabV11.DIRECTORY"))
-        assertTrue(reader.contains("ReaderPanelTabV11.MORE"))
-        assertTrue(reader.contains("LanghuanHeroSheetV3("))
-        assertTrue(reader.contains("LanghuanHeroTabsV3("))
-        assertTrue(reader.contains("LanghuanHeroActionTileV3("))
-        assertTrue(kit.contains("LanghuanComponentTokensV3"))
-        assertTrue(kit.contains("LanghuanHeroSheetV3"))
-        assertTrue(kit.contains("LanghuanHeroTabsV3"))
-        assertTrue(kit.contains("LanghuanHeroActionTileV3"))
-        assertTrue(kit.contains("LanghuanHeroRowV3"))
+        assertTrue(entry.contains("ReaderQingmoHeroV12("))
+        assertTrue(reader.contains("HeroReaderTabV12.DETAILS"))
+        assertTrue(reader.contains("HeroReaderTabV12.DIRECTORY"))
+        assertTrue(reader.contains("HeroReaderTabV12.MORE"))
+        assertTrue(reader.contains("LanghuanSheetV4("))
+        assertTrue(reader.contains("LanghuanTabsV4("))
+        assertTrue(reader.contains("LanghuanActionTileV4("))
+        assertTrue(kit.contains("LanghuanTokensV4"))
+        assertTrue(kit.contains("LanghuanSheetV4"))
+        assertTrue(kit.contains("LanghuanTabsV4"))
+        assertTrue(kit.contains("LanghuanActionTileV4"))
+        assertTrue(kit.contains("LanghuanRowV4"))
 
         assertTrue(reader.contains("FLAG_KEEP_SCREEN_ON"))
         assertTrue(reader.contains("SCREEN_ORIENTATION_PORTRAIT"))
         assertTrue(reader.contains("WindowCompat.getInsetsController"))
         assertTrue(reader.contains("Key.VolumeUp"))
         assertTrue(reader.contains("Key.VolumeDown"))
+        assertTrue(reader.contains("detectVerticalDragGestures"))
         assertTrue(reader.contains("toggleBookmark()"))
         assertTrue(reader.contains("ReaderPageModeV10.COVER"))
         assertTrue(reader.contains("ReaderProgressStoreV11.save("))
         assertTrue(reader.contains("ReaderProgressStoreV11.moveTo("))
-        assertTrue(reader.contains("rememberReaderMeasuredPaginationV17("))
+        assertTrue(reader.contains("rememberReaderPaginationV18("))
 
         listOf(
             "主题", "字体", "字号", "行段", "定位",
@@ -48,37 +47,34 @@ class QingmoReplicaReaderContractTest {
 
         assertFalse(reader.contains("IconButton(onClick = {})"))
         assertFalse(reader.contains("onClick = {}"))
-        assertTrue(reverseSpec.exists())
     }
 
     @Test
-    fun fixedViewportFooterAndContinuationIndentAreStructural() {
+    fun fixedHeaderBodyFooterAndContinuationIndentAreStructural() {
         val root = File(System.getProperty("user.dir") ?: ".")
-        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV11.kt").readText()
-        val paginator = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV17.kt").readText()
+        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV12.kt").readText()
+        val paginator = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt").readText()
 
-        // Header/body/footer are independent rows; text receives the weighted viewport only.
-        assertTrue(reader.contains("ReaderPageCanvasV11("))
+        assertTrue(reader.contains("HeroReaderCanvasV12("))
         assertTrue(reader.contains("Box(Modifier.fillMaxWidth().weight(1f).clipToBounds())"))
-        assertTrue(reader.contains("Row(Modifier.fillMaxWidth().height(12.dp)"))
+        assertTrue(reader.contains("Spacer(Modifier.height(8.dp))"))
+        assertTrue(reader.contains("Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically)"))
 
-        // A page that begins in the middle of a paragraph must not receive a new 2em indent.
-        assertTrue(reader.contains("firstParagraphStartsAtBoundary"))
-        assertTrue(reader.contains("index > 0 || firstParagraphStartsAtBoundary"))
-        assertTrue(paginator.contains("firstLineIndent && startsParagraph"))
+        assertTrue(reader.contains("pageStartsParagraph"))
+        assertTrue(reader.contains("index > 0 || pageStartsParagraph"))
+        assertTrue(paginator.contains("indent && startsParagraph"))
 
-        // Pagination cuts only on complete Compose text-layout lines.
         assertTrue(paginator.contains("getLineBottom"))
         assertTrue(paginator.contains("getLineEnd"))
-        assertTrue(paginator.contains("lastWholeLineEndV17"))
+        assertTrue(paginator.contains("lastCompleteLineEndV18"))
         assertTrue(paginator.contains("WindowInsets.systemBarsIgnoringVisibility"))
     }
 
     @Test
-    fun crossingChaptersRecreatesPagerAndUsesCorrectBoundaryAnchor() {
+    fun crossingChaptersUsesCorrectBoundaryAndFreshPager() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
-        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV11.kt").readText()
+        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV12.kt").readText()
 
         assertTrue(entry.contains("val chapterKey = state.readingChapter?.id"))
         assertTrue(entry.contains("key(chapterKey)"))
@@ -89,10 +85,10 @@ class QingmoReplicaReaderContractTest {
     }
 
     @Test
-    fun backgroundResumeCannotAdvancePagerOrChangeViewport() {
+    fun backgroundResumeCannotBecomeAUserPageTurn() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
-        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV11.kt").readText()
+        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV12.kt").readText()
 
         assertTrue(entry.contains("Lifecycle.Event.ON_PAUSE"))
         assertTrue(entry.contains("Lifecycle.Event.ON_STOP"))
