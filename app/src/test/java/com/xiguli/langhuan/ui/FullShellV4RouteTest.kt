@@ -28,13 +28,16 @@ class FullShellV4RouteTest {
         assertFalse(router.contains("ReaderShelfV9("))
         assertFalse(router.contains("ReaderExperienceEntryGuard("))
 
-        assertTrue(shelf.contains("MobileShelfDock("))
+        assertTrue(shelf.contains("MobileShelfNavigation("))
+        assertFalse(shelf.contains("MobileShelfDock("))
         assertTrue(shelf.contains("GridCells.Fixed(2)"))
         assertTrue(shelf.contains("book.coverPath"))
         assertTrue(shelf.contains("AI 创建小说"))
         assertTrue(shelf.contains("导入本地小说"))
         assertFalse(shelf.contains("NavigationBar("))
         assertFalse(shelf.contains("TopAppBar("))
+        assertFalse(shelf.contains("ShadcnButton("))
+        assertFalse(shelf.contains("ShadcnInput("))
 
         assertTrue(reader.contains("rememberPagerState("))
         assertTrue(reader.contains("pageCount = { pages.size.coerceAtLeast(1) }"))
