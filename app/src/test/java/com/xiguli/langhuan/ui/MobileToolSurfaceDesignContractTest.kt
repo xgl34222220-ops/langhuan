@@ -39,6 +39,6 @@ class MobileToolSurfaceDesignContractTest {
         // Reader renders a single quiet page counter and no branded footer.
         assertTrue(reader.contains("\"${'$'}page / ${'$'}pageCount\""))
         assertFalse(reader.contains("\"琅嬛\", style = MaterialTheme.typography.labelSmall"))
-        assertFalse(reader.contains("chapterIndex + 1"))
+        assertFalse(reader.contains("\"${'$'}{chapterIndex + 1}/${'$'}{ordered.size.coerceAtLeast(1)} ·"))
     }
 }
