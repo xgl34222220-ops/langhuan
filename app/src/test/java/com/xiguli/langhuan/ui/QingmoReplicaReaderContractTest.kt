@@ -52,4 +52,26 @@ class QingmoReplicaReaderContractTest {
         assertFalse(reader.contains("TextButton(onClick = {})"))
         assertTrue(reverseSpec.exists())
     }
+
+    @Test
+    fun crossingChaptersRecreatesPagerAndUsesCorrectBoundaryAnchor() {
+        val root = File(System.getProperty("user.dir") ?: ".")
+        val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
+        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoFunctionalV9.kt").readText()
+
+        // A pager retained across chapter changes reuses the old page index: last->next lands at tail,
+        // first->previous lands at head. The reader subtree therefore has to be keyed by chapter id.
+        assertTrue(entry.contains("val chapterKey = state.readingChapter?.id"))
+        assertTrue(entry.contains("key(chapterKey)"))
+
+        // Forward crossing must start the next chapter from its head.
+        assertTrue(reader.contains("else jumpChapter(next, false)"))
+
+        // Backward crossing must open the previous chapter at its tail.
+        assertTrue(reader.contains("else jumpChapter(previous, true)"))
+
+        // The stored stable anchor is what the freshly-created pager restores.
+        assertTrue(reader.contains("if (atEnd) 1f else 0f"))
+        assertTrue(reader.contains("if (atEnd) Int.MAX_VALUE else 0"))
+    }
 }
