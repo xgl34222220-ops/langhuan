@@ -2,24 +2,7 @@ package com.xiguli.langhuan.ui
 
 import android.app.Application
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.weight
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -42,29 +25,8 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.TravelExplore
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,10 +54,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable
-enum class NovelCharacterDistillModeV3 {
-    QUICK,
-    DEEP,
-}
+enum class NovelCharacterDistillModeV3 { QUICK, DEEP }
 
 @Serializable
 data class NovelCharacterEvidenceV3(
@@ -164,7 +123,7 @@ data class NovelCharacterDistillUiStateV3(
     val error: String? = null,
 )
 
-private data class NovelCharacterBatchV3(
+internal data class NovelCharacterBatchV3(
     val chapterNumbers: List<Int>,
     val text: String,
 )
@@ -176,8 +135,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
     val state: StateFlow<NovelCharacterDistillUiStateV3> = _state.asStateFlow()
 
     fun open(novelId: String) {
-        if (novelId.isBlank()) return
-        if (_state.value.novelId == novelId) return
+        if (novelId.isBlank() || _state.value.novelId == novelId) return
         val archive = loadArchive(novelId)
         _state.value = NovelCharacterDistillUiStateV3(
             novelId = novelId,
@@ -209,8 +167,8 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                     distilling = true,
                     preview = emptyList(),
                     progressText = if (mode == NovelCharacterDistillModeV3.DEEP) "正在准备深度蒸馏…" else "正在准备快速蒸馏…",
-                    error = null,
                     notice = null,
+                    error = null,
                 )
             }
             runCatching {
@@ -218,12 +176,12 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                 val batches = buildNovelCharacterBatchesV3(usable, mode)
                 var merged = emptyList<NovelCharacterProfileV3>()
                 batches.forEachIndexed { index, batch ->
+                    val first = batch.chapterNumbers.firstOrNull() ?: 0
+                    val last = batch.chapterNumbers.lastOrNull() ?: first
                     _state.update {
-                        it.copy(
-                            progressText = "正在分析 ${index + 1}/${batches.size} · 第 ${batch.chapterNumbers.first()}-${batch.chapterNumbers.last()} 章",
-                        )
+                        it.copy(progressText = "正在分析 ${index + 1}/${batches.size} · 第 $first-$last 章")
                     }
-                    val output = gateway.generate(
+                    val result = gateway.generate(
                         PromptBundle(
                             system = novelCharacterDistillSystemPromptV3(),
                             user = """
@@ -236,13 +194,15 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                             """.trimIndent(),
                         )
                     )
-                    val parsed = parseNovelCharacterBlocksV3(
-                        content = output.content,
-                        sourceTitle = book.title,
-                        mode = mode,
-                        scannedThroughChapter = batch.chapterNumbers.maxOrNull() ?: 0,
+                    merged = mergeNovelCharacterProfilesV3(
+                        merged,
+                        parseNovelCharacterBlocksV3(
+                            content = result.content,
+                            sourceTitle = book.title,
+                            mode = mode,
+                            scannedThroughChapter = batch.chapterNumbers.maxOrNull() ?: 0,
+                        ),
                     )
-                    merged = mergeNovelCharacterProfilesV3(merged, parsed)
                 }
                 merged
                     .filter { it.name.isNotBlank() }
@@ -280,12 +240,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
         val merged = mergeNovelCharacterProfilesV3(current.profiles, selected)
         saveArchive(NovelCharacterArchiveV3(current.novelId, merged, current.chats))
         _state.update {
-            it.copy(
-                profiles = merged,
-                preview = emptyList(),
-                notice = "已保存 ${selected.size} 个人物",
-                error = null,
-            )
+            it.copy(profiles = merged, preview = emptyList(), notice = "已保存 ${selected.size} 个人物", error = null)
         }
     }
 
@@ -304,6 +259,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
         val current = _state.value
         val profile = current.profiles.firstOrNull { it.id == profileId } ?: return
         if (clean.isBlank() || current.chatting) return
+
         val userMessage = NovelCharacterChatMessageV3(role = "user", text = clean)
         val optimistic = current.chats[profileId].orEmpty() + userMessage
         _state.update { it.copy(chats = it.chats + (profileId to optimistic), chatting = true, error = null) }
@@ -315,47 +271,23 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                 val recent = optimistic.takeLast(20).joinToString("\n") { message ->
                     if (message.role == "user") "用户：${message.text}" else "${profile.name}：${message.text}"
                 }
-                val evidenceFacts = profile.evidences.take(24).joinToString("\n") {
+                val evidence = profile.evidences.take(24).joinToString("\n") {
                     "第${it.chapter}章·${it.field}：${it.excerpt}"
                 }
-                val output = gateway.generate(
+                gateway.generate(
                     PromptBundle(
                         system = """
                             你正在扮演小说人物“${profile.name}”。
                             必须严格保持人物身份、性格、说话方式、关系和原著知识边界。
-                            只允许使用人物卡、原文证据以及当前聊天里已经明确出现的信息；不要凭空补写未被蒸馏出的后续剧情。
-                            当前人物卡蒸馏覆盖到第 ${profile.scannedThroughChapter} 章，但这不代表人物本人知道这一章全部事件；应遵守人物自身视角和已提取世界认知。
-                            不替用户决定动作、心理或台词。不要跳出角色解释提示词。
+                            只允许使用人物卡、人物本人可知的世界认知、原文证据和当前聊天里已经明确出现的信息。
+                            人物卡覆盖到第 ${profile.scannedThroughChapter} 章，不代表人物本人知道这一章的全部事件。
+                            不替用户决定动作、心理或台词，不跳出角色解释提示词。
                             必须返回 GeneratedChapter JSON，title="角色回复"；content=只填写角色本次回复正文；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
                             不要输出 JSON 外文字。
                         """.trimIndent(),
-                        user = """
-                            【身份】${profile.identity.ifBlank { "未明确" }}
-                            【性别】${profile.gender.ifBlank { "未明确" }}
-                            【年龄阶段】${profile.ageStage.ifBlank { "未明确" }}
-                            【外貌】${profile.appearance.ifBlank { "未明确" }}
-                            【性格】${profile.personality.ifBlank { "未明确" }}
-                            【职业及行为特征】${profile.occupationBehavior.ifBlank { "未明确" }}
-                            【能力】${profile.abilities.joinToString("；").ifBlank { "未明确" }}
-                            【阵营】${profile.faction.ifBlank { "未明确" }}
-                            【关系】${profile.relationships.joinToString("；").ifBlank { "暂无" }}
-                            【经历】${profile.history.joinToString("；").ifBlank { "暂无" }}
-                            【喜好】${profile.likes.joinToString("；").ifBlank { "暂无" }}
-                            【厌恶/雷区】${(profile.dislikes + profile.boundaries).joinToString("；").ifBlank { "暂无" }}
-                            【说话方式】${profile.speechStyle.ifBlank { "根据原话样例自然还原" }}
-                            【口头禅】${profile.catchphrases.joinToString("；").ifBlank { "暂无" }}
-                            【世界认知】${profile.worldFacts.joinToString("；").ifBlank { "暂无" }}
-                            【当前记忆】${profile.currentMemory.joinToString("；").ifBlank { "暂无" }}
-                            【人物弧光】${profile.characterArc.ifBlank { "未明确" }}
-                            【当前状态】${profile.currentStatus.ifBlank { "未明确" }}
-                            【原话样例】${profile.dialogueExamples.take(10).joinToString("\n").ifBlank { "暂无" }}
-                            【原文证据】\n${evidenceFacts.ifBlank { "暂无直接引文，只能使用人物卡中已有事实" }}
-
-                            【最近聊天】\n$recent
-                        """.trimIndent(),
+                        user = buildCharacterChatContextV3(profile, evidence, recent),
                     )
-                )
-                output.content.trim().ifBlank { error("AI 没有返回角色回复") }
+                ).content.trim().ifBlank { error("AI 没有返回角色回复") }
             }.onSuccess { reply ->
                 val assistant = NovelCharacterChatMessageV3(role = "assistant", text = reply)
                 _state.update { state ->
@@ -406,69 +338,96 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
     }
 }
 
+private fun buildCharacterChatContextV3(
+    profile: NovelCharacterProfileV3,
+    evidence: String,
+    recent: String,
+): String = """
+    【身份】${profile.identity.ifBlank { "未明确" }}
+    【性别】${profile.gender.ifBlank { "未明确" }}
+    【年龄阶段】${profile.ageStage.ifBlank { "未明确" }}
+    【外貌】${profile.appearance.ifBlank { "未明确" }}
+    【性格】${profile.personality.ifBlank { "未明确" }}
+    【职业及行为特征】${profile.occupationBehavior.ifBlank { "未明确" }}
+    【能力】${profile.abilities.joinToString("；").ifBlank { "未明确" }}
+    【阵营】${profile.faction.ifBlank { "未明确" }}
+    【关系】${profile.relationships.joinToString("；").ifBlank { "暂无" }}
+    【经历】${profile.history.joinToString("；").ifBlank { "暂无" }}
+    【喜好】${profile.likes.joinToString("；").ifBlank { "暂无" }}
+    【厌恶/雷区】${(profile.dislikes + profile.boundaries).joinToString("；").ifBlank { "暂无" }}
+    【说话方式】${profile.speechStyle.ifBlank { "根据原话样例自然还原" }}
+    【口头禅】${profile.catchphrases.joinToString("；").ifBlank { "暂无" }}
+    【世界认知】${profile.worldFacts.joinToString("；").ifBlank { "暂无" }}
+    【当前记忆】${profile.currentMemory.joinToString("；").ifBlank { "暂无" }}
+    【人物弧光】${profile.characterArc.ifBlank { "未明确" }}
+    【当前状态】${profile.currentStatus.ifBlank { "未明确" }}
+    【原话样例】
+    ${profile.dialogueExamples.take(10).joinToString("\n").ifBlank { "暂无" }}
+    【原文证据】
+    ${evidence.ifBlank { "暂无直接引文，只能使用人物卡中已有事实" }}
+    【最近聊天】
+    $recent
+""".trimIndent()
+
 internal fun buildNovelCharacterBatchesV3(
     chapters: List<ChapterDraft>,
     mode: NovelCharacterDistillModeV3,
 ): List<NovelCharacterBatchV3> {
     val ordered = chapters.filter { it.content.isNotBlank() }.sortedBy { it.chapterNumber }
     if (ordered.isEmpty()) return emptyList()
+
     val selected = if (mode == NovelCharacterDistillModeV3.DEEP || ordered.size <= QUICK_CHAPTER_COUNT_V3) {
         ordered
     } else {
-        val indexes = (0 until QUICK_CHAPTER_COUNT_V3)
+        (0 until QUICK_CHAPTER_COUNT_V3)
             .map { slot -> ((ordered.lastIndex.toDouble() * slot) / (QUICK_CHAPTER_COUNT_V3 - 1)).toInt() }
             .distinct()
-        indexes.map { ordered[it] }
+            .map { ordered[it] }
     }
 
     val segments = selected.flatMap { chapter ->
-        val content = if (mode == NovelCharacterDistillModeV3.QUICK && chapter.content.length > QUICK_CHAPTER_CHAR_LIMIT_V3) {
+        val source = if (mode == NovelCharacterDistillModeV3.QUICK && chapter.content.length > QUICK_CHAPTER_CHAR_LIMIT_V3) {
             val half = QUICK_CHAPTER_CHAR_LIMIT_V3 / 2
             chapter.content.take(half) + "\n……本章中段已省略……\n" + chapter.content.takeLast(half)
         } else {
             chapter.content
         }
-        content.chunked(CHAPTER_SEGMENT_CHARS_V3).mapIndexed { segmentIndex, segment ->
+        source.chunked(CHAPTER_SEGMENT_CHARS_V3).mapIndexed { index, segment ->
             val title = chapter.title.ifBlank { "第${chapter.chapterNumber}章" }
-            chapter.chapterNumber to "【第${chapter.chapterNumber}章 $title · 片段${segmentIndex + 1}】\n$segment"
+            chapter.chapterNumber to "【第${chapter.chapterNumber}章 $title · 片段${index + 1}】\n$segment"
         }
     }
 
-    val batches = mutableListOf<NovelCharacterBatchV3>()
-    var currentNumbers = mutableListOf<Int>()
-    var currentText = StringBuilder()
+    val result = mutableListOf<NovelCharacterBatchV3>()
+    var numbers = mutableListOf<Int>()
+    var text = StringBuilder()
     fun flush() {
-        if (currentText.isNotEmpty()) {
-            batches += NovelCharacterBatchV3(currentNumbers.distinct(), currentText.toString())
-            currentNumbers = mutableListOf()
-            currentText = StringBuilder()
-        }
+        if (text.isEmpty()) return
+        result += NovelCharacterBatchV3(numbers.distinct(), text.toString())
+        numbers = mutableListOf()
+        text = StringBuilder()
     }
     segments.forEach { (chapterNumber, segment) ->
-        val extra = segment.length + 2
-        if (currentText.isNotEmpty() && currentText.length + extra > BATCH_SOURCE_CHARS_V3) flush()
-        currentNumbers += chapterNumber
-        currentText.append(segment).append("\n\n")
+        if (text.isNotEmpty() && text.length + segment.length + 2 > BATCH_SOURCE_CHARS_V3) flush()
+        numbers += chapterNumber
+        text.append(segment).append("\n\n")
     }
     flush()
-    return batches
+    return result
 }
 
 private fun novelCharacterDistillSystemPromptV3(): String = """
-    你是“琅嬛小说人物蒸馏器”。任务是从小说原文中建立可直接用于角色扮演和长期记忆的人物卡。
-
-    原则：
-    1. 只提取本批原文能证明的事实，未知字段留空，严禁为了完整而编造。
-    2. 同一人物的本名、昵称、称号、假名放入 aliases，尽量不要重复建卡。
-    3. 区分“读者知道”与“人物本人知道”。worldFacts/currentMemory 只写这个人物能够知道或亲历的信息。
-    4. dialogueExamples 必须是这个人物在输入原文中真正说过的话，每条不超过 140 字。
-    5. evidence 必须引用本批原文，标明章节与字段；摘录不超过 120 字。没有直接证据就不要写 evidence。
-    6. personality 要写稳定人格与行为倾向，不要用空泛的“善良、勇敢”凑字段。
-    7. relationships 写“对象：关系/态度/变化”；history 写关键经历；characterArc 写人物阶段性变化。
-    8. 最多输出 20 个人物，优先保留有稳定身份、对白、行为或剧情作用的人物。
+    你是“琅嬛小说人物蒸馏器”。从小说原文建立可用于角色扮演、人物库和长期记忆的人物卡。
+    只提取当前原文能够证明的事实，未知字段必须留空，禁止为了完整而编造。
+    同一人物的本名、昵称、称号、假名合并到 aliases，尽量避免重复建卡。
+    必须区分读者知道和人物本人知道：worldFacts/currentMemory 只写人物本人能知道或亲历的信息。
+    dialogueExamples 必须是人物在输入原文中真正说过的话，每条不超过 140 字。
+    evidence 必须引用输入原文，格式为“章节号~字段~摘录”，摘录不超过 120 字。
+    personality 写稳定人格和行为倾向；relationships 写“对象：关系/态度/变化”；history 写关键经历；characterArc 写阶段变化。
+    每批最多输出 20 个人物，优先保留有身份、对白、行为或剧情作用的人物。
 
     必须返回 GeneratedChapter JSON，title="小说人物蒸馏"；summary=""；stateChanges=[]；touchedForeshadowingIds=[]。
-    content 字段只能包含以下纯文本块，可重复多个，不要 Markdown 代码块：
+    content 只能包含以下纯文本块，可重复多个：
     <CHARACTER>
     name=角色名
     aliases=别名1|别名2
@@ -494,8 +453,7 @@ private fun novelCharacterDistillSystemPromptV3(): String = """
     currentStatus=当前状态
     evidence=章节号~字段~原文摘录§章节号~字段~原文摘录
     </CHARACTER>
-    所有字段都必须单行；字段内容不能使用换行。没有证据的字段留空。
-    不要输出 JSON 外文字。
+    所有字段单行；没有证据就留空；不要输出 JSON 外文字。
 """.trimIndent()
 
 internal fun parseNovelCharacterBlocksV3(
@@ -507,13 +465,14 @@ internal fun parseNovelCharacterBlocksV3(
     if (content.isBlank()) return emptyList()
     val blockPattern = Regex("(?s)<CHARACTER>\\s*(.*?)\\s*</CHARACTER>")
     fun split(value: String): List<String> = value.split('|').map { it.trim() }.filter { it.isNotBlank() }.distinct()
-    fun evidence(value: String): List<NovelCharacterEvidenceV3> = value.split('§').mapNotNull { raw ->
+    fun parseEvidence(value: String): List<NovelCharacterEvidenceV3> = value.split('§').mapNotNull { raw ->
         val parts = raw.trim().split('~', limit = 3)
         val chapter = parts.getOrNull(0)?.filter(Char::isDigit)?.toIntOrNull() ?: return@mapNotNull null
         val field = parts.getOrNull(1).orEmpty().trim()
         val excerpt = parts.getOrNull(2).orEmpty().trim().take(120)
         if (excerpt.isBlank()) null else NovelCharacterEvidenceV3(chapter, field, excerpt)
     }
+
     return blockPattern.findAll(content).mapNotNull { match ->
         val fields = linkedMapOf<String, String>()
         match.groupValues[1].lineSequence().forEach { line ->
@@ -548,7 +507,7 @@ internal fun parseNovelCharacterBlocksV3(
             sourceTitle = sourceTitle,
             distillMode = mode,
             scannedThroughChapter = scannedThroughChapter,
-            evidences = evidence(fields["evidence"].orEmpty()),
+            evidences = parseEvidence(fields["evidence"].orEmpty()),
         )
     }.toList()
 }
@@ -564,42 +523,35 @@ internal fun mergeNovelCharacterProfilesV3(
             .filter(String::isNotBlank)
             .toSet()
         val index = result.indexOfFirst { old ->
-            (listOf(old.name) + old.aliases)
-                .map(::normalizeCharacterNameV2)
-                .any { it in incomingNames }
+            (listOf(old.name) + old.aliases).map(::normalizeCharacterNameV2).any { it in incomingNames }
         }
         if (index < 0) {
             result += profile
         } else {
             val old = result[index]
             fun richer(a: String, b: String): String = if (b.length > a.length) b else a
-            fun mergedList(a: List<String>, b: List<String>, limit: Int = 40): List<String> =
+            fun mergeList(a: List<String>, b: List<String>, limit: Int = 40): List<String> =
                 (a + b).map(String::trim).filter(String::isNotBlank).distinct().takeLast(limit)
-            val aliases = mergedList(
-                old.aliases,
-                profile.aliases + listOf(profile.name).filter { normalizeCharacterNameV2(it) != normalizeCharacterNameV2(old.name) },
-                20,
-            )
             result[index] = old.copy(
-                aliases = aliases,
+                aliases = mergeList(old.aliases, profile.aliases + listOf(profile.name).filter { normalizeCharacterNameV2(it) != normalizeCharacterNameV2(old.name) }, 20),
                 gender = richer(old.gender, profile.gender),
                 ageStage = richer(old.ageStage, profile.ageStage),
                 appearance = richer(old.appearance, profile.appearance),
                 personality = richer(old.personality, profile.personality),
                 identity = richer(old.identity, profile.identity),
                 occupationBehavior = richer(old.occupationBehavior, profile.occupationBehavior),
-                abilities = mergedList(old.abilities, profile.abilities),
+                abilities = mergeList(old.abilities, profile.abilities),
                 faction = richer(old.faction, profile.faction),
-                relationships = mergedList(old.relationships, profile.relationships),
-                history = mergedList(old.history, profile.history),
-                likes = mergedList(old.likes, profile.likes),
-                dislikes = mergedList(old.dislikes, profile.dislikes),
-                boundaries = mergedList(old.boundaries, profile.boundaries),
+                relationships = mergeList(old.relationships, profile.relationships),
+                history = mergeList(old.history, profile.history),
+                likes = mergeList(old.likes, profile.likes),
+                dislikes = mergeList(old.dislikes, profile.dislikes),
+                boundaries = mergeList(old.boundaries, profile.boundaries),
                 speechStyle = richer(old.speechStyle, profile.speechStyle),
-                catchphrases = mergedList(old.catchphrases, profile.catchphrases, 20),
-                worldFacts = mergedList(old.worldFacts, profile.worldFacts),
-                currentMemory = mergedList(old.currentMemory, profile.currentMemory),
-                dialogueExamples = mergedList(old.dialogueExamples, profile.dialogueExamples, 20),
+                catchphrases = mergeList(old.catchphrases, profile.catchphrases, 20),
+                worldFacts = mergeList(old.worldFacts, profile.worldFacts),
+                currentMemory = mergeList(old.currentMemory, profile.currentMemory),
+                dialogueExamples = mergeList(old.dialogueExamples, profile.dialogueExamples, 20),
                 characterArc = richer(old.characterArc, profile.characterArc),
                 currentStatus = richer(old.currentStatus, profile.currentStatus),
                 distillMode = if (old.distillMode == NovelCharacterDistillModeV3.DEEP || profile.distillMode == NovelCharacterDistillModeV3.DEEP) NovelCharacterDistillModeV3.DEEP else NovelCharacterDistillModeV3.QUICK,
@@ -615,13 +567,7 @@ internal fun mergeNovelCharacterProfilesV3(
     return result.sortedByDescending { it.updatedAt }
 }
 
-private enum class NovelCharacterScreenV3 {
-    LIBRARY,
-    DETAIL,
-    CHAT,
-    CHAT_IMPORT,
-    STORY,
-}
+private enum class NovelCharacterScreenV3 { LIBRARY, DETAIL, CHAT, CHAT_IMPORT, STORY }
 
 @Composable
 fun TavernNovelCharacterExperienceV3(
@@ -659,12 +605,8 @@ fun TavernNovelCharacterExperienceV3(
                 book = book,
                 chapterCount = libraryState.chapters.count { it.content.isNotBlank() },
                 state = state,
-                onQuick = {
-                    if (aiReady) vm.distill(book, libraryState.chapters, NovelCharacterDistillModeV3.QUICK, true) else onAiSetup()
-                },
-                onDeep = {
-                    if (aiReady) vm.distill(book, libraryState.chapters, NovelCharacterDistillModeV3.DEEP, true) else onAiSetup()
-                },
+                onQuick = { if (aiReady) vm.distill(book, libraryState.chapters, NovelCharacterDistillModeV3.QUICK, true) else onAiSetup() },
+                onDeep = { if (aiReady) vm.distill(book, libraryState.chapters, NovelCharacterDistillModeV3.DEEP, true) else onAiSetup() },
                 onOpen = { profile -> selectedId = profile.id; screen = NovelCharacterScreenV3.DETAIL },
                 onChatImport = { screen = NovelCharacterScreenV3.CHAT_IMPORT },
                 onStory = { screen = NovelCharacterScreenV3.STORY },
@@ -688,43 +630,32 @@ fun TavernNovelCharacterExperienceV3(
                     onClear = { vm.clearChat(selected.id) },
                 )
             }
-            NovelCharacterScreenV3.CHAT_IMPORT -> Box(Modifier.fillMaxSize()) {
+            NovelCharacterScreenV3.CHAT_IMPORT -> SecondaryTavernRouteV3(onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
                 TavernCharacterHubV2(book, libraryState, aiReady, onAiSetup)
-                Surface(
-                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 8.dp, end = 10.dp),
-                    shape = CircleShape,
-                    tonalElevation = 4.dp,
-                ) {
-                    IconButton(onClick = { screen = NovelCharacterScreenV3.LIBRARY }) {
-                        Icon(Icons.Rounded.ArrowBack, "返回小说人物")
-                    }
-                }
             }
-            NovelCharacterScreenV3.STORY -> Box(Modifier.fillMaxSize()) {
+            NovelCharacterScreenV3.STORY -> SecondaryTavernRouteV3(onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
                 StoryCoreExperience(book, libraryState, aiReady, onAiSetup)
-                Surface(
-                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 8.dp, end = 10.dp),
-                    shape = CircleShape,
-                    tonalElevation = 4.dp,
-                ) {
-                    IconButton(onClick = { screen = NovelCharacterScreenV3.LIBRARY }) {
-                        Icon(Icons.Rounded.ArrowBack, "返回小说人物")
-                    }
-                }
             }
         }
-        SnackbarHost(
-            hostState = snackbar,
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 42.dp, vertical = 8.dp),
-        )
+        SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 42.dp, vertical = 8.dp))
     }
 
     if (state.preview.isNotEmpty()) {
-        NovelCharacterPreviewDialogV3(
-            profiles = state.preview,
-            onDismiss = vm::discardPreview,
-            onSave = vm::savePreview,
-        )
+        NovelCharacterPreviewDialogV3(state.preview, vm::discardPreview, vm::savePreview)
+    }
+}
+
+@Composable
+private fun SecondaryTavernRouteV3(onBack: () -> Unit, content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        content()
+        Surface(
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 8.dp, end = 10.dp),
+            shape = CircleShape,
+            tonalElevation = 4.dp,
+        ) {
+            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回人物蒸馏") }
+        }
     }
 }
 
@@ -746,11 +677,7 @@ private fun NovelCharacterLibraryV3(
     ) {
         item {
             Text("人物蒸馏", fontSize = 32.sp, fontWeight = FontWeight.Black)
-            Text(
-                "从《${book.title}》正文提取可聊天的原著人物卡",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 3.dp),
-            )
+            Text("从《${book.title}》正文提取可聊天的原著人物卡", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
             Spacer(Modifier.height(16.dp))
             Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                 Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -765,25 +692,11 @@ private fun NovelCharacterLibraryV3(
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = onQuick,
-                            enabled = !state.distilling && chapterCount > 0,
-                            modifier = Modifier.weight(1f).height(54.dp),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            Icon(Icons.Rounded.Speed, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("快速蒸馏")
+                        Button(onClick = onQuick, enabled = !state.distilling && chapterCount > 0, modifier = Modifier.weight(1f).height(54.dp), shape = RoundedCornerShape(18.dp)) {
+                            Icon(Icons.Rounded.Speed, null); Spacer(Modifier.width(6.dp)); Text("快速蒸馏")
                         }
-                        FilledTonalButton(
-                            onClick = onDeep,
-                            enabled = !state.distilling && chapterCount > 0,
-                            modifier = Modifier.weight(1f).height(54.dp),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            Icon(Icons.Rounded.TravelExplore, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("深度蒸馏")
+                        FilledTonalButton(onClick = onDeep, enabled = !state.distilling && chapterCount > 0, modifier = Modifier.weight(1f).height(54.dp), shape = RoundedCornerShape(18.dp)) {
+                            Icon(Icons.Rounded.TravelExplore, null); Spacer(Modifier.width(6.dp)); Text("深度蒸馏")
                         }
                     }
                     if (state.distilling) {
@@ -796,14 +709,10 @@ private fun NovelCharacterLibraryV3(
             }
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onChatImport, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Rounded.FileOpen, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("聊天导入")
+                    Icon(Icons.Rounded.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("聊天导入")
                 }
                 OutlinedButton(onClick = onStory, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Rounded.AutoStories, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("故事分支")
+                    Icon(Icons.Rounded.AutoStories, null); Spacer(Modifier.width(6.dp)); Text("故事分支")
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -814,49 +723,39 @@ private fun NovelCharacterLibraryV3(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-
         if (state.profiles.isEmpty()) {
             item {
                 Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                     Column(Modifier.fillMaxWidth().padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Rounded.Groups, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
                         Text("从小说正文建立人物库", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-                        Text("快速蒸馏适合先看主要人物；深度蒸馏会扫描全部正文片段。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
+                        Text("快速蒸馏先看主要人物；深度蒸馏逐段覆盖全部正文。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
                     }
                 }
             }
         } else {
-            items(state.profiles, key = { it.id }) { profile ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().clickable { onOpen(profile) },
-                    shape = RoundedCornerShape(22.dp),
-                    tonalElevation = 1.dp,
-                ) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(56.dp)) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(profile.name.take(1).ifBlank { "人" }, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                            }
-                        }
-                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                            Text(profile.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Text(
-                                profile.identity.ifBlank { profile.personality.ifBlank { "原著人物" } },
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(if (profile.distillMode == NovelCharacterDistillModeV3.DEEP) "深度" else "快速", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                Text("证据 ${profile.evidences.size}", style = MaterialTheme.typography.labelSmall)
-                                if (profile.scannedThroughChapter > 0) Text("至 ${profile.scannedThroughChapter} 章", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                        Icon(Icons.Rounded.Description, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+            items(state.profiles, key = { it.id }) { profile -> NovelCharacterListCardV3(profile, onOpen) }
+        }
+    }
+}
+
+@Composable
+private fun NovelCharacterListCardV3(profile: NovelCharacterProfileV3, onOpen: (NovelCharacterProfileV3) -> Unit) {
+    Surface(modifier = Modifier.fillMaxWidth().clickable { onOpen(profile) }, shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(56.dp)) {
+                Box(contentAlignment = Alignment.Center) { Text(profile.name.take(1).ifBlank { "人" }, fontSize = 23.sp, fontWeight = FontWeight.Black) }
+            }
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text(profile.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(profile.identity.ifBlank { profile.personality.ifBlank { "原著人物" } }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(if (profile.distillMode == NovelCharacterDistillModeV3.DEEP) "深度" else "快速", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text("证据 ${profile.evidences.size}", style = MaterialTheme.typography.labelSmall)
+                    if (profile.scannedThroughChapter > 0) Text("至 ${profile.scannedThroughChapter} 章", style = MaterialTheme.typography.labelSmall)
                 }
             }
+            Icon(Icons.Rounded.Description, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -922,13 +821,10 @@ private fun NovelCharacterDetailV3(
         }
         Surface(shadowElevation = 5.dp) {
             Button(onClick = onChat, modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp).height(56.dp), shape = RoundedCornerShape(20.dp)) {
-                Icon(Icons.Rounded.Chat, null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (messageCount > 0) "继续聊天" else "开始聊天", fontWeight = FontWeight.Bold)
+                Icon(Icons.Rounded.Chat, null); Spacer(Modifier.width(8.dp)); Text(if (messageCount > 0) "继续聊天" else "开始聊天", fontWeight = FontWeight.Bold)
             }
         }
     }
-
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -993,12 +889,7 @@ private fun NovelCharacterChatV3(
                 IconButton(onClick = { confirmClear = true }) { Icon(Icons.Rounded.DeleteSweep, "清空聊天") }
             }
         }
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (messages.isEmpty()) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(vertical = 72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1011,46 +902,25 @@ private fun NovelCharacterChatV3(
             items(messages, key = { it.id }) { message ->
                 val mine = message.role == "user"
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-                    Surface(
-                        modifier = Modifier.widthIn(max = 310.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
+                    Surface(modifier = Modifier.widthIn(max = 310.dp), shape = RoundedCornerShape(20.dp), color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh) {
                         Text(message.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, lineHeight = 21.sp)
                     }
                 }
             }
-            if (busy) {
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text("${profile.name} 正在回复…", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
-                    }
+            if (busy) item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("${profile.name} 正在回复…", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         Surface(shadowElevation = 5.dp) {
             Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Bottom) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(22.dp),
-                    placeholder = { Text("和 ${profile.name} 聊天…") },
-                    maxLines = 5,
-                )
+                OutlinedTextField(value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(22.dp), placeholder = { Text("和 ${profile.name} 聊天…") }, maxLines = 5)
                 Spacer(Modifier.width(8.dp))
-                FilledIconButton(
-                    onClick = {
-                        val text = input.trim()
-                        if (text.isNotBlank()) {
-                            onSend(text)
-                            input = ""
-                        }
-                    },
-                    enabled = input.isNotBlank() && !busy,
-                    modifier = Modifier.size(52.dp),
-                ) { Icon(Icons.Rounded.Send, "发送") }
+                FilledIconButton(onClick = { val text = input.trim(); if (text.isNotBlank()) { onSend(text); input = "" } }, enabled = input.isNotBlank() && !busy, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Rounded.Send, "发送")
+                }
             }
         }
     }
@@ -1079,13 +949,7 @@ private fun NovelCharacterPreviewDialogV3(
             LazyColumn(modifier = Modifier.heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(profiles, key = { it.id }) { profile ->
                     val checked = profile.id in selected
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            selected = if (checked) selected - profile.id else selected + profile.id
-                        },
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                    ) {
+                    Surface(modifier = Modifier.fillMaxWidth().clickable { selected = if (checked) selected - profile.id else selected + profile.id }, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = checked, onCheckedChange = null)
                             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(42.dp)) {
@@ -1103,9 +967,7 @@ private fun NovelCharacterPreviewDialogV3(
         },
         confirmButton = {
             Button(onClick = { onSave(selected) }, enabled = selected.isNotEmpty()) {
-                Icon(Icons.Rounded.Save, null)
-                Spacer(Modifier.width(6.dp))
-                Text("保存 ${selected.size} 个")
+                Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(6.dp)); Text("保存 ${selected.size} 个")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
