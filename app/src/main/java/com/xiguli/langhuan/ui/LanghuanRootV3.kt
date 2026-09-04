@@ -33,10 +33,10 @@ private enum class RootRouteV3 {
 }
 
 /**
- * Root navigation now treats opening a book as one transaction:
- * request -> load book/chapters -> resolve saved chapter -> switch route once.
- * It never switches to BOOK while openedBook is still null, so the old first-tap flash/bounce
- * cannot occur.
+ * Book opening is a transaction: request -> load -> resolve chapter -> route. Same-book reloads
+ * (especially editor -> reader) must observe the fresh load clearing readingChapter before they can
+ * resolve. Without that gate, stale chapters satisfy the request one frame too early and the later
+ * openBook completion clears the reader back to null.
  */
 @Composable
 fun LanghuanRootV3(studioVm: StudioViewModel) {
@@ -60,6 +60,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     var tavernStoryId by remember { mutableStateOf<String?>(null) }
     var pendingBookId by remember { mutableStateOf<String?>(null) }
     var pendingBookRoute by remember { mutableStateOf<RootRouteV3?>(null) }
+    var pendingBookFreshReload by remember { mutableStateOf(false) }
 
     val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) localImportVm.importUri(uri)
@@ -72,8 +73,9 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     }
 
     fun requestBook(id: String, target: RootRouteV3, showInfo: Boolean = false) {
-        if (pendingBookId != null) return
+        if (pendingBookId != null || libraryState.isBusy) return
         openBookOnInfo = showInfo
+        pendingBookFreshReload = libraryState.openedBook?.id == id && libraryState.readingChapter != null
         pendingBookId = id
         pendingBookRoute = target
         if (target == RootRouteV3.TAVERN) tavernStoryId = id
@@ -120,20 +122,36 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         route = RootRouteV3.WRITING
     }
 
-    // Book loading finishes while the shelf stays on screen. Only now do we resolve the saved
-    // chapter and make one route transition. This replaces the old BOOK -> null -> SHELF bounce.
-    LaunchedEffect(pendingBookId, pendingBookRoute, libraryState.openedBook?.id, libraryState.chapters) {
+    // A fresh same-book load has one unmistakable completion signal in LibraryExperienceViewModel:
+    // openBook replaces the chapter list and clears readingChapter. Wait for that state before using
+    // the list. This prevents the editor-return stale-state race seen in the 2026-09-04 recording.
+    LaunchedEffect(
+        pendingBookId,
+        pendingBookRoute,
+        pendingBookFreshReload,
+        libraryState.openedBook?.id,
+        libraryState.chapters,
+        libraryState.readingChapter?.id,
+        libraryState.isBusy,
+    ) {
         val id = pendingBookId ?: return@LaunchedEffect
         val targetRoute = pendingBookRoute ?: return@LaunchedEffect
+        if (pendingBookFreshReload) {
+            if (libraryState.isBusy) return@LaunchedEffect
+            if (libraryState.readingChapter != null) return@LaunchedEffect
+        }
         val book = libraryState.openedBook?.takeIf { it.id == id } ?: return@LaunchedEffect
         val chapters = libraryState.chapters.sortedBy { it.chapterNumber }
         if (chapters.isNotEmpty()) {
             val saved = ReaderProgressStoreV11.load(appContext, id, book.currentChapter.coerceAtLeast(1))
-            val target = chapters.firstOrNull { it.chapterNumber == saved.chapterNumber }
+            val requestedEditorChapter = editorChapter?.takeIf { targetRoute == RootRouteV3.BOOK }
+            val target = requestedEditorChapter?.let { number -> chapters.firstOrNull { it.chapterNumber == number } }
+                ?: chapters.firstOrNull { it.chapterNumber == saved.chapterNumber }
                 ?: chapters.firstOrNull { it.chapterNumber == book.currentChapter }
                 ?: chapters.first()
             libraryVm.openReader(target.chapterNumber)
         }
+        pendingBookFreshReload = false
         pendingBookId = null
         pendingBookRoute = null
         route = targetRoute
@@ -141,6 +159,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
     LaunchedEffect(libraryState.error, pendingBookId) {
         if (pendingBookId != null && libraryState.error != null) {
+            pendingBookFreshReload = false
             pendingBookId = null
             pendingBookRoute = null
         }
@@ -162,7 +181,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         Box(Modifier.fillMaxSize()) {
             when (route) {
                 RootRouteV3.SHELF -> {
-                    ShelfCoreExperience(
+                    ShelfMobileExperience(
                         state = libraryState,
                         importState = localImportState,
                         openingBookId = pendingBookId,
@@ -182,11 +201,12 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
 
                 RootRouteV3.BOOK -> {
                     if (libraryState.openedBook != null) {
-                        ReaderCoreExperience(
+                        ReaderMobileExperience(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
                                 libraryVm.closeBook()
+                                editorChapter = null
                                 route = RootRouteV3.SHELF
                             },
                             onEnterWriting = { id ->
@@ -290,6 +310,8 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                                 writingVm.invalidateAfterExternalEdit(id)
                                 route = RootRouteV3.WRITING
                             } else {
+                                // Keep EDITOR mounted until requestBook has observed a fresh same-book
+                                // load. The BOOK route is changed only by the transaction effect above.
                                 openBook(id)
                             }
                         },
