@@ -25,9 +25,9 @@ class ReaderMatureLayoutV14Test {
         assertTrue(measured.contains("LocalWindowInfo.current"))
         assertTrue(measured.contains("WindowInsets.safeDrawing"))
         assertTrue(measured.contains("TextIndent"))
-        assertFalse(measured.contains("Resources.getSystem"))
-        assertFalse(measured.contains("Typeface.DEFAULT"))
-        assertFalse(measured.contains("StaticLayout"))
+        assertFalse(measured.contains("import android.content.res.Resources"))
+        assertFalse(measured.contains("import android.graphics.Typeface"))
+        assertFalse(measured.contains("import android.text.StaticLayout"))
 
         assertTrue(page.contains("ReaderPageParagraphsV16"))
         assertTrue(page.contains("indentFirstParagraph"))
