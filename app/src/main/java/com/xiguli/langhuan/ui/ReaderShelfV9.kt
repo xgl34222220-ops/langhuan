@@ -1,7 +1,6 @@
 package com.xiguli.langhuan.ui
 
 import android.content.Context
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -160,8 +159,7 @@ fun ReaderShelfV9(
     Surface(Modifier.fillMaxSize(), color = t.background) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
-                AnimatedContent(page, label = "reader-shelf-v9-page") { current ->
-                    when (current) {
+                when (page) {
                         ReaderShelfPageV9.BOOKS -> ReaderBookGridV9(
                             shelfName = selectedShelf,
                             books = visibleBooks,
@@ -205,7 +203,6 @@ fun ReaderShelfV9(
                             onTasks = onRunCenter,
                             onSettings = onAiSetup,
                         )
-                    }
                 }
             }
 

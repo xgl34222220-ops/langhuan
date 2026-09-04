@@ -145,7 +145,7 @@ fun ReaderExperience(
         }
 
         ReaderExperienceRoute.STORY -> Box(Modifier.fillMaxSize()) {
-            StoryPlayPanelV17(
+            StoryExperience(
                 book = book,
                 libraryState = state,
                 aiReady = studioState.provider.ready,
@@ -482,6 +482,9 @@ private fun ReaderExperiencePage(
                     bookmarked = bookmarked,
                     canPrevious = previous != null,
                     canNext = next != null,
+                    fontKey = fontKey,
+                    lineFactor = lineFactor,
+                    pageModeKey = pageModeKey,
                     onBack = { saveCurrentProgress(); onBack() },
                     onInfo = { showInfo = true },
                     onBookmark = ::toggleBookmark,
@@ -502,6 +505,9 @@ private fun ReaderExperiencePage(
                     onDirectory = { showDirectory = true },
                     onSearch = { showSearch = true },
                     onNight = { themeKey = if (themeKey == "night") "paper" else "night" },
+                    onFontKey = { key -> saveCurrentProgress(); fontKey = key },
+                    onLineFactor = { value -> saveCurrentProgress(); lineFactor = value },
+                    onPageMode = { key -> saveCurrentProgress(); pageModeKey = key },
                     onSettings = { showSettings = true },
                     onStory = onStory,
                 )

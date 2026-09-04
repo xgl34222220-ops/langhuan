@@ -127,14 +127,7 @@ private fun StoryImmersiveSurface(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        IconButton(onClick = { showContext = true }) { Icon(Icons.Rounded.Explore, "世界状态", tint = t.foreground) }
-                        IconButton(onClick = { showBranches = true }) { Icon(Icons.Rounded.ForkRight, "故事分支", tint = t.foreground) }
-                        IconButton(onClick = onManagement) { Icon(Icons.Rounded.Tune, "故事设置", tint = t.foreground) }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        StoryContextChip(Icons.Rounded.Place, location)
-                        StoryContextChip(Icons.Rounded.Schedule, storyTime)
-                        player?.name?.takeIf { it.isNotBlank() }?.let { StoryContextChip(Icons.Rounded.Person, it) }
+                        IconButton(onClick = onManagement) { Icon(Icons.Rounded.MoreHoriz, "故事设置", tint = t.foreground) }
                     }
                 }
             }
