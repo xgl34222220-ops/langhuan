@@ -18,12 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 
 /**
- * Stable entry for the current root router.
- *
- * The reader subtree is keyed by chapter id and is unmounted while the Activity is not RESUMED.
- * That keeps chapter-bound pager state isolated and prevents recents/system-bar transitions from
- * being interpreted as user page changes. Reader V11 additionally measures against
- * systemBarsIgnoringVisibility, so the pagination viewport is stable across immersive toggles.
+ * Stable reader entry. The active chapter owns its own pager subtree, and the subtree is unmounted
+ * outside RESUMED so recents/system-gesture transitions cannot become page turns.
  */
 @Composable
 fun ReaderNativeExperienceV4(
@@ -76,7 +72,7 @@ fun ReaderNativeExperienceV4(
     }
 
     key(chapterKey) {
-        ReaderQingmoHeroV11(
+        ReaderQingmoHeroV12(
             viewModel = viewModel,
             studioState = studioState,
             onBackToShelf = onBackToShelf,
