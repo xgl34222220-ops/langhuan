@@ -7,9 +7,11 @@ import org.junit.Test
 
 class ShadcnNewYorkShellTest {
     @Test
-    fun shelfUsesCompactShadcnPrimitivesInsteadOfMaterialNavigationShell() {
+    fun mainExperienceUsesCompactShadcnCompositionInsteadOfMaterialDashboardShell() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfCoreExperience.kt").readText()
+        val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderCoreExperience.kt").readText()
+        val story = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryCoreExperience.kt").readText()
         val kit = File(root, "src/main/java/com/xiguli/langhuan/ui/design/ShadcnCompose.kt").readText()
         val theme = File(root, "src/main/java/com/xiguli/langhuan/ui/theme/LanghuanStableTheme.kt").readText()
 
@@ -24,6 +26,21 @@ class ShadcnNewYorkShellTest {
         assertFalse(shelf.contains("NavigationBarItem("))
         assertFalse(shelf.contains("RoundedCornerShape(20.dp)"))
         assertFalse(shelf.contains("RoundedCornerShape(18.dp)"))
+
+        assertTrue(reader.contains("ShadcnTabs("))
+        assertTrue(reader.contains("ShadcnCard("))
+        assertTrue(reader.contains("ShadcnInput("))
+        assertTrue(reader.contains("Reading gesture surface is behind chrome"))
+        assertTrue(reader.contains("ReaderCoreChrome("))
+        assertFalse(reader.contains("ReaderQingmoChrome("))
+        assertFalse(reader.contains("ReaderPagedLayoutV14("))
+        assertFalse(reader.contains("FilterChip("))
+
+        assertTrue(story.contains("ShadcnButton("))
+        assertTrue(story.contains("ShadcnCard("))
+        assertTrue(story.contains("ShadcnMenuRow("))
+        assertFalse(story.contains("RoundedCornerShape(99.dp)"))
+        assertFalse(story.contains("RoundedCornerShape(22.dp)"))
 
         assertTrue(kit.contains("enum class ShadcnButtonVariant"))
         assertTrue(kit.contains("ShadcnButtonVariant.OUTLINE"))
