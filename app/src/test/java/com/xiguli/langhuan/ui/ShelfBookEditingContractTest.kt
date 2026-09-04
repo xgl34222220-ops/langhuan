@@ -21,6 +21,7 @@ class ShelfBookEditingContractTest {
         assertTrue(shelf.contains("GridCells.Fixed(2)"))
         assertTrue(shelf.contains("book.currentWords"))
         assertTrue(shelf.contains("Icons.Rounded.MoreHoriz"))
+        assertTrue(shelf.contains("最近更新"))
 
         assertTrue(editor.contains("ActivityResultContracts.GetContent()"))
         assertTrue(editor.contains("setLocalCover"))
