@@ -29,6 +29,11 @@ class ReaderMatureLayoutV14Test {
         assertFalse(measured.contains("import android.graphics.Typeface"))
         assertFalse(measured.contains("import android.text.StaticLayout"))
 
+        // Never force start + 1 when the remaining viewport cannot fit even one full line.
+        assertTrue(measured.contains("var best = start"))
+        assertTrue(measured.contains("if (splitEnd <= cursor && pieces.isNotEmpty()) break"))
+        assertTrue(measured.contains("return best.coerceIn(start, end)"))
+
         assertTrue(page.contains("ReaderPageParagraphsV16"))
         assertTrue(page.contains("indentFirstParagraph"))
         assertTrue(page.contains("fontSize = 12.sp"))
