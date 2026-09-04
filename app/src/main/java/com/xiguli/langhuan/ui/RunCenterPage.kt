@@ -1,6 +1,5 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,14 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -25,12 +24,10 @@ import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,9 +48,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.engine.ChapterRunKeepAliveRegistry
 import com.xiguli.langhuan.engine.DurableRunPhase
 import com.xiguli.langhuan.engine.RunStatus
-import com.xiguli.langhuan.ui.design.LanghuanBadge
-import com.xiguli.langhuan.ui.design.LanghuanCard
-import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LocalMiuixTokens
 import kotlinx.coroutines.delay
@@ -79,102 +73,72 @@ fun RunCenterPage(
     Surface(Modifier.fillMaxSize(), color = t.background) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 6.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                LanghuanIconButton(Icons.Rounded.Close, "关闭运行中心", onClose)
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text("运行中心", style = MaterialTheme.typography.headlineMedium, color = t.foreground)
-                    Text("后台任务 · 断点恢复 · 保存与后处理", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                Surface(onClick = onClose, modifier = Modifier.size(42.dp), shape = CircleShape, color = Color.Transparent) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Close, "关闭运行中心", Modifier.size(21.dp), tint = t.foreground) }
                 }
-                LanghuanBadge(if (live.active) "RUNNING" else "IDLE", accent = live.active)
+                Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                    Text("运行中心", style = MaterialTheme.typography.titleLarge, color = t.foreground, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (live.active) "有任务正在后台执行" else "只保留未完成或需要处理的任务",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (live.active) t.accentForeground else t.mutedForeground,
+                    )
+                }
             }
 
             when {
-                state.isLoading && state.items.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            CircularProgressIndicator(color = t.accent)
-                            Text("正在读取持久化断点……", color = t.mutedForeground)
+                state.isLoading && state.items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = t.accentForeground)
+                }
+
+                state.items.isEmpty() -> Box(
+                    Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 40.dp, vertical = 80.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(Modifier.size(54.dp), shape = CircleShape, color = t.accent) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.TaskAlt, null, Modifier.size(25.dp), tint = t.accentForeground)
+                            }
                         }
+                        Text("暂无运行任务", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground, fontWeight = FontWeight.Medium)
+                        Text(
+                            "中断、待保存或待后处理的章节会出现在这里。",
+                            Modifier.padding(top = 5.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
                     }
                 }
 
-                state.items.isEmpty() -> {
-                    Box(
-                        Modifier.fillMaxSize().navigationBarsPadding().padding(20.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 24.dp) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(9.dp),
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(48.dp),
-                                    shape = RoundedCornerShape(t.radiusMd),
-                                    color = t.muted,
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Rounded.TaskAlt, null, Modifier.size(24.dp), tint = LocalMiuixTokens.current.success)
-                                    }
-                                }
-                                Text("没有待恢复的 Run", style = MaterialTheme.typography.titleLarge, color = t.foreground)
-                                Text(
-                                    "已完成任务会自动清理；只有运行中、被中断、等待保存或等待后处理的章节会留在这里。",
-                                    color = t.mutedForeground,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize().navigationBarsPadding(),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 26.dp),
+                ) {
+                    item {
+                        Text(
+                            "运行断点只保存执行进度，不会改写小说 Canon。",
+                            Modifier.padding(start = 4.dp, bottom = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
                     }
-                }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize().navigationBarsPadding(),
-                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        item {
-                            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp) {
-                                Row(verticalAlignment = Alignment.Top) {
-                                    LanghuanBadge("RUNTIME", accent = true)
-                                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                                        Text("这些不是小说 Canon", style = MaterialTheme.typography.titleSmall, color = t.foreground)
-                                        Text(
-                                            "Run 断点只保存执行进度和已完成的模型结果；恢复会复用已完成阶段，不会因为重开 App 自动重发相同请求。",
-                                            color = t.mutedForeground,
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        items(state.items, key = { "${it.novelId}:${it.chapterNumber}" }) { item ->
-                            val isLive = live.active && live.novelId == item.novelId && live.chapterNumber == item.chapterNumber
-                            RunCenterCard(
-                                item = item,
-                                isLive = isLive,
-                                liveDetail = if (isLive) live.detail else "",
-                                onOpen = { viewModel.open(item) },
-                                onAbandon = { pendingAbandon = item },
-                            )
-                        }
-
-                        state.error?.let { error ->
-                            item {
-                                LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 12.dp) {
-                                    Text(error, color = t.destructive, style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
+                    itemsIndexed(state.items, key = { _, item -> "${item.novelId}:${item.chapterNumber}" }) { index, item ->
+                        val isLive = live.active && live.novelId == item.novelId && live.chapterNumber == item.chapterNumber
+                        RunCenterRow(
+                            item = item,
+                            isLive = isLive,
+                            liveDetail = if (isLive) live.detail else "",
+                            onOpen = { viewModel.open(item) },
+                            onAbandon = { pendingAbandon = item },
+                        )
+                        if (index != state.items.lastIndex) HorizontalDivider(color = t.border.copy(alpha = .45f), modifier = Modifier.padding(start = 52.dp))
+                    }
+                    state.error?.let { error ->
+                        item { Text(error, Modifier.padding(top = 12.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             }
@@ -184,10 +148,8 @@ fun RunCenterPage(
     pendingAbandon?.let { item ->
         AlertDialog(
             onDismissRequest = { pendingAbandon = null },
-            title = { Text("放弃这个 Run？") },
-            text = {
-                Text("会删除《${item.novelTitle}》第${item.chapterNumber}章的运行断点。已经正式保存进小说的正文不会被删除。")
-            },
+            title = { Text("放弃这个任务？") },
+            text = { Text("会删除《${item.novelTitle}》第${item.chapterNumber}章的运行断点。已经保存到小说的正文不会删除。") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.abandon(item)
@@ -200,7 +162,7 @@ fun RunCenterPage(
 }
 
 @Composable
-private fun RunCenterCard(
+private fun RunCenterRow(
     item: RunCenterItemUi,
     isLive: Boolean,
     liveDetail: String,
@@ -210,136 +172,70 @@ private fun RunCenterCard(
     val t = LocalLanghuanUiTokens.current
     val legacy = LocalMiuixTokens.current
     val statusText = when {
-        isLive -> "后台执行中"
-        item.phase == DurableRunPhase.GENERATING -> "上次运行可能被中断"
-        item.phase == DurableRunPhase.INTERRUPTED -> "已中断 · 可续跑"
-        item.phase == DurableRunPhase.READY_TO_COMMIT -> "正文已完成 · 待保存"
-        item.phase == DurableRunPhase.COMMITTING -> "正文已保存 · 待后处理"
+        isLive -> "执行中"
+        item.phase == DurableRunPhase.GENERATING -> "可能中断"
+        item.phase == DurableRunPhase.INTERRUPTED -> "可续跑"
+        item.phase == DurableRunPhase.READY_TO_COMMIT -> "待保存"
+        item.phase == DurableRunPhase.COMMITTING -> "待后处理"
         else -> "待处理"
     }
     val statusColor = when {
-        isLive -> t.accent
+        isLive -> t.accentForeground
         item.phase == DurableRunPhase.READY_TO_COMMIT -> legacy.success
         item.phase == DurableRunPhase.INTERRUPTED || item.phase == DurableRunPhase.GENERATING -> legacy.warning
-        item.phase == DurableRunPhase.COMMITTING -> t.foreground
         else -> t.mutedForeground
     }
     val actionLabel = when {
-        isLive -> "查看运行"
+        isLive -> "查看"
         item.phase == DurableRunPhase.READY_TO_COMMIT -> "查看并保存"
         item.phase == DurableRunPhase.COMMITTING -> "继续后处理"
-        else -> "继续处理"
+        else -> "继续"
     }
     val actionIcon = if (isLive || item.phase == DurableRunPhase.READY_TO_COMMIT) Icons.Rounded.OpenInNew else Icons.Rounded.PlayArrow
     val latest = item.events.lastOrNull()
 
-    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Surface(
-                    modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
-                    color = statusColor.copy(alpha = .12f),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            if (isLive) Icons.Rounded.TaskAlt else Icons.Rounded.History,
-                            null,
-                            Modifier.size(20.dp),
-                            tint = statusColor,
-                        )
-                    }
+    Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Surface(Modifier.size(38.dp), shape = RoundedCornerShape(12.dp), color = statusColor.copy(alpha = .12f)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(if (isLive) Icons.Rounded.TaskAlt else Icons.Rounded.History, null, Modifier.size(19.dp), tint = statusColor)
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        item.novelTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = t.foreground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        "第${item.chapterNumber}章 · ${item.chapterTitle}",
-                        color = t.mutedForeground,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                RunStatusPill(statusText, statusColor)
             }
-
-            Text(
-                liveDetail.ifBlank { item.note.ifBlank { "Run ${item.runId.take(8)} · 已完成 ${item.completedCount} 个阶段" } },
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-            )
-
-            latest?.let { event ->
-                val prefix = when (event.status) {
-                    RunStatus.RUNNING -> "进行中"
-                    RunStatus.SUCCESS -> "完成"
-                    RunStatus.SKIPPED -> "跳过"
-                    RunStatus.WARNING -> "注意"
-                    RunStatus.FAILED -> "失败"
+            Column(Modifier.padding(start = 11.dp).weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.novelTitle, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = t.foreground, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    RunStatusPill(statusText, statusColor)
                 }
+                Text("第${item.chapterNumber}章 · ${item.chapterTitle}", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "$prefix · ${event.stage.label} · ${event.detail}",
+                    liveDetail.ifBlank { item.note.ifBlank { "已完成 ${item.completedCount} 个阶段" } },
+                    Modifier.padding(top = 7.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = t.foreground,
-                    maxLines = 3,
+                    color = t.mutedForeground,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-
-            if (item.preview.isNotBlank()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusSm),
-                    color = t.muted,
-                    border = BorderStroke(1.dp, t.border),
-                ) {
-                    Text(
-                        item.preview.replace(Regex("\\s+"), " ").trim(),
-                        modifier = Modifier.padding(11.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = t.mutedForeground,
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                latest?.let { event ->
+                    val prefix = when (event.status) {
+                        RunStatus.RUNNING -> "进行中"
+                        RunStatus.SUCCESS -> "完成"
+                        RunStatus.SKIPPED -> "跳过"
+                        RunStatus.WARNING -> "注意"
+                        RunStatus.FAILED -> "失败"
+                    }
+                    Text("$prefix · ${event.stage.label} · ${event.detail}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = t.foreground.copy(alpha = .72f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-            }
+                Text("${ageText(item.updatedAt)} · ${item.runId.take(8)}", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.labelSmall, color = t.mutedForeground.copy(alpha = .78f))
 
-            Text(
-                "${ageText(item.updatedAt)} · Run ${item.runId.take(8)} · 当前阶段 ${item.currentStage}",
-                style = MaterialTheme.typography.labelSmall,
-                color = t.mutedForeground,
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onAbandon,
-                    enabled = !isLive,
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
-                    border = BorderStroke(1.dp, t.border),
-                ) {
-                    Icon(Icons.Rounded.DeleteOutline, null, Modifier.size(17.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(if (isLive) "先停止任务" else "放弃断点")
-                }
-                Button(
-                    onClick = onOpen,
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    shape = RoundedCornerShape(t.radiusSm),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = t.foreground,
-                        contentColor = t.primaryForeground,
-                    ),
-                ) {
-                    Icon(actionIcon, null, Modifier.size(17.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(actionLabel, fontWeight = FontWeight.Medium)
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onAbandon, enabled = !isLive) {
+                        Icon(Icons.Rounded.DeleteOutline, null, Modifier.size(16.dp))
+                        Text(if (isLive) "运行中" else "放弃", Modifier.padding(start = 4.dp), color = if (isLive) t.mutedForeground else t.destructive)
+                    }
+                    TextButton(onClick = onOpen) {
+                        Icon(actionIcon, null, Modifier.size(16.dp))
+                        Text(actionLabel, Modifier.padding(start = 4.dp))
+                    }
                 }
             }
         }
@@ -348,19 +244,8 @@ private fun RunCenterCard(
 
 @Composable
 private fun RunStatusPill(text: String, color: Color) {
-    Surface(
-        color = color.copy(alpha = .10f),
-        contentColor = color,
-        shape = RoundedCornerShape(999.dp),
-        border = BorderStroke(1.dp, color.copy(alpha = .20f)),
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-        )
+    Surface(color = color.copy(alpha = .10f), contentColor = color, shape = RoundedCornerShape(999.dp)) {
+        Text(text, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, maxLines = 1)
     }
 }
 
@@ -368,8 +253,8 @@ private fun ageText(time: Long): String {
     val seconds = ((System.currentTimeMillis() - time).coerceAtLeast(0L) / 1_000L)
     return when {
         seconds < 60 -> "刚刚更新"
-        seconds < 3_600 -> "${seconds / 60} 分钟前更新"
-        seconds < 86_400 -> "${seconds / 3_600} 小时前更新"
-        else -> "${seconds / 86_400} 天前更新"
+        seconds < 3_600 -> "${seconds / 60} 分钟前"
+        seconds < 86_400 -> "${seconds / 3_600} 小时前"
+        else -> "${seconds / 86_400} 天前"
     }
 }
