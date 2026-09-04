@@ -16,29 +16,37 @@ class MobileToolSurfaceDesignContractTest {
         val skills = File(root, "src/main/java/com/xiguli/langhuan/ui/WritingSkillPanel.kt").readText()
         val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfMobileExperience.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt").readText()
+        val design = File(root.parentFile ?: root, "design-systems/langhuan/DESIGN.md").takeIf { it.exists() }?.readText().orEmpty()
 
-        // AI service owns connections/models. Skill management stays in its own screen.
         assertFalse(ai.contains("WritingSkillPanel("))
         assertFalse(ai.contains("LanghuanBadge("))
         assertTrue(ai.contains("var showRouting by remember { mutableStateOf(false) }"))
         assertTrue(ai.contains("任务模型路由"))
-        assertTrue(ai.contains("需要时再展开"))
 
-        // Run center and Skill surfaces are lists/groups, not dashboard card walls.
         assertFalse(runCenter.contains("LanghuanCard("))
         assertFalse(runCenter.contains("\"IDLE\""))
         assertFalse(skillsPage.contains("LanghuanCard("))
         assertFalse(skills.contains("LanghuanCard("))
         assertTrue(skills.contains("expandedSkillId"))
-        assertTrue(skills.contains("SkillGroup("))
 
-        // The shelf uses a restrained native bottom bar instead of a floating oversized pill.
-        assertTrue(shelf.contains("MobileShelfNavigation("))
+        // Shelf v3: one recent-reading anchor + cover wall, no floating dock.
+        assertTrue(shelf.contains("ContinueReadingHeroV3("))
+        assertTrue(shelf.contains("MobileShelfNavigationV3("))
+        assertTrue(shelf.contains("GridCells.Fixed(2)"))
         assertFalse(shelf.contains("MobileShelfDock("))
+        assertFalse(shelf.contains("shadowElevation = 5.dp"))
 
-        // Reader renders a single quiet page counter and no branded footer.
+        // Reader v3: single quiet page counter, attached controls, progressive settings.
         assertTrue(reader.contains("\"${'$'}page / ${'$'}pageCount\""))
+        assertTrue(reader.contains("MobileReaderChromeV3("))
+        assertTrue(reader.contains("if (!advancedOpen)"))
+        assertTrue(reader.contains("高级排版"))
         assertFalse(reader.contains("\"琅嬛\", style = MaterialTheme.typography.labelSmall"))
-        assertFalse(reader.contains("\"${'$'}{chapterIndex + 1}/${'$'}{ordered.size.coerceAtLeast(1)} ·"))
+        assertFalse(reader.contains("故事\", palette.foreground"))
+        assertFalse(reader.contains("编辑\", palette.foreground"))
+
+        assertTrue(design.contains("HeroUI Native"))
+        assertTrue(design.contains("tweakcn"))
+        assertTrue(design.contains("Ponytail"))
     }
 }
