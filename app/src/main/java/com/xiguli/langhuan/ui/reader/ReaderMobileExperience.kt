@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -38,7 +39,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.TheaterComedy
@@ -56,6 +57,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -112,10 +114,11 @@ private data class MobileReaderPalette(
 )
 
 /**
- * Reading-first mobile reader.
+ * Langhuan reader v3.
  *
- * The reading surface is the product. Chrome is hidden by default, only reading controls are
- * allowed in the first layer, and authoring/AI actions live behind the book-more sheet.
+ * Pagination/progress mechanics stay stable; the visual layer is rebuilt around a real reading app:
+ * the page owns the screen, chrome is transient, settings are progressive, and authoring stays behind
+ * the book-more sheet.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,18 +138,10 @@ fun ReaderMobileExperience(
 
     if (chapter == null) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Box(
-                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
-                contentAlignment = Alignment.Center,
-            ) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = t.primary)
-                    Text(
-                        "正在准备正文",
-                        Modifier.padding(top = 10.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = t.mutedForeground,
-                    )
+                    Text("正在准备正文", Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                 }
             }
         }
@@ -170,7 +165,7 @@ fun ReaderMobileExperience(
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp).size(42.dp),
                 shape = CircleShape,
                 color = t.card.copy(alpha = .94f),
-                shadowElevation = 5.dp,
+                shadowElevation = 3.dp,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.ArrowBack, "返回阅读", Modifier.size(20.dp), tint = t.foreground)
@@ -180,7 +175,7 @@ fun ReaderMobileExperience(
         return
     }
 
-    MobileReaderPage(
+    MobileReaderPageV3(
         book = book,
         state = state,
         chapter = chapter,
@@ -190,7 +185,7 @@ fun ReaderMobileExperience(
     )
 
     if (showInfo) {
-        MobileBookInfoSheet(
+        MobileBookInfoSheetV3(
             book = book,
             chapterCount = state.chapters.size,
             currentChapter = chapter.chapterNumber,
@@ -214,7 +209,7 @@ fun ReaderMobileExperience(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MobileReaderPage(
+private fun MobileReaderPageV3(
     book: ReaderBookUi,
     state: LibraryExperienceState,
     chapter: ChapterDraft,
@@ -225,9 +220,7 @@ private fun MobileReaderPage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val prefs = remember(book.id) {
-        context.getSharedPreferences("reader_mobile_settings_v2", Context.MODE_PRIVATE)
-    }
+    val prefs = remember(book.id) { context.getSharedPreferences("reader_mobile_settings_v3", Context.MODE_PRIVATE) }
     val ordered = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } }
     val chapterIndex = ordered.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0)
     val previous = ordered.getOrNull(chapterIndex - 1)
@@ -245,21 +238,17 @@ private fun MobileReaderPage(
     var fontKey by remember(book.id) { mutableStateOf(prefs.getString("family_${book.id}", "serif") ?: "serif") }
     var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme_${book.id}", "paper") ?: "paper") }
     var pageModeKey by remember(book.id) {
-        mutableStateOf(
-            prefs.getString("page_mode_${book.id}", ReaderPageModeV10.PAGE.key)
-                ?: ReaderPageModeV10.PAGE.key,
-        )
+        mutableStateOf(prefs.getString("page_mode_${book.id}", ReaderPageModeV10.PAGE.key) ?: ReaderPageModeV10.PAGE.key)
     }
 
     val pageMode = ReaderPageModeV10.entries.firstOrNull { it.key == pageModeKey } ?: ReaderPageModeV10.PAGE
-    val palette = mobileReaderPalette(themeKey)
-    val family = mobileReaderFont(fontKey)
+    val palette = mobileReaderPaletteV3(themeKey)
+    val family = mobileReaderFontV3(fontKey)
     val displayTitle = remember(chapter.id, chapter.title, chapter.chapterNumber) {
         readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber)
     }
     val readingText = remember(chapter.id, chapter.title, chapter.content) {
-        readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
-            .ifBlank { "这一章没有正文。" }
+        readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content)).ifBlank { "这一章没有正文。" }
     }
     val measured = rememberReaderMeasuredPaginationV16(
         text = readingText,
@@ -273,26 +262,19 @@ private fun MobileReaderPage(
     )
     val pages = measured.pages.ifEmpty { listOf(readingText) }
     val offsets = measured.offsets.ifEmpty { listOf(0) }
-    val saved = remember(chapter.id) {
-        ReaderProgressStoreV11.load(context, book.id, chapter.chapterNumber)
-    }
+    val saved = remember(chapter.id) { ReaderProgressStoreV11.load(context, book.id, chapter.chapterNumber) }
     val initialPage = remember(chapter.id, measured.layoutToken, pageModeKey) {
         when {
             saved.chapterNumber != chapter.chapterNumber -> 0
-            saved.textOffset > 0 -> pageForRawTextOffset(offsets, saved.textOffset.coerceIn(0, readingText.length))
+            saved.textOffset > 0 -> pageForRawTextOffsetV3(offsets, saved.textOffset.coerceIn(0, readingText.length))
             saved.modeKey == pageMode.key -> saved.pageIndex.coerceIn(0, pages.lastIndex)
             else -> 0
         }
     }
-    val pagerState = rememberPagerState(
-        initialPage = initialPage.coerceIn(0, pages.lastIndex),
-        pageCount = { pages.size.coerceAtLeast(1) },
-    )
+    val pagerState = rememberPagerState(initialPage = initialPage.coerceIn(0, pages.lastIndex), pageCount = { pages.size.coerceAtLeast(1) })
     val scrollState = rememberScrollState()
     var crossingChapter by remember(chapter.id) { mutableStateOf(false) }
-    var anchorOffset by remember(chapter.id) {
-        mutableIntStateOf(saved.textOffset.coerceIn(0, readingText.length))
-    }
+    var anchorOffset by remember(chapter.id) { mutableIntStateOf(saved.textOffset.coerceIn(0, readingText.length)) }
     val layoutKey = "$pageModeKey|$fontKey|${fontSize.roundToInt()}|${(lineFactor * 100).roundToInt()}|${sidePadding.roundToInt()}|${paragraphSpacing.roundToInt()}|$firstLineIndent|${measured.layoutToken}"
     var appliedLayoutKey by remember(chapter.id) { mutableStateOf(layoutKey) }
 
@@ -300,21 +282,13 @@ private fun MobileReaderPage(
 
     fun currentTextOffset(): Int = when (pageMode) {
         ReaderPageModeV10.SCROLL -> {
-            val fraction = if (scrollState.maxValue <= 0) {
-                0f
-            } else {
-                scrollState.value.toFloat() / scrollState.maxValue.toFloat()
-            }
+            val fraction = if (scrollState.maxValue <= 0) 0f else scrollState.value.toFloat() / scrollState.maxValue.toFloat()
             (readingText.length * fraction).roundToInt().coerceIn(0, readingText.length)
         }
         else -> offsets.getOrElse(currentPage()) { 0 }.coerceIn(0, readingText.length)
     }
 
-    fun currentFraction(): Float = if (readingText.isBlank()) {
-        0f
-    } else {
-        currentTextOffset().toFloat() / readingText.length.toFloat()
-    }
+    fun currentFraction(): Float = if (readingText.isBlank()) 0f else currentTextOffset().toFloat() / readingText.length.toFloat()
 
     fun persist() {
         if (crossingChapter) return
@@ -357,20 +331,14 @@ private fun MobileReaderPage(
 
     fun tapPrevious() {
         val page = currentPage()
-        if (page > 0) {
-            scope.launch { pagerState.animateScrollToPage(page - 1) }
-        } else {
-            jumpChapter(previous, atEnd = true)
-        }
+        if (page > 0) scope.launch { pagerState.animateScrollToPage(page - 1) }
+        else jumpChapter(previous, atEnd = true)
     }
 
     fun tapNext() {
         val page = currentPage()
-        if (page < pages.lastIndex) {
-            scope.launch { pagerState.animateScrollToPage(page + 1) }
-        } else {
-            jumpChapter(next, atEnd = false)
-        }
+        if (page < pages.lastIndex) scope.launch { pagerState.animateScrollToPage(page + 1) }
+        else jumpChapter(next, atEnd = false)
     }
 
     LaunchedEffect(layoutKey, pages.size, scrollState.maxValue) {
@@ -378,19 +346,11 @@ private fun MobileReaderPage(
         val targetOffset = anchorOffset.coerceIn(0, readingText.length)
         if (pageMode == ReaderPageModeV10.SCROLL) {
             if (scrollState.maxValue > 0) {
-                val fraction = if (readingText.isBlank()) {
-                    0f
-                } else {
-                    targetOffset.toFloat() / readingText.length.toFloat()
-                }
-                scrollState.scrollTo(
-                    (scrollState.maxValue * fraction).roundToInt().coerceIn(0, scrollState.maxValue),
-                )
+                val fraction = if (readingText.isBlank()) 0f else targetOffset.toFloat() / readingText.length.toFloat()
+                scrollState.scrollTo((scrollState.maxValue * fraction).roundToInt().coerceIn(0, scrollState.maxValue))
             }
         } else {
-            pagerState.scrollToPage(
-                pageForRawTextOffset(offsets, targetOffset).coerceIn(0, pages.lastIndex),
-            )
+            pagerState.scrollToPage(pageForRawTextOffsetV3(offsets, targetOffset).coerceIn(0, pages.lastIndex))
         }
         appliedLayoutKey = layoutKey
     }
@@ -399,14 +359,11 @@ private fun MobileReaderPage(
         if (pageMode != ReaderPageModeV10.SCROLL || scrollState.maxValue <= 0) return@LaunchedEffect
         val offset = when {
             saved.textOffset > 0 -> saved.textOffset.coerceIn(0, readingText.length)
-            saved.positionFraction > 0f ->
-                (readingText.length * saved.positionFraction).roundToInt().coerceIn(0, readingText.length)
+            saved.positionFraction > 0f -> (readingText.length * saved.positionFraction).roundToInt().coerceIn(0, readingText.length)
             else -> 0
         }
-        val fraction = if (readingText.isBlank()) 0f else offset.toFloat() / readingText.length.toFloat()
-        scrollState.scrollTo(
-            (scrollState.maxValue * fraction).roundToInt().coerceIn(0, scrollState.maxValue),
-        )
+        val fraction = if (readingText.isBlank()) 0f else offset.toString().toFloat() / readingText.length.toFloat()
+        scrollState.scrollTo((scrollState.maxValue * fraction).roundToInt().coerceIn(0, scrollState.maxValue))
     }
 
     LaunchedEffect(chapter.id, pageMode, layoutKey) {
@@ -422,16 +379,7 @@ private fun MobileReaderPage(
         }
     }
 
-    LaunchedEffect(
-        fontSize,
-        lineFactor,
-        sidePadding,
-        paragraphSpacing,
-        firstLineIndent,
-        fontKey,
-        themeKey,
-        pageModeKey,
-    ) {
+    LaunchedEffect(fontSize, lineFactor, sidePadding, paragraphSpacing, firstLineIndent, fontKey, themeKey, pageModeKey) {
         prefs.edit()
             .putFloat("font_${book.id}", fontSize)
             .putFloat("line_${book.id}", lineFactor)
@@ -451,20 +399,12 @@ private fun MobileReaderPage(
         object : NestedScrollConnection {
             var edgeDrag = 0f
 
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (pageMode == ReaderPageModeV10.SCROLL || source != NestedScrollSource.UserInput) {
-                    return Offset.Zero
-                }
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (pageMode == ReaderPageModeV10.SCROLL || source != NestedScrollSource.UserInput) return Offset.Zero
                 val page = pagerState.currentPage.coerceIn(0, pages.lastIndex)
                 edgeDrag = when {
-                    page == 0 && available.x > 0f ->
-                        (edgeDrag + available.x).coerceAtMost(edgeThresholdPx * 2f)
-                    page == pages.lastIndex && available.x < 0f ->
-                        (edgeDrag + available.x).coerceAtLeast(-edgeThresholdPx * 2f)
+                    page == 0 && available.x > 0f -> (edgeDrag + available.x).coerceAtMost(edgeThresholdPx * 2f)
+                    page == pages.lastIndex && available.x < 0f -> (edgeDrag + available.x).coerceAtLeast(-edgeThresholdPx * 2f)
                     else -> 0f
                 }
                 return Offset.Zero
@@ -484,26 +424,21 @@ private fun MobileReaderPage(
         }
     }
 
-    Box(
-        Modifier.fillMaxSize().background(palette.background).windowInsetsPadding(WindowInsets.safeDrawing),
-    ) {
+    Box(Modifier.fillMaxSize().background(palette.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Box(
             Modifier.fillMaxSize().pointerInput(chapter.id, pageModeKey, pagerState.settledPage) {
                 detectTapGestures { offset ->
-                    if (pageMode == ReaderPageModeV10.SCROLL) {
-                        chromeVisible = !chromeVisible
-                    } else {
-                        when {
-                            offset.x < size.width * .28f -> tapPrevious()
-                            offset.x > size.width * .72f -> tapNext()
-                            else -> chromeVisible = !chromeVisible
-                        }
+                    if (pageMode == ReaderPageModeV10.SCROLL) chromeVisible = !chromeVisible
+                    else when {
+                        offset.x < size.width * .28f -> tapPrevious()
+                        offset.x > size.width * .72f -> tapNext()
+                        else -> chromeVisible = !chromeVisible
                     }
                 }
             },
         ) {
             when (pageMode) {
-                ReaderPageModeV10.SCROLL -> MobileScrollReadingPage(
+                ReaderPageModeV10.SCROLL -> MobileScrollReadingPageV3(
                     title = displayTitle,
                     text = readingText,
                     next = next,
@@ -526,7 +461,7 @@ private fun MobileReaderPage(
                     beyondViewportPageCount = 1,
                 ) { page ->
                     val safePage = page.coerceIn(0, pages.lastIndex)
-                    MobileReaderPageContent(
+                    MobileReaderPageContentV3(
                         pageText = pages[safePage],
                         title = displayTitle,
                         firstPage = safePage == 0,
@@ -537,8 +472,7 @@ private fun MobileReaderPage(
                         sidePadding = sidePadding,
                         paragraphSpacing = paragraphSpacing,
                         indentEnabled = firstLineIndent,
-                        indentFirstParagraph = firstLineIndent &&
-                            measured.indentFirstParagraph.getOrElse(safePage) { true },
+                        indentFirstParagraph = firstLineIndent && measured.indentFirstParagraph.getOrElse(safePage) { true },
                         family = family,
                         palette = palette,
                     )
@@ -547,7 +481,7 @@ private fun MobileReaderPage(
         }
 
         if (chromeVisible) {
-            MobileReaderChrome(
+            MobileReaderChromeV3(
                 modifier = Modifier.fillMaxSize(),
                 chapterTitle = displayTitle,
                 palette = palette,
@@ -555,8 +489,14 @@ private fun MobileReaderPage(
                     persist()
                     onBack()
                 },
-                onMore = onInfo,
-                onDirectory = { showDirectory = true },
+                onMore = {
+                    chromeVisible = false
+                    onInfo()
+                },
+                onDirectory = {
+                    chromeVisible = false
+                    showDirectory = true
+                },
                 onFontDecrease = {
                     rememberAnchor()
                     fontSize = (fontSize - 1f).coerceAtLeast(15f)
@@ -565,27 +505,29 @@ private fun MobileReaderPage(
                     rememberAnchor()
                     fontSize = (fontSize + 1f).coerceAtMost(30f)
                 },
-                onTheme = { themeKey = nextReaderTheme(themeKey) },
-                onSettings = { showSettings = true },
+                onTheme = { themeKey = nextReaderThemeV3(themeKey) },
+                onSettings = {
+                    chromeVisible = false
+                    showSettings = true
+                },
             )
         }
     }
 
     if (showDirectory) {
-        MobileReaderDirectory(
+        MobileReaderDirectoryV3(
             chapters = ordered,
             current = chapter.chapterNumber,
             onDismiss = { showDirectory = false },
             onSelect = { number ->
                 showDirectory = false
-                val target = ordered.firstOrNull { it.chapterNumber == number }
-                jumpChapter(target, atEnd = false)
+                jumpChapter(ordered.firstOrNull { it.chapterNumber == number }, atEnd = false)
             },
         )
     }
 
     if (showSettings) {
-        MobileReaderSettings(
+        MobileReaderSettingsV3(
             pageModeKey = pageModeKey,
             themeKey = themeKey,
             fontKey = fontKey,
@@ -609,7 +551,7 @@ private fun MobileReaderPage(
 }
 
 @Composable
-private fun MobileReaderPageContent(
+private fun MobileReaderPageContentV3(
     pageText: String,
     title: String,
     firstPage: Boolean,
@@ -626,32 +568,33 @@ private fun MobileReaderPageContent(
 ) {
     Column(
         Modifier.fillMaxSize().background(palette.background)
-            .padding(horizontal = sidePadding.dp, vertical = 14.dp),
+            .padding(horizontal = sidePadding.dp)
+            .padding(top = 22.dp, bottom = 10.dp),
     ) {
         if (firstPage) {
-            Spacer(Modifier.height(5.dp))
             Text(
                 title,
                 style = TextStyle(
                     fontSize = (fontSize + 2f).sp,
-                    lineHeight = (fontSize + 8f).sp,
+                    lineHeight = (fontSize + 9f).sp,
                     fontFamily = family,
                     fontWeight = FontWeight.Medium,
                     color = palette.foreground,
                 ),
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(18.dp))
         } else {
             Text(
                 title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall,
-                color = palette.secondary.copy(alpha = .58f),
+                color = palette.secondary.copy(alpha = .50f),
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
         }
-        MobileReaderParagraphs(
+
+        MobileReaderParagraphsV3(
             text = pageText,
             fontSize = fontSize,
             lineFactor = lineFactor,
@@ -662,22 +605,18 @@ private fun MobileReaderPageContent(
             color = palette.foreground,
         )
         Spacer(Modifier.weight(1f))
-        Row(
-            Modifier.fillMaxWidth().padding(top = 5.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "$page / $pageCount",
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.secondary.copy(alpha = .48f),
-            )
-        }
+        Text(
+            "$page / $pageCount",
+            modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+            textAlign = TextAlign.End,
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.secondary.copy(alpha = .42f),
+        )
     }
 }
 
 @Composable
-private fun MobileScrollReadingPage(
+private fun MobileScrollReadingPageV3(
     title: String,
     text: String,
     next: ChapterDraft?,
@@ -692,20 +631,21 @@ private fun MobileScrollReadingPage(
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(scrollState)
-            .padding(horizontal = sidePadding.dp, vertical = 22.dp),
+            .padding(horizontal = sidePadding.dp)
+            .padding(top = 28.dp, bottom = 24.dp),
     ) {
         Text(
             title,
             style = TextStyle(
                 fontSize = (fontSize + 2f).sp,
-                lineHeight = (fontSize + 8f).sp,
+                lineHeight = (fontSize + 9f).sp,
                 fontFamily = family,
                 fontWeight = FontWeight.Medium,
                 color = palette.foreground,
             ),
         )
-        Spacer(Modifier.height(22.dp))
-        MobileReaderParagraphs(
+        Spacer(Modifier.height(20.dp))
+        MobileReaderParagraphsV3(
             text = text,
             fontSize = fontSize,
             lineFactor = lineFactor,
@@ -715,23 +655,19 @@ private fun MobileScrollReadingPage(
             family = family,
             color = palette.foreground,
         )
-        Spacer(Modifier.height(56.dp))
+        Spacer(Modifier.height(64.dp))
         Text(
-            if (next == null) {
-                "— 全书完 —"
-            } else {
-                "下一章 · ${readerDisplayChapterTitleV13(next.title, next.chapterNumber)}"
-            },
-            Modifier.fillMaxWidth().padding(bottom = 28.dp),
+            if (next == null) "— 全书完 —" else "下一章 · ${readerDisplayChapterTitleV13(next.title, next.chapterNumber)}",
+            Modifier.fillMaxWidth().padding(bottom = 26.dp),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelMedium,
-            color = palette.secondary.copy(alpha = .72f),
+            color = palette.secondary.copy(alpha = .62f),
         )
     }
 }
 
 @Composable
-private fun MobileReaderParagraphs(
+private fun MobileReaderParagraphsV3(
     text: String,
     fontSize: Float,
     lineFactor: Float,
@@ -741,9 +677,7 @@ private fun MobileReaderParagraphs(
     family: FontFamily,
     color: Color,
 ) {
-    val paragraphs = remember(text) {
-        text.replace("\r\n", "\n").split(Regex("\\n+")).filter { it.isNotBlank() }
-    }
+    val paragraphs = remember(text) { text.replace("\r\n", "\n").split(Regex("\\n+")).filter { it.isNotBlank() } }
     paragraphs.forEachIndexed { index, paragraph ->
         val shouldIndent = indentEnabled && (index > 0 || indentFirstParagraph)
         Text(
@@ -757,14 +691,12 @@ private fun MobileReaderParagraphs(
                 textIndent = TextIndent(firstLine = if (shouldIndent) (fontSize * 2f).sp else 0.sp),
             ),
         )
-        if (index < paragraphs.lastIndex) {
-            Spacer(Modifier.height(paragraphSpacing.dp))
-        }
+        if (index < paragraphs.lastIndex) Spacer(Modifier.height(paragraphSpacing.dp))
     }
 }
 
 @Composable
-private fun MobileReaderChrome(
+private fun MobileReaderChromeV3(
     modifier: Modifier,
     chapterTitle: String,
     palette: MobileReaderPalette,
@@ -777,99 +709,73 @@ private fun MobileReaderChrome(
     onSettings: () -> Unit,
 ) {
     Box(modifier) {
-        Surface(
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-            color = palette.chrome.copy(alpha = .92f),
-            contentColor = palette.foreground,
-            shadowElevation = 0.dp,
+        Row(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                Modifier.height(50.dp).padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ReaderChromeIcon(Icons.Rounded.ArrowBack, "返回", palette.foreground, onBack)
-                Text(
-                    chapterTitle,
-                    Modifier.padding(horizontal = 8.dp).weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.foreground.copy(alpha = .84f),
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-                ReaderChromeIcon(Icons.Rounded.MoreHoriz, "更多", palette.foreground, onMore)
-            }
+            ReaderChromeIconV3(Icons.Rounded.ArrowBack, "返回", palette, onBack)
+            Text(
+                chapterTitle,
+                Modifier.padding(horizontal = 10.dp).weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.foreground.copy(alpha = .64f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            ReaderChromeIconV3(Icons.Rounded.MoreHoriz, "更多", palette, onMore)
         }
 
         Surface(
-            modifier = Modifier.align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 9.dp)
-                .fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = palette.chrome.copy(alpha = .96f),
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+            color = palette.chrome.copy(alpha = .98f),
             contentColor = palette.foreground,
-            shadowElevation = 5.dp,
+            shadowElevation = 4.dp,
         ) {
             Row(
-                Modifier.fillMaxWidth().height(54.dp).padding(horizontal = 7.dp),
+                Modifier.fillMaxWidth().navigationBarsPadding().height(64.dp).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MobileReaderAction(Modifier.weight(1f), Icons.Rounded.FormatListBulleted, "目录", palette.foreground, onDirectory)
-                MobileReaderAction(Modifier.weight(1f), Icons.Rounded.Remove, "A−", palette.foreground, onFontDecrease)
-                MobileReaderAction(Modifier.weight(1f), Icons.Rounded.AutoStories, "背景", palette.foreground, onTheme)
-                MobileReaderAction(Modifier.weight(1f), Icons.Rounded.Add, "A+", palette.foreground, onFontIncrease)
-                MobileReaderAction(Modifier.weight(1f), Icons.Rounded.Tune, "排版", palette.foreground, onSettings)
+                ReaderBottomActionV3(Modifier.weight(1f), Icons.Rounded.FormatListBulleted, "目录", palette.foreground, onDirectory)
+                ReaderBottomActionV3(Modifier.weight(1f), Icons.Rounded.Remove, "A−", palette.foreground, onFontDecrease)
+                ReaderBottomActionV3(Modifier.weight(1f), Icons.Rounded.Palette, "背景", palette.foreground, onTheme)
+                ReaderBottomActionV3(Modifier.weight(1f), Icons.Rounded.Add, "A+", palette.foreground, onFontIncrease)
+                ReaderBottomActionV3(Modifier.weight(1f), Icons.Rounded.Tune, "排版", palette.foreground, onSettings)
             }
         }
     }
 }
 
 @Composable
-private fun ReaderChromeIcon(
-    icon: ImageVector,
-    description: String,
-    color: Color,
-    onClick: () -> Unit,
-) {
+private fun ReaderChromeIconV3(icon: ImageVector, description: String, palette: MobileReaderPalette, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(42.dp),
         shape = CircleShape,
-        color = Color.Transparent,
+        color = palette.chrome.copy(alpha = .72f),
+        shadowElevation = 1.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(icon, description, Modifier.size(20.dp), tint = color.copy(alpha = .86f))
+            Icon(icon, description, Modifier.size(20.dp), tint = palette.foreground.copy(alpha = .84f))
         }
     }
 }
 
 @Composable
-private fun MobileReaderAction(
-    modifier: Modifier,
-    icon: ImageVector,
-    label: String,
-    color: Color,
-    onClick: () -> Unit,
-) {
+private fun ReaderBottomActionV3(modifier: Modifier, icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
     Column(
-        modifier.clickable(onClick = onClick).padding(vertical = 4.dp),
+        modifier.clickable(onClick = onClick).padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, null, Modifier.size(18.dp), tint = color.copy(alpha = .90f))
-        Text(
-            label,
-            Modifier.padding(top = 3.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = color.copy(alpha = .70f),
-        )
+        Icon(icon, null, Modifier.size(19.dp), tint = color.copy(alpha = .88f))
+        Text(label, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = .66f))
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MobileReaderDirectory(
+private fun MobileReaderDirectoryV3(
     chapters: List<ChapterDraft>,
     current: Int,
     onDismiss: () -> Unit,
@@ -879,21 +785,20 @@ private fun MobileReaderDirectory(
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val filtered = remember(chapters, query) {
-        chapters.filter {
-            query.isBlank() || readerDisplayChapterTitleV13(it.title, it.chapterNumber).contains(query, true)
-        }
+        chapters.filter { query.isBlank() || readerDisplayChapterTitleV13(it.title, it.chapterNumber).contains(query, true) }
     }
+    val initialIndex = remember(chapters, current) {
+        (chapters.indexOfFirst { it.chapterNumber == current } - 3).coerceAtLeast(0)
+    }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = t.background,
-        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {
         Column(Modifier.fillMaxWidth().heightIn(max = 690.dp)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("目录", style = MaterialTheme.typography.headlineSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
                     Text("${chapters.size} 章 · 当前第 ${current.coerceAtLeast(1)} 章", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
@@ -905,63 +810,53 @@ private fun MobileReaderDirectory(
                     },
                     modifier = Modifier.size(42.dp),
                     shape = CircleShape,
-                    color = if (searchOpen) t.accent else Color.Transparent,
+                    color = Color.Transparent,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "搜索章节", Modifier.size(19.dp), tint = if (searchOpen) t.accentForeground else t.foreground)
+                        Icon(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "搜索章节", Modifier.size(19.dp), tint = t.foreground)
                     }
                 }
             }
 
             if (searchOpen) {
-                Surface(
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    color = t.card,
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Search, null, Modifier.size(18.dp), tint = t.mutedForeground)
-                        androidx.compose.material3.OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            modifier = Modifier.padding(start = 6.dp).weight(1f),
-                            placeholder = { Text("搜索章节") },
-                            singleLine = true,
-                        )
-                    }
-                }
+                    placeholder = { Text("搜索章节") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(18.dp)) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                )
             }
 
             LazyColumn(
-                Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                state = listState,
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
             ) {
                 items(filtered, key = { it.id }) { item ->
                     val selected = item.chapterNumber == current
-                    Surface(
-                        onClick = { onSelect(item.chapterNumber) },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (selected) t.accent.copy(alpha = .72f) else Color.Transparent,
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onSelect(item.chapterNumber) }.height(50.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (selected) {
-                                Surface(Modifier.size(width = 3.dp, height = 26.dp), shape = CircleShape, color = t.primary) {}
-                            } else {
-                                Spacer(Modifier.width(3.dp))
-                            }
-                            Text(
-                                readerDisplayChapterTitleV13(item.title, item.chapterNumber),
-                                Modifier.padding(start = 12.dp).weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = t.foreground,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (selected) Text("当前", style = MaterialTheme.typography.labelSmall, color = t.primary, fontWeight = FontWeight.SemiBold)
-                        }
+                        Box(
+                            Modifier.width(3.dp).height(25.dp)
+                                .background(if (selected) t.primary else Color.Transparent, CircleShape),
+                        )
+                        Text(
+                            readerDisplayChapterTitleV13(item.title, item.chapterNumber),
+                            Modifier.padding(start = 12.dp).weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (selected) t.foreground else t.foreground.copy(alpha = .82f),
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (selected) Text("当前", style = MaterialTheme.typography.labelSmall, color = t.primary, fontWeight = FontWeight.SemiBold)
                     }
+                    HorizontalDivider(color = t.border.copy(alpha = .28f), modifier = Modifier.padding(start = 15.dp))
                 }
             }
             Spacer(Modifier.navigationBarsPadding().height(6.dp))
@@ -971,7 +866,7 @@ private fun MobileReaderDirectory(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MobileReaderSettings(
+private fun MobileReaderSettingsV3(
     pageModeKey: String,
     themeKey: String,
     fontKey: String,
@@ -1003,149 +898,144 @@ private fun MobileReaderSettings(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = t.background,
-        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("阅读设置", style = MaterialTheme.typography.headlineSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
-                    Text("常用设置在前，高级排版按需展开", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
-                }
-                ReaderChromeIcon(Icons.Rounded.Close, "关闭", t.foreground, onDismiss)
-            }
-
-            MobileSettingLabel("阅读背景")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                themes.forEach { (key, label, color) ->
-                    MobileThemeChoice(label = label, color = color, selected = themeKey == key) { onTheme(key) }
-                }
-            }
-
-            MobileSettingLabel("字号")
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = t.card) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MobileRoundControl(Icons.Rounded.Remove, "减小字号") {
-                        onBeforeLayoutChange()
-                        onFontSize((fontSize - 1f).coerceAtLeast(15f))
+        if (!advancedOpen) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("阅读设置", style = MaterialTheme.typography.headlineSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
+                        Text("只把最常用的调整放在这一层", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                     }
-                    Text("${fontSize.roundToInt()}", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleLarge, color = t.foreground, fontWeight = FontWeight.Medium)
-                    MobileRoundControl(Icons.Rounded.Add, "增大字号") {
-                        onBeforeLayoutChange()
-                        onFontSize((fontSize + 1f).coerceAtMost(30f))
+                    ReaderSheetIconV3(Icons.Rounded.Close, "关闭", onDismiss)
+                }
+
+                ReaderSettingLabelV3("阅读背景")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    themes.forEach { (key, label, color) ->
+                        ReaderThemeChoiceV3(label, color, themeKey == key) { onTheme(key) }
                     }
                 }
-            }
 
-            MobileSettingLabel("翻页方式")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    ReaderPageModeV10.PAGE.key to "左右",
-                    ReaderPageModeV10.COVER.key to "覆盖",
-                    ReaderPageModeV10.SCROLL.key to "滚动",
-                ).forEach { (key, label) ->
-                    MobileChoiceChip(text = label, selected = pageModeKey == key, modifier = Modifier.weight(1f)) {
-                        if (pageModeKey != key) onBeforeLayoutChange()
-                        onPageMode(key)
+                ReaderSettingLabelV3("字号")
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = t.card) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ReaderRoundControlV3(Icons.Rounded.Remove, "减小字号") {
+                            onBeforeLayoutChange()
+                            onFontSize((fontSize - 1f).coerceAtLeast(15f))
+                        }
+                        Text("${fontSize.roundToInt()} sp", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium, color = t.foreground, fontWeight = FontWeight.Medium)
+                        ReaderRoundControlV3(Icons.Rounded.Add, "增大字号") {
+                            onBeforeLayoutChange()
+                            onFontSize((fontSize + 1f).coerceAtMost(30f))
+                        }
                     }
                 }
-            }
 
-            Surface(
-                onClick = { advancedOpen = !advancedOpen },
-                modifier = Modifier.fillMaxWidth().padding(top = 22.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = t.card,
-            ) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                ReaderSettingLabelV3("阅读方式")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        ReaderPageModeV10.PAGE.key to "左右",
+                        ReaderPageModeV10.COVER.key to "覆盖",
+                        ReaderPageModeV10.SCROLL.key to "滚动",
+                    ).forEach { (key, label) ->
+                        ReaderChoiceV3(label, pageModeKey == key, Modifier.weight(1f)) {
+                            if (pageModeKey != key) onBeforeLayoutChange()
+                            onPageMode(key)
+                        }
+                    }
+                }
+
+                Row(
+                    Modifier.fillMaxWidth().clickable { advancedOpen = true }.padding(vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Column(Modifier.weight(1f)) {
                         Text("高级排版", style = MaterialTheme.typography.bodyLarge, color = t.foreground, fontWeight = FontWeight.Medium)
-                        Text("字体、行距、页边距、段间距与缩进", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                        Text("字体、行距、页边距、段距和缩进", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                     }
-                    Icon(if (advancedOpen) Icons.Rounded.KeyboardArrowLeft else Icons.Rounded.KeyboardArrowRight, null, Modifier.size(20.dp), tint = t.mutedForeground)
+                    Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(20.dp), tint = t.mutedForeground)
                 }
+                Spacer(Modifier.navigationBarsPadding().height(10.dp))
             }
+        } else {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    ReaderSheetIconV3(Icons.Rounded.KeyboardArrowLeft, "返回常用设置") { advancedOpen = false }
+                    Column(Modifier.padding(start = 6.dp).weight(1f)) {
+                        Text("高级排版", style = MaterialTheme.typography.headlineSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
+                        Text("调整后保持当前阅读位置", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    }
+                    ReaderSheetIconV3(Icons.Rounded.Close, "关闭", onDismiss)
+                }
 
-            if (advancedOpen) {
-                MobileSettingLabel("字体")
+                ReaderSettingLabelV3("字体")
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MobileChoiceChip("衬线", fontKey == "serif", Modifier.weight(1f)) {
+                    ReaderChoiceV3("衬线", fontKey == "serif", Modifier.weight(1f)) {
                         if (fontKey != "serif") onBeforeLayoutChange()
                         onFont("serif")
                     }
-                    MobileChoiceChip("无衬线", fontKey == "sans", Modifier.weight(1f)) {
+                    ReaderChoiceV3("无衬线", fontKey == "sans", Modifier.weight(1f)) {
                         if (fontKey != "sans") onBeforeLayoutChange()
                         onFont("sans")
                     }
                 }
 
-                MobileSettingLabel("排版密度")
-                Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = t.card) {
+                ReaderSettingLabelV3("排版密度")
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = t.card) {
                     Column {
-                        MobilePresetRow(label = "行距", options = listOf("紧" to 1.55f, "标准" to 1.78f, "松" to 1.94f), current = lineFactor) {
-                            onBeforeLayoutChange()
-                            onLine(it)
+                        ReaderPresetRowV3("行距", listOf("紧" to 1.55f, "标准" to 1.78f, "松" to 1.94f), lineFactor) {
+                            onBeforeLayoutChange(); onLine(it)
                         }
-                        HorizontalDivider(color = t.border.copy(alpha = .55f), modifier = Modifier.padding(start = 14.dp))
-                        MobilePresetRow(label = "页边距", options = listOf("窄" to 18f, "标准" to 24f, "宽" to 32f), current = sidePadding) {
-                            onBeforeLayoutChange()
-                            onPadding(it)
+                        HorizontalDivider(color = t.border.copy(alpha = .38f), modifier = Modifier.padding(start = 14.dp))
+                        ReaderPresetRowV3("页边距", listOf("窄" to 18f, "标准" to 24f, "宽" to 32f), sidePadding) {
+                            onBeforeLayoutChange(); onPadding(it)
                         }
-                        HorizontalDivider(color = t.border.copy(alpha = .55f), modifier = Modifier.padding(start = 14.dp))
-                        MobilePresetRow(label = "段间距", options = listOf("紧" to 2f, "标准" to 6f, "松" to 12f), current = paragraphSpacing) {
-                            onBeforeLayoutChange()
-                            onParagraph(it)
+                        HorizontalDivider(color = t.border.copy(alpha = .38f), modifier = Modifier.padding(start = 14.dp))
+                        ReaderPresetRowV3("段间距", listOf("紧" to 2f, "标准" to 6f, "松" to 12f), paragraphSpacing) {
+                            onBeforeLayoutChange(); onParagraph(it)
                         }
-                        HorizontalDivider(color = t.border.copy(alpha = .55f), modifier = Modifier.padding(start = 14.dp))
+                        HorizontalDivider(color = t.border.copy(alpha = .38f), modifier = Modifier.padding(start = 14.dp))
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                onBeforeLayoutChange()
-                                onIndent(!firstLineIndent)
+                                onBeforeLayoutChange(); onIndent(!firstLineIndent)
                             }.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("首行缩进", style = MaterialTheme.typography.bodyMedium, color = t.foreground, fontWeight = FontWeight.Medium)
+                                Text("首行缩进", style = MaterialTypeography.bodyMedium, color = t.foreground, fontWeight = FontWeight.Medium)
                                 Text("每个自然段缩进两个汉字", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                             }
                             Switch(checked = firstLineIndent, onCheckedChange = {
-                                onBeforeLayoutChange()
-                                onIndent(it)
+                                onBeforeLayoutChange(); onIndent(it)
                             })
                         }
                     }
                 }
+                Spacer(Modifier.navigationBarsPadding().height(18.dp))
             }
-
-            Spacer(Modifier.navigationBarsPadding().height(22.dp))
         }
     }
 }
 
 @Composable
-private fun MobileSettingLabel(text: String) {
+private fun ReaderSettingLabelV3(text: String) {
     val t = LocalLanghuanUiTokens.current
     Text(text, Modifier.padding(top = 18.dp, start = 2.dp, bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground, fontWeight = FontWeight.Medium)
 }
 
 @Composable
-private fun MobileThemeChoice(
-    label: String,
-    color: Color,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
+private fun ReaderThemeChoiceV3(label: String, color: Color, selected: Boolean, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
     Column(Modifier.width(68.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
             modifier = Modifier.size(46.dp),
             shape = CircleShape,
             color = color,
-            border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) t.primary else t.border.copy(alpha = .72f)),
+            border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) t.primary else t.border.copy(alpha = .65f)),
         ) {
-            if (selected) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = if (label == "夜间") Color(0xFFF3EEE7) else Color(0xFF3B3833))
-                }
+            if (selected) Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = if (label == "夜间") Color(0xFFF3EEE7) else Color(0xFF3B3833))
             }
         }
         Text(label, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.labelSmall, color = if (selected) t.foreground else t.mutedForeground, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
@@ -1153,12 +1043,7 @@ private fun MobileThemeChoice(
 }
 
 @Composable
-private fun MobileChoiceChip(
-    text: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
+private fun ReaderChoiceV3(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
     Surface(
         onClick = onClick,
@@ -1167,18 +1052,12 @@ private fun MobileChoiceChip(
         color = if (selected) t.accent else t.card,
         contentColor = if (selected) t.accentForeground else t.foreground,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
-        }
+        Box(contentAlignment = Alignment.Center) { Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium) }
     }
 }
 
 @Composable
-private fun MobileRoundControl(
-    icon: ImageVector,
-    description: String,
-    onClick: () -> Unit,
-) {
+private fun ReaderRoundControlV3(icon: ImageVector, description: String, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
     Surface(onClick = onClick, modifier = Modifier.size(42.dp), shape = CircleShape, color = t.accent) {
         Box(contentAlignment = Alignment.Center) { Icon(icon, description, Modifier.size(19.dp), tint = t.accentForeground) }
@@ -1186,12 +1065,7 @@ private fun MobileRoundControl(
 }
 
 @Composable
-private fun MobilePresetRow(
-    label: String,
-    options: List<Pair<String, Float>>,
-    current: Float,
-    onValue: (Float) -> Unit,
-) {
+private fun ReaderPresetRowV3(label: String, options: List<Pair<String, Float>>, current: Float, onValue: (Float) -> Unit) {
     val t = LocalLanghuanUiTokens.current
     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.width(66.dp), style = MaterialTheme.typography.bodyMedium, color = t.foreground, fontWeight = FontWeight.Medium)
@@ -1213,9 +1087,17 @@ private fun MobilePresetRow(
     }
 }
 
+@Composable
+private fun ReaderSheetIconV3(icon: ImageVector, description: String, onClick: () -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(onClick = onClick, modifier = Modifier.size(40.dp), shape = CircleShape, color = Color.Transparent) {
+        Box(contentAlignment = Alignment.Center) { Icon(icon, description, Modifier.size(20.dp), tint = t.foreground) }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MobileBookInfoSheet(
+private fun MobileBookInfoSheetV3(
     book: ReaderBookUi,
     chapterCount: Int,
     currentChapter: Int,
@@ -1227,127 +1109,82 @@ private fun MobileBookInfoSheet(
 ) {
     val t = LocalLanghuanUiTokens.current
     val cover = remember(book.coverPath) {
-        book.coverPath.takeIf { it.isNotBlank() }
-            ?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+        book.coverPath.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
     }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = t.background,
-        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Surface(
-                    modifier = Modifier.width(88.dp).aspectRatio(.70f),
-                    shape = RoundedCornerShape(16.dp),
-                    color = t.muted,
-                    shadowElevation = 2.dp,
-                ) {
-                    if (cover != null) {
-                        Image(cover.asImageBitmap(), book.title, Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
-                    } else {
-                        Box(Modifier.fillMaxSize().padding(10.dp), contentAlignment = Alignment.Center) {
-                            Text(book.title, style = MaterialTheme.typography.titleSmall, color = t.foreground, fontWeight = FontWeight.SemiBold, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                        }
+                Surface(Modifier.width(76.dp).aspectRatio(.68f), shape = RoundedCornerShape(14.dp), color = t.muted, shadowElevation = 1.dp) {
+                    if (cover != null) Image(cover.asImageBitmap(), book.title, Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop)
+                    else Box(Modifier.fillMaxSize().padding(9.dp), contentAlignment = Alignment.Center) {
+                        Text(book.title, style = MaterialTheme.typography.titleSmall, color = t.foreground, fontWeight = FontWeight.SemiBold, maxLines = 4, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Column(Modifier.padding(start = 15.dp).weight(1f)) {
-                    Text(book.title, style = MaterialTheme.typography.headlineSmall, color = t.foreground, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                    Text(book.title, style = MaterialTheme.typography.titleLarge, color = t.foreground, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(book.genre.ifBlank { "小说" }, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
-                    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        MobileBookMetric("章节", chapterCount.toString())
-                        MobileBookMetric("字数", book.currentWords.coerceAtLeast(0).toString())
-                        MobileBookMetric("当前", "第${currentChapter.coerceAtLeast(1)}章")
-                    }
+                    Text("$chapterCount 章 · ${book.currentWords.coerceAtLeast(0)} 字 · 当前第 ${currentChapter.coerceAtLeast(1)} 章", Modifier.padding(top = 9.dp), style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
                 }
+                ReaderSheetIconV3(Icons.Rounded.Close, "关闭", onContinue)
             }
 
-            Surface(
-                onClick = onContinue,
-                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-                shape = RoundedCornerShape(18.dp),
-                color = t.primary,
-                contentColor = t.primaryForeground,
-            ) {
-                Box(Modifier.padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
-                    Text("继续阅读", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                }
-            }
+            Text("操作", Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+            ReaderMoreActionRowV3(Icons.Rounded.Edit, "编辑本章", "修改当前章节正文", onEdit)
+            HorizontalDivider(color = t.border.copy(alpha = .34f), modifier = Modifier.padding(start = 34.dp))
+            ReaderMoreActionRowV3(Icons.Rounded.TheaterComedy, "进入故事", "以当前作品世界进入互动模式", onStory)
+            HorizontalDivider(color = t.border.copy(alpha = .34f), modifier = Modifier.padding(start = 34.dp))
+            ReaderMoreActionRowV3(Icons.Rounded.AutoAwesome, "AI 创作", "继续写作、规划或与 AI 对话", onWriting)
 
-            Text("更多操作", Modifier.padding(top = 20.dp, start = 2.dp, bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = t.card) {
-                Column {
-                    ReaderMoreActionRow(Icons.Rounded.Edit, "编辑本章", "修改当前章节正文", onEdit)
-                    HorizontalDivider(color = t.border.copy(alpha = .55f), modifier = Modifier.padding(start = 58.dp))
-                    ReaderMoreActionRow(Icons.Rounded.TheaterComedy, "进入故事", "以当前作品世界进入互动模式", onStory)
-                    HorizontalDivider(color = t.border.copy(alpha = .55f), modifier = Modifier.padding(start = 58.dp))
-                    ReaderMoreActionRow(Icons.Rounded.AutoAwesome, "AI 创作", "继续写作、规划或与 AI 对话", onWriting)
-                }
+            if (book.premise.isNotBlank()) {
+                Text("简介", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+                Text(book.premise, Modifier.padding(top = 7.dp), style = MaterialTheme.typography.bodyMedium, color = t.foreground.copy(alpha = .78f), lineHeight = 22.sp, maxLines = 5, overflow = TextOverflow.Ellipsis)
             }
-
-            Text("简介", Modifier.padding(top = 20.dp), style = MaterialTheme.typography.titleSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
-            Text(
-                book.premise.ifBlank { "暂无简介" },
-                Modifier.padding(top = 7.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = t.foreground.copy(alpha = .78f),
-                lineHeight = 22.sp,
-                maxLines = 7,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.navigationBarsPadding().height(20.dp))
+            Spacer(Modifier.navigationBarsPadding().height(18.dp))
         }
     }
 }
 
 @Composable
-private fun ReaderMoreActionRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-) {
+private fun ReaderMoreActionRowV3(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Surface(modifier = Modifier.size(36.dp), shape = RoundedCornerShape(12.dp), color = t.accent) {
-            Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(18.dp), tint = t.accentForeground) }
-        }
-        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.size(20.dp), tint = t.primary)
+        Column(Modifier.padding(start = 14.dp).weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, color = t.foreground, fontWeight = FontWeight.Medium)
             Text(subtitle, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.mutedForeground)
+        Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.mutedForeground.copy(alpha = .58f))
     }
 }
 
-@Composable
-private fun MobileBookMetric(label: String, value: String) {
-    val t = LocalLanghuanUiTokens.current
-    Column {
-        Text(value, style = MaterialTheme.typography.labelMedium, color = t.foreground, fontWeight = FontWeight.SemiBold)
-        Text(label, Modifier.padding(top = 1.dp), style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
-    }
+private fun pageForRawTextOffsetV3(offsets: List<Int>, offset: Int): Int {
+    if (offsets.isEmpty()) return 0
+    val safe = offset.coerceAtLeast(0)
+    var result = 0
+    offsets.forEachIndexed { index, start -> if (start <= safe) result = index }
+    return result.coerceIn(0, offsets.lastIndex)
 }
 
-private fun mobileReaderFont(key: String): FontFamily = when (key) {
+private fun mobileReaderFontV3(key: String): FontFamily = when (key) {
     "sans" -> FontFamily.SansSerif
     else -> FontFamily.Serif
 }
 
-private fun nextReaderTheme(key: String): String = when (key) {
+private fun nextReaderThemeV3(key: String): String = when (key) {
     "paper" -> "warm"
     "warm" -> "green"
     "green" -> "night"
     else -> "paper"
 }
 
-private fun mobileReaderPalette(key: String): MobileReaderPalette = when (key) {
+private fun mobileReaderPaletteV3(key: String): MobileReaderPalette = when (key) {
     "night" -> MobileReaderPalette(Color(0xFF171613), Color(0xFFE8E2D8), Color(0xFF9D978E), Color(0xFF201F1B))
-    "green" -> MobileReaderPalette(Color(0xFFE8F0E5), Color(0xFF253126), Color(0xFF667267), Color(0xFFF0F5EE))
+    "green" -> Color(0xFFE8F0E5).let { MobileReaderPalette(it, Color(0xFF253126), Color(0xFF667267), Color(0xFFF0F5EE)) }
     "warm" -> MobileReaderPalette(Color(0xFFF5E8CE), Color(0xFF352D23), Color(0xFF776A59), Color(0xFFF8EDD8))
     else -> MobileReaderPalette(Color(0xFFFAF7F2), Color(0xFF1C1A17), Color(0xFF8A817A), Color(0xFFFEFCF8))
 }
