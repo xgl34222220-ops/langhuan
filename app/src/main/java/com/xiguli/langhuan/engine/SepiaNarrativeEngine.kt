@@ -36,8 +36,8 @@ enum class SepiaOperation(
 
 object SepiaNarrativeEngine {
     const val SKILL_ID = "sepia-fiction"
-    const val UPSTREAM_VERSION = "0.6.0"
-    const val UPSTREAM_REVISION = "2b87154c1bd58e16f228b7a2142c734482417fd7"
+    const val UPSTREAM_VERSION = "0.7.0"
+    const val UPSTREAM_REVISION = "a0a374014141d929edec356fb86a5191d9eae6f7"
 
     fun operationFor(task: AiTaskType): SepiaOperation? = when (task) {
         AiTaskType.SCENE_DIRECTOR,
