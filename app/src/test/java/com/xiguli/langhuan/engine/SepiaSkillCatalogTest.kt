@@ -6,10 +6,10 @@ import org.junit.Test
 
 class SepiaSkillCatalogTest {
     @Test
-    fun `sepia adaptation tracks v060 and current upstream revision`() {
+    fun `sepia adaptation tracks v070 and current upstream revision`() {
         val sepia = WritingSkillCatalog.all.first { it.id == SepiaNarrativeEngine.SKILL_ID }
 
-        assertEquals("0.6.0-adapted", sepia.version)
+        assertEquals("0.7.0-adapted", sepia.version)
         assertEquals(SepiaNarrativeEngine.UPSTREAM_REVISION, sepia.sourceRevision)
         assertEquals("MIT", sepia.license)
         assertTrue(AiTaskType.AUTONOMOUS_PLANNER in sepia.defaultTasks)
