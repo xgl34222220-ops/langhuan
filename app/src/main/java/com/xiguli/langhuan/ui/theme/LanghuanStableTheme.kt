@@ -23,8 +23,8 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
  * Compose translation of shadcn/ui's neutral semantic theme.
- * Neutral ink/surface/border roles drive ordinary UI. The warm red-orange is a Langhuan brand
- * accent only; it is not used as a generic container color for every selected control.
+ * Neutral ink/surface/border roles drive ordinary UI. Brand color stays in Material tertiary and
+ * is reserved for explicit brand moments rather than generic hover/selected states.
  */
 private val BrandLight = Color(0xFFE84C34)
 private val BrandDark = Color(0xFFFF735E)
@@ -129,7 +129,6 @@ fun LanghuanStableTheme(
     } else {
         if (dark) ShadcnDarkColors else ShadcnLightColors
     }
-    val brand = if (dark) BrandDark else BrandLight
     val success = if (dark) SuccessDark else SuccessLight
     val warning = if (dark) WarningDark else WarningLight
 
@@ -154,16 +153,16 @@ fun LanghuanStableTheme(
         input = colors.outlineVariant,
         primary = colors.primary,
         primaryForeground = colors.onPrimary,
-        accent = brand,
-        accentForeground = if (dark) Color(0xFF3D1009) else Color.White,
+        accent = colors.surfaceContainerHigh,
+        accentForeground = colors.onSurface,
         destructive = colors.error,
         destructiveForeground = colors.onError,
         success = success,
         successForeground = if (dark) Color(0xFF052E20) else Color.White,
         warning = warning,
         warningForeground = if (dark) Color(0xFF3A2400) else Color.White,
-        ring = colors.onSurface.copy(alpha = if (dark) .70f else .58f),
-        warmSurface = if (dark) Color(0xFF211412) else Color(0xFFFFF4F1),
+        ring = colors.onSurface.copy(alpha = if (dark) .72f else .60f),
+        warmSurface = colors.surfaceContainerLow,
         radiusSm = 6.dp,
         radiusMd = 8.dp,
         radiusLg = 10.dp,
