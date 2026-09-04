@@ -18,16 +18,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 
 /**
- * Compatibility entry kept for the current root router.
+ * Stable entry for the current root router.
  *
- * Two invariants are enforced here instead of leaving them to the visual reader shell:
- * 1. A HorizontalPager is recreated when the chapter changes, so a last-page index from chapter N
- *    can never become the initial page of chapter N+1 (and vice versa).
- * 2. The paginated reader is unmounted while the Activity is not RESUMED. Android can transiently
- *    change safe insets / container size while moving to recents or returning from background. If
- *    pagination stays live during that transition, a layout-token change can remap the pager and
- *    look like an unsolicited page turn. The old reader disposes first (persisting its stable text
- *    anchor), then mounts again only after the resumed window has settled for a short interval.
+ * The reader subtree is keyed by chapter id and is unmounted while the Activity is not RESUMED.
+ * That keeps chapter-bound pager state isolated and prevents recents/system-bar transitions from
+ * being interpreted as user page changes. Reader V11 additionally measures against
+ * systemBarsIgnoringVisibility, so the pagination viewport is stable across immersive toggles.
  */
 @Composable
 fun ReaderNativeExperienceV4(
@@ -68,8 +64,6 @@ fun ReaderNativeExperienceV4(
             readerMounted = false
             return@LaunchedEffect
         }
-        // Wait past the transient system-bar / recents gesture frame before accepting reader input
-        // or recalculating page geometry.
         delay(120)
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             readerMounted = true
@@ -82,7 +76,7 @@ fun ReaderNativeExperienceV4(
     }
 
     key(chapterKey) {
-        ReaderQingmoFunctionalV9(
+        ReaderQingmoHeroV11(
             viewModel = viewModel,
             studioState = studioState,
             onBackToShelf = onBackToShelf,
