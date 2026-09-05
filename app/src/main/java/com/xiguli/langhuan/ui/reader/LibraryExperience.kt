@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reader
 
 import android.app.Application
 import android.graphics.Bitmap
@@ -45,6 +45,7 @@ import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.ui.theme.LanghuanShape
+import com.xiguli.langhuan.ui.verticalScroll
 import java.io.File
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.flow.MutableStateFlow

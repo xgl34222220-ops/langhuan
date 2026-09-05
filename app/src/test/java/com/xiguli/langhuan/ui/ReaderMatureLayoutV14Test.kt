@@ -1,5 +1,10 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.reader.ReaderExperience
+import com.xiguli.langhuan.ui.reader.ReaderMeasuredPaginationV16
+import com.xiguli.langhuan.ui.reader.ReaderPagedLayoutV14
+import com.xiguli.langhuan.ui.reader.rememberReaderMeasuredPaginationV16
+import com.xiguli.langhuan.ui.reader.splitReaderPagesV10
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -46,7 +51,7 @@ class ReaderMatureLayoutV14Test {
 
     @Test
     fun presetsKeepCompactReaderDefaults() {
-        val state = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderReadingStateV11.kt").readText()
+        val state = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderReadingStateV11.kt").readText()
         val migration = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderTypographyMigrationV14.kt").readText()
 
         assertTrue(state.contains("lineFactor = 1.72f"))

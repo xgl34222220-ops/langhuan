@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reader
 
 /**
  * Temporary source-compatibility overload for the retained V11 rollback reader.

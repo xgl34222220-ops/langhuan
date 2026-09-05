@@ -62,6 +62,8 @@ import com.xiguli.langhuan.ui.design.ShadcnCard
 import com.xiguli.langhuan.ui.design.ShadcnIconButton
 import com.xiguli.langhuan.ui.design.ShadcnMenuRow
 import com.xiguli.langhuan.ui.design.ShadcnSeparator
+import com.xiguli.langhuan.ui.reader.LibraryExperienceState
+import com.xiguli.langhuan.ui.reader.ReaderBookUi
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 
 /**

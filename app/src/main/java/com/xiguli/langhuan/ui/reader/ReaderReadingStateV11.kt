@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reader
 
 import android.content.Context
 import java.io.File

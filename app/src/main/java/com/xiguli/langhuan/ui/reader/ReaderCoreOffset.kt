@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reader
 
 /**
  * Callable helper owned by ReaderCore. It deliberately is not a top-level function so it does not

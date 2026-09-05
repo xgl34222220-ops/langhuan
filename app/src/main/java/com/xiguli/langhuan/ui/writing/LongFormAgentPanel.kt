@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.writing
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

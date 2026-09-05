@@ -18,7 +18,7 @@ import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.ProviderAutoDetector
-import com.xiguli.langhuan.ui.ReaderBookUi
+import com.xiguli.langhuan.ui.reader.ReaderBookUi
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI

@@ -1,6 +1,10 @@
 package com.xiguli.langhuan.ui
 
 import com.xiguli.langhuan.ui.creation.CreationChatV4
+import com.xiguli.langhuan.ui.reader.ReaderMobileExperience
+import com.xiguli.langhuan.ui.reader.ReaderPagedLayoutV14
+import com.xiguli.langhuan.ui.reader.ReaderProgressStoreV11
+import com.xiguli.langhuan.ui.writing.ChapterEditorExperience
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,7 +19,7 @@ class FullShellV4RouteTest {
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt").readText()
         val story = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryCoreExperience.kt").readText()
         val storyEntry = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryCleanExperience.kt").readText()
-        val creation = File(root, "src/main/java/com/xiguli/langhuan/ui/CreationChatV4.kt").readText()
+        val creation = File(root, "src/main/java/com/xiguli/langhuan/ui/creation/CreationChatV4.kt").readText()
         val editor = File(root, "src/main/java/com/xiguli/langhuan/ui/writing/ChapterEditorExperience.kt").readText()
 
         assertTrue(router.contains("ShelfMobileExperience("))

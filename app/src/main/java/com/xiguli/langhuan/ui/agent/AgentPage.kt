@@ -26,8 +26,8 @@ import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.domain.BibleCategory
 import com.xiguli.langhuan.engine.AgentAction
 import com.xiguli.langhuan.engine.AgentActionKind
-import com.xiguli.langhuan.ui.FullBookEditorPanel
-import com.xiguli.langhuan.ui.LongFormAgentPanel
+import com.xiguli.langhuan.ui.writing.FullBookEditorPanel
+import com.xiguli.langhuan.ui.writing.LongFormAgentPanel
 import com.xiguli.langhuan.ui.StudioUiState
 import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.canon.CandidateCanonPanel

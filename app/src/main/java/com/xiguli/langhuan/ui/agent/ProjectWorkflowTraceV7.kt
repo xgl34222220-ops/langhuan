@@ -48,7 +48,7 @@ import com.xiguli.langhuan.engine.NovelWorkflowState
 import com.xiguli.langhuan.engine.NovelWorkflowStatus
 import com.xiguli.langhuan.engine.ProjectRuntimeReceiptState
 import com.xiguli.langhuan.engine.ProjectRuntimeSkillReceipt
-import com.xiguli.langhuan.ui.WritingFlowUiState
+import com.xiguli.langhuan.ui.writing.WritingFlowUiState
 import com.xiguli.langhuan.ui.creation.ProjectConversationUiState
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanShape

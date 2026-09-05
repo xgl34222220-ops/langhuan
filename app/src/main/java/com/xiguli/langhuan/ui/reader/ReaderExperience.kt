@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reader
 
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,9 +37,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.EpubOriginalTocV1
 import com.xiguli.langhuan.data.EpubTocNodeV1
 import com.xiguli.langhuan.domain.ChapterDraft
+import com.xiguli.langhuan.ui.StoryCleanExperience
+import com.xiguli.langhuan.ui.StudioUiState
 import com.xiguli.langhuan.ui.cover.CoverPreviewV3
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
+import com.xiguli.langhuan.ui.verticalScroll
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

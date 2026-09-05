@@ -1,5 +1,8 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.reader.ReaderExperience
+import com.xiguli.langhuan.ui.reader.ReaderReadingStoreV11
+import com.xiguli.langhuan.ui.reader.readerBuiltInPresetsV12
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -11,7 +14,7 @@ class ReaderVideoReplicaV12Test {
     @Test
     fun matureReaderProtectsResumeInsetsCrossChapterAndTypographyState() {
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderExperience.kt").readText()
-        val assets = File(root, "src/main/java/com/xiguli/langhuan/ui/ReaderAssetsV10.kt").readText()
+        val assets = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderAssetsV10.kt").readText()
 
         listOf(
             "目录", "搜索", "排版", "书签", "批注", "进入故事",

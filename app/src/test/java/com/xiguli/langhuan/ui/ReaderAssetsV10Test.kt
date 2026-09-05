@@ -1,5 +1,7 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.reader.parseReaderHexColorV10
+import com.xiguli.langhuan.ui.reader.splitReaderPagesV10
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue

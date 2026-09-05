@@ -57,8 +57,8 @@ import com.xiguli.langhuan.ui.StudioUiState
 import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.agent.TaskModelRoutingPanel
 import com.xiguli.langhuan.ui.agent.TaskModelRoutingViewModel
-import com.xiguli.langhuan.ui.WritingSkillPanel
-import com.xiguli.langhuan.ui.WritingSkillViewModel
+import com.xiguli.langhuan.ui.writing.WritingSkillPanel
+import com.xiguli.langhuan.ui.writing.WritingSkillViewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton

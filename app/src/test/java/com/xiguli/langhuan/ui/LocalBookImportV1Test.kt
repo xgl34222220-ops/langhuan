@@ -1,5 +1,7 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.reader.decodeLocalBookTextV1
+import com.xiguli.langhuan.ui.reader.normalizeBookBytesV1
 import java.nio.charset.Charset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

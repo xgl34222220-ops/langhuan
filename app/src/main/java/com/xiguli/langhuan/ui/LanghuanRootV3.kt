@@ -24,7 +24,16 @@ import com.xiguli.langhuan.ui.cover.CoverStudioV3
 import com.xiguli.langhuan.ui.creation.CreationChatV4
 import com.xiguli.langhuan.ui.creation.NewBookConversationViewModel
 import com.xiguli.langhuan.ui.creation.ResearchNewBookConversationPage
+import com.xiguli.langhuan.ui.reader.LibraryExperienceViewModel
+import com.xiguli.langhuan.ui.reader.LocalBookImportViewModelV1
+import com.xiguli.langhuan.ui.reader.ReaderMobileExperience
+import com.xiguli.langhuan.ui.reader.ReaderProgressStoreV11
 import com.xiguli.langhuan.ui.settings.AiProviderSetupPage
+import com.xiguli.langhuan.ui.writing.ChapterEditorExperience
+import com.xiguli.langhuan.ui.writing.ChapterEditorViewModel
+import com.xiguli.langhuan.ui.writing.WritingFlowPage
+import com.xiguli.langhuan.ui.writing.WritingFlowViewModel
+import com.xiguli.langhuan.ui.writing.WritingSkillViewModel
 
 private enum class RootRouteV3 {
     SHELF,

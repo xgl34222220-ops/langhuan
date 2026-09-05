@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reader
 
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -96,6 +96,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.domain.ChapterDraft
+import com.xiguli.langhuan.ui.StoryCleanExperience
+import com.xiguli.langhuan.ui.StudioUiState
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.design.ShadcnButton
 import com.xiguli.langhuan.ui.design.ShadcnButtonSize
@@ -103,6 +105,7 @@ import com.xiguli.langhuan.ui.design.ShadcnButtonVariant
 import com.xiguli.langhuan.ui.design.ShadcnIconButton
 import com.xiguli.langhuan.ui.design.ShadcnInput
 import com.xiguli.langhuan.ui.theme.LanghuanShape
+import com.xiguli.langhuan.ui.verticalScroll
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay

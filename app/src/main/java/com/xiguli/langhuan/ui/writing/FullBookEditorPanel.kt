@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.writing
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons

@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.writing
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.StoredChapterVersion
 import com.xiguli.langhuan.ui.theme.LanghuanShape
+import com.xiguli.langhuan.ui.verticalScroll
 import kotlin.math.max
 import kotlin.math.min
 

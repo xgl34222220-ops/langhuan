@@ -34,7 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.domain.StorySnapshot
-import com.xiguli.langhuan.ui.LibraryExperienceViewModel
+import com.xiguli.langhuan.ui.reader.LibraryExperienceViewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton

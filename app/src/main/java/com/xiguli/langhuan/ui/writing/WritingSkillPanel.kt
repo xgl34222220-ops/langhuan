@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.writing
 
 import android.app.Application
 import android.net.Uri

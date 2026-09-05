@@ -1,5 +1,8 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.writing.ChapterEditorExperience
+import com.xiguli.langhuan.ui.writing.ChapterEditorPage
+import com.xiguli.langhuan.ui.writing.ChapterEditorViewModel
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -9,7 +12,7 @@ class ChapterEditorExperienceContractTest {
     fun focusedEditorKeepsAutosaveRewriteVersionAndAdvancedFallback() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val editor = File(root, "src/main/java/com/xiguli/langhuan/ui/writing/ChapterEditorExperience.kt").readText()
-        val viewModel = File(root, "src/main/java/com/xiguli/langhuan/ui/ChapterEditorViewModel.kt").readText()
+        val viewModel = File(root, "src/main/java/com/xiguli/langhuan/ui/writing/ChapterEditorViewModel.kt").readText()
 
         assertTrue(editor.contains("viewModel.flushAndClose"))
         assertTrue(editor.contains("viewModel::saveCheckpoint"))

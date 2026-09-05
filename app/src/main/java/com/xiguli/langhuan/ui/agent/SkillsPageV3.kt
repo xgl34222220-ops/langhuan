@@ -37,8 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.xiguli.langhuan.ui.WritingSkillPanel
-import com.xiguli.langhuan.ui.WritingSkillViewModel
+import com.xiguli.langhuan.ui.writing.WritingSkillPanel
+import com.xiguli.langhuan.ui.writing.WritingSkillViewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton

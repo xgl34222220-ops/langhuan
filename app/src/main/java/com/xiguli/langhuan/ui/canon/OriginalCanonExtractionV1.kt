@@ -26,7 +26,7 @@ import com.xiguli.langhuan.domain.CharacterState
 import com.xiguli.langhuan.domain.TimelineEvent
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
-import com.xiguli.langhuan.ui.ReaderBookUi
+import com.xiguli.langhuan.ui.reader.ReaderBookUi
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.verticalScroll
 import java.io.File
