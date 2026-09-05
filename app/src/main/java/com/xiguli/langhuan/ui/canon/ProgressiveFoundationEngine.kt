@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.canon
 
 import com.xiguli.langhuan.data.FoundationBibleItem
 import com.xiguli.langhuan.data.FoundationChapter
@@ -11,6 +11,10 @@ import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.domain.StateChange
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
+import com.xiguli.langhuan.ui.creation.CreationChatMessage
+import com.xiguli.langhuan.ui.creation.NewBookProposal
+import com.xiguli.langhuan.ui.creation.attachmentContext
+import com.xiguli.langhuan.ui.creation.attachmentPurpose
 
 /**
  * 分阶段建书引擎。

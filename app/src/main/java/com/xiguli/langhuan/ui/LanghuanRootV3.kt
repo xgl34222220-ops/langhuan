@@ -15,8 +15,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.engine.ProjectConversationStore
+import com.xiguli.langhuan.ui.agent.AgentPage
+import com.xiguli.langhuan.ui.agent.RunCenterPage
+import com.xiguli.langhuan.ui.agent.RunCenterViewModel
+import com.xiguli.langhuan.ui.agent.SkillsPageV3
 import com.xiguli.langhuan.ui.cover.CoverPersistenceGuardViewModel
 import com.xiguli.langhuan.ui.cover.CoverStudioV3
+import com.xiguli.langhuan.ui.creation.CreationChatV4
+import com.xiguli.langhuan.ui.creation.NewBookConversationViewModel
+import com.xiguli.langhuan.ui.creation.ResearchNewBookConversationPage
 import com.xiguli.langhuan.ui.settings.AiProviderSetupPage
 
 private enum class RootRouteV3 {

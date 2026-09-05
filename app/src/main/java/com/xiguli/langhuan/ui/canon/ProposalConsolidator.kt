@@ -1,7 +1,11 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.canon
 
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
+import com.xiguli.langhuan.ui.creation.CreationChatMessage
+import com.xiguli.langhuan.ui.creation.NewBookProposal
+import com.xiguli.langhuan.ui.creation.attachmentContext
+import com.xiguli.langhuan.ui.creation.messagesPromptAttachments
 
 /**
  * Rebuilds the current new-book proposal from the latest conversation facts before foundation work.

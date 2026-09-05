@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.canon
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel

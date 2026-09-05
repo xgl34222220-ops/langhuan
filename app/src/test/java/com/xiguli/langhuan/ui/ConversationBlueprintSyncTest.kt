@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.creation.blueprintDirtyAfterConversation
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

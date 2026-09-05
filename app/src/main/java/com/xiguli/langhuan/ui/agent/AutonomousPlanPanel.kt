@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.agent
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.domain.DriftSeverity
 import com.xiguli.langhuan.domain.ForeshadowPlanAction
+import com.xiguli.langhuan.ui.StudioUiState
+import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip

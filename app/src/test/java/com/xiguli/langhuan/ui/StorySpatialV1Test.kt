@@ -1,5 +1,10 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.canon.CanonEntityObservationV1
+import com.xiguli.langhuan.ui.canon.CanonEntityTypeV1
+import com.xiguli.langhuan.ui.canon.CanonEventObservationV1
+import com.xiguli.langhuan.ui.canon.CanonSourceDigestV1
+import com.xiguli.langhuan.ui.canon.OriginalCanonArchiveV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

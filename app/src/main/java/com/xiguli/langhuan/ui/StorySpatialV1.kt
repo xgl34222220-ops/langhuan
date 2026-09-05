@@ -16,6 +16,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.canon.CanonEntityTypeV1
+import com.xiguli.langhuan.ui.canon.CanonEventObservationV1
+import com.xiguli.langhuan.ui.canon.OriginalCanonArchiveStoreV1
+import com.xiguli.langhuan.ui.canon.OriginalCanonArchiveV1
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID

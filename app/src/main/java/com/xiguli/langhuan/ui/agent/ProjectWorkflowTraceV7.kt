@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.agent
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -48,6 +48,8 @@ import com.xiguli.langhuan.engine.NovelWorkflowState
 import com.xiguli.langhuan.engine.NovelWorkflowStatus
 import com.xiguli.langhuan.engine.ProjectRuntimeReceiptState
 import com.xiguli.langhuan.engine.ProjectRuntimeSkillReceipt
+import com.xiguli.langhuan.ui.WritingFlowUiState
+import com.xiguli.langhuan.ui.creation.ProjectConversationUiState
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.text.SimpleDateFormat

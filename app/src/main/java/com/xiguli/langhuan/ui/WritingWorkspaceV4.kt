@@ -31,6 +31,7 @@ import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.RunEvent
 import com.xiguli.langhuan.engine.RunStatus
+import com.xiguli.langhuan.ui.agent.RunInspectorPanel
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
 import top.yukonga.miuix.kmp.squircle.squircleClip

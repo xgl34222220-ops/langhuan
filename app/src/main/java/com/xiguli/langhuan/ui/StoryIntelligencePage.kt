@@ -19,6 +19,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.domain.ForeshadowStatus
 import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.engine.ChronologyRepairRisk
+import com.xiguli.langhuan.ui.canon.WholeBookChronologyViewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton

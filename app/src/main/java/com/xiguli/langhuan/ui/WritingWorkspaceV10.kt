@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xiguli.langhuan.ui.canon.CanonChangeProposalViewModel
 
 /**
  * Novel Skill OS V10 entry: keeps V8/V9 authoring surfaces intact and adds one lightweight,

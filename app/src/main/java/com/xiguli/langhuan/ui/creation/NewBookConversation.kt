@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.creation
 
 import android.app.Application
 import android.net.Uri
@@ -29,6 +29,8 @@ import com.xiguli.langhuan.engine.TaskModelRouter
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.engine.WritingSkillStore
 import com.xiguli.langhuan.engine.blueprintRunStage
+import com.xiguli.langhuan.ui.canon.ProgressiveFoundationEngine
+import com.xiguli.langhuan.ui.canon.ProposalConsolidator
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.Base64

@@ -29,6 +29,13 @@ import com.xiguli.langhuan.engine.CanonMigrationTaskStatus
 import com.xiguli.langhuan.engine.ProjectConversationOrigin
 import com.xiguli.langhuan.engine.WorkspaceNaturalLanguageRouter
 import com.xiguli.langhuan.engine.WorkspaceNaturalPlan
+import com.xiguli.langhuan.ui.agent.ProjectWorkflowTracePillV7
+import com.xiguli.langhuan.ui.agent.ProjectWorkflowTraceSheetV7
+import com.xiguli.langhuan.ui.canon.CanonChangeProposalSheetV7
+import com.xiguli.langhuan.ui.canon.CanonChangeProposalViewModel
+import com.xiguli.langhuan.ui.canon.CanonMigrationQueueSheetV8
+import com.xiguli.langhuan.ui.creation.ProjectConversationUiState
+import com.xiguli.langhuan.ui.creation.ProjectConversationViewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens

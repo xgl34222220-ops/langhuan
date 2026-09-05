@@ -1,5 +1,10 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.creation.CreationChatAttachment
+import com.xiguli.langhuan.ui.creation.attachmentContext
+import com.xiguli.langhuan.ui.creation.attachmentPurpose
+import com.xiguli.langhuan.ui.creation.defaultAttachmentInstruction
+import com.xiguli.langhuan.ui.creation.extractDocxText
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream

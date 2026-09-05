@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.canon
 
 import android.app.Application
 import androidx.compose.foundation.layout.*
@@ -26,7 +26,9 @@ import com.xiguli.langhuan.domain.CharacterState
 import com.xiguli.langhuan.domain.TimelineEvent
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.ui.ReaderBookUi
 import com.xiguli.langhuan.ui.theme.LanghuanShape
+import com.xiguli.langhuan.ui.verticalScroll
 import java.io.File
 import java.security.MessageDigest
 import kotlin.math.max

@@ -46,6 +46,7 @@ import com.xiguli.langhuan.domain.*
 import com.xiguli.langhuan.engine.ChapterPlanSuggestion
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.RunStatus
+import com.xiguli.langhuan.ui.agent.RunInspectorPanel
 import com.xiguli.langhuan.ui.glass.liquidGlassLens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanAppearance

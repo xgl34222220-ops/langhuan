@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.canon.SynopsisQuality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
