@@ -47,7 +47,6 @@ import com.xiguli.langhuan.engine.ChapterPlanSuggestion
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.ui.agent.RunInspectorPanel
-import com.xiguli.langhuan.ui.glass.liquidGlassLens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanAppearance
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
@@ -654,7 +653,7 @@ private fun ForeshadowStatus.label() = when (this) { ForeshadowStatus.PLANTED ->
     val surfaceBackdrop = rememberLayerBackdrop()
     val shellTint = if (dark) MaterialTheme.colorScheme.surface.copy(alpha = .39f) else Color.White.copy(alpha = .4f)
     val shell = if (backdrop != null) Modifier.drawBackdrop(
-        backdrop, shape = { shape }, effects = { padding = maxOf(padding, 30.dp.toPx()); colorControls(brightness = .02f, contrast = 1.05f, saturation = 1.4f); blur(9.dp.toPx(), 9.dp.toPx()); liquidGlassLens(17.dp.toPx(), 13.dp.toPx(), true, .045f) },
+        backdrop, shape = { shape }, effects = { padding = maxOf(padding, 30.dp.toPx()); colorControls(brightness = .02f, contrast = 1.05f, saturation = 1.4f); blur(9.dp.toPx(), 9.dp.toPx()) },
         highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .82f) }, onDrawSurface = { drawRect(shellTint) }
     ) else Modifier.hazeEffect(haze, HazeMaterials.ultraThin()) { blurRadius = 30.dp; noiseFactor = .018f }.background(if (dark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .35f))
     Box(modifier.padding(horizontal = 10.dp).padding(bottom = inset + 10.dp).fillMaxWidth().height(66.dp)) {
@@ -668,7 +667,7 @@ private fun ForeshadowStatus.label() = when (this) { ForeshadowStatus.PLANTED ->
     val x by animateDpAsState(width * current.ordinal, spring(dampingRatio = .68f, stiffness = Spring.StiffnessMediumLow), label = "dock")
     val shape = LanghuanShape.panel
     val indicatorTint = MaterialTheme.colorScheme.primary.copy(alpha = .18f)
-    val lens = if (backdrop != null) Modifier.drawBackdrop(backdrop, shape = { shape }, effects = { padding = maxOf(padding, 22.dp.toPx()); blur(3.dp.toPx(), 3.dp.toPx()); liquidGlassLens(13.dp.toPx(), 14.dp.toPx(), true, .08f) }, highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f) }, onDrawSurface = { drawRect(indicatorTint) }) else Modifier.background(indicatorTint.copy(alpha = .72f))
+    val lens = if (backdrop != null) Modifier.drawBackdrop(backdrop, shape = { shape }, effects = { padding = maxOf(padding, 22.dp.toPx()); blur(3.dp.toPx(), 3.dp.toPx()) }, highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f) }, onDrawSurface = { drawRect(indicatorTint) }) else Modifier.background(indicatorTint.copy(alpha = .72f))
     Box(Modifier.offset(x + 3.dp).width(width - 6.dp).height(54.dp).squircleClip(23.dp).then(lens))
     Row(Modifier.fillMaxWidth()) { AppPage.entries.forEach { p -> val chosen = p == current; val c = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f); Column(Modifier.width(width).height(54.dp).clickable(remember(p) { MutableInteractionSource() }, null) { select(p) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(p.icon, p.label, tint = c, modifier = Modifier.size(21.dp)); Text(p.label, color = c, fontSize = MaterialTheme.typography.labelSmall.fontSize, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium) } } }
 }
