@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.shell
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke

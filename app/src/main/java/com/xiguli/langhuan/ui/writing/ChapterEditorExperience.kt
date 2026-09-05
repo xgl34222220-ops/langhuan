@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
-import com.xiguli.langhuan.ui.verticalScroll
+import com.xiguli.langhuan.ui.shell.verticalScroll
 import kotlin.math.max
 import kotlin.math.min
 

@@ -150,6 +150,47 @@ class DesignTokenGuardTest {
     }
 
     @Test
+    fun uiPackageStaysLayered() {
+        // ui 根目录曾经堆了 80 个文件，页面、ViewModel、共享组件混放。分层之后
+        // 这里必须保持为空：新文件要落进某个业务子包，而不是又倒回根目录。
+        val uiRoot = File(sourceRoot, "ui")
+        val strays = uiRoot.listFiles().orEmpty()
+            .filter { it.isFile && it.extension == "kt" }
+            .map { it.name }
+            .sorted()
+        assertEquals(
+            "新的 UI 文件请放进 ui/ 下对应的业务子包，不要直接落在 ui 根目录：$strays",
+            emptyList<String>(),
+            strays,
+        )
+    }
+
+    @Test
+    fun packageDeclarationMatchesDirectory() {
+        // 曾经出过一次：ui/reader、ui/story、ui/shell、ui/writing 四个目录里的文件
+        // 仍然声明 package com.xiguli.langhuan.ui —— 目录分了层，包没分。这种
+        // 目录与包不一致的状态最难发现，因为它照样能编译。
+        val base = "com.xiguli.langhuan.ui"
+        val mismatched = File(sourceRoot, "ui").listFiles().orEmpty()
+            .filter { it.isDirectory }
+            .flatMap { dir ->
+                dir.listFiles().orEmpty()
+                    .filter { it.extension == "kt" }
+                    .filterNot { file ->
+                        Regex("""^package \Q$base.${dir.name}\E$""", RegexOption.MULTILINE)
+                            .containsMatchIn(file.readText())
+                    }
+                    .map { "${dir.name}/${it.name}" }
+            }
+            .sorted()
+        assertEquals(
+            "这些文件所在目录与 package 声明不一致：$mismatched",
+            emptyList<String>(),
+            mismatched,
+        )
+    }
+
+    @Test
     fun readingBodyMatchesDesignSpec() {
         // DESIGN.md §5：正文默认 18–20sp，行高 1.70–1.95 ×。
         val type = File(sourceRoot, "ui/theme/Type.kt").readText()

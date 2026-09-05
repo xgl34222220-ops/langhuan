@@ -44,7 +44,7 @@ import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
-import com.xiguli.langhuan.ui.verticalScroll
+import com.xiguli.langhuan.ui.shell.verticalScroll
 
 @Composable
 fun SkillsPageV3(

@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.story
 
 import android.app.Application
 import androidx.compose.foundation.layout.*
@@ -24,6 +24,7 @@ import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.ui.reader.LibraryExperienceState
 import com.xiguli.langhuan.ui.reader.ReaderBookUi
+import com.xiguli.langhuan.ui.shell.verticalScroll
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.io.File
 import java.util.UUID

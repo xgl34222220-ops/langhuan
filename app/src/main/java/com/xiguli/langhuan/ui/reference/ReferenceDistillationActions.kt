@@ -7,7 +7,7 @@ import android.widget.Toast
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
 import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
-import com.xiguli.langhuan.ui.StudioViewModel
+import com.xiguli.langhuan.ui.shell.StudioViewModel
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers

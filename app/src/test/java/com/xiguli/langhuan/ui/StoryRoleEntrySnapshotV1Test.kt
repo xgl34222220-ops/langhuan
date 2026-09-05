@@ -7,6 +7,17 @@ import com.xiguli.langhuan.ui.canon.CanonKnowledgeObservationV1
 import com.xiguli.langhuan.ui.canon.CanonRelationObservationV1
 import com.xiguli.langhuan.ui.canon.CanonSourceDigestV1
 import com.xiguli.langhuan.ui.canon.OriginalCanonArchiveV1
+import com.xiguli.langhuan.ui.story.StoryPlaySession
+import com.xiguli.langhuan.ui.story.StoryPlayTurn
+import com.xiguli.langhuan.ui.story.StoryPlayerProfile
+import com.xiguli.langhuan.ui.story.StoryRoleEntryEventV1
+import com.xiguli.langhuan.ui.story.StoryRoleEntrySnapshotV1
+import com.xiguli.langhuan.ui.story.StoryWorldStateV3
+import com.xiguli.langhuan.ui.story.applyStoryRoleEntrySnapshotToWorldV1
+import com.xiguli.langhuan.ui.story.buildStoryRoleEntrySnapshotV1
+import com.xiguli.langhuan.ui.story.mergeStoryRoleEntrySnapshotDirectorNoteV1
+import com.xiguli.langhuan.ui.story.renderStoryRoleEntrySnapshotDirectorNoteV1
+import com.xiguli.langhuan.ui.story.shouldAutoApplyStoryRoleEntrySnapshotV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

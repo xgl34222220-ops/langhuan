@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.shell
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +29,8 @@ import com.xiguli.langhuan.ui.reader.LocalBookImportViewModelV1
 import com.xiguli.langhuan.ui.reader.ReaderMobileExperience
 import com.xiguli.langhuan.ui.reader.ReaderProgressStoreV11
 import com.xiguli.langhuan.ui.settings.AiProviderSetupPage
+import com.xiguli.langhuan.ui.story.StoryCleanExperience
+import com.xiguli.langhuan.ui.story.StoryIntelligencePage
 import com.xiguli.langhuan.ui.writing.ChapterEditorExperience
 import com.xiguli.langhuan.ui.writing.ChapterEditorViewModel
 import com.xiguli.langhuan.ui.writing.WritingFlowPage

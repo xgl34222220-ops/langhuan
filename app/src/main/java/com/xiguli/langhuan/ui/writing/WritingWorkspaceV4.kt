@@ -34,7 +34,7 @@ import com.xiguli.langhuan.engine.RunStatus
 import com.xiguli.langhuan.ui.agent.RunInspectorPanel
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens
-import com.xiguli.langhuan.ui.verticalScroll
+import com.xiguli.langhuan.ui.shell.verticalScroll
 import top.yukonga.miuix.kmp.squircle.squircleClip
 
 private enum class WorkspaceSheetV4 { SCENES, STORY, RUN }

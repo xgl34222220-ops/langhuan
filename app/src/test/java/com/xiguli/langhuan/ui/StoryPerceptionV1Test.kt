@@ -1,5 +1,23 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.story.StoryActorLocationV1
+import com.xiguli.langhuan.ui.story.StoryAudibilityV1
+import com.xiguli.langhuan.ui.story.StoryLightLevelV1
+import com.xiguli.langhuan.ui.story.StoryObscurityV1
+import com.xiguli.langhuan.ui.story.StoryPerceptionPlaceV1
+import com.xiguli.langhuan.ui.story.StoryPerceptionRouteV1
+import com.xiguli.langhuan.ui.story.StoryPerceptionSceneV1
+import com.xiguli.langhuan.ui.story.StoryPlaceKindV1
+import com.xiguli.langhuan.ui.story.StoryPlaceV1
+import com.xiguli.langhuan.ui.story.StoryPortalStateV1
+import com.xiguli.langhuan.ui.story.StoryRouteEdgeV1
+import com.xiguli.langhuan.ui.story.StorySpatialSceneV1
+import com.xiguli.langhuan.ui.story.StoryTravelModeV1
+import com.xiguli.langhuan.ui.story.currentPlayerPerceptionsV1
+import com.xiguli.langhuan.ui.story.mergeStoryPerceptionDirectorNoteV1
+import com.xiguli.langhuan.ui.story.normalizePerceptionSceneV1
+import com.xiguli.langhuan.ui.story.renderStoryPerceptionDirectorNoteV1
+import com.xiguli.langhuan.ui.story.storySenseBetweenPlacesV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

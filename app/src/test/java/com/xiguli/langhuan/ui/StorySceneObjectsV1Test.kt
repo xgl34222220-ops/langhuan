@@ -1,5 +1,26 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.story.StoryLightLevelV1
+import com.xiguli.langhuan.ui.story.StoryPerceptionRouteV1
+import com.xiguli.langhuan.ui.story.StoryPerceptionSceneV1
+import com.xiguli.langhuan.ui.story.StoryPlaceKindV1
+import com.xiguli.langhuan.ui.story.StoryPlaceV1
+import com.xiguli.langhuan.ui.story.StoryPlayTurn
+import com.xiguli.langhuan.ui.story.StoryPlayVariable
+import com.xiguli.langhuan.ui.story.StoryPortalStateV1
+import com.xiguli.langhuan.ui.story.StoryRouteEdgeV1
+import com.xiguli.langhuan.ui.story.StorySceneObjectActionV1
+import com.xiguli.langhuan.ui.story.StorySceneObjectKindV1
+import com.xiguli.langhuan.ui.story.StorySceneObjectSceneV1
+import com.xiguli.langhuan.ui.story.StorySceneObjectV1
+import com.xiguli.langhuan.ui.story.StorySpatialSceneV1
+import com.xiguli.langhuan.ui.story.applyStorySceneObjectActionV1
+import com.xiguli.langhuan.ui.story.desiredLightForStorySceneObjectV1
+import com.xiguli.langhuan.ui.story.extractStorySceneObjectActionsV1
+import com.xiguli.langhuan.ui.story.findBlockingStorySceneObjectV1
+import com.xiguli.langhuan.ui.story.mergeStorySceneObjectsDirectorNoteV1
+import com.xiguli.langhuan.ui.story.normalizeStorySceneObjectsV1
+import com.xiguli.langhuan.ui.story.renderStorySceneObjectsDirectorNoteV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

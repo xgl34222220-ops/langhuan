@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.ui
 
 import com.xiguli.langhuan.ui.reader.ReaderMobileExperience
+import com.xiguli.langhuan.ui.shell.ShelfMobileExperience
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

@@ -31,8 +31,8 @@ import com.xiguli.langhuan.domain.CandidateFact
 import com.xiguli.langhuan.domain.CandidateFactKind
 import com.xiguli.langhuan.domain.CandidateFactRisk
 import com.xiguli.langhuan.domain.CandidateFactStatus
-import com.xiguli.langhuan.ui.StudioUiState
-import com.xiguli.langhuan.ui.StudioViewModel
+import com.xiguli.langhuan.ui.shell.StudioUiState
+import com.xiguli.langhuan.ui.shell.StudioViewModel
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 

@@ -1,5 +1,23 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.story.NpcLifeSceneV1
+import com.xiguli.langhuan.ui.story.NpcLifeStateV1
+import com.xiguli.langhuan.ui.story.NpcMemoryPrivacyV1
+import com.xiguli.langhuan.ui.story.NpcMemorySceneV1
+import com.xiguli.langhuan.ui.story.NpcOffscreenActorV1
+import com.xiguli.langhuan.ui.story.NpcOffscreenChangeV1
+import com.xiguli.langhuan.ui.story.NpcOffscreenEventV1
+import com.xiguli.langhuan.ui.story.NpcOffscreenSceneV1
+import com.xiguli.langhuan.ui.story.NpcPlanV1
+import com.xiguli.langhuan.ui.story.NpcPresenceV1
+import com.xiguli.langhuan.ui.story.OffscreenEventVisibilityV1
+import com.xiguli.langhuan.ui.story.OffscreenReturnCueV1
+import com.xiguli.langhuan.ui.story.applyOffscreenChangesV1
+import com.xiguli.langhuan.ui.story.desiredPresenceAfterOffscreenV1
+import com.xiguli.langhuan.ui.story.memoriesFromOffscreenEventV1
+import com.xiguli.langhuan.ui.story.mergeOffscreenPublicNoteV1
+import com.xiguli.langhuan.ui.story.renderOffscreenPublicNoteV1
+import com.xiguli.langhuan.ui.story.selectOffscreenNpcV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

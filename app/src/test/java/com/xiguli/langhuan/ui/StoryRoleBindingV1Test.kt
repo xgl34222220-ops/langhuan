@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.story.parseStoryCanonRoleCandidatesV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

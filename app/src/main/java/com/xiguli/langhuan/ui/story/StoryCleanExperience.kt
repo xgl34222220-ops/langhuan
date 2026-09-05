@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.story
 
 import androidx.compose.runtime.Composable
 import com.xiguli.langhuan.ui.reader.LibraryExperienceState

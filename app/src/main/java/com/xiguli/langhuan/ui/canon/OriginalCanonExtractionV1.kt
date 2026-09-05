@@ -28,7 +28,7 @@ import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.ui.reader.ReaderBookUi
 import com.xiguli.langhuan.ui.theme.LanghuanShape
-import com.xiguli.langhuan.ui.verticalScroll
+import com.xiguli.langhuan.ui.shell.verticalScroll
 import java.io.File
 import java.security.MessageDigest
 import kotlin.math.max

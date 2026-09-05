@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.story
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll

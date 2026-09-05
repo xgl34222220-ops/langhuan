@@ -45,7 +45,7 @@ import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import com.xiguli.langhuan.ui.theme.LanghuanShape
-import com.xiguli.langhuan.ui.verticalScroll
+import com.xiguli.langhuan.ui.shell.verticalScroll
 import java.io.File
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.flow.MutableStateFlow

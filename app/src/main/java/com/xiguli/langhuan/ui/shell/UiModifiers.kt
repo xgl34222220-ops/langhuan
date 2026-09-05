@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.shell
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll as composeVerticalScroll

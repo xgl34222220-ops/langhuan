@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.story
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable

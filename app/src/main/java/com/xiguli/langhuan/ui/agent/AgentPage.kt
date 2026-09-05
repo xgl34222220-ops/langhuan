@@ -28,8 +28,8 @@ import com.xiguli.langhuan.engine.AgentAction
 import com.xiguli.langhuan.engine.AgentActionKind
 import com.xiguli.langhuan.ui.writing.FullBookEditorPanel
 import com.xiguli.langhuan.ui.writing.LongFormAgentPanel
-import com.xiguli.langhuan.ui.StudioUiState
-import com.xiguli.langhuan.ui.StudioViewModel
+import com.xiguli.langhuan.ui.shell.StudioUiState
+import com.xiguli.langhuan.ui.shell.StudioViewModel
 import com.xiguli.langhuan.ui.canon.CandidateCanonPanel
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import com.xiguli.langhuan.ui.theme.LocalLanghuanTokens

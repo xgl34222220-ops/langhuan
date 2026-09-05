@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.story
 
 import android.app.Application
 import androidx.compose.foundation.layout.*
@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.ChapterEditorStore
 import com.xiguli.langhuan.ui.reader.LibraryExperienceState
 import com.xiguli.langhuan.ui.reader.ReaderBookUi
+import com.xiguli.langhuan.ui.shell.verticalScroll
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

@@ -4,6 +4,12 @@ import com.xiguli.langhuan.ui.creation.CreationChatV4
 import com.xiguli.langhuan.ui.reader.ReaderMobileExperience
 import com.xiguli.langhuan.ui.reader.ReaderPagedLayoutV14
 import com.xiguli.langhuan.ui.reader.ReaderProgressStoreV11
+import com.xiguli.langhuan.ui.shell.LanghuanRootV3
+import com.xiguli.langhuan.ui.shell.ShelfMobileExperience
+import com.xiguli.langhuan.ui.story.StoryCleanExperience
+import com.xiguli.langhuan.ui.story.StoryCoreExperience
+import com.xiguli.langhuan.ui.story.StoryPlayPanelV17
+import com.xiguli.langhuan.ui.story.StoryPlayV3ViewModel
 import com.xiguli.langhuan.ui.writing.ChapterEditorExperience
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -14,7 +20,7 @@ class FullShellV4RouteTest {
     @Test
     fun rootUsesMobileShelfReaderAndFreshReloadGate() {
         val root = File(System.getProperty("user.dir") ?: ".")
-        val router = File(root, "src/main/java/com/xiguli/langhuan/ui/LanghuanRootV3.kt").readText()
+        val router = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/LanghuanRootV3.kt").readText()
         val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfMobileExperience.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt").readText()
         val story = File(root, "src/main/java/com/xiguli/langhuan/ui/story/StoryCoreExperience.kt").readText()

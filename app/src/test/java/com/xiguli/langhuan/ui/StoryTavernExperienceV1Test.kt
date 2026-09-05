@@ -1,5 +1,9 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.story.StoryCanonRoleCandidateV1
+import com.xiguli.langhuan.ui.story.advanceTavernTimeV1
+import com.xiguli.langhuan.ui.story.mergeTavernDirectorNoteV1
+import com.xiguli.langhuan.ui.story.recommendTavernCastV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

@@ -1,5 +1,14 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.story.NpcLifeSceneV1
+import com.xiguli.langhuan.ui.story.NpcLifeStateV1
+import com.xiguli.langhuan.ui.story.NpcPresenceV1
+import com.xiguli.langhuan.ui.story.StoryCanonRoleCandidateV1
+import com.xiguli.langhuan.ui.story.desiredNpcCastV1
+import com.xiguli.langhuan.ui.story.mergeNpcLifeNoteV1
+import com.xiguli.langhuan.ui.story.mergeNpcLifeSituationV1
+import com.xiguli.langhuan.ui.story.renderNpcLifeNoteV1
+import com.xiguli.langhuan.ui.story.seedNpcLifeStatesV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

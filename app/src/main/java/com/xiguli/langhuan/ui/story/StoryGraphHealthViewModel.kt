@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.story
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel

@@ -1,5 +1,14 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.story.NpcLifeStateV1
+import com.xiguli.langhuan.ui.story.NpcLongMemoryV1
+import com.xiguli.langhuan.ui.story.NpcMemoryChangeV1
+import com.xiguli.langhuan.ui.story.NpcMemoryPrivacyV1
+import com.xiguli.langhuan.ui.story.NpcMemorySceneV1
+import com.xiguli.langhuan.ui.story.NpcPlanV1
+import com.xiguli.langhuan.ui.story.applyNpcMemoryChangesV1
+import com.xiguli.langhuan.ui.story.applyNpcPlansToLifeV1
+import com.xiguli.langhuan.ui.story.memorySliceForNpcV1
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

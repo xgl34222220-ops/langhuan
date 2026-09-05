@@ -53,8 +53,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xiguli.langhuan.ui.StudioUiState
-import com.xiguli.langhuan.ui.StudioViewModel
+import com.xiguli.langhuan.ui.shell.StudioUiState
+import com.xiguli.langhuan.ui.shell.StudioViewModel
 import com.xiguli.langhuan.ui.agent.TaskModelRoutingPanel
 import com.xiguli.langhuan.ui.agent.TaskModelRoutingViewModel
 import com.xiguli.langhuan.ui.writing.WritingSkillPanel
