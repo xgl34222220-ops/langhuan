@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -48,7 +49,7 @@ fun CreationChatV4(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val t = LocalLanghuanUiTokens.current
-    var input by remember { mutableStateOf("") }
+    var input by rememberSaveable { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
     val attachmentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         viewModel.addConversationAttachments(uris)
@@ -77,7 +78,10 @@ fun CreationChatV4(
             (if (state.lastRouteDecision != null) 1 else 0) +
             (if (state.streamingReply.isNotBlank() || state.isBusy) 1 else 0) +
             (if (state.error != null) 1 else 0)
-        if (total > 0) listState.animateScrollToItem(total - 1)
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+        if (total > 0 && !listState.isScrollInProgress && total - lastVisible <= 3) {
+            listState.animateScrollToItem(total - 1)
+        }
     }
 
     LaunchedEffect(state.createdStoryId) {

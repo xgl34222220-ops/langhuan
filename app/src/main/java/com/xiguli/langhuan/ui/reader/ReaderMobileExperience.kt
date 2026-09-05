@@ -1,6 +1,9 @@
 package com.xiguli.langhuan.ui.reader
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.text.PlatformTextStyle
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -145,8 +148,15 @@ fun ReaderMobileExperience(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = t.foreground)
-                    Text("正在准备正文", Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    if (state.isBusy) {
+                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = t.foreground)
+                        Text("正在准备正文", Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    } else {
+                        Text("故事，从第一页开始", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+                        Text(state.error ?: "这本书还没有可阅读的章节", Modifier.padding(16.dp), color = t.mutedForeground)
+                        ShadcnButton("前往创作", { onEnterWriting(book.id) })
+                        ShadcnButton("返回书架", onBackToShelf, Modifier.padding(top = 12.dp), variant = ShadcnButtonVariant.GHOST)
+                    }
                 }
             }
         }
@@ -155,6 +165,9 @@ fun ReaderMobileExperience(
 
     var showInfo by rememberSaveable(book.id) { mutableStateOf(startOnInfo) }
     var storyMode by rememberSaveable(book.id) { mutableStateOf(false) }
+    BackHandler(storyMode || showInfo) {
+        if (showInfo) showInfo = false else storyMode = false
+    }
 
     if (storyMode) {
         Box(Modifier.fillMaxSize()) {
@@ -227,9 +240,16 @@ private fun MobileReaderPage(
     var chromeVisible by remember(chapter.id) { mutableStateOf(false) }
     var showDirectory by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    BackHandler(chromeVisible || showDirectory || showSettings) {
+        when {
+            showSettings -> showSettings = false
+            showDirectory -> showDirectory = false
+            else -> chromeVisible = false
+        }
+    }
 
     var fontSize by remember(book.id) { mutableFloatStateOf(prefs.getFloat("font_${book.id}", 20f)) }
-    var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line_${book.id}", 1.65f)) }
+    var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line_${book.id}", 1.75f)) }
     var sidePadding by remember(book.id) { mutableFloatStateOf(prefs.getFloat("padding_${book.id}", 22f)) }
     var paragraphSpacing by remember(book.id) { mutableFloatStateOf(prefs.getFloat("paragraph_${book.id}", 8f)) }
     var firstLineIndent by remember(book.id) { mutableStateOf(prefs.getBoolean("indent_${book.id}", true)) }
@@ -446,6 +466,7 @@ private fun MobileReaderPage(
                     title = displayTitle,
                     text = readingText,
                     next = next,
+                    onNext = { jumpChapter(next) },
                     fontSize = fontSize,
                     lineFactor = lineFactor,
                     sidePadding = sidePadding,
@@ -473,14 +494,15 @@ private fun MobileReaderPage(
                         lineFactor = lineFactor,
                         sidePadding = sidePadding,
                         paragraphSpacing = paragraphSpacing,
-                        firstLineIndent = firstLineIndent && measured.indentFirstParagraph.getOrElse(safePage) { true },
+                        firstLineIndent = firstLineIndent,
+                        startsParagraph = measured.indentFirstParagraph.getOrElse(safePage) { true },
                         family = family,
                         palette = palette,
                     )
                 }
             }
 
-            if (!chromeVisible) {
+            if (!chromeVisible && pageMode == ReaderPageModeV10.SCROLL) {
                 Text(
                     "${chapterIndex + 1}/${ordered.size.coerceAtLeast(1)} · ${(currentFraction().coerceIn(0f, 1f) * 100).roundToInt()}%",
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 5.dp),
@@ -560,6 +582,7 @@ private fun MobileReaderPageContent(
     sidePadding: Float,
     paragraphSpacing: Float,
     firstLineIndent: Boolean,
+    startsParagraph: Boolean,
     family: FontFamily,
     palette: MobileReaderPalette,
 ) {
@@ -580,7 +603,7 @@ private fun MobileReaderPageContent(
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .78f))
             Spacer(Modifier.height(10.dp))
         }
-        MobileReaderParagraphs(pageText, fontSize, lineFactor, paragraphSpacing, firstLineIndent, family, palette.foreground)
+        MobileReaderParagraphs(pageText, fontSize, lineFactor, paragraphSpacing, firstLineIndent, family, palette.foreground, startsParagraph)
         Spacer(Modifier.weight(1f))
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("$page / $pageCount", style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
@@ -595,6 +618,7 @@ private fun MobileScrollReadingPage(
     title: String,
     text: String,
     next: ChapterDraft?,
+    onNext: () -> Unit,
     fontSize: Float,
     lineFactor: Float,
     sidePadding: Float,
@@ -622,7 +646,7 @@ private fun MobileScrollReadingPage(
         Spacer(Modifier.height(48.dp))
         Text(
             if (next == null) "— 全书完 —" else "下一章 · ${readerDisplayChapterTitleV13(next.title, next.chapterNumber)}",
-            Modifier.fillMaxWidth().padding(bottom = 24.dp),
+            Modifier.fillMaxWidth().clickable(enabled = next != null, onClick = onNext).padding(vertical = 24.dp),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelMedium,
             color = palette.secondary,
@@ -639,6 +663,7 @@ private fun MobileReaderParagraphs(
     firstLineIndent: Boolean,
     family: FontFamily,
     color: Color,
+    startsParagraph: Boolean = true,
 ) {
     val paragraphs = remember(text) { text.replace("\r\n", "\n").split(Regex("\\n+")).filter { it.isNotBlank() } }
     paragraphs.forEachIndexed { index, paragraph ->
@@ -649,7 +674,9 @@ private fun MobileReaderParagraphs(
                 lineHeight = (fontSize * lineFactor).sp,
                 fontFamily = family,
                 color = color,
-                textIndent = TextIndent(firstLine = if (firstLineIndent && index == 0) (fontSize * 2f).sp else 0.sp),
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                textAlign = TextAlign.Justify,
+                textIndent = TextIndent(firstLine = if (firstLineIndent && (index > 0 || startsParagraph)) (fontSize * 2f).sp else 0.sp),
             ),
         )
         if (index < paragraphs.lastIndex) Spacer(Modifier.height(paragraphSpacing.dp))
@@ -762,6 +789,10 @@ private fun MobileReaderDirectory(
     val filtered = remember(chapters, query) {
         chapters.filter { query.isBlank() || readerDisplayChapterTitleV13(it.title, it.chapterNumber).contains(query, true) }
     }
+    val directoryState = rememberLazyListState()
+    LaunchedEffect(query, current) {
+        directoryState.scrollToItem(if (query.isBlank()) filtered.indexOfFirst { it.chapterNumber == current }.coerceAtLeast(0) else 0)
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background, shape = LanghuanShape.sheetTop) {
         Column(Modifier.fillMaxWidth().heightIn(max = 690.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -778,8 +809,12 @@ private fun MobileReaderDirectory(
             }
             LazyColumn(
                 Modifier.fillMaxWidth().weight(1f),
+                state = directoryState,
                 contentPadding = PaddingValues(bottom = 14.dp),
             ) {
+                if (filtered.isEmpty()) item {
+                    Text("没有找到匹配的章节", Modifier.padding(24.dp), color = t.mutedForeground)
+                }
                 items(filtered, key = { it.id }) { item ->
                     val selected = item.chapterNumber == current
                     Row(
@@ -844,6 +879,14 @@ private fun MobileReaderSettings(
                 ShadcnIconButton(Icons.Rounded.Close, "关闭", onDismiss)
             }
 
+            MobileSettingLabel("实时排版预览")
+            Surface(color = mobileReaderPalette(themeKey).background, shape = LanghuanShape.card) {
+                Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                    Text("一页之间，自有天地", style = MaterialTheme.typography.titleMedium, color = mobileReaderPalette(themeKey).foreground)
+                    Spacer(Modifier.height(12.dp))
+                    MobileReaderParagraphs("风穿过树梢，书页在指尖轻轻翻动。把世界的喧嚣留在页外，慢慢读完这一段时光。", fontSize, lineFactor, paragraphSpacing, firstLineIndent, mobileReaderFont(fontKey), mobileReaderPalette(themeKey).foreground)
+                }
+            }
             MobileSettingLabel("阅读背景")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 themes.forEach { (key, label, color) ->
@@ -912,7 +955,7 @@ private fun MobileReaderSettings(
                 Column {
                     MobilePresetRow(
                         label = "行距",
-                        options = listOf("紧凑" to 1.45f, "标准" to 1.65f, "舒展" to 1.88f),
+                        options = listOf("紧凑" to 1.5f, "标准" to 1.75f, "舒展" to 1.9f),
                         current = lineFactor,
                     ) { onBeforeLayoutChange(); onLine(it) }
                     HorizontalDivider(color = t.border, modifier = Modifier.padding(start = 14.dp))

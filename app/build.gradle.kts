@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 93
-        versionName = "0.28.0-alpha14-reader-video"
+        versionCode = 94
+        versionName = "0.28.1-reader-polish"
     }
 
     buildFeatures { compose = true }

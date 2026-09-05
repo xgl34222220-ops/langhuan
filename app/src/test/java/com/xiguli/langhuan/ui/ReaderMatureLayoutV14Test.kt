@@ -41,8 +41,8 @@ class ReaderMatureLayoutV14Test {
 
         assertTrue(page.contains("ReaderPageParagraphsV16"))
         assertTrue(page.contains("indentFirstParagraph"))
-        assertTrue(page.contains("fontSize = 12.sp"))
-        assertTrue(page.contains("lineHeight = 16.sp"))
+        assertTrue(page.contains("fontSize = MaterialTheme.typography.labelSmall.fontSize"))
+        assertTrue(page.contains("lineHeight = MaterialTheme.typography.labelSmall.lineHeight"))
         assertTrue(page.contains("bottom = 4.dp"))
         assertTrue(page.contains("padding(top = 4.dp)"))
         assertTrue(page.contains("Spacer(Modifier.height(paragraphSpacing.coerceIn(0f, 24f).dp))"))

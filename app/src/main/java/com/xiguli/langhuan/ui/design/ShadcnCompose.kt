@@ -1,6 +1,15 @@
 package com.xiguli.langhuan.ui.design
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,12 +59,15 @@ fun ShadcnButton(
 ) {
     val t = LocalLanghuanUiTokens.current
     val inheritedContent = LocalContentColor.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(if (pressed && enabled) .97f else 1f, spring(stiffness = 700f), label = "buttonPress")
     val height = when (size) {
-        ShadcnButtonSize.XS -> 30.dp
-        ShadcnButtonSize.SM -> 34.dp
-        ShadcnButtonSize.DEFAULT -> 38.dp
-        ShadcnButtonSize.LG -> 42.dp
-        ShadcnButtonSize.ICON -> 38.dp
+        ShadcnButtonSize.XS -> 40.dp
+        ShadcnButtonSize.SM -> 44.dp
+        ShadcnButtonSize.DEFAULT -> 48.dp
+        ShadcnButtonSize.LG -> 52.dp
+        ShadcnButtonSize.ICON -> 48.dp
     }
     val horizontal = when (size) {
         ShadcnButtonSize.XS -> 9.dp
@@ -74,7 +86,10 @@ fun ShadcnButton(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.defaultMinSize(
+        interactionSource = interaction,
+        modifier = modifier.graphicsLayer { scaleX = pressScale; scaleY = pressScale }.semantics {
+            if (text.isBlank() && leadingIcon != null) contentDescription = "发送"
+        }.defaultMinSize(
             minWidth = if (size == ShadcnButtonSize.ICON) height else 0.dp,
             minHeight = height,
         ),
@@ -125,7 +140,7 @@ fun ShadcnIconButton(
     val border = if (variant == ShadcnButtonVariant.OUTLINE) BorderStroke(1.dp, t.border) else null
     Surface(
         onClick = onClick,
-        modifier = modifier.size(38.dp),
+        modifier = modifier.size(48.dp),
         shape = LanghuanShape.card,
         color = container,
         contentColor = foreground,
@@ -192,7 +207,7 @@ fun ShadcnInput(
         shadowElevation = .5.dp,
     ) {
         Row(
-            Modifier.fillMaxWidth().height(42.dp).padding(horizontal = 11.dp),
+            Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             leadingIcon?.let {
@@ -204,7 +219,7 @@ fun ShadcnInput(
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                textStyle = TextStyle(fontSize = MaterialTheme.typography.bodySmall.fontSize, lineHeight = MaterialTheme.typography.bodySmall.lineHeight, color = t.foreground),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = t.foreground),
                 cursorBrush = SolidColor(t.ring),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {

@@ -195,7 +195,7 @@ fun ChapterEditorExperience(
                             minLines = 22,
                             maxLines = 60,
                             placeholder = { Text("直接写正文；选中一段后，下方会出现 AI 局部精修。") },
-                            textStyle = LocalTextStyle.current.copy(fontSize = MaterialTheme.typography.titleMedium.fontSize, lineHeight = MaterialTheme.typography.titleMedium.lineHeight),
+                            textStyle = com.xiguli.langhuan.ui.theme.readingTextStyle(fontSizeSp = 18, lineHeightMultiplier = 1.75f, serif = false),
                             shape = LanghuanShape.card,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = t.background,

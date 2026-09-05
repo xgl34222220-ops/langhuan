@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -326,19 +327,36 @@ private fun MobileLibraryPage(
                             Icon(Icons.Rounded.AutoStories, null, Modifier.size(30.dp), tint = t.mutedForeground)
                         }
                     }
-                    Text("书架还是空的", Modifier.padding(top = 14.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground)
-                    Text("导入一本小说，或者从一个想法开始。", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
-                    ShadcnButton("添加第一本书", onAdd, Modifier.padding(top = 16.dp), size = ShadcnButtonSize.SM, leadingIcon = Icons.Rounded.Add)
+                    Text(if (query.isBlank()) "书架还是空的" else "没有找到这本书", Modifier.padding(top = 14.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                    Text(if (query.isBlank()) "导入一本小说，或者从一个想法开始。" else "换个书名或类型试试", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    if (query.isBlank()) ShadcnButton("添加第一本书", onAdd, Modifier.padding(top = 16.dp), size = ShadcnButtonSize.SM, leadingIcon = Icons.Rounded.Add)
+                    else ShadcnButton("清除搜索", { onQuery("") }, Modifier.padding(top = 16.dp), size = ShadcnButtonSize.SM)
                 }
             }
 
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 148.dp),
+                columns = GridCells.Adaptive(minSize = 100.dp),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 112.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
+                if (query.isBlank()) item(span = { GridItemSpan(maxLineSpan) }) {
+                    val recent = books.first()
+                    Surface(onClick = { onOpenBook(recent.id) }, enabled = openingBookId == null, shape = LanghuanShape.card, color = MaterialTheme.colorScheme.primaryContainer) {
+                        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                            Text("最近更新 · 打开阅读", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text(recent.title, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("第 ${recent.currentChapter.coerceAtLeast(1)} 章", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Icon(Icons.Rounded.KeyboardArrowRight, "继续阅读", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                    }
+                }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(if (query.isBlank()) "我的藏书" else "搜索结果 · ${books.size} 本", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                }
                 items(books, key = { it.id }) { book ->
                     MobileBookTile(
                         book = book,

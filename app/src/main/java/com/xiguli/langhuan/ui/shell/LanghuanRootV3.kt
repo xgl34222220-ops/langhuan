@@ -1,6 +1,10 @@
 package com.xiguli.langhuan.ui.shell
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -82,6 +86,24 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     var pendingBookId by remember { mutableStateOf<String?>(null) }
     var pendingBookRoute by remember { mutableStateOf<RootRouteV3?>(null) }
     var pendingBookFreshReload by remember { mutableStateOf(false) }
+    val entrance = remember { Animatable(1f) }
+    val notices = remember { SnackbarHostState() }
+    LaunchedEffect(route) {
+        entrance.snapTo(.94f)
+        entrance.animateTo(1f, tween(180))
+    }
+    LaunchedEffect(libraryState.error) {
+        libraryState.error?.takeIf { it.isNotBlank() }?.let { notices.showSnackbar(it) }
+    }
+    BackHandler(route != RootRouteV3.SHELF && route != RootRouteV3.EDITOR) {
+        route = when (route) {
+            RootRouteV3.AI_SETUP -> returnAfterAiSetup
+            RootRouteV3.SKILLS -> returnAfterSkills
+            RootRouteV3.CREATION_RESEARCH -> RootRouteV3.CREATION
+            RootRouteV3.WRITING, RootRouteV3.INTELLIGENCE, RootRouteV3.AGENT, RootRouteV3.COVER_STUDIO -> if (libraryState.openedBook != null) RootRouteV3.BOOK else RootRouteV3.SHELF
+            else -> RootRouteV3.SHELF
+        }
+    }
 
     val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) localImportVm.importUri(uri)
@@ -199,7 +221,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = entrance.value }) {
             when (route) {
                 RootRouteV3.SHELF -> {
                     ShelfMobileExperience(
@@ -413,6 +435,9 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
         }
     }
 
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        SnackbarHost(notices, Modifier.navigationBarsPadding().padding(16.dp))
+    }
     localImportState.error?.let { error ->
         AlertDialog(
             onDismissRequest = localImportVm::clearFeedback,

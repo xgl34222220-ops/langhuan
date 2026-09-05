@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -108,7 +109,7 @@ fun StoryCoreExperience(
             Surface(color = t.background, contentColor = t.foreground) {
                 Column(Modifier.statusBarsPadding()) {
                     Row(
-                        Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 10.dp),
+                        Modifier.fillMaxWidth().height(64.dp).padding(start = 68.dp, end = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -138,7 +139,7 @@ fun StoryCoreExperience(
             Surface(color = t.card, contentColor = t.foreground) {
                 Column {
                     HorizontalDivider(thickness = 1.dp, color = t.border)
-                    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
                         val choices = session?.turns?.lastOrNull()?.choices.orEmpty()
                         if (choices.isNotEmpty() && !state.busy) {
                             Row(

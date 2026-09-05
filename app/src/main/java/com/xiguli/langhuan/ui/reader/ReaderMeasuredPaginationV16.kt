@@ -10,6 +10,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -85,6 +87,8 @@ internal fun rememberReaderMeasuredPaginationV16(
         fontSize = fontSize.coerceIn(12f, 36f).sp,
         lineHeight = (fontSize.coerceIn(12f, 36f) * lineFactor.coerceIn(1.2f, 2.6f)).sp,
         fontFamily = family,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        textAlign = TextAlign.Justify,
     )
     val titleStyle = TextStyle(
         fontSize = (fontSize + 3f).sp,
@@ -96,12 +100,12 @@ internal fun rememberReaderMeasuredPaginationV16(
     val headerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
     val footerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
 
-    val topFirstPx = with(density) { 10.dp.roundToPx() }
+    val topFirstPx = with(density) { 8.dp.roundToPx() }
     val topNormalPx = with(density) { 8.dp.roundToPx() }
-    val titleGapPx = with(density) { 10.dp.roundToPx() }
+    val titleGapPx = with(density) { 12.dp.roundToPx() }
     val headerGapPx = with(density) { 10.dp.roundToPx() }
     val footerGapPx = with(density) { 4.dp.roundToPx() }
-    val bottomPx = with(density) { 4.dp.roundToPx() }
+    val bottomPx = with(density) { 12.dp.roundToPx() }
     val paragraphGapPx = with(density) { paragraphSpacing.coerceIn(0f, 24f).dp.roundToPx() }
 
     val titleHeightPx = textMeasurer.measure(

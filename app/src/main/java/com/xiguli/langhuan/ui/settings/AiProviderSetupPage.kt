@@ -90,7 +90,7 @@ fun AiProviderSetupPage(
                     Text("AI 服务", style = MaterialTheme.typography.headlineMedium, color = t.foreground)
                     Text("API、中转站、模型与任务路由", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                 }
-                LanghuanBadge(if (p.ready) "READY" else "SETUP", accent = p.ready)
+                LanghuanBadge(if (p.ready) "已就绪" else "待配置", accent = p.ready)
             }
 
             LazyColumn(

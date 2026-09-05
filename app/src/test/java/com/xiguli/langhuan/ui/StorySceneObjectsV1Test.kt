@@ -1,4 +1,5 @@
 package com.xiguli.langhuan.ui
+import com.xiguli.langhuan.ui.story.STORY_SCENE_OBJECT_SUBJECT_V1
 
 import com.xiguli.langhuan.ui.story.StoryLightLevelV1
 import com.xiguli.langhuan.ui.story.StoryPerceptionRouteV1

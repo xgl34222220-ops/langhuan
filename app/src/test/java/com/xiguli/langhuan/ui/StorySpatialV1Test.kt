@@ -1,4 +1,6 @@
 package com.xiguli.langhuan.ui
+import com.xiguli.langhuan.ui.story.STORY_SPATIAL_SUBJECT_V1
+import com.xiguli.langhuan.ui.story.STORY_SPATIAL_TARGET_FIELD_V1
 
 import com.xiguli.langhuan.ui.canon.CanonEntityObservationV1
 import com.xiguli.langhuan.ui.canon.CanonEntityTypeV1
