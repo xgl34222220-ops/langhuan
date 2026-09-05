@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.cover
 
 import android.app.Application
 import android.graphics.Bitmap
@@ -18,6 +18,7 @@ import com.xiguli.langhuan.engine.AiProviderConfig
 import com.xiguli.langhuan.engine.ApiProtocol
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.ProviderAutoDetector
+import com.xiguli.langhuan.ui.ReaderBookUi
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI

@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reference
 
 import android.app.Application
 import android.net.Uri
@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
 import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
+import com.xiguli.langhuan.ui.StudioViewModel
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers

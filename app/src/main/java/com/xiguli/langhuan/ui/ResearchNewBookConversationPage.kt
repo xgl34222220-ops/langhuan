@@ -31,6 +31,7 @@ import com.xiguli.langhuan.engine.ResearchFallbackEngine
 import com.xiguli.langhuan.engine.WebResearchEngine
 import com.xiguli.langhuan.engine.WebResearchSource
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.reference.ReferenceTemplateSelectionPanel
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import kotlinx.coroutines.launch
 

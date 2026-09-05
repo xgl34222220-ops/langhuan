@@ -15,6 +15,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.engine.ProjectConversationStore
+import com.xiguli.langhuan.ui.cover.CoverPersistenceGuardViewModel
+import com.xiguli.langhuan.ui.cover.CoverStudioV3
+import com.xiguli.langhuan.ui.settings.AiProviderSetupPage
 
 private enum class RootRouteV3 {
     SHELF,

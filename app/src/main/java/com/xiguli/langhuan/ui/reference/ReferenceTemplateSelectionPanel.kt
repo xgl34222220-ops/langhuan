@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.reference
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.engine.BuiltInReferenceLibraryInstaller
 import com.xiguli.langhuan.engine.ReferenceDistillationReport
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
+import com.xiguli.langhuan.ui.NewBookConversationViewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens

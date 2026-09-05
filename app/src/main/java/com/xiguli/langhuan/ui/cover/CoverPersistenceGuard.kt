@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.cover
 
 import android.app.Application
 import android.graphics.Bitmap

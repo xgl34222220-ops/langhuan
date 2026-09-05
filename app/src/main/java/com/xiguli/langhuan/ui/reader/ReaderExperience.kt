@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.data.EpubOriginalTocV1
 import com.xiguli.langhuan.data.EpubTocNodeV1
 import com.xiguli.langhuan.domain.ChapterDraft
+import com.xiguli.langhuan.ui.cover.CoverPreviewV3
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanShape
 import java.text.SimpleDateFormat

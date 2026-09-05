@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui
+package com.xiguli.langhuan.ui.settings
 
 import android.app.Application
 import androidx.compose.foundation.clickable
