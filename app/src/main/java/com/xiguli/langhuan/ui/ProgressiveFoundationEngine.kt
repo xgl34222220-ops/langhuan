@@ -170,7 +170,10 @@ internal class ProgressiveFoundationEngine(
         gateway.generate(prompt)
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
-    } catch (_: Throwable) {
+    } catch (error: Throwable) {
+        if (stage.startsWith("1/3")) {
+            throw IllegalStateException("$stage 请求失败：${error.message.orEmpty()}", error)
+        }
         null
     }
 

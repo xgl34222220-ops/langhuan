@@ -82,7 +82,8 @@ object NovelSkillExecutionPlanner {
         val task = primaryTask(route)
         val selected = task?.let(session::selection)
         val modelLabel = selected?.label ?: "${session.defaultProvider.name} · ${session.defaultProvider.model}"
-        val activeSkills = task?.let(skills::forTask).orEmpty().map { it.name }
+        val selectedSkills = task?.let(skills::forTask).orEmpty()
+        val activeSkills = selectedSkills.map { it.name }
 
         val executed = buildList {
             if (NovelCapability.CONVERSATION_CONTEXT in route.capabilities) {
@@ -116,6 +117,16 @@ object NovelSkillExecutionPlanner {
             }
             if (activeSkills.isNotEmpty()) {
                 add(NovelExecutionStep("Writing Skill Store", "实际注入：${activeSkills.joinToString("、")}"))
+            }
+            if (selectedSkills.any { it.id == SepiaNarrativeEngine.SKILL_ID }) {
+                task?.let(SepiaNarrativeEngine::operationFor)?.let { operation ->
+                    add(
+                        NovelExecutionStep(
+                            "Sepia · ${operation.label}",
+                            SepiaNarrativeEngine.executionDetail(operation),
+                        )
+                    )
+                }
             }
         }
 

@@ -2,7 +2,6 @@ package com.xiguli.langhuan.engine
 
 import com.xiguli.langhuan.domain.GeneratedChapter
 import java.net.HttpURLConnection
-import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URLEncoder
 import kotlinx.coroutines.CancellationException
@@ -205,9 +204,6 @@ class UniversalAiGateway(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            if (error is SocketTimeoutException || error.cause is SocketTimeoutException) {
-                throw IllegalStateException("AI 服务长时间没有返回数据，本次请求已停止；请重试或切换模型/中转站。", error)
-            }
             if (emitted) {
                 throw IllegalStateException(
                     "流式连接在已经开始返回内容后中断。为避免重复扣费，琅嬛没有自动发起第二次请求；可手动重试。",
@@ -239,24 +235,35 @@ class UniversalAiGateway(
         val endpoint = if (azure) azureChatEndpoint(config.baseUrl, config.model) else openAiChatEndpoint(config.baseUrl)
         val body = openAiBody(prompt, stream = false, azure = azure)
         val protocol = if (azure) ApiProtocol.AZURE_OPENAI else ApiProtocol.OPENAI_COMPATIBLE
-        return requireSuccess(http(endpoint, "POST", authHeaders(protocol, config.apiKey), body.toString()))
+        return requireSuccess(http(endpoint, "POST", authHeaders(protocol, config.apiKey), body.toString(), AI_RESPONSE_TIMEOUT_MS))
     }
 
     private suspend fun streamOpenAi(prompt: PromptBundle, azure: Boolean, onDelta: (String) -> Unit): String {
         val endpoint = if (azure) azureChatEndpoint(config.baseUrl, config.model) else openAiChatEndpoint(config.baseUrl)
         val protocol = if (azure) ApiProtocol.AZURE_OPENAI else ApiProtocol.OPENAI_COMPATIBLE
         val buffer = StringBuilder()
-        streamHttp(endpoint, authHeaders(protocol, config.apiKey), openAiBody(prompt, stream = true, azure = azure).toString()) { line ->
+        val reasoningBuffer = StringBuilder()
+        streamHttp(endpoint, authHeaders(protocol, config.apiKey), openAiBody(prompt, stream = true, azure = azure).toString(), AI_STREAM_IDLE_TIMEOUT_MS) { line ->
             val data = line.removePrefix("data:").trim()
             if (data.isBlank() || data == "[DONE]") return@streamHttp
-            val root = runCatching { WireJson.parseToJsonElement(data).jsonObject }.getOrNull() ?: return@streamHttp
-            val delta = root["choices"].asObjects().firstOrNull()
-                ?.get("delta")?.let { it as? JsonObject }?.string("content")
-                ?: root["choices"].asObjects().firstOrNull()
-                    ?.get("message")?.let { it as? JsonObject }?.string("content")
+            val root = runCatching { WireJson.parseToJsonElement(data) as? JsonObject }.getOrNull()
+            if (root == null) {
+                if (!data.startsWith("{") && !data.startsWith("[")) appendDelta(buffer, data, onDelta, prompt.jsonMode)
+                return@streamHttp
+            }
+            val delta = openAiStreamVisibleText(root)
+            val reasoning = openAiStreamReasoningText(root)
+            if (!reasoning.isNullOrBlank()) reasoningBuffer.append(reasoning)
             appendDelta(buffer, delta, onDelta, prompt.jsonMode)
         }
-        return buffer.toString().ifBlank { error("流式响应为空") }
+        val visible = buffer.toString().trim()
+        if (visible.isNotBlank()) return visible
+        val recovered = recoverReasoningOnlyText(reasoningBuffer.toString())
+        if (recovered.isNotBlank()) {
+            onDelta(recovered)
+            return recovered
+        }
+        error("AI 返回了成功流，但没有可读文本字段")
     }
 
     private fun openAiBody(prompt: PromptBundle, stream: Boolean, azure: Boolean): JsonObject = buildJsonObject {
@@ -312,7 +319,7 @@ class UniversalAiGateway(
 
     private suspend fun callAnthropic(prompt: PromptBundle): String {
         val body = anthropicBody(prompt, stream = false)
-        return requireSuccess(http(anthropicMessagesEndpoint(config.baseUrl), "POST", authHeaders(ApiProtocol.ANTHROPIC, config.apiKey), body.toString()))
+        return requireSuccess(http(anthropicMessagesEndpoint(config.baseUrl), "POST", authHeaders(ApiProtocol.ANTHROPIC, config.apiKey), body.toString(), AI_RESPONSE_TIMEOUT_MS))
     }
 
     private suspend fun streamAnthropic(prompt: PromptBundle, onDelta: (String) -> Unit): String {
@@ -321,6 +328,7 @@ class UniversalAiGateway(
             anthropicMessagesEndpoint(config.baseUrl),
             authHeaders(ApiProtocol.ANTHROPIC, config.apiKey),
             anthropicBody(prompt, stream = true).toString(),
+            AI_STREAM_IDLE_TIMEOUT_MS,
         ) { line ->
             val data = line.removePrefix("data:").trim()
             if (data.isBlank() || data == "[DONE]") return@streamHttp
@@ -375,6 +383,7 @@ class UniversalAiGateway(
                 "POST",
                 emptyMap(),
                 geminiBody(prompt).toString(),
+                AI_RESPONSE_TIMEOUT_MS,
             )
         )
     }
@@ -385,6 +394,7 @@ class UniversalAiGateway(
             geminiStreamEndpoint(config.baseUrl, config.model, config.apiKey),
             emptyMap(),
             geminiBody(prompt).toString(),
+            AI_STREAM_IDLE_TIMEOUT_MS,
         ) { line ->
             val data = line.removePrefix("data:").trim()
             if (data.isBlank()) return@streamHttp
@@ -437,13 +447,14 @@ class UniversalAiGateway(
                 "POST",
                 emptyMap(),
                 ollamaBody(prompt, stream = false).toString(),
+                AI_RESPONSE_TIMEOUT_MS,
             )
         )
     }
 
     private suspend fun streamOllama(prompt: PromptBundle, onDelta: (String) -> Unit): String {
         val buffer = StringBuilder()
-        streamHttp(ollamaChatEndpoint(config.baseUrl), emptyMap(), ollamaBody(prompt, stream = true).toString()) { line ->
+        streamHttp(ollamaChatEndpoint(config.baseUrl), emptyMap(), ollamaBody(prompt, stream = true).toString(), AI_STREAM_IDLE_TIMEOUT_MS) { line ->
             val root = runCatching { WireJson.parseToJsonElement(line.trim()).jsonObject }.getOrNull() ?: return@streamHttp
             val delta = (root["message"] as? JsonObject)?.string("content")
             appendDelta(buffer, delta, onDelta, prompt.jsonMode)
@@ -509,20 +520,7 @@ class UniversalAiGateway(
         onDelta(if (structuredJson) chapterContentPreview(buffer.toString()) else buffer.toString())
     }
 
-    private fun extractText(protocol: ApiProtocol, body: String): String {
-        val root = WireJson.parseToJsonElement(body).jsonObject
-        return when (protocol) {
-            ApiProtocol.ANTHROPIC -> root["content"].asObjects().firstNotNullOfOrNull { it.string("text") }
-            ApiProtocol.GEMINI -> root["candidates"].asObjects().firstOrNull()
-                ?.get("content")?.let { it as? JsonObject }?.get("parts").asObjects()
-                .orEmpty().joinToString("") { it.string("text").orEmpty() }
-
-            ApiProtocol.OLLAMA -> root["message"]?.jsonObject?.string("content")
-            else -> root["choices"].asObjects().firstOrNull()
-                ?.get("message")?.jsonObject?.string("content")
-                ?: root.string("output_text")
-        }.orEmpty().ifBlank { error("AI 返回内容为空或协议格式不兼容") }
-    }
+    private fun extractText(protocol: ApiProtocol, body: String): String = extractProviderText(protocol, body)
 
     private fun decodeChapter(raw: String): GeneratedChapter {
         val cleaned = raw.trim()
@@ -534,13 +532,163 @@ class UniversalAiGateway(
     }
 }
 
-private suspend fun http(url: String, method: String, headers: Map<String, String>, body: String? = null): HttpResult =
+/**
+ * Decode provider payloads without assuming every OpenAI-compatible relay returns exactly
+ * choices[0].message.content as a primitive string. Reasoning relays commonly use content arrays,
+ * reasoning_content, Responses API output blocks, choices.text, or SSE-wrapped JSON.
+ */
+internal fun extractProviderText(protocol: ApiProtocol, body: String): String {
+    val raw = body.trim()
+    if (raw.isBlank()) error("AI 返回了空响应")
+
+    val sse = extractSseProviderText(protocol, raw)
+    if (sse.isNotBlank()) return sse
+
+    val parsed = runCatching { WireJson.parseToJsonElement(raw) }.getOrNull()
+    if (parsed != null) {
+        val visible = providerVisibleText(protocol, parsed).trim()
+        if (visible.isNotBlank()) return visible
+        val reasoning = providerReasoningText(parsed).trim()
+        if (reasoning.isNotBlank()) return recoverReasoningOnlyText(reasoning)
+        error("AI 已返回成功响应，但没有找到可读文本字段（已兼容 content/text/output_text/reasoning_content/Responses API）")
+    }
+
+    // Some lightweight relays return the model text directly rather than a JSON envelope.
+    if (!raw.startsWith("<") && !raw.startsWith("{") && !raw.startsWith("[")) return raw
+    error("AI 返回了无法解析的响应格式")
+}
+
+private fun extractSseProviderText(protocol: ApiProtocol, raw: String): String {
+    if (raw.lineSequence().none { it.trimStart().startsWith("data:") }) return ""
+    val visible = StringBuilder()
+    val reasoning = StringBuilder()
+    raw.lineSequence().forEach { source ->
+        val line = source.trim()
+        if (!line.startsWith("data:")) return@forEach
+        val data = line.removePrefix("data:").trim()
+        if (data.isBlank() || data == "[DONE]") return@forEach
+        val element = runCatching { WireJson.parseToJsonElement(data) }.getOrNull()
+        if (element == null) {
+            if (!data.startsWith("{") && !data.startsWith("[")) visible.append(data)
+        } else {
+            val chunk = providerVisibleText(protocol, element)
+            if (chunk.isNotBlank()) visible.append(chunk)
+            val thought = providerReasoningText(element)
+            if (thought.isNotBlank()) reasoning.append(thought)
+        }
+    }
+    return visible.toString().trim().ifBlank { recoverReasoningOnlyText(reasoning.toString()) }
+}
+
+private fun providerVisibleText(protocol: ApiProtocol, element: JsonElement): String {
+    if (element is JsonArray) return element.joinToString("") { providerVisibleText(protocol, it) }
+    val root = element as? JsonObject ?: return element.textPayload().orEmpty()
+    return when (protocol) {
+        ApiProtocol.ANTHROPIC -> root["content"].textPayload().orEmpty()
+        ApiProtocol.GEMINI -> root["candidates"].asObjects().joinToString("") { candidate ->
+            (candidate["content"] as? JsonObject)?.get("parts").textPayload().orEmpty()
+        }
+        ApiProtocol.OLLAMA -> (root["message"] as? JsonObject)?.get("content").textPayload()
+            ?: root["response"].textPayload()
+            ?: ""
+        else -> openAiVisibleText(root)
+    }
+}
+
+private fun openAiVisibleText(root: JsonObject): String {
+    val choices = root["choices"].asObjects()
+    val choiceText = choices.joinToString("") { choice ->
+        val message = choice["message"] as? JsonObject
+        val delta = choice["delta"] as? JsonObject
+        message?.get("content").textPayload()
+            ?: delta?.get("content").textPayload()
+            ?: choice["text"].textPayload()
+            ?: ""
+    }
+    if (choiceText.isNotBlank()) return choiceText
+    root["output_text"].textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    root["output"].textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    if (root.string("type")?.contains("output_text.delta", ignoreCase = true) == true) {
+        root["delta"].textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    }
+    root["content"].textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    return ""
+}
+
+private fun providerReasoningText(element: JsonElement): String {
+    if (element is JsonArray) return element.joinToString("") { providerReasoningText(it) }
+    val root = element as? JsonObject ?: return ""
+    val choices = root["choices"].asObjects()
+    val fromChoices = choices.joinToString("") { choice ->
+        val message = choice["message"] as? JsonObject
+        val delta = choice["delta"] as? JsonObject
+        message?.get("reasoning_content").textPayload()
+            ?: message?.get("reasoning").textPayload()
+            ?: delta?.get("reasoning_content").textPayload()
+            ?: delta?.get("reasoning").textPayload()
+            ?: ""
+    }
+    if (fromChoices.isNotBlank()) return fromChoices
+    return root["reasoning_content"].textPayload()
+        ?: root["reasoning"].textPayload()
+        ?: root["thinking"].textPayload()
+        ?: ""
+}
+
+private fun openAiStreamVisibleText(root: JsonObject): String {
+    val choice = root["choices"].asObjects().firstOrNull()
+    val message = choice?.get("message") as? JsonObject
+    val delta = choice?.get("delta") as? JsonObject
+    delta?.get("content").textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    message?.get("content").textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    choice?.get("text").textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    if (root.string("type")?.contains("output_text.delta", ignoreCase = true) == true) {
+        root["delta"].textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    }
+    root["output_text"].textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    root["output"].textPayload()?.takeIf(String::isNotBlank)?.let { return it }
+    return ""
+}
+
+private fun openAiStreamReasoningText(root: JsonObject): String? {
+    val choice = root["choices"].asObjects().firstOrNull()
+    val message = choice?.get("message") as? JsonObject
+    val delta = choice?.get("delta") as? JsonObject
+    return delta?.get("reasoning_content").textPayload()
+        ?: delta?.get("reasoning").textPayload()
+        ?: message?.get("reasoning_content").textPayload()
+        ?: message?.get("reasoning").textPayload()
+        ?: root["reasoning_content"].textPayload()
+        ?: root["reasoning"].textPayload()
+}
+
+private fun JsonElement?.textPayload(): String? = when (this) {
+    null -> null
+    is JsonPrimitive -> contentOrNull
+    is JsonArray -> mapNotNull { it.textPayload() }.joinToString("").takeIf(String::isNotBlank)
+    is JsonObject -> listOf("text", "content", "output_text", "value")
+        .firstNotNullOfOrNull { key -> this[key].textPayload()?.takeIf(String::isNotBlank) }
+    else -> null
+}
+
+private fun recoverReasoningOnlyText(raw: String): String {
+    val value = raw.trim()
+    if (value.isBlank()) return ""
+    val afterThink = value.substringAfterLast("</think>", missingDelimiterValue = "").trim()
+    if (afterThink.isNotBlank()) return afterThink
+    val stripped = value.replace(Regex("(?is)<think>.*?</think>"), "").trim()
+    if (stripped.isNotBlank()) return stripped
+    return value
+}
+
+
+private suspend fun http(url: String, method: String, headers: Map<String, String>, body: String? = null, readTimeoutMs: Int = READ_TIMEOUT_MS): HttpResult =
     runInterruptible(Dispatchers.IO) {
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     try {
         connection.requestMethod = method
         connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = READ_TIMEOUT_MS
+        connection.readTimeout = readTimeoutMs
         connection.setRequestProperty("Accept", "application/json")
         headers.forEach(connection::setRequestProperty)
         if (body != null) {
@@ -561,13 +709,14 @@ private suspend fun streamHttp(
     url: String,
     headers: Map<String, String>,
     body: String,
+    readTimeoutMs: Int = STREAM_IDLE_TIMEOUT_MS,
     onLine: (String) -> Unit,
 ) = runInterruptible(Dispatchers.IO) {
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     try {
         connection.requestMethod = "POST"
         connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = STREAM_IDLE_TIMEOUT_MS
+        connection.readTimeout = readTimeoutMs
         connection.doOutput = true
         connection.setRequestProperty("Accept", "text/event-stream, application/x-ndjson, application/json")
         connection.setRequestProperty("Content-Type", "application/json")
@@ -594,6 +743,9 @@ private suspend fun streamHttp(
 private const val CONNECT_TIMEOUT_MS = 20_000
 private const val READ_TIMEOUT_MS = 90_000
 private const val STREAM_IDLE_TIMEOUT_MS = 120_000
+// Slow reasoning models need a wider per-request transport window. Chapter generation still has its own outer deadlines.
+private const val AI_RESPONSE_TIMEOUT_MS = 300_000
+private const val AI_STREAM_IDLE_TIMEOUT_MS = 300_000
 
 private fun chapterContentPreview(raw: String): String {
     val match = Regex("\\\"content\\\"\\s*:\\s*\\\"").find(raw) ?: return "已接收 ${raw.length} 个字符…"
