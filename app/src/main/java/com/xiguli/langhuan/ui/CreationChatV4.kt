@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -333,7 +334,7 @@ private fun CreationAssistantTextV4(text: String, streaming: Boolean) {
             }
         }
         Column(Modifier.padding(start = 11.dp).weight(1f)) {
-            Text(text, style = MaterialTheme.typography.bodyLarge, lineHeight = 25.sp, color = t.foreground)
+            Text(creationChatDisplayTextV20(text), style = MaterialTheme.typography.bodyLarge, lineHeight = 25.sp, color = t.foreground)
             if (streaming) {
                 Row(Modifier.padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     LanghuanOrb(active = true, size = 18.dp)
@@ -348,6 +349,16 @@ private fun CreationAssistantTextV4(text: String, streaming: Boolean) {
         }
     }
 }
+
+
+internal fun creationChatDisplayTextV20(raw: String): String = raw
+    .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s+"), "")
+    .replace(Regex("\\*\\*(.+?)\\*\\*", RegexOption.DOT_MATCHES_ALL)) { it.groupValues[1] }
+    .replace(Regex("__(.+?)__", RegexOption.DOT_MATCHES_ALL)) { it.groupValues[1] }
+    .replace("```markdown", "")
+    .replace("```md", "")
+    .replace("```", "")
+    .trim()
 
 @Composable
 private fun CreationThinkingV4(label: String) {
@@ -430,8 +441,8 @@ private fun CreationComposerV4(
     val busy = state.isBusy || state.isLoadingAttachments
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = t.background,
-        shadowElevation = 8.dp,
+        color = Color.Transparent,
+        shadowElevation = 0.dp,
     ) {
         Column(
             Modifier

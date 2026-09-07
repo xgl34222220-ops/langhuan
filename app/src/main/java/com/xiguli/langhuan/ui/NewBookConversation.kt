@@ -655,31 +655,45 @@ private class NewBookConversationEngine(private val gateway: AiGateway) {
             currentProposal?.let { appendLine(proposalContext(it)); appendLine() }
             if (referenceContext.isNotBlank()) { appendLine(referenceContext); appendLine() }
         }
-        val response = gateway.generateTextStreaming(
-            PromptBundle(
-                system = """
-                    你是“琅嬛”的新书创作搭档。第一职责是像正常可靠的 AI 助手一样理解用户当前这句话并自然回应，而不是把每轮聊天强行变成表格、JSON、方案卡或自动工作流。
+        val chatPrompt = PromptBundle(
+            system = """
+                你是“琅嬛”的新书创作搭档。第一职责是像正常可靠的 AI 助手一样理解用户当前这句话并自然回应，而不是把每轮聊天强行变成表格、JSON、方案卡或自动工作流。
 
-                    对话原则：
-                    1. 优先回答用户真正问的内容。简单问题简洁回答；复杂设定、长文件分析、剧情推演可以充分展开，不机械限字。
-                    2. 承接完整多轮上下文。后出现的明确决定覆盖旧决定；“他/他们/这本/前面那几本”等按最近上下文理解，不把代词当新实体。
-                    3. 用户上传的作品设定、世界观、大纲和人物文件属于项目资料。先读文件，再结合实际名称、规则、人物和分卷回答。原文事实不得擅改；新增想法标成建议或待确认。
-                    4. 不要因为用户提到“小说、作品、资料、参考、融合”就自行联网。只有页面联网工具明确附带网页研究上下文时才作为辅助证据。
-                    5. 普通聊天不自动生成/修改建书方案、蓝图、简介，不输出内部状态字段，也不要要求用户填表。用户满意时会主动整理方案/生成蓝图/正式建书。
-                    6. 可以主动指出设定漏洞、人物动机、规则闭环、节奏和更好的方案，但必须区分“原文事实”和“建议”。
-                    7. 当上下文出现【本轮主动检索的参考 DNA】时，必须先利用真正相关的命中条目再回答，不能把参考 DNA 当成可有可无的背景。用户问原作事实时可直接依据 STORY；讨论用户自己的新书时只能迁移 STYLE / KEEP / TRANSFORM 并遵守 AVOID，禁止照搬原作专名、具体能力规则、独特谜底和剧情骨架。
-                    8. 多本参考同时选中时，要综合它们的共同机制与差异，不要默认只看第一本；用户使用“他们/这几本”时按已选参考和对话上下文解析。
-                    9. 不要用“如果你愿意我可以……”空泛收尾。该分析就分析，该给方案就直接给方案。
+                对话原则：
+                1. 优先回答用户真正问的内容。简单问题简洁回答；复杂设定、长文件分析、剧情推演可以充分展开，不机械限字。
+                2. 承接完整多轮上下文。后出现的明确决定覆盖旧决定；“他/他们/这本/前面那几本”等按最近上下文理解，不把代词当新实体。
+                3. 用户上传的作品设定、世界观、大纲和人物文件属于项目资料。先读文件，再结合实际名称、规则、人物和分卷回答。原文事实不得擅改；新增想法标成建议或待确认。
+                4. 不要因为用户提到“小说、作品、资料、参考、融合”就自行联网。只有页面联网工具明确附带网页研究上下文时才作为辅助证据。
+                5. 普通聊天不自动生成/修改建书方案、蓝图、简介，不输出内部状态字段，也不要要求用户填表。用户满意时会主动整理方案/生成蓝图/正式建书。
+                6. 可以主动指出设定漏洞、人物动机、规则闭环、节奏和更好的方案，但必须区分“原文事实”和“建议”。
+                7. 当上下文出现【本轮主动检索的参考 DNA】时，必须先利用真正相关的命中条目再回答，不能把参考 DNA 当成可有可无的背景。用户问原作事实时可直接依据 STORY；讨论用户自己的新书时只能迁移 STYLE / KEEP / TRANSFORM 并遵守 AVOID，禁止照搬原作专名、具体能力规则、独特谜底和剧情骨架。
+                8. 多本参考同时选中时，要综合它们的共同机制与差异，不要默认只看第一本；用户使用“他们/这几本”时按已选参考和对话上下文解析。
+                9. 不要用“如果你愿意我可以……”空泛收尾。该分析就分析，该给方案就直接给方案。
 
-                    $hiddenContext
-                """.trimIndent(),
-                user = latest,
-                messages = conversationPromptMessages(messages),
-                attachments = messagesPromptAttachments(messages.takeLast(1)),
+                $hiddenContext
+            """.trimIndent(),
+            user = latest,
+            messages = conversationPromptMessages(messages),
+            attachments = messagesPromptAttachments(messages.takeLast(1)),
+            jsonMode = false,
+        )
+        var response = gateway.generateTextStreaming(chatPrompt, onDelta = onDelta).trim()
+        if (shouldAutoContinueCreationReplyV20(response)) {
+            val prefix = response
+            val continuationInstruction = "从你上一条回复断掉的位置直接继续。不要从头重写，不要重复已经输出的句子，不要总结前文；保持原来的编号、语气和 Markdown 结构，把当前回答完整说完。"
+            val continuationPrompt = chatPrompt.copy(
+                user = continuationInstruction,
+                messages = chatPrompt.messages +
+                    PromptMessage("assistant", prefix) +
+                    PromptMessage("user", continuationInstruction),
+                attachments = emptyList(),
                 jsonMode = false,
-            ),
-            onDelta = onDelta,
-        ).trim()
+            )
+            val suffix = gateway.generateTextStreaming(continuationPrompt) { delta ->
+                onDelta(stitchCreationContinuationV20(prefix, delta))
+            }.trim()
+            response = stitchCreationContinuationV20(prefix, suffix)
+        }
         return ConversationTurn(response.ifBlank { "我在。继续按你刚才的设定往下聊。" })
     }
 
@@ -688,6 +702,32 @@ private class NewBookConversationEngine(private val gateway: AiGateway) {
         appendLine("书名：${proposal.title}"); appendLine("类型：${proposal.genre}"); appendLine("简介：${proposal.premise}"); appendLine("主题：${proposal.theme}")
         appendLine("目标字数：${proposal.targetWords}"); appendLine("核心钩子：${proposal.coreHook}"); appendLine("内部策划：${proposal.rationale}")
         if (proposal.decisionLedger.isNotBlank()) { appendLine("确认事实账本："); appendLine(proposal.decisionLedger) }
+    }
+}
+
+
+internal fun shouldAutoContinueCreationReplyV20(raw: String): Boolean {
+    val text = raw.trimEnd()
+    if (text.length < 180) return false
+    if (text.endsWith("```")) return false
+    val terminal = setOf('。', '！', '？', '.', '!', '?', '”', '’', '』', '」', '】', ')', '）', '…')
+    if (text.lastOrNull() in terminal) return false
+    if (text.endsWith("——") || text.endsWith("— 完 —")) return false
+    return true
+}
+
+internal fun stitchCreationContinuationV20(prefix: String, suffix: String): String {
+    val left = prefix.trimEnd()
+    val right = suffix.trimStart()
+    if (left.isBlank()) return right
+    if (right.isBlank()) return left
+    val maxOverlap = minOf(320, left.length, right.length)
+    for (size in maxOverlap downTo 3) {
+        if (left.endsWith(right.take(size))) return left + right.drop(size)
+    }
+    return when {
+        right.firstOrNull()?.let { it in setOf('，', '。', '！', '？', '；', '：', ',', '.', '!', '?', ';', ':') } == true -> left + right
+        else -> left + "\n" + right
     }
 }
 

@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 98
-        versionName = "0.28.0-alpha19-creation-reliability"
+        versionCode = 99
+        versionName = "0.28.0-alpha20-reader-chat-polish"
     }
 
     buildFeatures { compose = true }

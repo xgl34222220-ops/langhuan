@@ -241,11 +241,11 @@ fun LanghuanGlassPanel(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(radius),
-        color = t.card.copy(alpha = .90f),
+        color = t.card.copy(alpha = .74f),
         contentColor = t.cardForeground,
-        border = BorderStroke(1.dp, t.border.copy(alpha = .82f)),
+        border = BorderStroke(1.dp, t.border.copy(alpha = .58f)),
         tonalElevation = 0.dp,
-        shadowElevation = 2.dp,
+        shadowElevation = 0.dp,
     ) {
         Box(Modifier.padding(contentPadding), content = content)
     }

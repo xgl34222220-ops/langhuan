@@ -121,6 +121,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.ui.design.LanghuanActionTileV4
+import com.xiguli.langhuan.ui.design.LanghuanAmbientBackdrop
+import com.xiguli.langhuan.ui.design.LanghuanConstellationField
 import com.xiguli.langhuan.ui.design.LanghuanDividerV4
 import com.xiguli.langhuan.ui.design.LanghuanRowV4
 import com.xiguli.langhuan.ui.design.LanghuanSheetV4
@@ -159,6 +161,7 @@ private data class HeroReaderPresetV13(
 )
 
 private val HERO_READER_PRESETS_V13 = listOf(
+    HeroReaderPresetV13("langhuan", "琅嬛星图", "轻雾星图 · 克制动态 · 长读低干扰", "langhuan", 18f, 1.76f, 0f, 22f, true, "sans"),
     HeroReaderPresetV13("qingmo", "清墨", "均衡留白 · 温润纸色", "tea", 18f, 1.75f, 3f, 20f, true, "sans"),
     HeroReaderPresetV13("tomato", "番茄小说风格", "稍大字号 · 紧凑行距 · 暖色背景", "tea", 19f, 1.68f, 2f, 19f, true, "sans"),
     HeroReaderPresetV13("weread", "微信读书风格", "宽页边距 · 舒展行距 · 轻纸白", "paper", 17.5f, 1.80f, 4f, 24f, true, "sans"),
@@ -285,18 +288,13 @@ private fun HeroReaderPageV13(
         mutableStateOf(prefs.getStringSet("bookmarks", emptySet())?.contains(chapter.chapterNumber.toString()) == true)
     }
 
-    val pageMode = ReaderPageModeV10.entries.firstOrNull { it.key == pageModeKey } ?: ReaderPageModeV10.PAGE
+    val requestedPageMode = ReaderPageModeV10.entries.firstOrNull { it.key == pageModeKey } ?: ReaderPageModeV10.PAGE
+    val pageMode = if (requestedPageMode == ReaderPageModeV10.COVER) ReaderPageModeV10.PAGE else requestedPageMode
     val rawPalette = heroReaderPaletteV13(themeKey)
-    val palette = remember(rawPalette, backgroundFollow, chapter.chapterNumber) {
-        if (!backgroundFollow || themeKey == "night") rawPalette
-        else rawPalette.copy(
-            page = lerp(
-                rawPalette.page,
-                if (chapter.chapterNumber % 2 == 0) Color.White else Color(0xFFB8C8AE),
-                .035f,
-            ),
-        )
-    }
+    // A reading background must remain stable between chapters. The old chapter-parity tint
+    // changed the page colour while reading and made the book feel visually inconsistent.
+    val palette = rawPalette
+    val spatialBackground = themeKey == "langhuan"
     val tokens = remember(palette) { langhuanTokensV4(palette.page, palette.text, palette.accent) }
     val family = if (fontKey == "serif") FontFamily.Serif else FontFamily.SansSerif
 
@@ -308,13 +306,14 @@ private fun HeroReaderPageV13(
     val displayTitle = remember(chapter.id, chapter.title) { chapterTitle(chapter) }
     val readingText = remember(chapter.id, chapter.content) { chapterText(chapter) }
 
+    val pagedParagraphSpacing = if (pageMode == ReaderPageModeV10.SCROLL) paragraphSpacing else 0f
     val pagination = rememberReaderPaginationV18(
         text = readingText,
         title = displayTitle,
         fontSize = fontSize,
         lineFactor = lineFactor,
         sidePadding = sidePadding,
-        paragraphSpacing = paragraphSpacing,
+        paragraphSpacing = pagedParagraphSpacing,
         firstLineIndent = firstLineIndent,
         family = family,
     )
@@ -338,7 +337,7 @@ private fun HeroReaderPageV13(
     )
     val pagerFling = PagerDefaults.flingBehavior(
         state = pagerState,
-        snapPositionalThreshold = 0.15f,
+        snapPositionalThreshold = 0.32f,
     )
     val scrollState = rememberScrollState()
     var crossingChapter by remember(chapter.id) { mutableStateOf(false) }
@@ -510,20 +509,18 @@ private fun HeroReaderPageV13(
         else activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         onDispose { if (lockPortrait) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
-    DisposableEffect(activity, immersive, statusBar, navigationBar) {
+    DisposableEffect(activity, immersive) {
         val window = activity?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
         if (controller != null) {
             controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (immersive) controller.hide(WindowInsetsCompat.Type.systemBars()) else {
-                if (statusBar) controller.show(WindowInsetsCompat.Type.statusBars()) else controller.hide(WindowInsetsCompat.Type.statusBars())
-                if (navigationBar) controller.show(WindowInsetsCompat.Type.navigationBars()) else controller.hide(WindowInsetsCompat.Type.navigationBars())
-            }
+            if (immersive) controller.hide(WindowInsetsCompat.Type.systemBars())
+            else controller.show(WindowInsetsCompat.Type.systemBars())
         }
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
     }
 
-    val edgeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 52.dp.toPx() }
+    val edgeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 36.dp.toPx() }
     val edgeSwipe = remember(chapter.id, pages.size, pageMode, previous?.id, next?.id) {
         object : NestedScrollConnection {
             var edgeDrag = 0f
@@ -569,19 +566,21 @@ private fun HeroReaderPageV13(
                 }
             },
     ) {
+        if (spatialBackground) {
+            LanghuanAmbientBackdrop(Modifier.fillMaxSize(), active = false)
+            LanghuanConstellationField(Modifier.fillMaxSize(), active = false)
+        }
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(chapter.id, pageModeKey, fullNext, panelVisible) {
+                .pointerInput(chapter.id, pageModeKey, panelVisible) {
                     detectTapGestures(
                         onDoubleTap = { panelVisible = true },
                         onLongPress = { panelVisible = true },
                         onTap = { point ->
                             if (panelVisible) panelVisible = false
                             else if (pageMode == ReaderPageModeV10.SCROLL) panelVisible = true
-                            else if (fullNext) {
-                                if (point.x < size.width * .18f) previousPage() else nextPage()
-                            } else when {
+                            else when {
                                 point.x < size.width * .28f -> previousPage()
                                 point.x > size.width * .72f -> nextPage()
                                 else -> panelVisible = true
@@ -640,17 +639,17 @@ private fun HeroReaderPageV13(
                             pageCount = pages.size,
                             fontSize = fontSize,
                             lineFactor = lineFactor,
-                            paragraphSpacing = paragraphSpacing,
+                            paragraphSpacing = pagedParagraphSpacing,
                             sidePadding = sidePadding,
                             firstLineIndent = firstLineIndent,
                             family = family,
                             palette = palette,
                             showTimeBattery = showTimeBattery,
+                            spatialBackground = spatialBackground,
                         )
                     }
                 }
             }
-            if (backgroundMask) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .045f)))
         }
 
         if (bookmarked) {
@@ -662,24 +661,6 @@ private fun HeroReaderPageV13(
             )
         }
 
-        if (pullBookmark) {
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .size(width = 76.dp, height = 92.dp)
-                    .pointerInput(chapter.id, pullBookmark) {
-                        var distance = 0f
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { _, amount -> if (amount > 0f) distance += amount },
-                            onDragEnd = {
-                                if (distance >= 36.dp.toPx()) toggleBookmark()
-                                distance = 0f
-                            },
-                            onDragCancel = { distance = 0f },
-                        )
-                    },
-            )
-        }
 
         AnimatedVisibility(
             visible = panelVisible && overlay == HeroReaderOverlayV13.NONE,
@@ -820,11 +801,12 @@ private fun HeroReaderCanvasV13(
     family: FontFamily,
     palette: HeroReaderPaletteV13,
     showTimeBattery: Boolean,
+    spatialBackground: Boolean,
 ) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(palette.page)
+            .background(if (spatialBackground) Color.Transparent else palette.page)
             .padding(start = sidePadding.dp, end = sidePadding.dp, top = 16.dp, bottom = 12.dp),
     ) {
         Text(
@@ -971,7 +953,7 @@ private fun HeroReaderControlsV13(
 ) {
     LanghuanSheetV4(tokens = tokens) {
         LanghuanTabsV4(
-            labels = listOf("详情", "目录", "更多"),
+            labels = listOf("详情", "目录", "设置"),
             selected = tab.ordinal,
             onSelected = { onTab(HeroReaderTabV13.entries[it]) },
             tokens = tokens,
@@ -1023,22 +1005,13 @@ private fun HeroReaderControlsV13(
                     HeroReaderActionV13("主题", Icons.Rounded.Palette, onClick = onTheme),
                     HeroReaderActionV13("字体", Icons.Rounded.TextFields, onClick = onFont),
                     HeroReaderActionV13("字号", Icons.Rounded.FormatSize, onClick = { onType("字号") }),
-                    HeroReaderActionV13("行段", Icons.Rounded.FormatAlignJustify, onClick = { onType("行段") }),
-                    HeroReaderActionV13("定位", Icons.Rounded.MyLocation, onClick = onLocate),
-                    HeroReaderActionV13("上下翻页", Icons.Rounded.SwapVert, pageMode == ReaderPageModeV10.SCROLL, onVertical),
-                    HeroReaderActionV13("仿真翻页", Icons.Rounded.Refresh, pageMode == ReaderPageModeV10.COVER, onSimulated),
+                    HeroReaderActionV13("行距页边距", Icons.Rounded.FormatAlignJustify, onClick = { onType("行段") }),
+                    HeroReaderActionV13("滚动阅读", Icons.Rounded.SwapVert, pageMode == ReaderPageModeV10.SCROLL, onVertical),
                     HeroReaderActionV13("全文搜索", Icons.Rounded.Search, onClick = onSearch),
                     HeroReaderActionV13("音量键翻页", Icons.Rounded.VolumeUp, volumeTurn, onVolume),
                     HeroReaderActionV13("屏幕常亮", Icons.Rounded.LightMode, keepScreen, onKeepScreen),
                     HeroReaderActionV13("时间电量", Icons.Rounded.BatteryFull, showTimeBattery, onTimeBattery),
                     HeroReaderActionV13("沉浸式", Icons.Rounded.Fullscreen, immersive, onImmersive),
-                    HeroReaderActionV13("点击动画", Icons.Rounded.TouchApp, clickAnimation, onClickAnimation),
-                    HeroReaderActionV13("下拉书签", Icons.Outlined.BookmarkBorder, pullBookmark, onPullBookmark),
-                    HeroReaderActionV13("全屏下一页", Icons.Rounded.Smartphone, fullNext, onFullNext),
-                    HeroReaderActionV13("背景图遮罩", Icons.Rounded.Image, backgroundMask, onBackgroundMask),
-                    HeroReaderActionV13("背景跟随", Icons.Rounded.Brightness6, backgroundFollow, onBackgroundFollow),
-                    HeroReaderActionV13("状态栏", Icons.Rounded.Smartphone, statusBar, onStatusBar),
-                    HeroReaderActionV13("导航栏", Icons.Rounded.FormatIndentIncrease, navigationBar, onNavigationBar),
                     HeroReaderActionV13("锁定竖屏", Icons.Rounded.Landscape, lockPortrait, onLockPortrait),
                 )
                 LazyVerticalGrid(
@@ -1097,7 +1070,7 @@ private fun HeroThemeSheetV13(
     onBack: () -> Unit,
 ) {
     LanghuanSheetV4(tokens, title = "阅读主题") {
-        listOf("paper" to "纸白", "tea" to "茶纸", "green" to "青叶", "night" to "夜间").forEach { (key, name) ->
+        listOf("langhuan" to "琅嬛星图", "paper" to "纸白", "tea" to "茶纸", "green" to "青叶", "night" to "夜间").forEach { (key, name) ->
             LanghuanRowV4(name, tokens, trailing = if (current == key) "✓" else null, onClick = { onTheme(key) })
             LanghuanDividerV4(tokens)
         }
@@ -1192,6 +1165,7 @@ private fun HeroSearchSheetV13(
 }
 
 private fun heroReaderPaletteV13(key: String): HeroReaderPaletteV13 = when (key) {
+    "langhuan" -> HeroReaderPaletteV13(Color(0xFFF5F6FE), Color(0xFF22232A), Color(0xFF747784), Color(0xFF5D78B8))
     "paper" -> HeroReaderPaletteV13(Color(0xFFF7F3EA), Color(0xFF282622), Color(0xFF716D64), Color(0xFF476B9A))
     "green" -> HeroReaderPaletteV13(Color(0xFFDDE6D1), Color(0xFF283126), Color(0xFF65705F), Color(0xFF4A7652))
     "night" -> HeroReaderPaletteV13(Color(0xFF17191D), Color(0xFFD2D4D8), Color(0xFF858A91), Color(0xFF7EA8E8))
