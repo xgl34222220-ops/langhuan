@@ -224,13 +224,21 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         val before = _state.value
         if ((clean.isBlank() && before.pendingAttachments.isEmpty()) || before.isBusy || before.isLoadingAttachments) return
         val userText = clean.ifBlank { defaultAttachmentInstruction(before.pendingAttachments) }
-        val history = before.messages + CreationChatMessage("user", userText, before.pendingAttachments)
+        val retryMessage = before.messages.lastOrNull()?.takeIf { message ->
+            before.error != null &&
+                message.role == "user" &&
+                before.pendingAttachments.isEmpty() &&
+                message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim() == userText.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
+        }
+        val turnAttachments = retryMessage?.attachments ?: before.pendingAttachments
+        val history = if (retryMessage != null) before.messages
+        else before.messages + CreationChatMessage("user", userText, turnAttachments)
         val plainInstruction = userText.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
         val referenceQuestion = isReferenceFactQuestion(plainInstruction) && before.selectedReferenceTemplateIds.isNotEmpty()
         val routeDecision = NovelSkillRouter.route(
             NovelRouteInput(
                 message = plainInstruction,
-                attachmentPurposes = before.pendingAttachments.map(::attachmentPurpose),
+                attachmentPurposes = turnAttachments.map(::attachmentPurpose),
                 hasConversationHistory = before.messages.any { it.role == "user" },
                 hasFoundation = before.foundation != null,
                 hasSelectedReferences = before.selectedReferenceTemplateIds.isNotEmpty(),
@@ -327,8 +335,13 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 }
             }.onFailure { error ->
                 emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "${routeDecision.intent.label} · ${error.message.orEmpty()}")
+                val partialReply = _state.value.streamingReply.trim()
                 _state.update {
                     it.copy(
+                        messages = if (partialReply.isBlank()) it.messages else it.messages + CreationChatMessage(
+                            "assistant",
+                            "$partialReply\n\n（连接中断，已保留已返回内容；继续发送要求即可从这里往下接。）",
+                        ),
                         isBusy = false,
                         busyLabel = "",
                         streamingReply = "",
@@ -673,6 +686,12 @@ private fun canonicalAttachmentMime(lower: String, reported: String): String = w
 }
 private const val MAX_CHAT_ATTACHMENT_BYTES = 12 * 1024 * 1024
 private fun friendlyAiError(error: Throwable, fallback: String): String {
-    val message = error.message.orEmpty(); val timeout = message.contains("timed out", true) || message.contains("timeout", true) || message.contains("超时")
-    return if (timeout) "$fallback：AI 服务或中转站主动返回了超时/断开。琅嬛本身没有设置生成倒计时，也没有因为等待时间过长主动终止请求。" else message.ifBlank { fallback }
+    val message = error.message.orEmpty()
+    val localSocketTimeout = error is java.net.SocketTimeoutException || error.cause is java.net.SocketTimeoutException
+    val timeoutText = message.contains("timed out", true) || message.contains("timeout", true) || message.contains("超时")
+    return when {
+        localSocketTimeout -> "$fallback：等待模型返回超过当前网络容错时间。当前会谈与蓝图断点已保留，可直接重试；连续出现时请切换更稳定的模型或中转站。"
+        timeoutText -> "$fallback：AI 服务或中转站返回了超时/断开：${message.take(260)}"
+        else -> message.ifBlank { fallback }
+    }
 }

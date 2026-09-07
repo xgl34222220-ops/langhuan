@@ -2,7 +2,6 @@ package com.xiguli.langhuan.engine
 
 import com.xiguli.langhuan.domain.GeneratedChapter
 import java.net.HttpURLConnection
-import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URLEncoder
 import kotlinx.coroutines.CancellationException
@@ -205,9 +204,6 @@ class UniversalAiGateway(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            if (error is SocketTimeoutException || error.cause is SocketTimeoutException) {
-                throw IllegalStateException("AI 服务长时间没有返回数据，本次请求已停止；请重试或切换模型/中转站。", error)
-            }
             if (emitted) {
                 throw IllegalStateException(
                     "流式连接在已经开始返回内容后中断。为避免重复扣费，琅嬛没有自动发起第二次请求；可手动重试。",
@@ -239,14 +235,14 @@ class UniversalAiGateway(
         val endpoint = if (azure) azureChatEndpoint(config.baseUrl, config.model) else openAiChatEndpoint(config.baseUrl)
         val body = openAiBody(prompt, stream = false, azure = azure)
         val protocol = if (azure) ApiProtocol.AZURE_OPENAI else ApiProtocol.OPENAI_COMPATIBLE
-        return requireSuccess(http(endpoint, "POST", authHeaders(protocol, config.apiKey), body.toString()))
+        return requireSuccess(http(endpoint, "POST", authHeaders(protocol, config.apiKey), body.toString(), AI_RESPONSE_TIMEOUT_MS))
     }
 
     private suspend fun streamOpenAi(prompt: PromptBundle, azure: Boolean, onDelta: (String) -> Unit): String {
         val endpoint = if (azure) azureChatEndpoint(config.baseUrl, config.model) else openAiChatEndpoint(config.baseUrl)
         val protocol = if (azure) ApiProtocol.AZURE_OPENAI else ApiProtocol.OPENAI_COMPATIBLE
         val buffer = StringBuilder()
-        streamHttp(endpoint, authHeaders(protocol, config.apiKey), openAiBody(prompt, stream = true, azure = azure).toString()) { line ->
+        streamHttp(endpoint, authHeaders(protocol, config.apiKey), openAiBody(prompt, stream = true, azure = azure).toString(), AI_STREAM_IDLE_TIMEOUT_MS) { line ->
             val data = line.removePrefix("data:").trim()
             if (data.isBlank() || data == "[DONE]") return@streamHttp
             val root = runCatching { WireJson.parseToJsonElement(data).jsonObject }.getOrNull() ?: return@streamHttp
@@ -312,7 +308,7 @@ class UniversalAiGateway(
 
     private suspend fun callAnthropic(prompt: PromptBundle): String {
         val body = anthropicBody(prompt, stream = false)
-        return requireSuccess(http(anthropicMessagesEndpoint(config.baseUrl), "POST", authHeaders(ApiProtocol.ANTHROPIC, config.apiKey), body.toString()))
+        return requireSuccess(http(anthropicMessagesEndpoint(config.baseUrl), "POST", authHeaders(ApiProtocol.ANTHROPIC, config.apiKey), body.toString(), AI_RESPONSE_TIMEOUT_MS))
     }
 
     private suspend fun streamAnthropic(prompt: PromptBundle, onDelta: (String) -> Unit): String {
@@ -321,6 +317,7 @@ class UniversalAiGateway(
             anthropicMessagesEndpoint(config.baseUrl),
             authHeaders(ApiProtocol.ANTHROPIC, config.apiKey),
             anthropicBody(prompt, stream = true).toString(),
+            AI_STREAM_IDLE_TIMEOUT_MS,
         ) { line ->
             val data = line.removePrefix("data:").trim()
             if (data.isBlank() || data == "[DONE]") return@streamHttp
@@ -375,6 +372,7 @@ class UniversalAiGateway(
                 "POST",
                 emptyMap(),
                 geminiBody(prompt).toString(),
+                AI_RESPONSE_TIMEOUT_MS,
             )
         )
     }
@@ -385,6 +383,7 @@ class UniversalAiGateway(
             geminiStreamEndpoint(config.baseUrl, config.model, config.apiKey),
             emptyMap(),
             geminiBody(prompt).toString(),
+            AI_STREAM_IDLE_TIMEOUT_MS,
         ) { line ->
             val data = line.removePrefix("data:").trim()
             if (data.isBlank()) return@streamHttp
@@ -437,13 +436,14 @@ class UniversalAiGateway(
                 "POST",
                 emptyMap(),
                 ollamaBody(prompt, stream = false).toString(),
+                AI_RESPONSE_TIMEOUT_MS,
             )
         )
     }
 
     private suspend fun streamOllama(prompt: PromptBundle, onDelta: (String) -> Unit): String {
         val buffer = StringBuilder()
-        streamHttp(ollamaChatEndpoint(config.baseUrl), emptyMap(), ollamaBody(prompt, stream = true).toString()) { line ->
+        streamHttp(ollamaChatEndpoint(config.baseUrl), emptyMap(), ollamaBody(prompt, stream = true).toString(), AI_STREAM_IDLE_TIMEOUT_MS) { line ->
             val root = runCatching { WireJson.parseToJsonElement(line.trim()).jsonObject }.getOrNull() ?: return@streamHttp
             val delta = (root["message"] as? JsonObject)?.string("content")
             appendDelta(buffer, delta, onDelta, prompt.jsonMode)
@@ -534,13 +534,13 @@ class UniversalAiGateway(
     }
 }
 
-private suspend fun http(url: String, method: String, headers: Map<String, String>, body: String? = null): HttpResult =
+private suspend fun http(url: String, method: String, headers: Map<String, String>, body: String? = null, readTimeoutMs: Int = READ_TIMEOUT_MS): HttpResult =
     runInterruptible(Dispatchers.IO) {
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     try {
         connection.requestMethod = method
         connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = READ_TIMEOUT_MS
+        connection.readTimeout = readTimeoutMs
         connection.setRequestProperty("Accept", "application/json")
         headers.forEach(connection::setRequestProperty)
         if (body != null) {
@@ -561,13 +561,14 @@ private suspend fun streamHttp(
     url: String,
     headers: Map<String, String>,
     body: String,
+    readTimeoutMs: Int = STREAM_IDLE_TIMEOUT_MS,
     onLine: (String) -> Unit,
 ) = runInterruptible(Dispatchers.IO) {
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     try {
         connection.requestMethod = "POST"
         connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = STREAM_IDLE_TIMEOUT_MS
+        connection.readTimeout = readTimeoutMs
         connection.doOutput = true
         connection.setRequestProperty("Accept", "text/event-stream, application/x-ndjson, application/json")
         connection.setRequestProperty("Content-Type", "application/json")
@@ -594,6 +595,9 @@ private suspend fun streamHttp(
 private const val CONNECT_TIMEOUT_MS = 20_000
 private const val READ_TIMEOUT_MS = 90_000
 private const val STREAM_IDLE_TIMEOUT_MS = 120_000
+// Slow reasoning models need a wider per-request transport window. Chapter generation still has its own outer deadlines.
+private const val AI_RESPONSE_TIMEOUT_MS = 300_000
+private const val AI_STREAM_IDLE_TIMEOUT_MS = 300_000
 
 private fun chapterContentPreview(raw: String): String {
     val match = Regex("\\\"content\\\"\\s*:\\s*\\\"").find(raw) ?: return "已接收 ${raw.length} 个字符…"
