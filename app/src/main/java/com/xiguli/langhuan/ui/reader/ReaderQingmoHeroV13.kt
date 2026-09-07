@@ -455,6 +455,18 @@ private fun HeroReaderPageV13(
         }
     }
 
+    // A pager must never rest between two pages. Some OEM gesture stacks can cancel the
+    // pager's final settle animation, leaving two chapter pages permanently visible at once.
+    // Observe the idle state and hard-snap to the nearest current page if an offset remains.
+    LaunchedEffect(chapter.id, pagerState, pagerPageCount) {
+        snapshotFlow { pagerState.isScrollInProgress to pagerState.currentPageOffsetFraction }
+            .collectLatest { (scrolling, offset) ->
+                if (!scrolling && abs(offset) > 0.001f) {
+                    pagerState.scrollToPage(pagerState.currentPage.coerceIn(0, pagerPageCount - 1))
+                }
+            }
+    }
+
     LaunchedEffect(chapter.id, pageMode, layoutKey) {
         if (pageMode == ReaderPageModeV10.SCROLL) {
             snapshotFlow { scrollState.value }.distinctUntilChanged().collectLatest {
@@ -577,14 +589,12 @@ private fun HeroReaderPageV13(
                     detectTapGestures(
                         onDoubleTap = { panelVisible = true },
                         onLongPress = { panelVisible = true },
-                        onTap = { point ->
+                        onTap = {
                             if (panelVisible) panelVisible = false
                             else if (pageMode == ReaderPageModeV10.SCROLL) panelVisible = true
-                            else when {
-                                point.x < size.width * .28f -> previousPage()
-                                point.x > size.width * .72f -> nextPage()
-                                else -> panelVisible = true
-                            }
+                            // Paged-mode taps are handled by the pager page itself. Keeping the
+                            // tap target below HorizontalPager made taps lose to the pager gesture
+                            // detector on some devices.
                         },
                     )
                 },
@@ -612,8 +622,8 @@ private fun HeroReaderPageV13(
             } else {
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize().nestedScroll(edgeSwipe),
-                    beyondViewportPageCount = 1,
+                    modifier = Modifier.fillMaxSize().clipToBounds().nestedScroll(edgeSwipe),
+                    beyondViewportPageCount = 0,
                     flingBehavior = pagerFling,
                     userScrollEnabled = !panelVisible && overlay == HeroReaderOverlayV13.NONE,
                 ) { pagerPage ->
@@ -629,7 +639,25 @@ private fun HeroReaderPageV13(
                         }
                     } else Modifier
 
-                    Box(transition.fillMaxSize()) {
+                    Box(
+                        transition
+                            .fillMaxSize()
+                            .clipToBounds()
+                            .pointerInput(chapter.id, pagerPage, panelVisible) {
+                                detectTapGestures(
+                                    onDoubleTap = { panelVisible = true },
+                                    onLongPress = { panelVisible = true },
+                                    onTap = { point ->
+                                        if (panelVisible) panelVisible = false
+                                        else when {
+                                            point.x < size.width * .28f -> previousPage()
+                                            point.x > size.width * .72f -> nextPage()
+                                            else -> panelVisible = true
+                                        }
+                                    },
+                                )
+                            },
+                    ) {
                         val safe = pagerPage.coerceIn(0, pages.lastIndex)
                         HeroReaderCanvasV13(
                             title = displayTitle,
