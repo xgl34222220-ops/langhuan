@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 100
-        versionName = "0.28.0-alpha21-reader-pagination-fix"
+        versionCode = 101
+        versionName = "0.28.0-alpha22-reader-reference-density"
     }
 
     buildFeatures { compose = true }

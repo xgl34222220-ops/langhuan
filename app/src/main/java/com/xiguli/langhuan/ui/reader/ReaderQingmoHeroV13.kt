@@ -111,6 +111,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
@@ -161,14 +162,14 @@ private data class HeroReaderPresetV13(
 )
 
 private val HERO_READER_PRESETS_V13 = listOf(
-    HeroReaderPresetV13("langhuan", "琅嬛星图", "轻雾星图 · 克制动态 · 长读低干扰", "langhuan", 18f, 1.76f, 0f, 22f, true, "sans"),
-    HeroReaderPresetV13("qingmo", "清墨", "均衡留白 · 温润纸色", "tea", 18f, 1.75f, 3f, 20f, true, "sans"),
-    HeroReaderPresetV13("tomato", "番茄小说风格", "稍大字号 · 紧凑行距 · 暖色背景", "tea", 19f, 1.68f, 2f, 19f, true, "sans"),
-    HeroReaderPresetV13("weread", "微信读书风格", "宽页边距 · 舒展行距 · 轻纸白", "paper", 17.5f, 1.80f, 4f, 24f, true, "sans"),
-    HeroReaderPresetV13("qidian", "起点阅读风格", "正文密度适中 · 页边距偏窄", "paper", 18f, 1.72f, 3f, 18f, true, "sans"),
-    HeroReaderPresetV13("ireader", "掌阅风格", "宋体阅读 · 行距更舒展", "tea", 18f, 1.82f, 4f, 22f, true, "serif"),
-    HeroReaderPresetV13("compact", "紧凑阅读", "一屏更多文字", "paper", 17f, 1.55f, 1f, 18f, true, "sans"),
-    HeroReaderPresetV13("comfort", "舒适阅读", "大字号 · 大行距 · 宽留白", "tea", 19f, 1.88f, 5f, 25f, true, "serif"),
+    HeroReaderPresetV13("langhuan", "琅嬛星图", "轻雾星图 · 正文优先 · 低干扰", "langhuan", 18f, 1.56f, 0f, 18f, true, "sans"),
+    HeroReaderPresetV13("qingmo", "清墨", "成熟网文密度 · 克制留白", "tea", 18f, 1.56f, 0f, 18f, true, "sans"),
+    HeroReaderPresetV13("tomato", "番茄小说风格", "稍大字号 · 紧凑行距 · 暖色背景", "tea", 19f, 1.50f, 0f, 16f, true, "sans"),
+    HeroReaderPresetV13("weread", "微信读书风格", "适中字号 · 轻纸白 · 稍宽页边距", "paper", 17.5f, 1.62f, 1f, 21f, true, "sans"),
+    HeroReaderPresetV13("qidian", "起点阅读风格", "正文密度均衡 · 窄页边距", "paper", 18f, 1.54f, 0f, 17f, true, "sans"),
+    HeroReaderPresetV13("ireader", "掌阅风格", "宋体阅读 · 适度舒展", "tea", 18f, 1.62f, 1f, 20f, true, "serif"),
+    HeroReaderPresetV13("compact", "紧凑阅读", "一屏更多正文", "paper", 17f, 1.42f, 0f, 15f, true, "sans"),
+    HeroReaderPresetV13("comfort", "舒适阅读", "大字号 · 仍保持正文密度", "tea", 19f, 1.66f, 1f, 21f, true, "serif"),
 )
 
 private enum class HeroReaderTabV13 { DETAILS, DIRECTORY, MORE }
@@ -261,14 +262,43 @@ private fun HeroReaderPageV13(
     var overlay by rememberSaveable { mutableStateOf(HeroReaderOverlayV13.NONE) }
     var typePage by rememberSaveable { mutableStateOf("字号") }
 
-    var fontSize by remember(book.id) { mutableFloatStateOf(prefs.getFloat("font", 18f)) }
-    var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line", 1.75f)) }
-    var paragraphSpacing by remember(book.id) { mutableFloatStateOf(prefs.getFloat("paragraph", 3f)) }
-    var sidePadding by remember(book.id) { mutableFloatStateOf(prefs.getFloat("sidePadding", 20f)) }
+    val legacyPreset = remember(book.id) { prefs.getString("preset", "qingmo") ?: "qingmo" }
+    val legacyFont = remember(book.id) { prefs.getFloat("font", 18f) }
+    val legacyLine = remember(book.id) { prefs.getFloat("line", 1.75f) }
+    val legacyParagraph = remember(book.id) { prefs.getFloat("paragraph", 3f) }
+    val legacySide = remember(book.id) { prefs.getFloat("sidePadding", 20f) }
+    val densityMigrationNeeded = remember(book.id) {
+        if (prefs.getBoolean("reader_density_v22", false)) false
+        else when (legacyPreset) {
+            "qingmo" -> legacyFont == 18f && legacyLine == 1.75f && legacyParagraph == 3f && legacySide == 20f
+            "langhuan" -> legacyFont == 18f && legacyLine == 1.76f && legacyParagraph == 0f && legacySide == 22f
+            else -> false
+        }
+    }
+    val initialLine = if (densityMigrationNeeded) 1.56f else legacyLine
+    val initialParagraph = if (densityMigrationNeeded) 0f else legacyParagraph
+    val initialSide = if (densityMigrationNeeded) 18f else legacySide
+
+    var fontSize by remember(book.id) { mutableFloatStateOf(legacyFont) }
+    var lineFactor by remember(book.id) { mutableFloatStateOf(initialLine) }
+    var paragraphSpacing by remember(book.id) { mutableFloatStateOf(initialParagraph) }
+    var sidePadding by remember(book.id) { mutableFloatStateOf(initialSide) }
     var firstLineIndent by remember(book.id) { mutableStateOf(prefs.getBoolean("indent", true)) }
     var fontKey by remember(book.id) { mutableStateOf(prefs.getString("fontKey", "sans") ?: "sans") }
     var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme", "tea") ?: "tea") }
-    var presetKey by remember(book.id) { mutableStateOf(prefs.getString("preset", "qingmo") ?: "qingmo") }
+    var presetKey by remember(book.id) { mutableStateOf(legacyPreset) }
+
+    LaunchedEffect(book.id) {
+        if (!prefs.getBoolean("reader_density_v22", false)) {
+            val edit = prefs.edit().putBoolean("reader_density_v22", true)
+            if (densityMigrationNeeded) {
+                edit.putFloat("line", 1.56f)
+                    .putFloat("paragraph", 0f)
+                    .putFloat("sidePadding", 18f)
+            }
+            edit.apply()
+        }
+    }
     var pageModeKey by remember(book.id) {
         mutableStateOf(prefs.getString("pageMode", ReaderPageModeV10.PAGE.key) ?: ReaderPageModeV10.PAGE.key)
     }
@@ -650,8 +680,8 @@ private fun HeroReaderPageV13(
                                     onTap = { point ->
                                         if (panelVisible) panelVisible = false
                                         else when {
-                                            point.x < size.width * .28f -> previousPage()
-                                            point.x > size.width * .72f -> nextPage()
+                                            point.x < size.width * .33f -> previousPage()
+                                            point.x > size.width * .67f -> nextPage()
                                             else -> panelVisible = true
                                         }
                                     },
@@ -835,19 +865,19 @@ private fun HeroReaderCanvasV13(
         Modifier
             .fillMaxSize()
             .background(if (spatialBackground) Color.Transparent else palette.page)
-            .padding(start = sidePadding.dp, end = sidePadding.dp, top = 16.dp, bottom = 12.dp),
+            .padding(start = sidePadding.dp, end = sidePadding.dp, top = 8.dp, bottom = 6.dp),
     ) {
         Text(
             title,
-            fontSize = 11.sp,
-            lineHeight = 15.sp,
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
             fontFamily = family,
             fontWeight = FontWeight.Medium,
             color = palette.secondary.copy(alpha = .58f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(7.dp))
         Box(Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
             HeroReaderPageBodyV13(
                 text = body,
@@ -860,15 +890,15 @@ private fun HeroReaderCanvasV13(
                 color = palette.text,
             )
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (showTimeBattery) {
-                Text(heroReaderTimeV13(), fontSize = 9.sp, lineHeight = 12.sp, color = palette.secondary.copy(alpha = .44f))
+                Text(heroReaderTimeV13(), fontSize = 8.sp, lineHeight = 10.sp, color = palette.secondary.copy(alpha = .44f))
                 Spacer(Modifier.width(8.dp))
-                Text("${heroReaderBatteryV13()}%", fontSize = 9.sp, lineHeight = 12.sp, color = palette.secondary.copy(alpha = .44f))
+                Text("${heroReaderBatteryV13()}%", fontSize = 8.sp, lineHeight = 10.sp, color = palette.secondary.copy(alpha = .44f))
             }
             Spacer(Modifier.weight(1f))
-            Text("$page/$pageCount", fontSize = 9.sp, lineHeight = 12.sp, color = palette.secondary.copy(alpha = .44f))
+            Text("$page/$pageCount", fontSize = 8.sp, lineHeight = 10.sp, color = palette.secondary.copy(alpha = .44f))
         }
     }
 }
@@ -896,6 +926,7 @@ private fun HeroReaderPageBodyV13(
                     fontFamily = family,
                     fontWeight = FontWeight.Normal,
                     color = color,
+                    textAlign = TextAlign.Justify,
                     textIndent = TextIndent(firstLine = if (shouldIndent) (fontSize * 2f).sp else 0.sp),
                 ),
             )
@@ -923,6 +954,7 @@ private fun HeroReaderWholeBodyV13(
                 lineHeight = (fontSize * lineFactor).sp,
                 fontFamily = family,
                 color = color,
+                textAlign = TextAlign.Justify,
                 textIndent = TextIndent(firstLine = if (indent) (fontSize * 2f).sp else 0.sp),
             ),
         )

@@ -60,7 +60,7 @@ class QingmoReplicaReaderContractTest {
 
         assertTrue(reader.contains("HeroReaderCanvasV13("))
         assertTrue(reader.contains("Box(Modifier.fillMaxWidth().weight(1f).clipToBounds())"))
-        assertTrue(reader.contains("Spacer(Modifier.height(8.dp))"))
+        assertTrue(reader.contains("Spacer(Modifier.height(4.dp))"))
         assertTrue(reader.contains("Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically)"))
 
         assertTrue(reader.contains("pageStartsParagraph"))

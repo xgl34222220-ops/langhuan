@@ -21,16 +21,16 @@ class ReaderPaginationAlpha21ContractTest {
     fun pageOwnsLeftCenterRightTapZones() {
         val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")
         assertTrue(reader.contains(".pointerInput(chapter.id, pagerPage, panelVisible)"))
-        assertTrue(reader.contains("point.x < size.width * .28f -> previousPage()"))
-        assertTrue(reader.contains("point.x > size.width * .72f -> nextPage()"))
+        assertTrue(reader.contains("point.x < size.width * .33f -> previousPage()"))
+        assertTrue(reader.contains("point.x > size.width * .67f -> nextPage()"))
         assertTrue(reader.contains("else -> panelVisible = true"))
     }
 
     @Test
-    fun pageBodyUsesAnIntegerLineGrid() {
+    fun pageBodyUsesFullMeasuredViewportWithoutArtificialBlankBand() {
         val paginator = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt")
-        assertTrue(paginator.contains("val lineBoxHeight = measurer.measure("))
-        assertTrue(paginator.contains("rawBodyHeight / lineBoxHeight"))
-        assertTrue(paginator.contains("* lineBoxHeight"))
+        assertTrue(paginator.contains("val bodyHeight = ("))
+        assertTrue(paginator.contains("stableHeight - pageTop - headerHeight - headerGap - footerGap - footerHeight - pageBottom - rasterGuard"))
+        assertTrue(!paginator.contains("rawBodyHeight / lineBoxHeight"))
     }
 }
