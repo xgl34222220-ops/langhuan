@@ -59,7 +59,8 @@ class QingmoReplicaReaderContractTest {
         val paginator = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt").readText()
 
         assertTrue(reader.contains("HeroReaderCanvasV13("))
-        assertTrue(reader.contains("Box(Modifier.fillMaxWidth().weight(1f).clipToBounds())"))
+        assertTrue(reader.contains(".weight(1f)"))
+        assertTrue(reader.contains(".onSizeChanged(onBodyViewportChanged)"))
         assertTrue(reader.contains("Spacer(Modifier.height(4.dp))"))
         assertTrue(reader.contains("Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically)"))
 

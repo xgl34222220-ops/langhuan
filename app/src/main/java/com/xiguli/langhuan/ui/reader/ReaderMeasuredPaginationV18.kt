@@ -47,6 +47,8 @@ internal fun rememberReaderPaginationV18(
     paragraphSpacing: Float,
     firstLineIndent: Boolean,
     family: FontFamily,
+    viewportWidthPx: Int = 0,
+    viewportHeightPx: Int = 0,
 ): ReaderPaginationV18 {
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
@@ -67,7 +69,7 @@ internal fun rememberReaderPaginationV18(
         ).coerceAtLeast(1)
 
     val horizontal = with(density) { sidePadding.coerceIn(12f, 48f).dp.roundToPx() }
-    val bodyWidth = (stableWidth - horizontal * 2).coerceAtLeast(with(density) { 180.dp.roundToPx() })
+    val fallbackBodyWidth = (stableWidth - horizontal * 2).coerceAtLeast(with(density) { 180.dp.roundToPx() })
 
     val pageTop = with(density) { 8.dp.roundToPx() }
     val pageBottom = with(density) { 6.dp.roundToPx() }
@@ -87,37 +89,38 @@ internal fun rememberReaderPaginationV18(
         lineHeight = 10.sp,
         fontFamily = family,
         fontWeight = FontWeight.Normal,
-        textAlign = TextAlign.Justify,
     )
     val bodyStyle = TextStyle(
         fontSize = fontSize.coerceIn(13f, 32f).sp,
         lineHeight = (fontSize.coerceIn(13f, 32f) * lineFactor.coerceIn(1.25f, 2.35f)).sp,
         fontFamily = family,
         fontWeight = FontWeight.Normal,
+        textAlign = TextAlign.Justify,
     )
 
     val headerHeight = measurer.measure(
         text = title,
         style = headerStyle,
         maxLines = 1,
-        constraints = Constraints(maxWidth = bodyWidth),
+        constraints = Constraints(maxWidth = fallbackBodyWidth),
     ).size.height
     val footerHeight = measurer.measure(
         text = "18:09  83%                         88/100",
         style = footerStyle,
         maxLines = 1,
-        constraints = Constraints(maxWidth = bodyWidth),
+        constraints = Constraints(maxWidth = fallbackBodyWidth),
     ).size.height
 
-    // Use the full measured viewport. The previous integer-line quantization rounded
-    // DOWN and could discard almost one complete line per page, which appeared as
-    // a large empty band. Text is still split only at complete measured line ends.
-    val bodyHeight = (
+    // The rendered weighted body Box is the pagination source of truth. Screen/inset math
+    // is only a first-frame fallback until Compose reports the exact body viewport pixels.
+    val fallbackBodyHeight = (
         stableHeight - pageTop - headerHeight - headerGap - footerGap - footerHeight - pageBottom - rasterGuard
         ).coerceAtLeast(with(density) { 220.dp.roundToPx() })
+    val bodyWidth = viewportWidthPx.takeIf { it > 0 } ?: fallbackBodyWidth
+    val bodyHeight = viewportHeightPx.takeIf { it > 0 } ?: fallbackBodyHeight
 
     val normalized = remember(text) { readerNormalizeBodyV14(text) }
-    val token = "$stableWidth:$stableHeight:$bodyWidth:$bodyHeight:$fontSize:$lineFactor:$paragraphSpacing:$firstLineIndent:${family.hashCode()}"
+    val token = "$stableWidth:$stableHeight:$bodyWidth:$bodyHeight:$viewportWidthPx:$viewportHeightPx:$fontSize:$lineFactor:$paragraphSpacing:$firstLineIndent:${family.hashCode()}"
 
     return remember(normalized, bodyWidth, bodyHeight, bodyStyle, paragraphGap, firstLineIndent, fontSize, token) {
         paginateV18(

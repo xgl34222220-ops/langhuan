@@ -29,7 +29,9 @@ class ReaderPaginationAlpha21ContractTest {
     @Test
     fun pageBodyUsesFullMeasuredViewportWithoutArtificialBlankBand() {
         val paginator = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt")
-        assertTrue(paginator.contains("val bodyHeight = ("))
+        assertTrue(paginator.contains("val fallbackBodyHeight = ("))
+        assertTrue(paginator.contains("val bodyHeight = viewportHeightPx.takeIf { it > 0 } ?: fallbackBodyHeight"))
+        assertTrue(paginator.contains("val bodyWidth = viewportWidthPx.takeIf { it > 0 } ?: fallbackBodyWidth"))
         assertTrue(paginator.contains("stableHeight - pageTop - headerHeight - headerGap - footerGap - footerHeight - pageBottom - rasterGuard"))
         assertTrue(!paginator.contains("rawBodyHeight / lineBoxHeight"))
     }
