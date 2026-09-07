@@ -1,0 +1,51 @@
+name: Apply alpha21 reader pagination
+
+on:
+  push:
+    branches: [fix/alpha21-reader-pagination]
+    paths:
+      - '.github/workflows/apply-alpha21-reader-pagination.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Apply patch
+        run: python3 .github/scripts/apply_alpha21_reader_pagination.py
+
+      - name: Test and build
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Commit result
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-alpha21-reader-pagination.yml .github/scripts/apply_alpha21_reader_pagination.py
+          git config user.name "xgl34222220-ops"
+          git config user.email "xgl34222220@gmail.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: align reader pages and restore tap paging alpha21"
+          git push
