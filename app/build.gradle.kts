@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 97
-        versionName = "0.28.0-alpha18-reader-integration"
+        versionCode = 98
+        versionName = "0.28.0-alpha19-creation-reliability"
     }
 
     buildFeatures { compose = true }

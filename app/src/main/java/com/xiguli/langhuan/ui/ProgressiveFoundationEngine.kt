@@ -163,8 +163,8 @@ internal class ProgressiveFoundationEngine(
     }
 
     /**
-     * 不设置任何 App 侧生成时限。不同模型/中转站的思考耗时差异很大，
-     * 只允许用户主动取消，琅嬛不再因为固定秒数擅自终止正常请求。
+     * 蓝图阶段不再叠加短倒计时；实际网络层保留较长但有限的容错窗口，避免坏连接永久挂死。
+     * 每个已完成阶段都会保存检查点，用户也可以主动停止并从断点继续。
      */
     private suspend fun requestOptional(stage: String, prompt: PromptBundle): GeneratedChapter? = try {
         gateway.generate(prompt)

@@ -50,6 +50,8 @@ import kotlinx.serialization.json.Json
 private const val CHAT_SENTINEL = "__CHAT__"
 private const val NEW_BOOK_DRAFT_FILE = "new_book_conversation_draft.json"
 private const val RESEARCH_CONTEXT_MARKER = "\n\n【琅嬛联网检索资料（隐藏上下文）】"
+private const val INTERRUPTED_REPLY_MARKER = "\n\n（连接中断，已保留已返回内容；重试时会替换这段未完成回复。）"
+private const val STOPPED_REPLY_MARKER = "\n\n（已停止生成，已保留已返回内容；重试时会替换这段未完成回复。）"
 private val GENRE_PLACEHOLDERS = setOf("小说类型", "类型", "题材", "genre")
 private val THEME_PLACEHOLDERS = setOf("主题命题", "主题", "核心主题", "theme")
 private const val DEFAULT_THEME = "人在真相、执念与代价之间如何选择"
@@ -105,6 +107,8 @@ data class NewBookProposal(
     val decisionLedger: String = "",
 )
 
+enum class CreationRetryTarget { CHAT, PROPOSAL, BLUEPRINT }
+
 data class NewBookConversationState(
     val messages: List<CreationChatMessage> = listOf(
         CreationChatMessage(
@@ -124,6 +128,8 @@ data class NewBookConversationState(
     val runEvents: List<RunEvent> = emptyList(),
     val createdStoryId: String? = null,
     val error: String? = null,
+    val retryTarget: CreationRetryTarget? = null,
+    val canCancelCurrentOperation: Boolean = false,
     val selectedReferenceTemplateIds: List<String> = emptyList(),
     /** V2：向用户显示上一轮真正检索并送进模型的参考 DNA 数量。 */
     val lastReferenceUsage: String = "",
@@ -202,6 +208,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     private val _state = MutableStateFlow(draftStore.restore() ?: NewBookConversationState())
     val state: StateFlow<NewBookConversationState> = _state.asStateFlow()
     private var activeProviderId: String? = null
+    private var conversationJob: kotlinx.coroutines.Job? = null
+    private var proposalJob: kotlinx.coroutines.Job? = null
     private var foundationJob: kotlinx.coroutines.Job? = null
     @Volatile private var suppressDraftPersistence = false
 
@@ -224,14 +232,20 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         val before = _state.value
         if ((clean.isBlank() && before.pendingAttachments.isEmpty()) || before.isBusy || before.isLoadingAttachments) return
         val userText = clean.ifBlank { defaultAttachmentInstruction(before.pendingAttachments) }
-        val retryMessage = before.messages.lastOrNull()?.takeIf { message ->
-            before.error != null &&
+        val normalizedUserText = userText.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
+        val failedRetryIndex = if (before.error != null && before.pendingAttachments.isEmpty()) {
+            before.messages.indexOfLast { message ->
                 message.role == "user" &&
-                before.pendingAttachments.isEmpty() &&
-                message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim() == userText.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
+                    message.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim() == normalizedUserText
+            }
+        } else -1
+        val failedRetryMessage = before.messages.getOrNull(failedRetryIndex)
+        val trailingFailedTurnMessages = if (failedRetryIndex >= 0) before.messages.drop(failedRetryIndex + 1) else emptyList()
+        val retryMessage = failedRetryMessage?.takeIf {
+            trailingFailedTurnMessages.all(::isProvisionalInterruptedReply)
         }
         val turnAttachments = retryMessage?.attachments ?: before.pendingAttachments
-        val history = if (retryMessage != null) before.messages
+        val history = if (retryMessage != null) before.messages.take(failedRetryIndex + 1)
         else before.messages + CreationChatMessage("user", userText, turnAttachments)
         val plainInstruction = userText.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
         val referenceQuestion = isReferenceFactQuestion(plainInstruction) && before.selectedReferenceTemplateIds.isNotEmpty()
@@ -271,11 +285,18 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 lastExecutionPlan = null,
                 runEvents = listOf(RunEvent(RunStage.CREATION_CHAT, RunStatus.RUNNING, runDetail.ifBlank { "模型正在流式回复" })),
                 error = null,
+                retryTarget = null,
+                canCancelCurrentOperation = true,
             )
         }
 
-        viewModelScope.launch {
-            val routingSession = runCatching { taskModelRouter.snapshot() }.getOrElse { error ->
+        val job = viewModelScope.launch {
+            val routingSession = try {
+                taskModelRouter.snapshot()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                finishCancelledConversation(routeDecision, null)
+                return@launch
+            } catch (error: Throwable) {
                 emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "任务模型路由失败：${error.message.orEmpty()}")
                 _state.update {
                     it.copy(
@@ -283,6 +304,8 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         busyLabel = "",
                         streamingReply = "",
                         lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.FAILED),
+                        retryTarget = CreationRetryTarget.CHAT,
+                        canCancelCurrentOperation = false,
                         error = error.message?.takeIf(String::isNotBlank) ?: "请先在设置里添加并启用一个 AI 服务",
                     )
                 }
@@ -331,27 +354,37 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                         lastReferenceUsage = usage.label,
                         lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.SUCCESS),
                         lastExecutionPlan = executionPlan.copy(status = NovelRouteStatus.SUCCESS),
+                        retryTarget = null,
+                        canCancelCurrentOperation = false,
                     )
                 }
             }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) {
+                    finishCancelledConversation(routeDecision, executionPlan)
+                    return@onFailure
+                }
                 emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "${routeDecision.intent.label} · ${error.message.orEmpty()}")
                 val partialReply = _state.value.streamingReply.trim()
                 _state.update {
                     it.copy(
                         messages = if (partialReply.isBlank()) it.messages else it.messages + CreationChatMessage(
                             "assistant",
-                            "$partialReply\n\n（连接中断，已保留已返回内容；继续发送要求即可从这里往下接。）",
+                            partialReply + INTERRUPTED_REPLY_MARKER,
                         ),
                         isBusy = false,
                         busyLabel = "",
                         streamingReply = "",
                         lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.FAILED),
                         lastExecutionPlan = executionPlan.copy(status = NovelRouteStatus.FAILED),
+                        retryTarget = CreationRetryTarget.CHAT,
+                        canCancelCurrentOperation = false,
                         error = friendlyAiError(error, if (referenceQuestion) "模板事实读取失败" else "AI 构思失败"),
                     )
                 }
             }
         }
+        conversationJob = job
+        job.invokeOnCompletion { if (conversationJob === job) conversationJob = null }
     }
 
     fun addConversationAttachments(uris: List<Uri>) {
@@ -404,21 +437,28 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
     fun syncConversationProposal() {
         val before = _state.value
         if (before.isBusy || before.isLoadingAttachments || before.messages.none { it.role == "user" }) return
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             val gateway = activeGateway()
-            if (gateway == null) { _state.update { it.copy(error = "请先在设置里添加并启用一个 AI 服务") }; return@launch }
+            if (gateway == null) { _state.update { it.copy(error = "请先在设置里添加并启用一个 AI 服务", retryTarget = CreationRetryTarget.PROPOSAL, canCancelCurrentOperation = false) }; return@launch }
             val baseline = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders() ?: defaultProposal()
-            _state.update { it.copy(isBusy = true, busyLabel = "正在把当前会谈整理为建书方案……", runEvents = listOf(RunEvent(RunStage.PROPOSAL_SYNC, RunStatus.RUNNING, "合并用户最新决定，不自动生成蓝图")), error = null) }
+            _state.update { it.copy(isBusy = true, busyLabel = "正在把当前会谈整理为建书方案……", runEvents = listOf(RunEvent(RunStage.PROPOSAL_SYNC, RunStatus.RUNNING, "合并用户最新决定，不自动生成蓝图")), error = null, retryTarget = null, canCancelCurrentOperation = true) }
             runCatching { ProposalConsolidator(gateway).consolidate(baseline, before.messages) }
                 .onSuccess { proposal ->
                     emitRun(RunStage.PROPOSAL_SYNC, RunStatus.SUCCESS, "当前会谈已整理成方案缓存")
-                    _state.update { it.copy(proposal = proposal.sanitizePlaceholders(), blueprintDirty = before.foundation != null, isBusy = false, busyLabel = "", error = null) }
+                    _state.update { it.copy(proposal = proposal.sanitizePlaceholders(), blueprintDirty = before.foundation != null, isBusy = false, busyLabel = "", error = null, retryTarget = null, canCancelCurrentOperation = false) }
                 }
                 .onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) {
+                        emitRun(RunStage.PROPOSAL_SYNC, RunStatus.FAILED, "已由用户停止整理方案")
+                        _state.update { it.copy(isBusy = false, busyLabel = "", error = null, retryTarget = null, canCancelCurrentOperation = false) }
+                        return@onFailure
+                    }
                     emitRun(RunStage.PROPOSAL_SYNC, RunStatus.FAILED, error.message.orEmpty())
-                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "整理当前方案失败")) }
+                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "整理当前方案失败"), retryTarget = CreationRetryTarget.PROPOSAL, canCancelCurrentOperation = false) }
                 }
         }
+        proposalJob = job
+        job.invokeOnCompletion { if (proposalJob === job) proposalJob = null }
     }
 
     fun generateFoundation(regenerate: Boolean = false) {
@@ -431,7 +471,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         foundationJob = viewModelScope.launch {
             val gateway = activeGateway()
             if (gateway == null) { _state.update { it.copy(error = "请先在设置里添加并启用一个 AI 服务") }; return@launch }
-            _state.update { it.copy(proposal = baseline, isBusy = true, blueprintDirty = before.blueprintDirty, busyLabel = "正在把整段会谈的最新决定合并为最终方案……", runEvents = listOf(RunEvent(RunStage.PROPOSAL_SYNC, RunStatus.RUNNING, "先把会谈最新决定锁成蓝图输入")), error = null) }
+            _state.update { it.copy(proposal = baseline, isBusy = true, blueprintDirty = before.blueprintDirty, busyLabel = "正在把整段会谈的最新决定合并为最终方案……", runEvents = listOf(RunEvent(RunStage.PROPOSAL_SYNC, RunStatus.RUNNING, "先把会谈最新决定锁成蓝图输入")), error = null, retryTarget = null, canCancelCurrentOperation = true) }
             val instruction = if (regenerate) {
                 "以会谈和用户上传作品设定为硬约束，重新整理并补全蓝图。只重做 AI 补充部分；附件明确的人物、规则、势力、卷数、卷序、主线节点和终局不得改动。"
             } else {
@@ -469,11 +509,14 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                 )
             }.onSuccess { foundation ->
                 val cleanFoundation = foundation.sanitizeFoundationPlaceholders()
-                _state.update { it.copy(foundation = cleanFoundation, proposal = cleanFoundation.toProposal(), foundationStage = inferFoundationStage(cleanFoundation).coerceAtLeast(1), blueprintDirty = false, messages = it.messages + CreationChatMessage("assistant", "当前有效蓝图已经保存。核心蓝图完成后即可正式建书；章纲或伏笔没补完也不会再把整本书锁死。"), isBusy = false, busyLabel = "") }
+                _state.update { it.copy(foundation = cleanFoundation, proposal = cleanFoundation.toProposal(), foundationStage = inferFoundationStage(cleanFoundation).coerceAtLeast(1), blueprintDirty = false, messages = it.messages + CreationChatMessage("assistant", "当前有效蓝图已经保存。核心蓝图完成后即可正式建书；章纲或伏笔没补完也不会再把整本书锁死。"), isBusy = false, busyLabel = "", retryTarget = null, canCancelCurrentOperation = false) }
             }.onFailure { error ->
-                if (error !is kotlinx.coroutines.CancellationException) {
+                if (error is kotlinx.coroutines.CancellationException) {
+                    emitRun(blueprintRunStage((_state.value.foundationStage + 1).coerceIn(1, 3)), RunStatus.FAILED, "已由用户停止，现有蓝图断点已保留")
+                    _state.update { it.copy(isBusy = false, busyLabel = "", error = null, retryTarget = null, canCancelCurrentOperation = false) }
+                } else {
                     emitRun(blueprintRunStage((_state.value.foundationStage + 1).coerceIn(1, 3)), RunStatus.FAILED, error.message.orEmpty())
-                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "建书蓝图生成失败")) }
+                    _state.update { it.copy(isBusy = false, busyLabel = "", error = friendlyAiError(error, "建书蓝图生成失败"), retryTarget = CreationRetryTarget.BLUEPRINT, canCancelCurrentOperation = false) }
                 }
             }
             foundationJob = null
@@ -486,7 +529,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         if (snapshot.isBusy) {
             if (runningFoundation == null) { _state.update { it.copy(error = "AI 还在处理当前聊天，请等这一轮回复结束后再正式建书。") }; return }
             runningFoundation.cancel(); foundationJob = null
-            _state.update { it.copy(isBusy = false, busyLabel = "", error = null) }
+            _state.update { it.copy(isBusy = false, busyLabel = "", error = null, retryTarget = null, canCancelCurrentOperation = false) }
             snapshot = _state.value
         }
         val foundation = snapshot.foundation?.sanitizeFoundationPlaceholders() ?: return
@@ -496,7 +539,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         val selectedReferences = snapshot.selectedReferenceTemplateIds
 
         viewModelScope.launch {
-            _state.update { it.copy(foundation = foundation, proposal = foundation.toProposal(), foundationStage = stage, blueprintDirty = false, isBusy = true, runEvents = listOf(RunEvent(RunStage.CREATE_BOOK, RunStatus.RUNNING, "把已确认核心蓝图写入正式项目结构")), busyLabel = if (stage < 3) "正在用当前有效核心蓝图建书；未完成的章纲/伏笔可稍后补齐……" else "正在把蓝图写入小说圣经、三级大纲和长期记忆……", error = null) }
+            _state.update { it.copy(foundation = foundation, proposal = foundation.toProposal(), foundationStage = stage, blueprintDirty = false, isBusy = true, runEvents = listOf(RunEvent(RunStage.CREATE_BOOK, RunStatus.RUNNING, "把已确认核心蓝图写入正式项目结构")), busyLabel = if (stage < 3) "正在用当前有效核心蓝图建书；未完成的章纲/伏笔可稍后补齐……" else "正在把蓝图写入小说圣经、三级大纲和长期记忆……", error = null, retryTarget = null, canCancelCurrentOperation = false) }
             runCatching { foundationApplier.create(foundation) }
                 .onSuccess { created ->
                     referenceBindings.bind(created.snapshot.novel.id, selectedReferences)
@@ -524,12 +567,54 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         }
     }
 
-    fun retryLastTurn() {
+    fun retryFailedOperation() {
         val snapshot = _state.value
         if (snapshot.isBusy || snapshot.isLoadingAttachments || snapshot.error == null) return
-        val lastUser = snapshot.messages.lastOrNull { it.role == "user" } ?: return
-        val text = lastUser.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
-        if (text.isNotBlank()) send(text)
+        when (snapshot.retryTarget) {
+            CreationRetryTarget.CHAT -> {
+                val lastUser = snapshot.messages.lastOrNull { it.role == "user" } ?: return
+                val text = lastUser.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
+                if (text.isNotBlank()) send(text)
+            }
+            CreationRetryTarget.PROPOSAL -> syncConversationProposal()
+            CreationRetryTarget.BLUEPRINT -> generateFoundation(regenerate = snapshot.blueprintDirty || snapshot.foundationStage >= 3)
+            null -> Unit
+        }
+    }
+
+    fun retryLastTurn() = retryFailedOperation()
+
+    fun cancelCurrentAiOperation() {
+        val snapshot = _state.value
+        if (!snapshot.isBusy || !snapshot.canCancelCurrentOperation) return
+        _state.update { it.copy(busyLabel = "正在停止当前生成……") }
+        when {
+            conversationJob?.isActive == true -> conversationJob?.cancel()
+            proposalJob?.isActive == true -> proposalJob?.cancel()
+            foundationJob?.isActive == true -> foundationJob?.cancel()
+            else -> _state.update { it.copy(isBusy = false, busyLabel = "", canCancelCurrentOperation = false, retryTarget = null) }
+        }
+    }
+
+    private fun finishCancelledConversation(
+        routeDecision: NovelRouteDecision,
+        executionPlan: NovelSkillExecutionPlan?,
+    ) {
+        val partialReply = _state.value.streamingReply.trim()
+        emitRun(RunStage.CREATION_CHAT, RunStatus.FAILED, "已由用户停止本轮生成")
+        _state.update {
+            it.copy(
+                messages = if (partialReply.isBlank()) it.messages else it.messages + CreationChatMessage("assistant", partialReply + STOPPED_REPLY_MARKER),
+                isBusy = false,
+                busyLabel = "",
+                streamingReply = "",
+                lastRouteDecision = routeDecision.copy(status = NovelRouteStatus.FAILED),
+                lastExecutionPlan = executionPlan?.copy(status = NovelRouteStatus.FAILED) ?: it.lastExecutionPlan,
+                error = null,
+                retryTarget = null,
+                canCancelCurrentOperation = false,
+            )
+        }
     }
 
     fun reset() { suppressDraftPersistence = false; draftStore.clear(); _state.value = NewBookConversationState() }
@@ -620,6 +705,10 @@ private fun inferFoundationStage(foundation: StoryFoundation?): Int {
 }
 private fun sanitizeMetaValue(value: String, placeholders: Set<String>, fallback: String): String { val clean = value.trim(); return if (clean.isBlank() || placeholders.any { clean.equals(it, true) }) fallback else clean }
 
+private fun isProvisionalInterruptedReply(message: CreationChatMessage): Boolean =
+    message.role == "assistant" &&
+        (message.text.endsWith(INTERRUPTED_REPLY_MARKER) || message.text.endsWith(STOPPED_REPLY_MARKER))
+
 private fun conversationPromptMessages(messages: List<CreationChatMessage>): List<PromptMessage> {
     val firstUser = messages.indexOfFirst { it.role == "user" }; if (firstUser < 0) return emptyList()
     val relevant = messages.drop(firstUser); val lastUser = relevant.indexOfLast { it.role == "user" }
@@ -695,11 +784,24 @@ private fun canonicalAttachmentMime(lower: String, reported: String): String = w
 private const val MAX_CHAT_ATTACHMENT_BYTES = 12 * 1024 * 1024
 private fun friendlyAiError(error: Throwable, fallback: String): String {
     val message = error.message.orEmpty()
-    val localSocketTimeout = error is java.net.SocketTimeoutException || error.cause is java.net.SocketTimeoutException
-    val timeoutText = message.contains("timed out", true) || message.contains("timeout", true) || message.contains("超时")
+    val causes = mutableListOf<Throwable>()
+    var cursor: Throwable? = error
+    while (cursor != null && causes.size < 8) {
+        causes += cursor
+        cursor = cursor.cause
+    }
+    val localSocketTimeout = causes.any { it is java.net.SocketTimeoutException }
+    val timeoutText = causes.any { cause ->
+        val text = cause.message.orEmpty()
+        text.contains("timed out", true) || text.contains("timeout", true) || text.contains("超时")
+    }
+    val disconnectText = causes.any { cause ->
+        val text = cause.message.orEmpty()
+        listOf("connection reset", "broken pipe", "unexpected end", "eof", "stream was reset", "连接重置", "连接断开").any { text.contains(it, true) }
+    }
     return when {
         localSocketTimeout -> "$fallback：等待模型返回超过当前网络容错时间。当前会谈与蓝图断点已保留，可直接重试；连续出现时请切换更稳定的模型或中转站。"
-        timeoutText -> "$fallback：AI 服务或中转站返回了超时/断开：${message.take(260)}"
+        timeoutText || disconnectText -> "$fallback：AI 服务、中转站或当前网络连接中断：${message.take(260)}"
         message.contains("没有找到可读文本字段") || message.contains("无法解析的响应格式") || message.contains("成功流，但没有可读文本字段") ->
             "$fallback：模型接口已经连通，但这一轮没有给出可读正文。琅嬛已兼容 content、content 数组、text、output_text、reasoning_content 和 Responses API；可直接点“重试上一轮”，连续出现再切换模型。"
         else -> message.ifBlank { fallback }
