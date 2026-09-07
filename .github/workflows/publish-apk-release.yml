@@ -1,5 +1,6 @@
 name: Publish APK Release
 
+# Manual publish trigger: 0.28.0-alpha16-spatial-ui
 on:
   push:
     branches: [main]
