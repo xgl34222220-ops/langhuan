@@ -62,6 +62,8 @@ import androidx.work.WorkManager
 import com.xiguli.langhuan.engine.ReferenceDistillationCheckpointStore
 import com.xiguli.langhuan.engine.ReferenceDistillationJobs
 import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
+import com.xiguli.langhuan.ui.design.LanghuanOrb
+import com.xiguli.langhuan.ui.design.LanghuanSpatialHero
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -135,10 +137,12 @@ fun AiFirstShelf(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                LanghuanOrb(active = !state.isBusy, size = 48.dp)
+                Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("琅嬛书架", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
                     Text(
-                        "聊出一本书 · 蒸馏参考 · 长期创作",
+                        "小说工作台 · AI 创作 · 阅读与长期记忆",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -152,56 +156,65 @@ fun AiFirstShelf(
         }
 
         item {
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 1.dp,
-            ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = if (aiReady) onStartCreation else onConfigureAi,
-                        modifier = Modifier.fillMaxWidth().height(58.dp),
-                        enabled = !state.isBusy,
-                        shape = RoundedCornerShape(19.dp),
-                    ) {
-                        Icon(if (aiReady) Icons.Rounded.AutoAwesome else Icons.Rounded.Key, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (aiReady) "和 AI 聊出一本新小说" else "先配置 AI，再开始创作", fontWeight = FontWeight.SemiBold)
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        FilledTonalButton(
-                            onClick = onConfigureAi,
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            enabled = !state.isBusy,
-                            shape = RoundedCornerShape(17.dp),
-                        ) {
-                            Icon(Icons.Rounded.Key, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("AI / Key", maxLines = 1)
-                        }
-                        FilledTonalButton(
-                            onClick = if (aiReady) onDistillReference else onConfigureAi,
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            enabled = !state.isBusy,
-                            shape = RoundedCornerShape(17.dp),
-                        ) {
-                            Icon(Icons.Rounded.AutoFixHigh, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("导入蒸馏", maxLines = 1)
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ShelfPill("TXT / EPUB / MD")
-                        ShelfPill("Style + Story DNA")
-                        ShelfPill("双层断点")
-                    }
-                    Text(
-                        "整本小说先做全书结构扫描，AI 按书长深度分层阅读；最终 DNA 再分组聚合，长篇不会把全部批次一次塞给模型。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            LanghuanSpatialHero(
+                title = if (aiReady) "把一个念头，长成一本书" else "先连接你的 AI",
+                subtitle = if (aiReady) {
+                    "自然聊天、参考蒸馏、蓝图与长期记忆都从这里开始。视觉会动，创作流程不会被动画打断。"
+                } else {
+                    "配置任意兼容服务后，就能从一句设定直接进入创作。"
+                },
+                eyebrow = if (aiReady) "AI READY · ${aiModel.ifBlank { "DEFAULT MODEL" }}" else "AI SETUP REQUIRED",
+                active = !state.isBusy,
+                modifier = Modifier.fillMaxWidth(),
+                trailing = {
+                    LanghuanOrb(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 18.dp),
+                        active = !state.isBusy,
+                        size = 54.dp,
                     )
+                },
+            ) {
+                Spacer(Modifier.height(18.dp))
+                Button(
+                    onClick = if (aiReady) onStartCreation else onConfigureAi,
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    enabled = !state.isBusy,
+                    shape = RoundedCornerShape(19.dp),
+                ) {
+                    Icon(if (aiReady) Icons.Rounded.AutoAwesome else Icons.Rounded.Key, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (aiReady) "和 AI 聊出一本新小说" else "配置 AI 服务", fontWeight = FontWeight.SemiBold)
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    FilledTonalButton(
+                        onClick = onConfigureAi,
+                        modifier = Modifier.weight(1f).height(50.dp),
+                        enabled = !state.isBusy,
+                        shape = RoundedCornerShape(17.dp),
+                    ) {
+                        Icon(Icons.Rounded.Key, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("AI / Key", maxLines = 1)
+                    }
+                    FilledTonalButton(
+                        onClick = if (aiReady) onDistillReference else onConfigureAi,
+                        modifier = Modifier.weight(1f).height(50.dp),
+                        enabled = !state.isBusy,
+                        shape = RoundedCornerShape(17.dp),
+                    ) {
+                        Icon(Icons.Rounded.AutoFixHigh, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("参考 DNA", maxLines = 1)
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ShelfPill("Native Motion")
+                    ShelfPill("Story + Style DNA")
+                    ShelfPill("断点续跑")
                 }
             }
         }

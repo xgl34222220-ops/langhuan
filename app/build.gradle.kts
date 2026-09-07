@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 94
-        versionName = "0.28.0-alpha15-creation-hotfix"
+        versionCode = 95
+        versionName = "0.28.0-alpha16-spatial-ui"
     }
 
     buildFeatures { compose = true }
