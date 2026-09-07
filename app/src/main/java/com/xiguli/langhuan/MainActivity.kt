@@ -26,7 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.local.StartupDatabaseStatus
 import com.xiguli.langhuan.data.local.StartupDatabaseGate
 import com.xiguli.langhuan.engine.PostStartupInitializer
-import com.xiguli.langhuan.ui.LanghuanRootV3
+import com.xiguli.langhuan.ui.LanghuanRootV4
 import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
 
@@ -73,7 +73,7 @@ private fun StartupDatabaseRoot() {
             LanghuanStableTheme {
                 LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
                 val studioViewModel: StudioViewModel = viewModel()
-                LanghuanRootV3(studioViewModel)
+                LanghuanRootV4(studioViewModel)
             }
         }
     }

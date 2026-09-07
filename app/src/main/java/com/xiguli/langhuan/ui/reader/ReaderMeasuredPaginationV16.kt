@@ -42,9 +42,17 @@ private data class ReaderPagePieceV16(
 )
 
 /**
- * Compose-native pagination.
+ * Compose-native pagination for the active Qingmo reader surface.
  *
- * Measurement and rendering use the same Compose TextMeasurer/TextStyle/FontFamily/TextIndent stack.
+ * The previous implementation still measured the retired v3 reader geometry while V9 rendered a
+ * different 18dp page inset, 12/10sp chapter labels and a 9sp footer. It also measured a paragraph
+ * continuation without an indent even though the V9 renderer applies its first-line indent again at
+ * the beginning of every displayed page. Those two layout models produced different wrapping and
+ * could push the final glyph line under the page boundary.
+ *
+ * This function deliberately mirrors QingmoReaderPageContentV9 instead of estimating a generic
+ * reader viewport. A small 4dp raster guard absorbs device/font rounding differences so no partial
+ * glyph line is ever accepted as fitting at the bottom of a page.
  */
 @Composable
 internal fun rememberReaderMeasuredPaginationV16(
@@ -78,55 +86,74 @@ internal fun rememberReaderMeasuredPaginationV16(
             safeInsets.getTop(density) -
             safeInsets.getBottom(density)
         ).coerceAtLeast(1)
+
+    // QingmoReaderPageContentV9 currently renders the same 20dp horizontal inset passed here.
     val sidePaddingPx = with(density) { sidePadding.coerceIn(10f, 60f).dp.roundToPx() }
-    val bodyWidthPx = (safeWidthPx - sidePaddingPx * 2).coerceAtLeast(with(density) { 180.dp.roundToPx() })
+    val bodyWidthPx = (safeWidthPx - sidePaddingPx * 2)
+        .coerceAtLeast(with(density) { 180.dp.roundToPx() })
 
     val bodyStyle = TextStyle(
         fontSize = fontSize.coerceIn(12f, 36f).sp,
         lineHeight = (fontSize.coerceIn(12f, 36f) * lineFactor.coerceIn(1.2f, 2.6f)).sp,
         fontFamily = family,
+        fontWeight = FontWeight.Normal,
     )
-    val titleStyle = TextStyle(
-        fontSize = (fontSize + 3f).sp,
-        lineHeight = (fontSize + 8f).sp,
-        fontWeight = FontWeight.SemiBold,
-        fontFamily = family,
+
+    // These styles intentionally match QingmoReaderHeaderV9 / QingmoReaderPageContentV9.
+    val firstHeaderStyle = TextStyle(
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
     )
-    val headerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
-    val footerStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFamily = family)
+    val continuationHeaderStyle = TextStyle(fontSize = 10.sp)
+    val footerStyle = TextStyle(fontSize = 9.sp)
 
-    val topFirstPx = with(density) { 10.dp.roundToPx() }
-    val topNormalPx = with(density) { 8.dp.roundToPx() }
-    val titleGapPx = with(density) { 10.dp.roundToPx() }
-    val headerGapPx = with(density) { 10.dp.roundToPx() }
-    val footerGapPx = with(density) { 4.dp.roundToPx() }
-    val bottomPx = with(density) { 4.dp.roundToPx() }
-    val paragraphGapPx = with(density) { paragraphSpacing.coerceIn(0f, 24f).dp.roundToPx() }
+    // V9 page geometry: 18dp vertical page inset, 22dp first-page header gap,
+    // 13dp continuation header gap, footer anchored at the bottom.
+    val pageInsetPx = with(density) { 18.dp.roundToPx() }
+    val firstHeaderGapPx = with(density) { 22.dp.roundToPx() }
+    val continuationHeaderGapPx = with(density) { 13.dp.roundToPx() }
+    val rasterGuardPx = with(density) { 4.dp.roundToPx() }
+    val paragraphGapPx = with(density) {
+        paragraphSpacing.coerceIn(0f, 24f).dp.roundToPx()
+    }
 
-    val titleHeightPx = textMeasurer.measure(
+    val firstHeaderHeightPx = textMeasurer.measure(
         text = displayTitle,
-        style = titleStyle,
+        style = firstHeaderStyle,
         constraints = Constraints(maxWidth = bodyWidthPx),
     ).size.height
-    val headerHeightPx = textMeasurer.measure(
+    val continuationHeaderHeightPx = textMeasurer.measure(
         text = displayTitle,
-        style = headerStyle,
+        style = continuationHeaderStyle,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         constraints = Constraints(maxWidth = bodyWidthPx),
     ).size.height
     val footerHeightPx = textMeasurer.measure(
-        text = "00:00    99/99 · 100%",
+        text = "99/99",
         style = footerStyle,
         maxLines = 1,
         constraints = Constraints(maxWidth = bodyWidthPx),
     ).size.height
 
     val firstBodyHeightPx = (
-        safeHeightPx - topFirstPx - titleHeightPx - titleGapPx - footerGapPx - footerHeightPx - bottomPx
+        safeHeightPx -
+            pageInsetPx -
+            firstHeaderHeightPx -
+            firstHeaderGapPx -
+            footerHeightPx -
+            pageInsetPx -
+            rasterGuardPx
         ).coerceAtLeast(with(density) { 220.dp.roundToPx() })
+
     val normalBodyHeightPx = (
-        safeHeightPx - topNormalPx - headerHeightPx - headerGapPx - footerGapPx - footerHeightPx - bottomPx
+        safeHeightPx -
+            pageInsetPx -
+            continuationHeaderHeightPx -
+            continuationHeaderGapPx -
+            footerHeightPx -
+            pageInsetPx -
+            rasterGuardPx
         ).coerceAtLeast(with(density) { 240.dp.roundToPx() })
 
     val normalized = remember(text) { readerNormalizeBodyV14(text) }
@@ -211,8 +238,12 @@ private fun paginateReaderV16(
             val available = maxHeight - usedHeight - gap
             if (available <= 0 && pieces.isNotEmpty()) break
 
+            // V9 renders every displayed page's first Text with first-line indent enabled. Mirror
+            // that behavior for a paragraph continuation at page start, otherwise measured wrapping
+            // differs from rendered wrapping and the final line can be clipped.
+            val shouldIndent = firstLineIndent && (startsParagraph || pieces.isEmpty())
             val style = bodyStyle.withReaderIndentV16(
-                enabled = firstLineIndent && startsParagraph,
+                enabled = shouldIndent,
                 fontSize = fontSize,
             )
             val remaining = text.substring(cursor, paragraph.end)
@@ -239,16 +270,13 @@ private fun paginateReaderV16(
                 widthPx = widthPx,
             )
 
-            // Critical pagination rule: if even one complete glyph line does not fit in the
-            // remaining height, do not force a character into this page. The old fallback always
-            // returned start + 1 and produced the exact "half a line above the footer" artifact.
+            // Never force a partial glyph line into the remaining viewport.
             if (splitEnd <= cursor && pieces.isNotEmpty()) break
 
             val safeEnd = if (splitEnd > cursor) {
                 splitEnd.coerceAtMost(paragraph.end)
             } else {
-                // A completely empty page should always have enough body height for one line, but
-                // keep a progress fallback so malformed metrics can never create an infinite loop.
+                // Malformed device metrics should never stall pagination indefinitely.
                 (cursor + 1).coerceAtMost(paragraph.end)
             }
             if (gap > 0) usedHeight += gap

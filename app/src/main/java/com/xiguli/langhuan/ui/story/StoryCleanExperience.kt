@@ -3,8 +3,10 @@ package com.xiguli.langhuan.ui
 import androidx.compose.runtime.Composable
 
 /**
- * Compatibility entry only. The previous implementation mounted StoryPlayPanelV17 invisibly.
- * That legacy runtime surface has been removed; all calls now go straight to StoryCoreExperience.
+ * Tavern entry surface.
+ *
+ * Novel character distillation is the primary experience. Imported chat personas and the
+ * existing story branch runtime remain available as secondary routes inside that surface.
  */
 @Composable
 fun StoryCleanExperience(
@@ -16,7 +18,7 @@ fun StoryCleanExperience(
 ) {
     @Suppress("UNUSED_VARIABLE")
     val keepSignatureStable = onAdopted
-    StoryCoreExperience(
+    TavernNovelCharacterExperienceV3(
         book = book,
         libraryState = libraryState,
         aiReady = aiReady,
