@@ -1,5 +1,6 @@
 name: Apply alpha22 reader reference density
 
+# Retry 2: update stale reader contracts after the density redesign.
 on:
   push:
     branches: [fix/alpha22-reader-reference-density]
@@ -34,7 +35,9 @@ jobs:
           gradle-version: '9.5.0'
 
       - name: Apply patch
-        run: python3 .github/scripts/apply_alpha22_reader_reference.py
+        run: |
+          python3 .github/scripts/apply_alpha22_reader_reference.py
+          python3 .github/scripts/fix_alpha22_reader_contracts.py
 
       - name: Test and build
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
