@@ -3,17 +3,12 @@ from pathlib import Path
 p = Path('tools/apply_wire_spatial2.py')
 s = p.read_text()
 
-# The first patch version bounded streamOpenAi by streamAnthropic, but openAiBody/callAnthropic
-# live between those methods. Bound it by the immediately following openAiBody instead.
-old_pattern_tail = r'''    \\}\n\n    private suspend fun streamAnthropic','''
-new_pattern_tail = r'''    \\}\n\n    private fun openAiBody','''
-assert old_pattern_tail in s, 'old stream regex boundary not found'
-s = s.replace(old_pattern_tail, new_pattern_tail, 1)
-
-old_new_tail = "    private suspend fun streamAnthropic'''\n"
-new_new_tail = "    private fun openAiBody'''\n"
-assert old_new_tail in s, 'old stream replacement tail not found'
-s = s.replace(old_new_tail, new_new_tail, 1)
+# In the patch source this phrase occurs exactly twice in the streamOpenAi replacement:
+# once as the regex boundary and once as the replacement tail. The original boundary crossed
+# over openAiBody/callAnthropic; both must instead stop at the immediately following openAiBody.
+needle = 'private suspend fun streamAnthropic'
+assert s.count(needle) >= 2, f'unexpected stream boundary count: {s.count(needle)}'
+s = s.replace(needle, 'private fun openAiBody', 2)
 
 old_visible = '''private fun openAiStreamVisibleText(root: JsonObject): String {
     val choice = root["choices"].asObjects().firstOrNull()
@@ -46,7 +41,6 @@ new_visible = '''private fun openAiStreamVisibleText(root: JsonObject): String {
 assert old_visible in s, 'nullable stream helper not found'
 s = s.replace(old_visible, new_visible, 1)
 
-# Ensure the final successful patch removes both temporary scripts.
 old_cleanup = "Path('tools/apply_wire_spatial2.py').unlink(missing_ok=True)\n"
 new_cleanup = old_cleanup + "Path('tools/fix_wire_patch_script.py').unlink(missing_ok=True)\n"
 assert old_cleanup in s, 'cleanup marker not found'
