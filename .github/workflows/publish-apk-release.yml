@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha21-reader-pagination-fix
+# Manual publish trigger: 0.28.0-alpha22-reader-reference-density
 on:
   push:
     branches: [main]
