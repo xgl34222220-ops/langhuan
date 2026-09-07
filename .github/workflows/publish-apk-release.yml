@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha17-wirefix-spatial2
+# Manual publish trigger: 0.28.0-alpha19-creation-reliability
 on:
   push:
     branches: [main]
