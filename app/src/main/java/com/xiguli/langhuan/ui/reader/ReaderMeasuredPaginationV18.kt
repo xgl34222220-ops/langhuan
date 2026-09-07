@@ -107,9 +107,18 @@ internal fun rememberReaderPaginationV18(
         constraints = Constraints(maxWidth = bodyWidth),
     ).size.height
 
-    val bodyHeight = (
+    val rawBodyHeight = (
         stableHeight - pageTop - headerHeight - headerGap - footerGap - footerHeight - pageBottom - rasterGuard
         ).coerceAtLeast(with(density) { 220.dp.roundToPx() })
+    val lineBoxHeight = measurer.measure(
+        text = "阅",
+        style = bodyStyle,
+        maxLines = 1,
+        constraints = Constraints(maxWidth = bodyWidth),
+    ).size.height.coerceAtLeast(1)
+    // Quantize the viewport to complete line boxes. This removes the page-to-page
+    // one-line drift caused by fractional dp/sp rounding on high-density screens.
+    val bodyHeight = ((rawBodyHeight / lineBoxHeight).coerceAtLeast(1) * lineBoxHeight)
 
     val normalized = remember(text) { readerNormalizeBodyV14(text) }
     val token = "$stableWidth:$stableHeight:$bodyWidth:$bodyHeight:$fontSize:$lineFactor:$paragraphSpacing:$firstLineIndent:${family.hashCode()}"
