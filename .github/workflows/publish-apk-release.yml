@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha19-creation-reliability
+# Manual publish trigger: 0.28.0-alpha20-reader-chat-polish
 on:
   push:
     branches: [main]
