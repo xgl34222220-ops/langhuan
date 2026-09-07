@@ -504,7 +504,7 @@ class UniversalAiGateway(
         AiTaskType.PROSE_AUTHOR,
         AiTaskType.NOVELIZATION -> 6_144
         AiTaskType.EDITOR_REWRITE -> 7_168
-        else -> 4_096
+        else -> if (prompt.jsonMode) 4_096 else 6_144
     }
 
     private fun appendDelta(

@@ -39,11 +39,14 @@ class QingmoReplicaReaderContractTest {
         assertTrue(reader.contains("rememberReaderPaginationV18("))
 
         listOf(
-            "排版预设", "主题", "字体", "字号", "行段", "定位",
-            "上下翻页", "仿真翻页", "全文搜索", "音量键翻页", "屏幕常亮",
-            "时间电量", "沉浸式", "点击动画", "下拉书签", "全屏下一页",
-            "背景图遮罩", "背景跟随", "状态栏", "导航栏", "锁定竖屏",
+            "排版预设", "主题", "字体", "字号", "行距页边距", "滚动阅读",
+            "全文搜索", "音量键翻页", "屏幕常亮", "时间电量", "沉浸式", "锁定竖屏",
         ).forEach { label -> assertTrue("missing reader action: $label", reader.contains("\"$label\"")) }
+        val visibleActions = reader.substringAfter("val actions = listOf(").substringBefore("LazyVerticalGrid")
+        listOf(
+            "定位", "上下翻页", "仿真翻页", "点击动画", "下拉书签", "全屏下一页",
+            "背景图遮罩", "背景跟随", "状态栏", "导航栏",
+        ).forEach { label -> assertFalse("legacy reader action still exposed: $label", visibleActions.contains("\"$label\"")) }
 
         assertFalse(reader.contains("IconButton(onClick = {})"))
         assertFalse(reader.contains("onClick = {}"))
@@ -96,7 +99,7 @@ class QingmoReplicaReaderContractTest {
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt").readText()
 
         assertTrue(reader.contains("PagerDefaults.flingBehavior"))
-        assertTrue(reader.contains("snapPositionalThreshold = 0.15f"))
+        assertTrue(reader.contains("snapPositionalThreshold = 0.32f"))
         assertTrue(reader.contains("BackHandler"))
         assertTrue(reader.contains("panelVisible -> panelVisible = false"))
         assertTrue(reader.contains("persist()\n                onBack()"))
