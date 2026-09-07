@@ -143,7 +143,8 @@ fun CreationChatV4(
                     item {
                         CreationErrorPanelV4(
                             error = error,
-                            onRetry = viewModel::retryLastTurn,
+                            retryTarget = state.retryTarget,
+                            onRetry = viewModel::retryFailedOperation,
                             onConfigureAi = onConfigureAi,
                         )
                     }
@@ -180,6 +181,7 @@ fun CreationChatV4(
                     viewModel.generateFoundation(regenerate = state.blueprintDirty || state.foundationStage >= 3)
                 },
                 onCreate = viewModel::createCurrentFoundation,
+                onCancelCurrent = viewModel::cancelCurrentAiOperation,
             )
             }
         }
@@ -359,6 +361,7 @@ private fun CreationThinkingV4(label: String) {
 @Composable
 private fun CreationErrorPanelV4(
     error: String,
+    retryTarget: CreationRetryTarget?,
     onRetry: () -> Unit,
     onConfigureAi: () -> Unit,
 ) {
@@ -377,15 +380,23 @@ private fun CreationErrorPanelV4(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onRetry,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(t.radiusMd),
-                    colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
-                ) {
-                    Icon(Icons.Rounded.Refresh, null, Modifier.size(17.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("重试上一轮")
+                if (retryTarget != null) {
+                    Button(
+                        onClick = onRetry,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(t.radiusMd),
+                        colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+                    ) {
+                        Icon(Icons.Rounded.Refresh, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            when (retryTarget) {
+                                CreationRetryTarget.CHAT -> "重试这一轮"
+                                CreationRetryTarget.PROPOSAL -> "重新整理"
+                                CreationRetryTarget.BLUEPRINT -> "继续蓝图"
+                            }
+                        )
+                    }
                 }
                 OutlinedButton(
                     onClick = onConfigureAi,
@@ -413,6 +424,7 @@ private fun CreationComposerV4(
     onSyncProposal: () -> Unit,
     onGenerateFoundation: () -> Unit,
     onCreate: () -> Unit,
+    onCancelCurrent: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     val busy = state.isBusy || state.isLoadingAttachments
@@ -533,21 +545,30 @@ private fun CreationComposerV4(
                         },
                     )
                     val canSend = !busy && (input.isNotBlank() || state.pendingAttachments.isNotEmpty())
+                    val canStop = state.isBusy && state.canCancelCurrentOperation
+                    val actionEnabled = canSend || canStop
                     Surface(
                         modifier = Modifier.size(40.dp),
                         shape = RoundedCornerShape(t.radiusSm),
-                        color = if (canSend) t.foreground else t.muted,
-                        contentColor = if (canSend) t.primaryForeground else t.mutedForeground,
+                        color = when {
+                            canStop -> t.destructive
+                            canSend -> t.foreground
+                            else -> t.muted
+                        },
+                        contentColor = if (actionEnabled) t.primaryForeground else t.mutedForeground,
                     ) {
                         Box(
-                            Modifier.clickable(enabled = canSend, onClick = onSend),
+                            Modifier.clickable(
+                                enabled = actionEnabled,
+                                onClick = if (canStop) onCancelCurrent else onSend,
+                            ),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                Icons.Rounded.ArrowUpward,
-                                "发送",
+                                if (canStop) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
+                                if (canStop) "停止生成" else "发送",
                                 Modifier.size(19.dp),
-                                tint = if (canSend) t.primaryForeground else t.mutedForeground,
+                                tint = if (actionEnabled) t.primaryForeground else t.mutedForeground,
                             )
                         }
                     }
