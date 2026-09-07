@@ -38,7 +38,7 @@ needle = '''    val displayTitle = remember(chapter.id, chapter.title) { chapter
     )'''
 replacement = '''    val displayTitle = remember(chapter.id, chapter.title) { chapterTitle(chapter) }
     val readingText = remember(chapter.id, chapter.content) { chapterText(chapter) }
-    var measuredBodyViewport by remember(chapter.id) { mutableStateOf(IntSize.Zero) }
+    var measuredBodyViewport by remember(book.id) { mutableStateOf(IntSize.Zero) }
 
     val pagedParagraphSpacing = if (pageMode == ReaderPageModeV10.SCROLL) paragraphSpacing else 0f
     val pagination = rememberReaderPaginationV18(
@@ -226,6 +226,16 @@ b = replace_once(
     "version name",
 )
 build.write_text(b)
+
+contract = Path("app/src/test/java/com/xiguli/langhuan/ui/QingmoReplicaReaderContractTest.kt")
+c = contract.read_text()
+c = replace_once(
+    c,
+    '        assertTrue(reader.contains("Box(Modifier.fillMaxWidth().weight(1f).clipToBounds())"))',
+    '        assertTrue(reader.contains(".weight(1f)"))\n        assertTrue(reader.contains(".onSizeChanged(onBodyViewportChanged)"))',
+    "reader body viewport contract",
+)
+contract.write_text(c)
 
 test = Path("app/src/test/java/com/xiguli/langhuan/ui/ReaderExactViewportAlpha23Test.kt")
 test.write_text('''package com.xiguli.langhuan.ui\n\nimport java.io.File\nimport org.junit.Assert.assertTrue\nimport org.junit.Test\n\nclass ReaderExactViewportAlpha23Test {\n    private fun source(path: String): String = File(System.getProperty("user.dir") ?: ".", path).readText()\n\n    @Test fun paginationUsesMeasuredBodyViewportInsteadOfOnlyScreenPrediction() {\n        val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")\n        val paginator = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt")\n        assertTrue(reader.contains("var measuredBodyViewport"))\n        assertTrue(reader.contains(".onSizeChanged(onBodyViewportChanged)"))\n        assertTrue(reader.contains("viewportWidthPx = measuredBodyViewport.width"))\n        assertTrue(reader.contains("viewportHeightPx = measuredBodyViewport.height"))\n        assertTrue(paginator.contains("viewportWidthPx: Int = 0"))\n        assertTrue(paginator.contains("viewportHeightPx: Int = 0"))\n        assertTrue(paginator.contains("val bodyWidth = viewportWidthPx.takeIf { it > 0 } ?: fallbackBodyWidth"))\n        assertTrue(paginator.contains("val bodyHeight = viewportHeightPx.takeIf { it > 0 } ?: fallbackBodyHeight"))\n        assertTrue(paginator.contains("textAlign = TextAlign.Justify"))\n    }\n}\n''')
