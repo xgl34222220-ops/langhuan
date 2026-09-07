@@ -524,6 +524,14 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
         }
     }
 
+    fun retryLastTurn() {
+        val snapshot = _state.value
+        if (snapshot.isBusy || snapshot.isLoadingAttachments || snapshot.error == null) return
+        val lastUser = snapshot.messages.lastOrNull { it.role == "user" } ?: return
+        val text = lastUser.text.substringBefore(RESEARCH_CONTEXT_MARKER).trim()
+        if (text.isNotBlank()) send(text)
+    }
+
     fun reset() { suppressDraftPersistence = false; draftStore.clear(); _state.value = NewBookConversationState() }
     fun consumeCreatedStory() { _state.update { it.copy(createdStoryId = null) } }
 
@@ -692,6 +700,8 @@ private fun friendlyAiError(error: Throwable, fallback: String): String {
     return when {
         localSocketTimeout -> "$fallback：等待模型返回超过当前网络容错时间。当前会谈与蓝图断点已保留，可直接重试；连续出现时请切换更稳定的模型或中转站。"
         timeoutText -> "$fallback：AI 服务或中转站返回了超时/断开：${message.take(260)}"
+        message.contains("没有找到可读文本字段") || message.contains("无法解析的响应格式") || message.contains("成功流，但没有可读文本字段") ->
+            "$fallback：模型接口已经连通，但这一轮没有给出可读正文。琅嬛已兼容 content、content 数组、text、output_text、reasoning_content 和 Responses API；可直接点“重试上一轮”，连续出现再切换模型。"
         else -> message.ifBlank { fallback }
     }
 }
