@@ -16,6 +16,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -68,24 +69,25 @@ internal fun rememberReaderPaginationV18(
     val horizontal = with(density) { sidePadding.coerceIn(12f, 48f).dp.roundToPx() }
     val bodyWidth = (stableWidth - horizontal * 2).coerceAtLeast(with(density) { 180.dp.roundToPx() })
 
-    val pageTop = with(density) { 16.dp.roundToPx() }
-    val pageBottom = with(density) { 12.dp.roundToPx() }
-    val headerGap = with(density) { 14.dp.roundToPx() }
-    val footerGap = with(density) { 8.dp.roundToPx() }
-    val rasterGuard = with(density) { 3.dp.roundToPx() }
+    val pageTop = with(density) { 8.dp.roundToPx() }
+    val pageBottom = with(density) { 6.dp.roundToPx() }
+    val headerGap = with(density) { 7.dp.roundToPx() }
+    val footerGap = with(density) { 4.dp.roundToPx() }
+    val rasterGuard = with(density) { 1.dp.roundToPx() }
     val paragraphGap = with(density) { paragraphSpacing.coerceIn(0f, 24f).dp.roundToPx() }
 
     val headerStyle = TextStyle(
-        fontSize = 11.sp,
-        lineHeight = 15.sp,
+        fontSize = 10.sp,
+        lineHeight = 13.sp,
         fontFamily = family,
         fontWeight = FontWeight.Medium,
     )
     val footerStyle = TextStyle(
-        fontSize = 9.sp,
-        lineHeight = 12.sp,
+        fontSize = 8.sp,
+        lineHeight = 10.sp,
         fontFamily = family,
         fontWeight = FontWeight.Normal,
+        textAlign = TextAlign.Justify,
     )
     val bodyStyle = TextStyle(
         fontSize = fontSize.coerceIn(13f, 32f).sp,
@@ -107,18 +109,12 @@ internal fun rememberReaderPaginationV18(
         constraints = Constraints(maxWidth = bodyWidth),
     ).size.height
 
-    val rawBodyHeight = (
+    // Use the full measured viewport. The previous integer-line quantization rounded
+    // DOWN and could discard almost one complete line per page, which appeared as
+    // a large empty band. Text is still split only at complete measured line ends.
+    val bodyHeight = (
         stableHeight - pageTop - headerHeight - headerGap - footerGap - footerHeight - pageBottom - rasterGuard
         ).coerceAtLeast(with(density) { 220.dp.roundToPx() })
-    val lineBoxHeight = measurer.measure(
-        text = "阅",
-        style = bodyStyle,
-        maxLines = 1,
-        constraints = Constraints(maxWidth = bodyWidth),
-    ).size.height.coerceAtLeast(1)
-    // Quantize the viewport to complete line boxes. This removes the page-to-page
-    // one-line drift caused by fractional dp/sp rounding on high-density screens.
-    val bodyHeight = ((rawBodyHeight / lineBoxHeight).coerceAtLeast(1) * lineBoxHeight)
 
     val normalized = remember(text) { readerNormalizeBodyV14(text) }
     val token = "$stableWidth:$stableHeight:$bodyWidth:$bodyHeight:$fontSize:$lineFactor:$paragraphSpacing:$firstLineIndent:${family.hashCode()}"
