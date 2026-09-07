@@ -25,6 +25,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+      - name: Repair patch script
+        run: python3 tools/fix_wire_patch_script.py
       - name: Apply patch
         run: python3 tools/apply_wire_spatial2.py
       - name: Test and build
