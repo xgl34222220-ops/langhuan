@@ -89,6 +89,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
@@ -102,6 +103,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -109,6 +113,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -126,6 +131,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.absoluteValue
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -301,10 +307,6 @@ private fun HeroReaderPageV13(
 
     val displayTitle = remember(chapter.id, chapter.title) { chapterTitle(chapter) }
     val readingText = remember(chapter.id, chapter.content) { chapterText(chapter) }
-    val previousTitle = remember(previous?.id, previous?.title) { previous?.let(::chapterTitle).orEmpty() }
-    val previousText = remember(previous?.id, previous?.content) { previous?.let(::chapterText).orEmpty() }
-    val nextTitle = remember(next?.id, next?.title) { next?.let(::chapterTitle).orEmpty() }
-    val nextText = remember(next?.id, next?.content) { next?.let(::chapterText).orEmpty() }
 
     val pagination = rememberReaderPaginationV18(
         text = readingText,
@@ -316,34 +318,10 @@ private fun HeroReaderPageV13(
         firstLineIndent = firstLineIndent,
         family = family,
     )
-    val previousPagination = rememberReaderPaginationV18(
-        text = previousText.ifBlank { " " },
-        title = previousTitle,
-        fontSize = fontSize,
-        lineFactor = lineFactor,
-        sidePadding = sidePadding,
-        paragraphSpacing = paragraphSpacing,
-        firstLineIndent = firstLineIndent,
-        family = family,
-    )
-    val nextPagination = rememberReaderPaginationV18(
-        text = nextText.ifBlank { " " },
-        title = nextTitle,
-        fontSize = fontSize,
-        lineFactor = lineFactor,
-        sidePadding = sidePadding,
-        paragraphSpacing = paragraphSpacing,
-        firstLineIndent = firstLineIndent,
-        family = family,
-    )
 
     val pages = pagination.pages.ifEmpty { listOf(readingText) }
     val offsets = pagination.offsets.ifEmpty { listOf(0) }
     val starts = pagination.pageStartsParagraph.ifEmpty { listOf(true) }
-    val previousPages = previousPagination.pages.ifEmpty { listOf(previousText) }
-    val previousStarts = previousPagination.pageStartsParagraph.ifEmpty { listOf(true) }
-    val nextPages = nextPagination.pages.ifEmpty { listOf(nextText) }
-    val nextStarts = nextPagination.pageStartsParagraph.ifEmpty { listOf(true) }
 
     val saved = remember(chapter.id) { ReaderProgressStoreV11.load(context, book.id, chapter.chapterNumber) }
     val initialPage = remember(chapter.id, pagination.layoutToken, pageModeKey) {
@@ -353,11 +331,11 @@ private fun HeroReaderPageV13(
             else -> saved.pageIndex.coerceIn(0, pages.lastIndex)
         }
     }
-    val leadingBoundary = if (pageMode != ReaderPageModeV10.SCROLL && previous != null) 1 else 0
-    val trailingBoundary = if (pageMode != ReaderPageModeV10.SCROLL && next != null) 1 else 0
-    val pagerPageCount = (leadingBoundary + pages.size + trailingBoundary).coerceAtLeast(1)
-    val initialPagerPage = (initialPage + leadingBoundary).coerceIn(0, pagerPageCount - 1)
-    val pagerState = rememberPagerState(initialPage = initialPagerPage, pageCount = { pagerPageCount })
+    val pagerPageCount = pages.size.coerceAtLeast(1)
+    val pagerState = rememberPagerState(
+        initialPage = initialPage.coerceIn(0, pagerPageCount - 1),
+        pageCount = { pagerPageCount },
+    )
     val pagerFling = PagerDefaults.flingBehavior(
         state = pagerState,
         snapPositionalThreshold = 0.15f,
@@ -368,7 +346,7 @@ private fun HeroReaderPageV13(
     val layoutKey = "$pageModeKey|$fontKey|${fontSize.roundToInt()}|${(lineFactor * 100).roundToInt()}|${paragraphSpacing.roundToInt()}|${sidePadding.roundToInt()}|$firstLineIndent|${pagination.layoutToken}"
     var appliedLayoutKey by remember(chapter.id) { mutableStateOf(layoutKey) }
 
-    fun currentPage(): Int = (pagerState.settledPage - leadingBoundary).coerceIn(0, pages.lastIndex)
+    fun currentPage(): Int = pagerState.settledPage.coerceIn(0, pages.lastIndex)
 
     fun currentOffset(): Int = if (pageMode == ReaderPageModeV10.SCROLL) {
         val fraction = if (scrollState.maxValue <= 0) 0f else scrollState.value.toFloat() / scrollState.maxValue.toFloat()
@@ -425,22 +403,22 @@ private fun HeroReaderPageV13(
 
     fun previousPage() {
         if (pageMode == ReaderPageModeV10.SCROLL) return
-        val target = pagerState.settledPage - 1
-        if (target >= 0) {
+        val page = currentPage()
+        if (page > 0) {
             scope.launch {
-                if (clickAnimation) pagerState.animateScrollToPage(target) else pagerState.scrollToPage(target)
+                if (clickAnimation) pagerState.animateScrollToPage(page - 1) else pagerState.scrollToPage(page - 1)
             }
-        } else jumpChapter(previous, true)
+        } else jumpChapter(previous, atEnd = true)
     }
 
     fun nextPage() {
         if (pageMode == ReaderPageModeV10.SCROLL) return
-        val target = pagerState.settledPage + 1
-        if (target < pagerPageCount) {
+        val page = currentPage()
+        if (page < pages.lastIndex) {
             scope.launch {
-                if (clickAnimation) pagerState.animateScrollToPage(target) else pagerState.scrollToPage(target)
+                if (clickAnimation) pagerState.animateScrollToPage(page + 1) else pagerState.scrollToPage(page + 1)
             }
-        } else jumpChapter(next, false)
+        } else jumpChapter(next, atEnd = false)
     }
 
     BackHandler {
@@ -457,7 +435,7 @@ private fun HeroReaderPageV13(
         }
     }
 
-    LaunchedEffect(layoutKey, pages.size, scrollState.maxValue, leadingBoundary) {
+    LaunchedEffect(layoutKey, pages.size, scrollState.maxValue) {
         if (appliedLayoutKey == layoutKey) return@LaunchedEffect
         val targetOffset = anchorOffset.coerceIn(0, readingText.length)
         if (pageMode == ReaderPageModeV10.SCROLL) {
@@ -467,20 +445,14 @@ private fun HeroReaderPageV13(
             }
         } else {
             val page = heroReaderPageForOffsetV13(offsets, targetOffset).coerceIn(0, pages.lastIndex)
-            pagerState.scrollToPage((page + leadingBoundary).coerceIn(0, pagerPageCount - 1))
+            pagerState.scrollToPage(page.coerceIn(0, pagerPageCount - 1))
         }
         appliedLayoutKey = layoutKey
     }
 
-    LaunchedEffect(chapter.id, pageMode, layoutKey, leadingBoundary, trailingBoundary, pages.size) {
+    LaunchedEffect(chapter.id, pageMode, layoutKey, pages.size) {
         if (pageMode != ReaderPageModeV10.SCROLL) {
-            snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { settled ->
-                when {
-                    previous != null && leadingBoundary == 1 && settled == 0 -> jumpChapter(previous, true)
-                    next != null && trailingBoundary == 1 && settled == leadingBoundary + pages.size -> jumpChapter(next, false)
-                    else -> persist()
-                }
-            }
+            snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { persist() }
         }
     }
 
@@ -551,6 +523,36 @@ private fun HeroReaderPageV13(
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
     }
 
+    val edgeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 52.dp.toPx() }
+    val edgeSwipe = remember(chapter.id, pages.size, pageMode, previous?.id, next?.id) {
+        object : NestedScrollConnection {
+            var edgeDrag = 0f
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (pageMode == ReaderPageModeV10.SCROLL || source != NestedScrollSource.UserInput) return Offset.Zero
+                val page = pagerState.currentPage.coerceIn(0, pages.lastIndex)
+                edgeDrag = when {
+                    page == 0 && available.x > 0f -> (edgeDrag + available.x).coerceAtMost(edgeThresholdPx * 2f)
+                    page == pages.lastIndex && available.x < 0f -> (edgeDrag + available.x).coerceAtLeast(-edgeThresholdPx * 2f)
+                    else -> 0f
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val drag = edgeDrag
+                edgeDrag = 0f
+                if (abs(drag) >= edgeThresholdPx && !crossingChapter) {
+                    when {
+                        drag > 0f && pagerState.currentPage == 0 -> jumpChapter(previous, atEnd = true)
+                        drag < 0f && pagerState.currentPage == pages.lastIndex -> jumpChapter(next, atEnd = false)
+                    }
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -611,7 +613,7 @@ private fun HeroReaderPageV13(
             } else {
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().nestedScroll(edgeSwipe),
                     beyondViewportPageCount = 1,
                     flingBehavior = pagerFling,
                     userScrollEnabled = !panelVisible && overlay == HeroReaderOverlayV13.NONE,
@@ -629,61 +631,22 @@ private fun HeroReaderPageV13(
                     } else Modifier
 
                     Box(transition.fillMaxSize()) {
-                        when {
-                            previous != null && leadingBoundary == 1 && pagerPage == 0 -> {
-                                val safe = previousPages.lastIndex.coerceAtLeast(0)
-                                HeroReaderCanvasV13(
-                                    title = previousTitle,
-                                    body = previousPages[safe],
-                                    pageStartsParagraph = previousStarts.getOrElse(safe) { true },
-                                    page = safe + 1,
-                                    pageCount = previousPages.size,
-                                    fontSize = fontSize,
-                                    lineFactor = lineFactor,
-                                    paragraphSpacing = paragraphSpacing,
-                                    sidePadding = sidePadding,
-                                    firstLineIndent = firstLineIndent,
-                                    family = family,
-                                    palette = palette,
-                                    showTimeBattery = showTimeBattery,
-                                )
-                            }
-                            next != null && trailingBoundary == 1 && pagerPage == leadingBoundary + pages.size -> {
-                                HeroReaderCanvasV13(
-                                    title = nextTitle,
-                                    body = nextPages.first(),
-                                    pageStartsParagraph = nextStarts.firstOrNull() ?: true,
-                                    page = 1,
-                                    pageCount = nextPages.size,
-                                    fontSize = fontSize,
-                                    lineFactor = lineFactor,
-                                    paragraphSpacing = paragraphSpacing,
-                                    sidePadding = sidePadding,
-                                    firstLineIndent = firstLineIndent,
-                                    family = family,
-                                    palette = palette,
-                                    showTimeBattery = showTimeBattery,
-                                )
-                            }
-                            else -> {
-                                val safe = (pagerPage - leadingBoundary).coerceIn(0, pages.lastIndex)
-                                HeroReaderCanvasV13(
-                                    title = displayTitle,
-                                    body = pages[safe],
-                                    pageStartsParagraph = starts.getOrElse(safe) { true },
-                                    page = safe + 1,
-                                    pageCount = pages.size,
-                                    fontSize = fontSize,
-                                    lineFactor = lineFactor,
-                                    paragraphSpacing = paragraphSpacing,
-                                    sidePadding = sidePadding,
-                                    firstLineIndent = firstLineIndent,
-                                    family = family,
-                                    palette = palette,
-                                    showTimeBattery = showTimeBattery,
-                                )
-                            }
-                        }
+                        val safe = pagerPage.coerceIn(0, pages.lastIndex)
+                        HeroReaderCanvasV13(
+                            title = displayTitle,
+                            body = pages[safe],
+                            pageStartsParagraph = starts.getOrElse(safe) { true },
+                            page = safe + 1,
+                            pageCount = pages.size,
+                            fontSize = fontSize,
+                            lineFactor = lineFactor,
+                            paragraphSpacing = paragraphSpacing,
+                            sidePadding = sidePadding,
+                            firstLineIndent = firstLineIndent,
+                            family = family,
+                            palette = palette,
+                            showTimeBattery = showTimeBattery,
+                        )
                     }
                 }
             }

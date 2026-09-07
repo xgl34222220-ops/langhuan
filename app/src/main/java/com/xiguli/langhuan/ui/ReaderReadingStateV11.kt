@@ -250,7 +250,7 @@ internal object ReaderProgressStoreV11 {
             .putInt("offset_$bookId", progress.textOffset.coerceAtLeast(0))
             .putString("mode_$bookId", progress.modeKey)
             .putLong("updated_$bookId", System.currentTimeMillis())
-            .commit()
+            .apply()
         context.getSharedPreferences("reader_progress_v1", Context.MODE_PRIVATE).edit()
             .putInt("chapter_$bookId", progress.chapterNumber.coerceAtLeast(1))
             .putLong("last_$bookId", System.currentTimeMillis())

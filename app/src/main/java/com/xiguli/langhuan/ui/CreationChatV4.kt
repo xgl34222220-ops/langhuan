@@ -177,7 +177,7 @@ fun CreationChatV4(
                 },
                 onSyncProposal = viewModel::syncConversationProposal,
                 onGenerateFoundation = {
-                    viewModel.generateFoundation(regenerate = state.foundation != null || state.blueprintDirty)
+                    viewModel.generateFoundation(regenerate = state.blueprintDirty || state.foundationStage >= 3)
                 },
                 onCreate = viewModel::createCurrentFoundation,
             )
