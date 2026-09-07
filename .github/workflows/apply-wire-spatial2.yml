@@ -39,3 +39,4 @@ jobs:
           git add -A
           git commit -m 'fix: broaden AI wire compatibility and spatialize active creation'
           git push origin HEAD:fix/wire-compat-spatial2
+# rerun: repair stream boundary v2
