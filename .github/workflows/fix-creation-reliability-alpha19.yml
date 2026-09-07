@@ -30,7 +30,9 @@ jobs:
           gradle-version: '9.5.0'
 
       - name: Apply creation reliability fixes
-        run: python3 .github/scripts/fix_creation_reliability_alpha19.py
+        run: |
+          python3 .github/scripts/fix_creation_reliability_alpha19.py
+          python3 .github/scripts/fix_creation_reliability_alpha19_compile.py
 
       - name: Verify
         run: |
@@ -41,7 +43,7 @@ jobs:
         run: |
           git config user.name "xgl34222220-ops"
           git config user.email "xgl34222220@gmail.com"
-          git rm .github/scripts/fix_creation_reliability_alpha19.py .github/workflows/fix-creation-reliability-alpha19.yml
+          git rm .github/scripts/fix_creation_reliability_alpha19.py .github/scripts/fix_creation_reliability_alpha19_compile.py .github/workflows/fix-creation-reliability-alpha19.yml
           git add app
           git diff --cached --check
           git commit -m "fix: make creation chat and blueprint reliably retryable"
