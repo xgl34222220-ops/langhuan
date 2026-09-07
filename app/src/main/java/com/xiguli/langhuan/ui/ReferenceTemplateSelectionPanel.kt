@@ -54,6 +54,8 @@ import com.xiguli.langhuan.engine.ReferenceDistillationReport
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LanghuanOrb
+import com.xiguli.langhuan.ui.design.LanghuanSpatialHero
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -89,8 +91,25 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
     val totalSearchable = selectedReports.sumOf(store::retainedItemCount)
     val selectedWithStory = selectedReports.count(store::hasStoryDna)
 
-    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+    LanghuanSpatialHero(
+        title = "Reference DNA",
+        subtitle = when {
+            loading -> "正在校验内置参考库……"
+            selectedReports.isEmpty() -> "共 ${reports.size} 本参考 · 本次创作尚未绑定"
+            selectedReports.size == 1 -> "已绑定《${selectedReports.first().title}》 · $totalSearchable 条可检索 DNA"
+            else -> "已绑定 ${selectedReports.size} 本 · $totalSearchable 条可检索 DNA"
+        },
+        eyebrow = "REFERENCE CONSTELLATION",
+        modifier = Modifier.fillMaxWidth(),
+        trailing = {
+            LanghuanOrb(
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 18.dp),
+                size = 44.dp,
+                active = loading,
+            )
+        },
+    ) {
+        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(40.dp),

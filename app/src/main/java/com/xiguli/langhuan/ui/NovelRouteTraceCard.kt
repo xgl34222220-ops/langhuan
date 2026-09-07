@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.engine.NovelRouteDecision
 import com.xiguli.langhuan.engine.NovelRouteStatus
 import com.xiguli.langhuan.engine.NovelSkillExecutionPlan
+import com.xiguli.langhuan.ui.design.LanghuanOrb
 
 /** Compact, inspectable execution trace for the latest natural-language creation turn. */
 @Composable
@@ -55,17 +56,15 @@ internal fun NovelRouteTraceCardV4(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .36f))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = .78f))
             .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f), shape)
             .clickable { expanded = !expanded }
             .padding(horizontal = 13.dp, vertical = 11.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Rounded.AccountTree,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary,
+            LanghuanOrb(
+                size = 28.dp,
+                active = effectiveStatus == NovelRouteStatus.RUNNING,
             )
             Column(Modifier.padding(start = 8.dp).weight(1f)) {
                 Text(
