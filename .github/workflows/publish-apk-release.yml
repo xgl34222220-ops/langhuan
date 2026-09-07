@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha20-reader-chat-polish
+# Manual publish trigger: 0.28.0-alpha21-reader-pagination-fix
 on:
   push:
     branches: [main]
