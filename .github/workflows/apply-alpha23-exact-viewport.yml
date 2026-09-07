@@ -1,6 +1,6 @@
 name: Apply alpha23 exact reader viewport
 
-# Retry after aligning the existing reader contract with exact viewport measurement.
+# Retry after aligning all reader contracts with exact viewport measurement.
 on:
   push:
     branches: [fix/alpha23-reader-exact-viewport]
@@ -35,7 +35,9 @@ jobs:
           gradle-version: '9.5.0'
 
       - name: Apply patch
-        run: python3 .github/scripts/apply_alpha23_exact_viewport.py
+        run: |
+          python3 .github/scripts/apply_alpha23_exact_viewport.py
+          python3 .github/scripts/fix_alpha23_contracts.py
 
       - name: Test and build
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
