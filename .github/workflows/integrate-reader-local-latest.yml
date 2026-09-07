@@ -5,6 +5,8 @@ on:
     branches: [fix/reader-local-latest-integration]
     paths:
       - '.github/workflows/integrate-reader-local-latest.yml'
+      - '.github/scripts/integrate_reader_local.py'
+      - '.github/scripts/update_reader_contract_test.py'
 
 permissions:
   contents: write
@@ -37,7 +39,9 @@ jobs:
           git merge -X ours origin/main --no-edit
 
       - name: Apply reader and blueprint integration fixes
-        run: python3 .github/scripts/integrate_reader_local.py
+        run: |
+          python3 .github/scripts/integrate_reader_local.py
+          python3 .github/scripts/update_reader_contract_test.py
 
       - name: Verify
         run: |
