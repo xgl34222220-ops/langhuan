@@ -114,9 +114,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -335,6 +337,7 @@ private fun HeroReaderPageV13(
 
     val displayTitle = remember(chapter.id, chapter.title) { chapterTitle(chapter) }
     val readingText = remember(chapter.id, chapter.content) { chapterText(chapter) }
+    var measuredBodyViewport by remember(book.id) { mutableStateOf(IntSize.Zero) }
 
     val pagedParagraphSpacing = if (pageMode == ReaderPageModeV10.SCROLL) paragraphSpacing else 0f
     val pagination = rememberReaderPaginationV18(
@@ -346,6 +349,8 @@ private fun HeroReaderPageV13(
         paragraphSpacing = pagedParagraphSpacing,
         firstLineIndent = firstLineIndent,
         family = family,
+        viewportWidthPx = measuredBodyViewport.width,
+        viewportHeightPx = measuredBodyViewport.height,
     )
 
     val pages = pagination.pages.ifEmpty { listOf(readingText) }
@@ -704,6 +709,11 @@ private fun HeroReaderPageV13(
                             palette = palette,
                             showTimeBattery = showTimeBattery,
                             spatialBackground = spatialBackground,
+                            onBodyViewportChanged = { size ->
+                                if (size.width > 0 && size.height > 0 && size != measuredBodyViewport) {
+                                    measuredBodyViewport = size
+                                }
+                            },
                         )
                     }
                 }
@@ -860,6 +870,7 @@ private fun HeroReaderCanvasV13(
     palette: HeroReaderPaletteV13,
     showTimeBattery: Boolean,
     spatialBackground: Boolean,
+    onBodyViewportChanged: (IntSize) -> Unit,
 ) {
     Column(
         Modifier
@@ -878,7 +889,13 @@ private fun HeroReaderCanvasV13(
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(7.dp))
-        Box(Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clipToBounds()
+                .onSizeChanged(onBodyViewportChanged),
+        ) {
             HeroReaderPageBodyV13(
                 text = body,
                 pageStartsParagraph = pageStartsParagraph,
