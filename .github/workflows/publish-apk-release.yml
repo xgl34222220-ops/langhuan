@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha22-reader-reference-density
+# Manual publish trigger: 0.28.0-alpha23-reader-exact-viewport
 on:
   push:
     branches: [main]
