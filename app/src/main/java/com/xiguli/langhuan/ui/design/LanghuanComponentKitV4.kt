@@ -27,7 +27,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -35,8 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Native Compose primitives ported from the anatomy of HeroUI Native / coss / tweakcn references.
- * This is deliberately a Compose implementation rather than a React/React-Native dependency.
+ * Native Compose mobile primitives for the app shell and reader settings.
+ * Hierarchy comes from depth, radius and inset highlight; neutral borders are not used as walls.
  */
 @Immutable
 internal data class LanghuanTokensV4(
@@ -46,8 +49,9 @@ internal data class LanghuanTokensV4(
     val surfaceRaised: Color,
     val muted: Color,
     val mutedForeground: Color,
+    val strong: Color,
     val primary: Color,
-    val outline: Color,
+    val track: Color,
     val destructive: Color,
 )
 
@@ -60,11 +64,16 @@ internal fun langhuanTokensV4(background: Color, foreground: Color, accent: Colo
         surfaceRaised = Color.White.copy(alpha = if (light) .94f else .13f),
         muted = foreground.copy(alpha = .075f),
         mutedForeground = foreground.copy(alpha = .54f),
+        strong = foreground.copy(alpha = .82f),
         primary = accent,
-        outline = foreground.copy(alpha = .10f),
+        track = foreground.copy(alpha = if (light) .075f else .12f),
         destructive = Color(0xFFBA1A1A),
     )
 }
+
+private fun v4DepthBrush(base: Color, highlight: Float = .20f): Brush = Brush.verticalGradient(
+    listOf(Color.White.copy(alpha = highlight).compositeOver(base), base, base),
+)
 
 @Composable
 internal fun LanghuanSheetV4(
@@ -75,10 +84,10 @@ internal fun LanghuanSheetV4(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
         color = tokens.surfaceRaised,
         tonalElevation = 0.dp,
-        shadowElevation = 14.dp,
+        shadowElevation = 16.dp,
     ) {
         Column(
             Modifier
@@ -90,17 +99,19 @@ internal fun LanghuanSheetV4(
                 Modifier
                     .align(Alignment.CenterHorizontally)
                     .width(34.dp)
-                    .height(4.dp)
+                    .height(3.dp)
                     .clip(CircleShape)
-                    .background(tokens.foreground.copy(alpha = .16f)),
+                    .background(tokens.track),
             )
             if (!title.isNullOrBlank()) {
                 Text(
                     title,
                     Modifier.padding(top = 14.dp, bottom = 12.dp),
                     color = tokens.foreground,
-                    fontSize = 18.sp,
+                    fontSize = 19.sp,
+                    lineHeight = 24.sp,
                     fontWeight = FontWeight.SemiBold,
+                    letterSpacing = .6.sp,
                 )
             } else Spacer(Modifier.height(10.dp))
             content()
@@ -115,39 +126,35 @@ internal fun LanghuanTabsV4(
     onSelected: (Int) -> Unit,
     tokens: LanghuanTokensV4,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = tokens.muted,
-        tonalElevation = 0.dp,
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            labels.forEachIndexed { index, label ->
-                val active = selected == index
-                val bg by animateColorAsState(
-                    targetValue = if (active) tokens.surfaceRaised else Color.Transparent,
-                    animationSpec = tween(170, easing = FastOutSlowInEasing),
-                    label = "reader-tab",
+        labels.forEachIndexed { index, label ->
+            val active = selected == index
+            val bg by animateColorAsState(
+                targetValue = if (active) tokens.surfaceRaised else tokens.surface,
+                animationSpec = tween(170, easing = FastOutSlowInEasing),
+                label = "langhuan-tab",
+            )
+            Box(
+                Modifier
+                    .weight(1f)
+                    .shadow(if (active) 6.dp else 3.dp, RoundedCornerShape(15.dp), clip = false)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(v4DepthBrush(bg, if (active) .24f else .14f))
+                    .clickable { onSelected(index) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    color = if (active) tokens.foreground else tokens.mutedForeground,
+                    fontSize = 14.5.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    letterSpacing = .3.sp,
                 )
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(15.dp))
-                        .background(bg)
-                        .clickable { onSelected(index) }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        label,
-                        color = if (active) tokens.foreground else tokens.mutedForeground,
-                        fontSize = 13.sp,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                    )
-                }
             }
         }
     }
@@ -163,32 +170,35 @@ internal fun LanghuanActionTileV4(
 ) {
     Column(
         Modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(15.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 9.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(
-            modifier = Modifier.size(44.dp),
-            shape = RoundedCornerShape(15.dp),
-            color = if (selected) tokens.primary.copy(alpha = .14f) else tokens.muted,
-            tonalElevation = 0.dp,
+        val base = if (selected) tokens.primary.copy(alpha = .14f).compositeOver(tokens.surfaceRaised) else tokens.surfaceRaised
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .shadow(6.dp, CircleShape, clip = false)
+                .clip(CircleShape)
+                .background(v4DepthBrush(base, .24f)),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    icon,
-                    contentDescription = label,
-                    modifier = Modifier.size(21.dp),
-                    tint = if (selected) tokens.primary else tokens.foreground.copy(alpha = .78f),
-                )
-            }
+            Icon(
+                icon,
+                contentDescription = label,
+                modifier = Modifier.size(21.dp),
+                tint = if (selected) tokens.primary else tokens.strong,
+            )
         }
         Text(
             label,
             Modifier.padding(top = 7.dp),
             color = if (selected) tokens.primary else tokens.mutedForeground,
-            fontSize = 11.sp,
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp,
             fontWeight = FontWeight.Medium,
+            letterSpacing = .25.sp,
             maxLines = 1,
         )
     }
@@ -213,15 +223,20 @@ internal fun LanghuanRowV4(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Surface(Modifier.size(38.dp), RoundedCornerShape(13.dp), color = tokens.muted) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(19.dp),
-                        tint = if (destructive) tokens.destructive else tokens.foreground.copy(alpha = .76f),
-                    )
-                }
+            Box(
+                Modifier
+                    .size(38.dp)
+                    .shadow(4.dp, CircleShape, clip = false)
+                    .clip(CircleShape)
+                    .background(v4DepthBrush(tokens.surfaceRaised, .22f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(19.dp),
+                    tint = if (destructive) tokens.destructive else tokens.strong,
+                )
             }
             Spacer(Modifier.width(12.dp))
         }
@@ -229,14 +244,31 @@ internal fun LanghuanRowV4(
             Text(
                 title,
                 color = if (destructive) tokens.destructive else tokens.foreground,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = 14.5.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Normal,
+                letterSpacing = .3.sp,
             )
             if (!subtitle.isNullOrBlank()) {
-                Text(subtitle, Modifier.padding(top = 3.dp), color = tokens.mutedForeground, fontSize = 11.sp)
+                Text(
+                    subtitle,
+                    Modifier.padding(top = 3.dp),
+                    color = tokens.mutedForeground,
+                    fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
+                    letterSpacing = .25.sp,
+                )
             }
         }
-        if (!trailing.isNullOrBlank()) Text(trailing, color = tokens.mutedForeground, fontSize = 12.sp)
+        if (!trailing.isNullOrBlank()) {
+            Text(
+                trailing,
+                color = tokens.mutedForeground,
+                fontSize = 12.5.sp,
+                lineHeight = 17.sp,
+                letterSpacing = .25.sp,
+            )
+        }
     }
 }
 
@@ -247,6 +279,6 @@ internal fun LanghuanDividerV4(tokens: LanghuanTokensV4, inset: Dp = 0.dp) {
             .fillMaxWidth()
             .padding(horizontal = inset)
             .height(1.dp)
-            .background(tokens.outline),
+            .background(tokens.track),
     )
 }
