@@ -32,6 +32,7 @@ class ReaderSessionV27Test {
     }
 
     private fun screenshot(name: String) {
+        rule.mainClock.advanceTimeBy(1000)
         rule.waitForIdle()
         android.os.SystemClock.sleep(500) // Wait for SurfaceFlinger to present the settled frame.
         val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
@@ -101,6 +102,8 @@ class ReaderSessionV27Test {
         rule.onNodeWithText("目录").performClick()
         rule.onNodeWithText("正在读").assertIsDisplayed()
         screenshot("03-directory")
+        rule.onNodeWithText("设置").performClick()
+        screenshot("08-reader-tools-settled")
         rule.onNodeWithContentDescription("返回书架").performClick()
         rule.waitUntil(10000) { barsVisible() }
     }
