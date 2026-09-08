@@ -71,8 +71,8 @@ internal fun rememberReaderPaginationV18(
     val horizontal = with(density) { sidePadding.coerceIn(12f, 48f).dp.roundToPx() }
     val fallbackBodyWidth = (stableWidth - horizontal * 2).coerceAtLeast(with(density) { 180.dp.roundToPx() })
 
-    val pageTop = with(density) { 12.dp.roundToPx() }
-    val pageBottom = with(density) { 10.dp.roundToPx() }
+    val pageTop = with(density) { 32.dp.roundToPx() }
+    val pageBottom = with(density) { 24.dp.roundToPx() }
     val headerGap = with(density) { 12.dp.roundToPx() }
     val footerGap = with(density) { 10.dp.roundToPx() }
     val rasterGuard = with(density) { 1.dp.roundToPx() }

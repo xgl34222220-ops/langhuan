@@ -926,7 +926,7 @@ private fun HeroReaderCanvasV13(
         Modifier
             .fillMaxSize()
             .background(if (spatialBackground) Color.Transparent else palette.page)
-            .padding(start = sidePadding.dp, end = sidePadding.dp, top = 12.dp, bottom = 10.dp),
+            .padding(start = sidePadding.dp, end = sidePadding.dp, top = 32.dp, bottom = 24.dp),
     ) {
         Text(
             title,
