@@ -37,9 +37,10 @@ class ReaderAlpha25PolishContractTest {
         assertTrue(hero.contains("textAlign = TextAlign.Start"))
         assertTrue(hero.contains("paragraph.trim(),"))
         assertTrue(hero.contains("恢复推荐排版"))
-        assertTrue(hero.contains("1.48 · 0dp · 16dp"))
+        assertTrue(hero.contains("onLine(1.65f); onParagraph(8f); onPadding(22f)"))
         assertTrue(pagination.contains("textAlign = TextAlign.Start"))
         assertTrue(pagination.contains(".map { it.trim() }"))
         assertTrue(pagination.contains(".filter { it.isNotBlank() }"))
     }
 }
+

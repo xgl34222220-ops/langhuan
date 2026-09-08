@@ -18,9 +18,9 @@ class ShelfBookEditingContractTest {
         assertTrue(entry.contains("ShelfQingmoFunctionalV9("))
         assertFalse(router.contains("ShelfNativeExperienceV4("))
 
-        assertTrue(shelf.contains("\"正在阅读\""))
+        assertTrue(shelf.contains("\"我的书库\""))
         assertTrue(shelf.contains("GridCells.Fixed(3)"))
-        assertTrue(shelf.contains("Arrangement.spacedBy(28.dp)"))
+        assertTrue(shelf.contains("Arrangement.spacedBy(20.dp)"))
         assertTrue(shelf.contains("RoundedCornerShape(1.dp)"))
         assertTrue(shelf.contains("fontSize = 14.sp"))
         assertTrue(shelf.contains("Icons.Outlined.Person"))
@@ -51,3 +51,4 @@ class ShelfBookEditingContractTest {
         assertTrue(editor.contains("保存修改"))
     }
 }
+

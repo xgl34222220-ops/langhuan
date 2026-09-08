@@ -92,6 +92,7 @@ internal fun rememberReaderPaginationV18(
     )
     val bodyStyle = TextStyle(
         fontSize = fontSize.coerceIn(13f, 32f).sp,
+        letterSpacing = 0.sp,
         lineHeight = (fontSize.coerceIn(13f, 32f) * lineFactor.coerceIn(1.25f, 2.35f)).sp,
         fontFamily = family,
         fontWeight = FontWeight.Normal,
@@ -126,7 +127,7 @@ internal fun rememberReaderPaginationV18(
             .filter { it.isNotBlank() }
             .joinToString("\n")
     }
-    val token = "$stableWidth:$stableHeight:$bodyWidth:$bodyHeight:$viewportWidthPx:$viewportHeightPx:$fontSize:$lineFactor:$paragraphSpacing:$firstLineIndent:${family.hashCode()}"
+    val token = "${density.density}:${density.fontScale}:$stableWidth:$stableHeight:$bodyWidth:$bodyHeight:$viewportWidthPx:$viewportHeightPx:$fontSize:$lineFactor:$paragraphSpacing:$firstLineIndent:${family.hashCode()}"
 
     return remember(normalized, bodyWidth, bodyHeight, bodyStyle, paragraphGap, firstLineIndent, fontSize, token) {
         paginateV18(
@@ -273,3 +274,4 @@ private fun paragraphsV18(text: String): List<ParagraphV18> = buildList {
         start = if (newline < 0) text.length else newline + 1
     }
 }
+

@@ -122,8 +122,8 @@ class QingmoReplicaReaderContractTest {
         ).forEach { name -> assertTrue("missing preset: $name", reader.contains("\"$name\"")) }
 
         assertTrue(reader.contains("sidePadding"))
-        assertTrue(reader.contains("减小页边距"))
-        assertTrue(reader.contains("增大页边距"))
+        assertTrue(reader.contains("sidePadding, 12f..40f, tokens, onPadding"))
+        assertTrue(reader.contains("Slider(value = value.coerceIn(range)"))
         assertTrue(reader.contains("presetKey = \"custom\""))
     }
 
@@ -138,6 +138,7 @@ class QingmoReplicaReaderContractTest {
         assertTrue(entry.contains("readerMounted = false"))
         assertTrue(entry.contains("delay(120)"))
         assertTrue(entry.contains("Lifecycle.State.RESUMED"))
-        assertTrue(reader.contains("WindowInsets.systemBarsIgnoringVisibility"))
+        assertTrue(reader.contains(".windowInsetsPadding(WindowInsets.systemBars)"))
     }
 }
+

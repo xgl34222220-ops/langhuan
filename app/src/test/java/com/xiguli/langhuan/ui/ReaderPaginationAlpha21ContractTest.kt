@@ -20,9 +20,9 @@ class ReaderPaginationAlpha21ContractTest {
     @Test
     fun pageOwnsLeftCenterRightTapZones() {
         val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")
-        assertTrue(reader.contains(".pointerInput(chapter.id, pagerPage, panelVisible)"))
-        assertTrue(reader.contains("point.x < size.width * .33f -> previousPage()"))
-        assertTrue(reader.contains("point.x > size.width * .67f -> nextPage()"))
+        assertTrue(reader.contains(".pointerInput(chapter.id, pagerPage, panelVisible, interactionEnabled)"))
+        assertTrue(reader.contains("point.x < size.width * .28f -> turnPrevious()"))
+        assertTrue(reader.contains("point.x > size.width * .72f -> turnNext()"))
         assertTrue(reader.contains("else -> panelVisible = true"))
     }
 
@@ -36,3 +36,4 @@ class ReaderPaginationAlpha21ContractTest {
         assertTrue(!paginator.contains("rawBodyHeight / lineBoxHeight"))
     }
 }
+

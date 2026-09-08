@@ -17,6 +17,21 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -171,7 +186,7 @@ private val HERO_READER_PRESETS_V13 = listOf(
     HeroReaderPresetV13("qidian", "起点阅读风格", "正文密度均衡 · 窄页边距", "paper", 18f, 1.48f, 0f, 16f, true, "sans"),
     HeroReaderPresetV13("ireader", "掌阅风格", "宋体阅读 · 适度舒展", "tea", 18f, 1.54f, 1f, 18f, true, "serif"),
     HeroReaderPresetV13("compact", "紧凑阅读", "一屏更多正文", "paper", 17f, 1.40f, 0f, 14f, true, "sans"),
-    HeroReaderPresetV13("comfort", "舒适阅读", "大字号 · 仍保持正文密度", "tea", 19f, 1.58f, 1f, 20f, true, "serif"),
+    HeroReaderPresetV13("comfort", "舒适阅读", "舒展行距 · 清晰段落 · 暖纸", "paper", 20f, 1.65f, 8f, 22f, true, "serif"),
 )
 
 private enum class HeroReaderTabV13 { DETAILS, DIRECTORY, MORE }
@@ -193,6 +208,7 @@ fun ReaderQingmoHeroV13(
     onOpenEditor: (String, Int) -> Unit,
     onOpenAiSetup: () -> Unit,
     startOnInfo: Boolean = false,
+    interactionEnabled: Boolean = true,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val book = state.openedBook ?: return
@@ -229,6 +245,7 @@ fun ReaderQingmoHeroV13(
         state = state,
         chapter = chapter,
         startPanel = startOnInfo,
+        interactionEnabled = interactionEnabled,
         onBack = onBackToShelf,
         onOpenChapter = viewModel::openReader,
         onEdit = { onOpenEditor(book.id, chapter.chapterNumber) },
@@ -243,6 +260,7 @@ private fun HeroReaderPageV13(
     state: LibraryExperienceState,
     chapter: ChapterDraft,
     startPanel: Boolean,
+    interactionEnabled: Boolean,
     onBack: () -> Unit,
     onOpenChapter: (Int) -> Unit,
     onEdit: () -> Unit,
@@ -260,47 +278,28 @@ private fun HeroReaderPageV13(
     val next = chapters.getOrNull(chapterIndex + 1)
 
     var panelVisible by remember(chapter.id) { mutableStateOf(startPanel) }
-    var tab by rememberSaveable(chapter.id) { mutableStateOf(HeroReaderTabV13.DIRECTORY) }
+    var tab by rememberSaveable(chapter.id) { mutableStateOf(HeroReaderTabV13.MORE) }
     var overlay by rememberSaveable { mutableStateOf(HeroReaderOverlayV13.NONE) }
     var typePage by rememberSaveable { mutableStateOf("字号") }
 
-    val legacyPreset = remember(book.id) { prefs.getString("preset", "qingmo") ?: "qingmo" }
-    val legacyFont = remember(book.id) { prefs.getFloat("font", 18f) }
-    val legacyLine = remember(book.id) { prefs.getFloat("line", 1.75f) }
-    val legacyParagraph = remember(book.id) { prefs.getFloat("paragraph", 3f) }
-    val legacySide = remember(book.id) { prefs.getFloat("sidePadding", 20f) }
-    val densityMigrationNeeded = remember(book.id) {
-        if (prefs.getBoolean("reader_density_v22", false)) false
-        else when (legacyPreset) {
-            "qingmo" -> legacyFont == 18f && legacyLine == 1.75f && legacyParagraph == 3f && legacySide == 20f
-            "langhuan" -> legacyFont == 18f && legacyLine == 1.76f && legacyParagraph == 0f && legacySide == 22f
-            else -> false
-        }
+    // Only migrate the old untouched default. User typography choices remain intact.
+    val migrateDefault = remember(book.id) {
+        !prefs.getBoolean("reader_comfort_v26", false) &&
+            readerUsesLegacyDefaultV26(
+                prefs.getString("preset", "qingmo") ?: "qingmo",
+                prefs.getFloat("font", 18f), prefs.getFloat("line", 1.75f),
+                prefs.getFloat("paragraph", 3f), prefs.getFloat("sidePadding", 20f),
+            )
     }
-    val initialLine = if (densityMigrationNeeded) 1.56f else legacyLine
-    val initialParagraph = if (densityMigrationNeeded) 0f else legacyParagraph
-    val initialSide = if (densityMigrationNeeded) 18f else legacySide
-
-    var fontSize by remember(book.id) { mutableFloatStateOf(legacyFont) }
-    var lineFactor by remember(book.id) { mutableFloatStateOf(initialLine) }
-    var paragraphSpacing by remember(book.id) { mutableFloatStateOf(initialParagraph) }
-    var sidePadding by remember(book.id) { mutableFloatStateOf(initialSide) }
+    var fontSize by remember(book.id) { mutableFloatStateOf(if (migrateDefault) 20f else prefs.getFloat("font", 20f)) }
+    var lineFactor by remember(book.id) { mutableFloatStateOf(if (migrateDefault) 1.65f else prefs.getFloat("line", 1.65f)) }
+    var paragraphSpacing by remember(book.id) { mutableFloatStateOf(if (migrateDefault) 8f else prefs.getFloat("paragraph", 8f)) }
+    var sidePadding by remember(book.id) { mutableFloatStateOf(if (migrateDefault) 22f else prefs.getFloat("sidePadding", 22f)) }
     var firstLineIndent by remember(book.id) { mutableStateOf(prefs.getBoolean("indent", true)) }
-    var fontKey by remember(book.id) { mutableStateOf(prefs.getString("fontKey", "sans") ?: "sans") }
-    var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme", "tea") ?: "tea") }
-    var presetKey by remember(book.id) { mutableStateOf(legacyPreset) }
+    var fontKey by remember(book.id) { mutableStateOf(prefs.getString("fontKey", "serif") ?: "serif") }
+    var themeKey by remember(book.id) { mutableStateOf(prefs.getString("theme", "paper") ?: "paper") }
+    var presetKey by remember(book.id) { mutableStateOf(if (migrateDefault) "comfort" else prefs.getString("preset", "comfort") ?: "comfort") }
 
-    LaunchedEffect(book.id) {
-        if (!prefs.getBoolean("reader_density_v22", false)) {
-            val edit = prefs.edit().putBoolean("reader_density_v22", true)
-            if (densityMigrationNeeded) {
-                edit.putFloat("line", 1.56f)
-                    .putFloat("paragraph", 0f)
-                    .putFloat("sidePadding", 18f)
-            }
-            edit.apply()
-        }
-    }
     var pageModeKey by remember(book.id) {
         mutableStateOf(prefs.getString("pageMode", ReaderPageModeV10.PAGE.key) ?: ReaderPageModeV10.PAGE.key)
     }
@@ -380,7 +379,9 @@ private fun HeroReaderPageV13(
     var crossingChapter by remember(chapter.id) { mutableStateOf(false) }
     var anchorOffset by remember(chapter.id) { mutableIntStateOf(saved.textOffset.coerceIn(0, readingText.length)) }
     val layoutKey = "$pageModeKey|$fontKey|${fontSize.roundToInt()}|${(lineFactor * 100).roundToInt()}|${paragraphSpacing.roundToInt()}|${sidePadding.roundToInt()}|$firstLineIndent|${pagination.layoutToken}"
-    var appliedLayoutKey by remember(chapter.id) { mutableStateOf(layoutKey) }
+    var appliedLayoutKey by remember(chapter.id) { mutableStateOf("") }
+    var positionReady by remember(chapter.id) { mutableStateOf(false) }
+    val currentBodyViewport = remember { mutableStateOf(IntSize.Zero) }
 
     fun currentPage(): Int = pagerState.settledPage.coerceIn(0, pages.lastIndex)
 
@@ -390,7 +391,7 @@ private fun HeroReaderPageV13(
     } else offsets.getOrElse(currentPage()) { 0 }.coerceIn(0, readingText.length)
 
     fun persist() {
-        if (crossingChapter) return
+        if (crossingChapter || !positionReady || appliedLayoutKey != layoutKey) return
         val offset = currentOffset()
         ReaderProgressStoreV11.save(
             context,
@@ -421,6 +422,11 @@ private fun HeroReaderPageV13(
 
     fun jumpChapter(target: ChapterDraft?, atEnd: Boolean = false) {
         target ?: return
+        if (target.id == chapter.id) {
+            panelVisible = false
+            overlay = HeroReaderOverlayV13.NONE
+            return
+        }
         if (crossingChapter) return
         persist()
         crossingChapter = true
@@ -438,7 +444,12 @@ private fun HeroReaderPageV13(
     }
 
     fun previousPage() {
-        if (pageMode == ReaderPageModeV10.SCROLL) return
+        if (!interactionEnabled || !positionReady) return
+        if (pageMode == ReaderPageModeV10.SCROLL) {
+            if (scrollState.value == 0) jumpChapter(previous, atEnd = true)
+            else scope.launch { scrollState.animateScrollTo((scrollState.value - currentBodyViewport.value.height * .85f).roundToInt().coerceAtLeast(0)) }
+            return
+        }
         val page = currentPage()
         if (page > 0) {
             scope.launch {
@@ -448,7 +459,12 @@ private fun HeroReaderPageV13(
     }
 
     fun nextPage() {
-        if (pageMode == ReaderPageModeV10.SCROLL) return
+        if (!interactionEnabled || !positionReady) return
+        if (pageMode == ReaderPageModeV10.SCROLL) {
+            if (scrollState.value >= scrollState.maxValue) jumpChapter(next)
+            else scope.launch { scrollState.animateScrollTo((scrollState.value + currentBodyViewport.value.height * .85f).roundToInt().coerceAtMost(scrollState.maxValue)) }
+            return
+        }
         val page = currentPage()
         if (page < pages.lastIndex) {
             scope.launch {
@@ -471,24 +487,35 @@ private fun HeroReaderPageV13(
         }
     }
 
-    LaunchedEffect(layoutKey, pages.size, scrollState.maxValue) {
+    LaunchedEffect(layoutKey, pages.size, scrollState.maxValue, measuredBodyViewport) {
         if (appliedLayoutKey == layoutKey) return@LaunchedEffect
+        if (pageMode != ReaderPageModeV10.SCROLL && measuredBodyViewport == IntSize.Zero) return@LaunchedEffect
         val targetOffset = anchorOffset.coerceIn(0, readingText.length)
         if (pageMode == ReaderPageModeV10.SCROLL) {
-            if (scrollState.maxValue > 0) {
+            if (scrollState.maxValue == Int.MAX_VALUE) return@LaunchedEffect
+            val y = if (!positionReady && saved.modeKey == pageMode.key && saved.textOffset != Int.MAX_VALUE) {
+                saved.scrollY.coerceIn(0, scrollState.maxValue)
+            } else {
                 val fraction = if (readingText.isBlank()) 0f else targetOffset.toFloat() / readingText.length
-                scrollState.scrollTo((scrollState.maxValue * fraction).roundToInt())
+                (scrollState.maxValue * fraction).roundToInt()
             }
+            scrollState.scrollTo(y)
         } else {
-            val page = heroReaderPageForOffsetV13(offsets, targetOffset).coerceIn(0, pages.lastIndex)
-            pagerState.scrollToPage(page.coerceIn(0, pagerPageCount - 1))
+            val page = if (!positionReady && saved.chapterNumber == chapter.chapterNumber && saved.textOffset == 0) {
+                saved.pageIndex.coerceIn(0, pages.lastIndex)
+            } else heroReaderPageForOffsetV13(offsets, targetOffset).coerceIn(0, pages.lastIndex)
+            pagerState.scrollToPage(page)
         }
         appliedLayoutKey = layoutKey
+        positionReady = true
     }
 
-    LaunchedEffect(chapter.id, pageMode, layoutKey, pages.size) {
+    LaunchedEffect(chapter.id, pageMode, layoutKey, pages.size, positionReady) {
         if (pageMode != ReaderPageModeV10.SCROLL) {
-            snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { persist() }
+            snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect {
+                if (positionReady && appliedLayoutKey == layoutKey) anchorOffset = currentOffset()
+                persist()
+            }
         }
     }
 
@@ -504,10 +531,11 @@ private fun HeroReaderPageV13(
             }
     }
 
-    LaunchedEffect(chapter.id, pageMode, layoutKey) {
+    LaunchedEffect(chapter.id, pageMode, layoutKey, positionReady) {
         if (pageMode == ReaderPageModeV10.SCROLL) {
             snapshotFlow { scrollState.value }.distinctUntilChanged().collectLatest {
                 delay(180)
+                if (positionReady && appliedLayoutKey == layoutKey) anchorOffset = currentOffset()
                 persist()
             }
         }
@@ -523,6 +551,7 @@ private fun HeroReaderPageV13(
         backgroundMask, backgroundFollow, statusBar, navigationBar, lockPortrait,
     ) {
         prefs.edit()
+            .putBoolean("reader_comfort_v26", true)
             .putFloat("font", fontSize)
             .putFloat("line", lineFactor)
             .putFloat("paragraph", paragraphSpacing)
@@ -547,7 +576,10 @@ private fun HeroReaderPageV13(
             .apply()
     }
 
-    DisposableEffect(chapter.id, layoutKey) { onDispose { persist() } }
+    val saveLatest by rememberUpdatedState { persist() }
+    DisposableEffect(chapter.id) { onDispose { saveLatest() } }
+    val turnPrevious by rememberUpdatedState { previousPage() }
+    val turnNext by rememberUpdatedState { nextPage() }
     DisposableEffect(keepScreen) {
         if (keepScreen) activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -558,24 +590,32 @@ private fun HeroReaderPageV13(
         else activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         onDispose { if (lockPortrait) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
-    DisposableEffect(activity, immersive) {
+    DisposableEffect(activity, immersive, themeKey) {
         val window = activity?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        val wasLightStatus = controller?.isAppearanceLightStatusBars
+        val wasLightNavigation = controller?.isAppearanceLightNavigationBars
         if (controller != null) {
+            controller.isAppearanceLightStatusBars = themeKey != "night"
+            controller.isAppearanceLightNavigationBars = themeKey != "night"
             controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             if (immersive) controller.hide(WindowInsetsCompat.Type.systemBars())
             else controller.show(WindowInsetsCompat.Type.systemBars())
         }
-        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+        onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+            wasLightStatus?.let { controller?.isAppearanceLightStatusBars = it }
+            wasLightNavigation?.let { controller?.isAppearanceLightNavigationBars = it }
+        }
     }
 
     val edgeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 36.dp.toPx() }
-    val edgeSwipe = remember(chapter.id, pages.size, pageMode, previous?.id, next?.id) {
+    val edgeSwipe = remember(chapter.id, pages.size, pageMode, previous?.id, next?.id, interactionEnabled) {
         object : NestedScrollConnection {
             var edgeDrag = 0f
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (pageMode == ReaderPageModeV10.SCROLL || source != NestedScrollSource.UserInput) return Offset.Zero
+                if (!interactionEnabled || pageMode == ReaderPageModeV10.SCROLL || source != NestedScrollSource.UserInput) return Offset.Zero
                 val page = pagerState.currentPage.coerceIn(0, pages.lastIndex)
                 edgeDrag = when {
                     page == 0 && available.x > 0f -> (edgeDrag + available.x).coerceAtMost(edgeThresholdPx * 2f)
@@ -603,11 +643,11 @@ private fun HeroReaderPageV13(
         Modifier
             .fillMaxSize()
             .background(palette.page)
-            .windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility)
+            .windowInsetsPadding(WindowInsets.systemBars)
             .focusRequester(focusRequester)
             .focusable()
             .onPreviewKeyEvent { event ->
-                if (!volumeTurn || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (!interactionEnabled || !volumeTurn || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.VolumeUp -> { previousPage(); true }
                     Key.VolumeDown -> { nextPage(); true }
@@ -622,9 +662,9 @@ private fun HeroReaderPageV13(
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(chapter.id, pageModeKey, panelVisible) {
+                .pointerInput(chapter.id, pageModeKey, panelVisible, interactionEnabled) {
+                    if (!interactionEnabled) return@pointerInput
                     detectTapGestures(
-                        onDoubleTap = { panelVisible = true },
                         onLongPress = { panelVisible = true },
                         onTap = {
                             if (panelVisible) panelVisible = false
@@ -640,7 +680,8 @@ private fun HeroReaderPageV13(
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .verticalScroll(scrollState)
+                        .onSizeChanged { currentBodyViewport.value = it }
+                        .verticalScroll(scrollState, enabled = interactionEnabled)
                         .padding(start = sidePadding.dp, end = sidePadding.dp, top = 16.dp, bottom = 16.dp),
                 ) {
                     Text(
@@ -654,7 +695,10 @@ private fun HeroReaderPageV13(
                     HeroReaderWholeBodyV13(
                         readingText, fontSize, lineFactor, paragraphSpacing, firstLineIndent, family, palette.text,
                     )
-                    Spacer(Modifier.height(54.dp))
+                    Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TextButton(onClick = { jumpChapter(previous, atEnd = true) }, enabled = previous != null) { Text("上一章", color = palette.accent) }
+                        TextButton(onClick = { jumpChapter(next) }, enabled = next != null) { Text(if (next == null) "已读至末章" else "下一章", color = palette.accent) }
+                    }
                 }
             } else {
                 HorizontalPager(
@@ -662,7 +706,7 @@ private fun HeroReaderPageV13(
                     modifier = Modifier.fillMaxSize().clipToBounds().nestedScroll(edgeSwipe),
                     beyondViewportPageCount = 0,
                     flingBehavior = pagerFling,
-                    userScrollEnabled = !panelVisible && overlay == HeroReaderOverlayV13.NONE,
+                    userScrollEnabled = interactionEnabled && !panelVisible && overlay == HeroReaderOverlayV13.NONE,
                 ) { pagerPage ->
                     val rawOffset = (pagerState.currentPage - pagerPage) + pagerState.currentPageOffsetFraction
                     val transition = if (pageMode == ReaderPageModeV10.COVER) {
@@ -680,15 +724,15 @@ private fun HeroReaderPageV13(
                         transition
                             .fillMaxSize()
                             .clipToBounds()
-                            .pointerInput(chapter.id, pagerPage, panelVisible) {
+                            .pointerInput(chapter.id, pagerPage, panelVisible, interactionEnabled) {
+                                if (!interactionEnabled) return@pointerInput
                                 detectTapGestures(
-                                    onDoubleTap = { panelVisible = true },
                                     onLongPress = { panelVisible = true },
                                     onTap = { point ->
                                         if (panelVisible) panelVisible = false
                                         else when {
-                                            point.x < size.width * .33f -> previousPage()
-                                            point.x > size.width * .67f -> nextPage()
+                                            point.x < size.width * .28f -> turnPrevious()
+                                            point.x > size.width * .72f -> turnNext()
                                             else -> panelVisible = true
                                         }
                                     },
@@ -732,6 +776,26 @@ private fun HeroReaderPageV13(
         }
 
 
+        if (panelVisible || overlay != HeroReaderOverlayV13.NONE) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .10f)).clickable {
+                overlay = HeroReaderOverlayV13.NONE
+                panelVisible = false
+            })
+        }
+        AnimatedVisibility(
+            visible = panelVisible && overlay == HeroReaderOverlayV13.NONE,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(tween(140)), exit = fadeOut(tween(100)),
+        ) {
+            Surface(color = tokens.surfaceRaised, shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { persist(); onBack() }) { Icon(Icons.Rounded.ArrowBack, "返回书架", tint = tokens.foreground) }
+                    Text(book.title, Modifier.weight(1f), color = tokens.foreground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    IconButton(onClick = ::toggleBookmark) { Icon(if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder, "书签", tint = tokens.primary) }
+                    IconButton(onClick = { panelVisible = false }) { Icon(Icons.Rounded.Close, "收起菜单", tint = tokens.foreground) }
+                }
+            }
+        }
         AnimatedVisibility(
             visible = panelVisible && overlay == HeroReaderOverlayV13.NONE,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -740,6 +804,19 @@ private fun HeroReaderPageV13(
         ) {
             HeroReaderControlsV13(
                 tokens = tokens,
+                fontSize = fontSize,
+                themeKey = themeKey,
+                onFontSize = { rememberAnchor(); presetKey = "custom"; fontSize = it },
+                onQuickTheme = { themeKey = it; presetKey = "custom" },
+                progress = if (pageMode == ReaderPageModeV10.SCROLL) scrollState.value.toFloat() / scrollState.maxValue.coerceAtLeast(1) else currentPage().toFloat() / pages.lastIndex.coerceAtLeast(1),
+                onProgress = { fraction -> scope.launch {
+                    if (pageMode == ReaderPageModeV10.SCROLL) scrollState.scrollTo((fraction * scrollState.maxValue).roundToInt())
+                    else pagerState.scrollToPage((fraction * pages.lastIndex).roundToInt())
+                } },
+                onPrevious = { jumpChapter(previous, atEnd = false) },
+                onNext = { jumpChapter(next) },
+                hasPrevious = previous != null,
+                hasNext = next != null,
                 tab = tab,
                 book = book,
                 chapters = chapters,
@@ -941,6 +1018,7 @@ private fun HeroReaderPageBodyV13(
                 paragraph.trim(),
                 style = TextStyle(
                     fontSize = fontSize.sp,
+                    letterSpacing = 0.sp,
                     lineHeight = (fontSize * lineFactor).sp,
                     fontFamily = family,
                     fontWeight = FontWeight.Normal,
@@ -970,6 +1048,7 @@ private fun HeroReaderWholeBodyV13(
             paragraph.trim(),
             style = TextStyle(
                 fontSize = fontSize.sp,
+                letterSpacing = 0.sp,
                 lineHeight = (fontSize * lineFactor).sp,
                 fontFamily = family,
                 color = color,
@@ -984,6 +1063,16 @@ private fun HeroReaderWholeBodyV13(
 @Composable
 private fun HeroReaderControlsV13(
     tokens: LanghuanTokensV4,
+    fontSize: Float,
+    themeKey: String,
+    onFontSize: (Float) -> Unit,
+    onQuickTheme: (String) -> Unit,
+    progress: Float,
+    onProgress: (Float) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
     tab: HeroReaderTabV13,
     book: ReaderBookUi,
     chapters: List<ChapterDraft>,
@@ -1030,7 +1119,19 @@ private fun HeroReaderControlsV13(
     onWriting: () -> Unit,
     onStory: () -> Unit,
 ) {
-    LanghuanSheetV4(tokens = tokens) {
+    val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * .62f).dp
+    var directoryQuery by rememberSaveable { mutableStateOf("") }
+    val visibleChapters = remember(chapters, directoryQuery) {
+        chapters.filter { directoryQuery.isBlank() || readerDisplayChapterTitleV13(it.title, it.chapterNumber).contains(directoryQuery, true) }
+    }
+    val directoryState = rememberLazyListState(initialFirstVisibleItemIndex = chapters.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0))
+    LaunchedEffect(tab, directoryQuery, chapter.id) {
+        if (tab == HeroReaderTabV13.DIRECTORY) {
+            val index = visibleChapters.indexOfFirst { it.id == chapter.id }
+            if (index >= 0) directoryState.scrollToItem(index)
+        }
+    }
+    LanghuanSheetV4(tokens = tokens, modifier = Modifier.heightIn(max = maxPanelHeight)) {
         LanghuanTabsV4(
             labels = listOf("详情", "目录", "设置"),
             selected = tab.ordinal,
@@ -1064,21 +1165,40 @@ private fun HeroReaderControlsV13(
                 LanghuanRowV4("进入故事", tokens, icon = Icons.Rounded.TouchApp, onClick = onStory)
                 LanghuanRowV4("返回书架", tokens, trailing = "‹", onClick = onBack)
             }
-            HeroReaderTabV13.DIRECTORY -> LazyColumn(
-                Modifier.heightIn(max = 430.dp),
-                contentPadding = PaddingValues(bottom = 8.dp),
-            ) {
-                items(chapters, key = { it.id }) { item ->
-                    LanghuanRowV4(
-                        title = readerDisplayChapterTitleV13(item.title, item.chapterNumber),
-                        tokens = tokens,
-                        trailing = if (item.id == chapter.id) "当前" else null,
-                        onClick = { onChapter(item.chapterNumber) },
-                    )
-                    LanghuanDividerV4(tokens)
+            HeroReaderTabV13.DIRECTORY -> Column {
+                OutlinedTextField(
+                    value = directoryQuery, onValueChange = { directoryQuery = it },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    placeholder = { Text("搜索章节 · 共 ${chapters.size} 章") },
+                    shape = RoundedCornerShape(16.dp),
+                )
+                LazyColumn(state = directoryState, modifier = Modifier.heightIn(max = maxPanelHeight - 140.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+                    items(visibleChapters, key = { it.id }) { item ->
+                        Surface(color = if (item.id == chapter.id) tokens.primary.copy(alpha = .10f) else Color.Transparent, shape = RoundedCornerShape(14.dp)) {
+                            Row(Modifier.fillMaxWidth().clickable { onChapter(item.chapterNumber) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(readerDisplayChapterTitleV13(item.title, item.chapterNumber), Modifier.weight(1f), fontSize = 15.sp, lineHeight = 23.sp, color = if (item.id == chapter.id) tokens.primary else tokens.foreground)
+                                if (item.id == chapter.id) Text("正在读", color = tokens.primary, fontSize = 11.sp)
+                            }
+                        }
+                    }
                 }
             }
-            HeroReaderTabV13.MORE -> {
+            HeroReaderTabV13.MORE -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onPrevious, enabled = hasPrevious) { Icon(Icons.Rounded.ChevronLeft, "上一章", tint = tokens.foreground.copy(alpha = if (hasPrevious) 1f else .25f)) }
+                    Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), Modifier.weight(1f), fontSize = 13.sp, color = tokens.mutedForeground, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                    IconButton(onClick = onNext, enabled = hasNext) { Icon(Icons.Rounded.ChevronRight, "下一章", tint = tokens.foreground.copy(alpha = if (hasNext) 1f else .25f)) }
+                }
+                Slider(value = progress.coerceIn(0f, 1f), onValueChange = onProgress, colors = SliderDefaults.colors(thumbColor = tokens.primary, activeTrackColor = tokens.primary))
+                HeroReaderAdjustRowV26("字号", "${fontSize.roundToInt()}", fontSize, 14f..30f, tokens, onFontSize)
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf("paper" to "纸白", "tea" to "暖纸", "green" to "青叶", "night" to "夜间").forEach { (key, name) ->
+                        val colors = heroReaderPaletteV13(key)
+                        Surface(Modifier.weight(1f).clickable { onQuickTheme(key) }, shape = RoundedCornerShape(14.dp), color = colors.page) {
+                            Text((if (themeKey == key) "✓ " else "") + name, Modifier.padding(vertical = 13.dp), color = colors.text, fontSize = 13.sp, textAlign = TextAlign.Center)
+                        }
+                    }
+                }
                 val actions = listOf(
                     HeroReaderActionV13("排版预设", Icons.Rounded.Tune, onClick = onPreset),
                     HeroReaderActionV13("主题", Icons.Rounded.Palette, onClick = onTheme),
@@ -1093,19 +1213,13 @@ private fun HeroReaderControlsV13(
                     HeroReaderActionV13("沉浸式", Icons.Rounded.Fullscreen, immersive, onImmersive),
                     HeroReaderActionV13("锁定竖屏", Icons.Rounded.Landscape, lockPortrait, onLockPortrait),
                 )
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    modifier = Modifier.heightIn(max = 420.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp),
-                ) {
-                    gridItems(actions, key = { it.label }) { action ->
-                        LanghuanActionTileV4(
-                            label = action.label,
-                            icon = action.icon,
-                            selected = action.selected,
-                            tokens = tokens,
-                            onClick = action.onClick,
-                        )
+                actions.chunked(4).forEach { row ->
+                    Row(Modifier.fillMaxWidth()) {
+                        row.forEach { action ->
+                            Box(Modifier.weight(1f)) {
+                                LanghuanActionTileV4(action.label, action.icon, action.selected, tokens, action.onClick)
+                            }
+                        }
                     }
                 }
             }
@@ -1127,6 +1241,7 @@ private fun HeroPresetSheetV13(
             fontSize = 12.sp,
             modifier = Modifier.padding(bottom = 8.dp),
         )
+        Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .5f).dp).verticalScroll(rememberScrollState())) {
         HERO_READER_PRESETS_V13.forEach { preset ->
             LanghuanRowV4(
                 title = preset.name,
@@ -1136,6 +1251,7 @@ private fun HeroPresetSheetV13(
                 onClick = { onPreset(preset) },
             )
             LanghuanDividerV4(tokens)
+        }
         }
         LanghuanRowV4("返回", tokens, onClick = onBack)
     }
@@ -1189,22 +1305,31 @@ private fun HeroTypeSheetV13(
     onIndent: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
-    LanghuanSheetV4(tokens, title = title) {
-        if (title == "字号") {
-            LanghuanRowV4("减小字号", tokens, trailing = "${fontSize.roundToInt()}sp", onClick = { onFontSize((fontSize - 1f).coerceAtLeast(14f)) })
-            LanghuanRowV4("增大字号", tokens, trailing = "${fontSize.roundToInt()}sp", onClick = { onFontSize((fontSize + 1f).coerceAtMost(30f)) })
-        } else {
-            // Make each tap visually meaningful while keeping the exact value in state/prefs.
-            LanghuanRowV4("恢复推荐排版", tokens, trailing = "1.48 · 0dp · 16dp", onClick = { onLine(1.48f); onParagraph(0f); onPadding(16f) })
-            LanghuanRowV4("减小行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor - .10f).coerceAtLeast(1.30f)) })
-            LanghuanRowV4("增大行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor + .10f).coerceAtMost(2.30f)) })
-            LanghuanRowV4("减小段距", tokens, trailing = "${paragraphSpacing.roundToInt()}dp", onClick = { onParagraph((paragraphSpacing - 2f).coerceAtLeast(0f)) })
-            LanghuanRowV4("增大段距", tokens, trailing = "${paragraphSpacing.roundToInt()}dp", onClick = { onParagraph((paragraphSpacing + 2f).coerceAtMost(24f)) })
-            LanghuanRowV4("减小页边距", tokens, trailing = "${sidePadding.roundToInt()}dp", onClick = { onPadding((sidePadding - 4f).coerceAtLeast(12f)) })
-            LanghuanRowV4("增大页边距", tokens, trailing = "${sidePadding.roundToInt()}dp", onClick = { onPadding((sidePadding + 4f).coerceAtMost(48f)) })
-            LanghuanRowV4("首行缩进", tokens, trailing = if (indent) "开" else "关", onClick = { onIndent(!indent) })
+    LanghuanSheetV4(tokens, title = "阅读排版") {
+        Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .55f).dp).verticalScroll(rememberScrollState())) {
+            HeroReaderAdjustRowV26("字号", "${fontSize.roundToInt()}", fontSize, 14f..30f, tokens, onFontSize)
+            HeroReaderAdjustRowV26("行距", String.format(Locale.US, "%.2f", lineFactor), lineFactor, 1.3f..2.3f, tokens, onLine)
+            HeroReaderAdjustRowV26("段距", "${paragraphSpacing.roundToInt()}", paragraphSpacing, 0f..24f, tokens, onParagraph)
+            HeroReaderAdjustRowV26("页边距", "${sidePadding.roundToInt()}", sidePadding, 12f..40f, tokens, onPadding)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("首行缩进", Modifier.weight(1f), color = tokens.foreground, fontSize = 14.sp)
+                Switch(checked = indent, onCheckedChange = onIndent)
+            }
+            LanghuanRowV4("恢复推荐排版", tokens, trailing = "舒适阅读", onClick = { onFontSize(20f); onLine(1.65f); onParagraph(8f); onPadding(22f); onIndent(true) })
         }
-        LanghuanRowV4("返回", tokens, onClick = onBack)
+        LanghuanRowV4("完成", tokens, trailing = "✓", onClick = onBack)
+    }
+}
+
+@Composable
+private fun HeroReaderAdjustRowV26(
+    label: String, valueLabel: String, value: Float, range: ClosedFloatingPointRange<Float>,
+    tokens: LanghuanTokensV4, onValue: (Float) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.width(56.dp), color = tokens.foreground, fontSize = 14.sp)
+        Slider(value = value.coerceIn(range), onValueChange = { raw -> val step = if (range.endInclusive < 3f) .05f else 1f; onValue((raw / step).roundToInt() * step) }, valueRange = range, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = tokens.primary, activeTrackColor = tokens.primary))
+        Text(valueLabel, Modifier.width(42.dp), color = tokens.mutedForeground, fontSize = 13.sp, textAlign = TextAlign.End)
     }
 }
 
@@ -1247,10 +1372,10 @@ private fun HeroSearchSheetV13(
 
 private fun heroReaderPaletteV13(key: String): HeroReaderPaletteV13 = when (key) {
     "langhuan" -> HeroReaderPaletteV13(Color(0xFFF5F6FE), Color(0xFF22232A), Color(0xFF747784), Color(0xFF5D78B8))
-    "paper" -> HeroReaderPaletteV13(Color(0xFFF7F3EA), Color(0xFF282622), Color(0xFF716D64), Color(0xFF476B9A))
+    "paper" -> HeroReaderPaletteV13(Color(0xFFF7F3EA), Color(0xFF282622), Color(0xFF716D64), Color(0xFFA77836))
     "green" -> HeroReaderPaletteV13(Color(0xFFDDE6D1), Color(0xFF283126), Color(0xFF65705F), Color(0xFF4A7652))
     "night" -> HeroReaderPaletteV13(Color(0xFF17191D), Color(0xFFD2D4D8), Color(0xFF858A91), Color(0xFF7EA8E8))
-    else -> HeroReaderPaletteV13(Color(0xFFE9D9B9), Color(0xFF302B23), Color(0xFF817866), Color(0xFF4F73A5))
+    else -> HeroReaderPaletteV13(Color(0xFFEDE4CE), Color(0xFF302B23), Color(0xFF817866), Color(0xFFA77836))
 }
 
 private fun heroReaderPageForOffsetV13(offsets: List<Int>, offset: Int): Int {
@@ -1286,3 +1411,4 @@ private fun heroReaderSearchPreviewV13(content: String, query: String): String {
     val end = (index + q.length + 44).coerceAtMost(content.length)
     return content.substring(start, end).replace(Regex("\\s+"), " ")
 }
+

@@ -13,12 +13,10 @@ class ReaderChatAlpha24ContractTest {
         val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")
         assertTrue(reader.contains("val pagedParagraphSpacing = paragraphSpacing"))
         assertFalse(reader.contains("else 0f\n    val pagination"))
-        assertTrue(reader.contains("lineFactor - .10f"))
-        assertTrue(reader.contains("lineFactor + .10f"))
-        assertTrue(reader.contains("sidePadding - 4f"))
-        assertTrue(reader.contains("sidePadding + 4f"))
-        assertTrue(reader.contains("coerceAtLeast(12f)"))
-        assertTrue(reader.contains("coerceAtMost(48f)"))
+        assertTrue(reader.contains("lineFactor, 1.3f..2.3f, tokens, onLine"))
+        assertTrue(reader.contains("paragraphSpacing, 0f..24f, tokens, onParagraph"))
+        assertTrue(reader.contains("sidePadding, 12f..40f, tokens, onPadding"))
+
     }
 
     @Test
@@ -30,3 +28,4 @@ class ReaderChatAlpha24ContractTest {
         assertTrue(chat.contains("任务模型未响应，正在切回全局默认模型"))
     }
 }
+

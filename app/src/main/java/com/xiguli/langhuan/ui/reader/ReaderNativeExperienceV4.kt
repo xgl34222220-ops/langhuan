@@ -70,10 +70,8 @@ fun ReaderNativeExperienceV4(
         }
     }
 
-    if (!readerMounted) {
-        Box(Modifier.fillMaxSize())
-        return
-    }
+    // Keep the last rendered page in the task snapshot and preserve its pager state.
+    // Lifecycle transitions disable input instead of replacing the book with a blank surface.
 
     // Pager state still resets per chapter so saved page/offset restoration remains deterministic,
     // while the outer reader surface stays mounted and visually continuous.
@@ -86,6 +84,8 @@ fun ReaderNativeExperienceV4(
             onOpenEditor = onOpenEditor,
             onOpenAiSetup = onOpenAiSetup,
             startOnInfo = startOnInfo,
+            interactionEnabled = readerMounted,
         )
     }
 }
+
