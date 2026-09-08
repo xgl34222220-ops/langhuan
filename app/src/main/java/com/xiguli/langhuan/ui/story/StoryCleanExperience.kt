@@ -49,7 +49,11 @@ fun StoryCleanExperience(
         onError = t.destructiveForeground,
     )
 
-    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography) {
+    MaterialTheme(
+        colorScheme = scheme,
+        typography = MaterialTheme.typography,
+        shapes = MaterialTheme.shapes,
+    ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = t.background,
