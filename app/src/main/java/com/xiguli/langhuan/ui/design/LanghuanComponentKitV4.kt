@@ -188,6 +188,8 @@ internal fun LanghuanActionTileV4(
 ) {
     Column(
         Modifier
+            .fillMaxWidth()
+            .height(90.dp)
             .clip(RoundedCornerShape(15.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 9.dp, horizontal = 4.dp),
@@ -196,10 +198,9 @@ internal fun LanghuanActionTileV4(
         val base = if (selected) tokens.primary.copy(alpha = .14f).compositeOver(tokens.surfaceRaised) else tokens.surfaceRaised
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .shadow(2.dp, CircleShape, clip = false)
-                .clip(CircleShape)
-                .background(v4DepthBrush(base, .24f)),
+                .size(42.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (selected) tokens.primary.copy(alpha = .13f) else tokens.muted),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -213,10 +214,10 @@ internal fun LanghuanActionTileV4(
             label,
             Modifier.padding(top = 7.dp),
             color = if (selected) tokens.primary else tokens.mutedForeground,
-            fontSize = 12.5.sp,
+            fontSize = 12.sp,
             lineHeight = 17.sp,
             fontWeight = FontWeight.Medium,
-            letterSpacing = .25.sp,
+            letterSpacing = 0.sp,
             maxLines = 2,
             textAlign = TextAlign.Center,
         )

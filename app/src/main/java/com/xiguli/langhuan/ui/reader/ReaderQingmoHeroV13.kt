@@ -26,8 +26,6 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.rememberUpdatedState
@@ -138,6 +136,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.domain.ChapterDraft
+import androidx.compose.material.icons.rounded.ScreenLockPortrait
+import com.xiguli.langhuan.ui.design.ReaderSliderV27
 import com.xiguli.langhuan.ui.design.LanghuanActionTileV4
 import com.xiguli.langhuan.ui.design.LanghuanAmbientBackdrop
 import com.xiguli.langhuan.ui.design.LanghuanConstellationField
@@ -255,7 +255,7 @@ fun ReaderQingmoHeroV13(
 }
 
 @Composable
-private fun HeroReaderPageV13(
+internal fun HeroReaderPageV13(
     book: ReaderBookUi,
     state: LibraryExperienceState,
     chapter: ChapterDraft,
@@ -580,35 +580,6 @@ private fun HeroReaderPageV13(
     DisposableEffect(chapter.id) { onDispose { saveLatest() } }
     val turnPrevious by rememberUpdatedState { previousPage() }
     val turnNext by rememberUpdatedState { nextPage() }
-    DisposableEffect(keepScreen) {
-        if (keepScreen) activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
-    }
-    DisposableEffect(lockPortrait) {
-        if (lockPortrait) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        else activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        onDispose { if (lockPortrait) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
-    }
-    DisposableEffect(activity, immersive, themeKey) {
-        val window = activity?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        val wasLightStatus = controller?.isAppearanceLightStatusBars
-        val wasLightNavigation = controller?.isAppearanceLightNavigationBars
-        if (controller != null) {
-            controller.isAppearanceLightStatusBars = themeKey != "night"
-            controller.isAppearanceLightNavigationBars = themeKey != "night"
-            controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (immersive) controller.hide(WindowInsetsCompat.Type.systemBars())
-            else controller.show(WindowInsetsCompat.Type.systemBars())
-        }
-        onDispose {
-            controller?.show(WindowInsetsCompat.Type.systemBars())
-            wasLightStatus?.let { controller?.isAppearanceLightStatusBars = it }
-            wasLightNavigation?.let { controller?.isAppearanceLightNavigationBars = it }
-        }
-    }
-
     val edgeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 36.dp.toPx() }
     val edgeSwipe = remember(chapter.id, pages.size, pageMode, previous?.id, next?.id, interactionEnabled) {
         object : NestedScrollConnection {
@@ -686,9 +657,9 @@ private fun HeroReaderPageV13(
                 ) {
                     Text(
                         displayTitle,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                        color = palette.secondary.copy(alpha = .60f),
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = palette.secondary,
                         fontWeight = FontWeight.Medium,
                     )
                     Spacer(Modifier.height(14.dp))
@@ -955,19 +926,19 @@ private fun HeroReaderCanvasV13(
         Modifier
             .fillMaxSize()
             .background(if (spatialBackground) Color.Transparent else palette.page)
-            .padding(start = sidePadding.dp, end = sidePadding.dp, top = 8.dp, bottom = 6.dp),
+            .padding(start = sidePadding.dp, end = sidePadding.dp, top = 32.dp, bottom = 24.dp),
     ) {
         Text(
             title,
-            fontSize = 10.sp,
-            lineHeight = 13.sp,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
             fontFamily = family,
             fontWeight = FontWeight.Medium,
-            color = palette.secondary.copy(alpha = .58f),
+            color = palette.secondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(12.dp))
         Box(
             Modifier
                 .fillMaxWidth()
@@ -986,15 +957,15 @@ private fun HeroReaderCanvasV13(
                 color = palette.text,
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (showTimeBattery) {
-                Text(heroReaderTimeV13(), fontSize = 8.sp, lineHeight = 10.sp, color = palette.secondary.copy(alpha = .44f))
+                Text(heroReaderTimeV13(), fontSize = 12.sp, lineHeight = 18.sp, color = palette.secondary)
                 Spacer(Modifier.width(8.dp))
-                Text("${heroReaderBatteryV13()}%", fontSize = 8.sp, lineHeight = 10.sp, color = palette.secondary.copy(alpha = .44f))
+                Text("${heroReaderBatteryV13()}%", fontSize = 12.sp, lineHeight = 18.sp, color = palette.secondary)
             }
             Spacer(Modifier.weight(1f))
-            Text("$page/$pageCount", fontSize = 8.sp, lineHeight = 10.sp, color = palette.secondary.copy(alpha = .44f))
+            Text("$page/$pageCount", fontSize = 12.sp, lineHeight = 18.sp, color = palette.secondary)
         }
     }
 }
@@ -1189,7 +1160,7 @@ private fun HeroReaderControlsV13(
                     Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), Modifier.weight(1f), fontSize = 13.sp, color = tokens.mutedForeground, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                     IconButton(onClick = onNext, enabled = hasNext) { Icon(Icons.Rounded.ChevronRight, "下一章", tint = tokens.foreground.copy(alpha = if (hasNext) 1f else .25f)) }
                 }
-                Slider(value = progress.coerceIn(0f, 1f), onValueChange = onProgress, colors = SliderDefaults.colors(thumbColor = tokens.primary, activeTrackColor = tokens.primary))
+                ReaderSliderV27("章内进度", progress, onProgress, tokens)
                 HeroReaderAdjustRowV26("字号", "${fontSize.roundToInt()}", fontSize, 14f..30f, tokens, onFontSize)
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     listOf("paper" to "纸白", "tea" to "暖纸", "green" to "青叶", "night" to "夜间").forEach { (key, name) ->
@@ -1211,7 +1182,7 @@ private fun HeroReaderControlsV13(
                     HeroReaderActionV13("屏幕常亮", Icons.Rounded.LightMode, keepScreen, onKeepScreen),
                     HeroReaderActionV13("时间电量", Icons.Rounded.BatteryFull, showTimeBattery, onTimeBattery),
                     HeroReaderActionV13("沉浸式", Icons.Rounded.Fullscreen, immersive, onImmersive),
-                    HeroReaderActionV13("锁定竖屏", Icons.Rounded.Landscape, lockPortrait, onLockPortrait),
+                    HeroReaderActionV13("锁定竖屏", Icons.Rounded.ScreenLockPortrait, lockPortrait, onLockPortrait),
                 )
                 actions.chunked(4).forEach { row ->
                     Row(Modifier.fillMaxWidth()) {
@@ -1328,7 +1299,7 @@ private fun HeroReaderAdjustRowV26(
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.width(56.dp), color = tokens.foreground, fontSize = 14.sp)
-        Slider(value = value.coerceIn(range), onValueChange = { raw -> val step = if (range.endInclusive < 3f) .05f else 1f; onValue((raw / step).roundToInt() * step) }, valueRange = range, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = tokens.primary, activeTrackColor = tokens.primary))
+        ReaderSliderV27(label, value, { raw -> val step = if (range.endInclusive < 3f) .05f else 1f; onValue((raw / step).roundToInt() * step) }, tokens, Modifier.weight(1f), range)
         Text(valueLabel, Modifier.width(42.dp), color = tokens.mutedForeground, fontSize = 13.sp, textAlign = TextAlign.End)
     }
 }

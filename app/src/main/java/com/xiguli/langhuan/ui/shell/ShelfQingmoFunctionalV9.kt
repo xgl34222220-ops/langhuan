@@ -197,6 +197,7 @@ fun ShelfQingmoFunctionalV9(
 
             QingmoShelfScreenV9.PROFILE -> QingmoProfileV9(
                 nickname = nickname,
+                bookCount = state.stories.size,
                 checkedIn = checkedIn,
                 syncEnabled = syncEnabled,
                 onBack = { screen = QingmoShelfScreenV9.SHELF },
@@ -522,25 +523,6 @@ private fun QingmoShelfHomeV9(
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
-                    if (query.isBlank()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            val recent = books.first()
-                            Surface(
-                                modifier = Modifier.fillMaxWidth().combinedClickable(enabled = openingBookId == null, onClick = { onOpenBook(recent.id) }, onLongClick = { onLongPress(recent) }),
-                                shape = RoundedCornerShape(26.dp), color = Color(0xFFFFFCF5), shadowElevation = 2.dp,
-                            ) {
-                                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    QingmoMiniCoverV9(recent, Modifier.width(74.dp).aspectRatio(.71f), openingBookId == recent.id)
-                                    Column(Modifier.padding(start = 20.dp).weight(1f)) {
-                                        Text("接着上次，读下去", color = secondary, fontSize = 12.sp)
-                                        Text(recent.title, Modifier.padding(top = 8.dp), color = ink, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                        Text("第 ${ReaderProgressStoreV11.load(context, recent.id, recent.currentChapter.coerceAtLeast(1)).chapterNumber} 章", Modifier.padding(top = 6.dp), color = secondary, fontSize = 12.sp)
-                                        Text("继续阅读  →", Modifier.padding(top = 16.dp), color = Color(0xFFA77836), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                }
-                            }
-                        }
-                    }
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("我的书库", Modifier.weight(1f), color = ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -600,6 +582,7 @@ private fun QingmoShelfHomeV9(
 @Composable
 private fun QingmoProfileV9(
     nickname: String,
+    bookCount: Int,
     checkedIn: Boolean,
     syncEnabled: Boolean,
     onBack: () -> Unit,
@@ -612,45 +595,32 @@ private fun QingmoProfileV9(
     onSyncChanged: (Boolean) -> Unit,
     onSettings: () -> Unit,
 ) {
-    val ink = Color(0xFF17191D)
-    val secondary = Color(0xFF92959A)
-    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            IconButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp, top = 4.dp)) {
-                Icon(Icons.Rounded.ArrowBack, "返回", tint = ink)
-            }
-            Surface(onClick = onEditProfile, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(Modifier.size(46.dp), shape = CircleShape, color = Color(0xFFF1F2F3)) {
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Person, null, tint = secondary) }
-                    }
-                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                        Text(nickname, fontSize = 16.sp, color = ink, fontWeight = FontWeight.Medium)
-                        Text("编辑个人资料", fontSize = 11.sp, color = secondary)
-                    }
-                    Icon(Icons.Rounded.ChevronRight, null, Modifier.size(16.dp), tint = Color(0xFFC5C6C9))
+    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Text("我的", color = Color(0xFF302D28), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Surface(onClick = onEditProfile, modifier = Modifier.padding(top = 24.dp).fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF5)) {
+            Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color(0xFFDDEAE6)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Person, null, Modifier.size(26.dp), tint = Color(0xFF49665A)) }
                 }
+                Column(Modifier.padding(start = 16.dp).weight(1f)) {
+                    Text(nickname, color = Color(0xFF302D28), fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                    Text("书库中有 $bookCount 本故事", Modifier.padding(top = 5.dp), color = Color(0xFF898278), fontSize = 13.sp)
+                }
+                Icon(Icons.Rounded.ChevronRight, "编辑资料", tint = Color(0xFF898278))
             }
-            Spacer(Modifier.height(8.dp))
-            QingmoProfileRowV9(Icons.Rounded.TaskAlt, "签到", if (checkedIn) "今日已签到" else "点击签到") {
-                if (!checkedIn) onCheckIn()
+        }
+        Text("我的阅读", Modifier.padding(top = 28.dp, bottom = 12.dp), color = Color(0xFF898278), fontSize = 13.sp)
+        Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF5)) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+                QingmoProfileRowV9(Icons.Rounded.History, "阅读记录", "回到最近读过的故事", onHistory)
+                QingmoProfileRowV9(Icons.Rounded.Book, "书架管理", "整理我的收藏", onShelfManager)
             }
-            QingmoProfileRowV9(Icons.Rounded.Explore, "探索", "发现作品与创作入口", onExplore)
-            QingmoProfileRowV9(Icons.Rounded.History, "阅历", "查看最近阅读记录", onHistory)
-            QingmoProfileRowV9(Icons.Rounded.WorkspacePremium, "勋章", "查看本地阅读成就", onMedals)
-            HorizontalDivider(Modifier.padding(horizontal = 28.dp), color = Color(0xFFF0F0F1))
-            QingmoProfileRowV9(Icons.Rounded.Book, "书架", "管理书架", onShelfManager)
-            QingmoProfileRowV9(Icons.Rounded.History, "读过", "按最近阅读排序", onHistory)
-            QingmoProfileRowV9(
-                icon = Icons.Rounded.CloudSync,
-                title = "同步",
-                subtitle = if (syncEnabled) "本地同步状态已开启" else "本地同步状态已关闭",
-                trailing = {
-                    Switch(checked = syncEnabled, onCheckedChange = onSyncChanged)
-                },
-                onClick = { onSyncChanged(!syncEnabled) },
-            )
-            QingmoProfileRowV9(Icons.Rounded.Settings, "设置", "AI、Skill 与运行中心", onSettings)
+        }
+        Text("偏好与服务", Modifier.padding(top = 28.dp, bottom = 12.dp), color = Color(0xFF898278), fontSize = 13.sp)
+        Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF5)) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+                QingmoProfileRowV9(Icons.Rounded.Settings, "设置", "阅读、AI 与创作能力", onSettings)
+            }
         }
     }
 }

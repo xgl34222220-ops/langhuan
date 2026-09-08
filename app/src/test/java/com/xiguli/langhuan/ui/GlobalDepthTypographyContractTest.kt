@@ -38,7 +38,7 @@ class GlobalDepthTypographyContractTest {
         val kit = source("src/main/java/com/xiguli/langhuan/ui/design/LanghuanComponentKitV4.kt")
         assertTrue(kit.contains("val strong: Color"))
         assertTrue(kit.contains("val track: Color"))
-        assertTrue(kit.contains(".shadow(2.dp, CircleShape"))
+        assertTrue(kit.contains(".height(90.dp)"))
         assertTrue(kit.contains(".background(tokens.track)"))
     }
 }

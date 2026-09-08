@@ -14,8 +14,9 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 105
-        versionName = "0.28.0-alpha26-reading-comfort"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 106
+        versionName = "0.28.0-alpha27-reader-session"
     }
 
     buildFeatures { compose = true }
@@ -79,5 +80,9 @@ dependencies {
     implementation(libs.miuix.blur)
     implementation(libs.miuix.squircle)
     testImplementation(libs.junit4)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

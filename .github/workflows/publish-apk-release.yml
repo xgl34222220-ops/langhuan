@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha26-reading-comfort
+# Manual publish trigger: 0.28.0-alpha27-reader-session
 on:
   push:
     branches: [main]
