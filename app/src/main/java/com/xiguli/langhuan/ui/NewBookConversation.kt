@@ -329,16 +329,40 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
             emitRun(RunStage.CREATION_CHAT, RunStatus.RUNNING, executionDetail.ifBlank { "执行计划已就绪" })
 
-            val gateway = executionPlan.primaryTask?.let { routingSession.selection(it).gateway } ?: routingSession.defaultGateway
+            val routedSelection = executionPlan.primaryTask?.let(routingSession::selection)
+            val primaryGateway = routedSelection?.gateway ?: routingSession.defaultGateway
+            val canFallbackToDefault = routedSelection?.inheritedGlobal == false
             runCatching {
-                NewBookConversationEngine(gateway).reply(
+                var emittedContent = false
+                suspend fun runReply(gateway: AiGateway): ConversationTurn = NewBookConversationEngine(gateway).reply(
                     messages = history,
                     currentProposal = (before.proposal ?: before.foundation?.toProposal())?.sanitizePlaceholders(),
                     referenceContext = referenceContext,
                     routeDecision = routeDecision,
                     executionPlan = executionPlan,
-                    onDelta = { partial -> _state.update { it.copy(streamingReply = partial) } },
+                    onDelta = { partial ->
+                        if (partial.isNotBlank()) emittedContent = true
+                        _state.update { it.copy(streamingReply = partial) }
+                    },
                 )
+
+                try {
+                    runReply(primaryGateway)
+                } catch (error: Throwable) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    // A stale/unsupported task override must not make creation chat appear dead.
+                    // Retry only before the model emitted anything, so a paid/visible partial turn
+                    // is never replayed or duplicated.
+                    if (!canFallbackToDefault || emittedContent) throw error
+                    emitRun(RunStage.CREATION_CHAT, RunStatus.RUNNING, "任务模型未响应，回退全局默认模型")
+                    _state.update {
+                        it.copy(
+                            streamingReply = "",
+                            busyLabel = "任务模型未响应，正在切回全局默认模型……",
+                        )
+                    }
+                    runReply(routingSession.defaultGateway)
+                }
             }.onSuccess { turn ->
                 emitRun(RunStage.CREATION_CHAT, RunStatus.SUCCESS, executionDetail.ifBlank { "回复完成" })
                 _state.update {

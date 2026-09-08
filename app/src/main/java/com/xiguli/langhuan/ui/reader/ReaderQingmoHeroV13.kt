@@ -339,7 +339,9 @@ private fun HeroReaderPageV13(
     val readingText = remember(chapter.id, chapter.content) { chapterText(chapter) }
     var measuredBodyViewport by remember(book.id) { mutableStateOf(IntSize.Zero) }
 
-    val pagedParagraphSpacing = if (pageMode == ReaderPageModeV10.SCROLL) paragraphSpacing else 0f
+    // Page and scroll modes must honor the same typography controls. Previously paged mode
+    // forced paragraph spacing to zero, making part of the type sheet look ineffective.
+    val pagedParagraphSpacing = paragraphSpacing
     val pagination = rememberReaderPaginationV18(
         text = readingText,
         title = displayTitle,
@@ -1192,12 +1194,13 @@ private fun HeroTypeSheetV13(
             LanghuanRowV4("减小字号", tokens, trailing = "${fontSize.roundToInt()}sp", onClick = { onFontSize((fontSize - 1f).coerceAtLeast(14f)) })
             LanghuanRowV4("增大字号", tokens, trailing = "${fontSize.roundToInt()}sp", onClick = { onFontSize((fontSize + 1f).coerceAtMost(30f)) })
         } else {
-            LanghuanRowV4("减小行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor - .05f).coerceAtLeast(1.35f)) })
-            LanghuanRowV4("增大行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor + .05f).coerceAtMost(2.20f)) })
-            LanghuanRowV4("减小段距", tokens, trailing = "${paragraphSpacing.roundToInt()}dp", onClick = { onParagraph((paragraphSpacing - 1f).coerceAtLeast(0f)) })
-            LanghuanRowV4("增大段距", tokens, trailing = "${paragraphSpacing.roundToInt()}dp", onClick = { onParagraph((paragraphSpacing + 1f).coerceAtMost(20f)) })
-            LanghuanRowV4("减小页边距", tokens, trailing = "${sidePadding.roundToInt()}dp", onClick = { onPadding((sidePadding - 2f).coerceAtLeast(14f)) })
-            LanghuanRowV4("增大页边距", tokens, trailing = "${sidePadding.roundToInt()}dp", onClick = { onPadding((sidePadding + 2f).coerceAtMost(36f)) })
+            // Make each tap visually meaningful while keeping the exact value in state/prefs.
+            LanghuanRowV4("减小行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor - .10f).coerceAtLeast(1.30f)) })
+            LanghuanRowV4("增大行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor + .10f).coerceAtMost(2.30f)) })
+            LanghuanRowV4("减小段距", tokens, trailing = "${paragraphSpacing.roundToInt()}dp", onClick = { onParagraph((paragraphSpacing - 2f).coerceAtLeast(0f)) })
+            LanghuanRowV4("增大段距", tokens, trailing = "${paragraphSpacing.roundToInt()}dp", onClick = { onParagraph((paragraphSpacing + 2f).coerceAtMost(24f)) })
+            LanghuanRowV4("减小页边距", tokens, trailing = "${sidePadding.roundToInt()}dp", onClick = { onPadding((sidePadding - 4f).coerceAtLeast(12f)) })
+            LanghuanRowV4("增大页边距", tokens, trailing = "${sidePadding.roundToInt()}dp", onClick = { onPadding((sidePadding + 4f).coerceAtMost(48f)) })
             LanghuanRowV4("首行缩进", tokens, trailing = if (indent) "开" else "关", onClick = { onIndent(!indent) })
         }
         LanghuanRowV4("返回", tokens, onClick = onBack)

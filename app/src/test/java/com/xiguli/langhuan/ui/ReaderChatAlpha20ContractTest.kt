@@ -30,7 +30,7 @@ class ReaderChatAlpha20ContractTest {
         val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")
         assertTrue(reader.contains("琅嬛星图"))
         assertTrue(reader.contains("LanghuanConstellationField"))
-        assertTrue(reader.contains("val pagedParagraphSpacing = if (pageMode == ReaderPageModeV10.SCROLL) paragraphSpacing else 0f"))
+        assertTrue(reader.contains("val pagedParagraphSpacing = paragraphSpacing"))
         assertTrue(reader.contains("snapPositionalThreshold = 0.32f"))
         assertTrue(reader.contains("labels = listOf(\"详情\", \"目录\", \"设置\")"))
         val actionBlock = reader.substringAfter("val actions = listOf(").substringBefore("LazyVerticalGrid")

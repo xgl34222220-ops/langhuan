@@ -14,8 +14,8 @@ android {
         applicationId = "com.xiguli.langhuan"
         minSdk = 28
         targetSdk = 36
-        versionCode = 102
-        versionName = "0.28.0-alpha23-reader-exact-viewport"
+        versionCode = 103
+        versionName = "0.28.0-alpha24-reader-chat-hotfix"
     }
 
     buildFeatures { compose = true }
