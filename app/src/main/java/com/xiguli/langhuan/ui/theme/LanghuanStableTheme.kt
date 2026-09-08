@@ -15,6 +15,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,10 +23,10 @@ import com.xiguli.langhuan.ui.design.LanghuanUiTokens
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
- * 琅嬛稳定主题：以 MIUIx / Android 原生移动端层级为主。
+ * 琅嬛稳定主题。
  *
- * 普通界面使用柔和 Surface、较大的语义圆角和 Monet；阅读正文自己的纸张主题由 Reader 负责，
- * 不再把 shadcn 的黑白 Web 风格直接套到手机主界面。
+ * UI typography follows an Inter Tight-like compact rhythm while keeping SansSerif fallback for
+ * Chinese glyphs. Reader body typography remains completely independent from this UI theme.
  */
 private val LanghuanLightColors = lightColorScheme(
     primary = Color(0xFF245FD3),
@@ -89,26 +90,106 @@ private val LanghuanDarkColors = darkColorScheme(
 
 private val LanghuanShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(30.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(15.dp),
+    large = RoundedCornerShape(18.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
+private val UiSans = FontFamily.SansSerif
+
 private val LanghuanTypography = Typography(
-    displaySmall = TextStyle(fontSize = 31.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Normal),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
-    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium),
-    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium),
-    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium),
+    displaySmall = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-.8).sp,
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-.75).sp,
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-.7).sp,
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 20.sp,
+        lineHeight = 25.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-.2).sp,
+    ),
+    titleLarge = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 19.sp,
+        lineHeight = 24.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = .6.sp,
+    ),
+    titleMedium = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = .35.sp,
+    ),
+    titleSmall = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = .3.sp,
+    ),
+    bodyLarge = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 14.5.sp,
+        lineHeight = 18.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = .3.sp,
+    ),
+    bodyMedium = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 14.5.sp,
+        lineHeight = 18.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = .3.sp,
+    ),
+    bodySmall = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 12.5.sp,
+        lineHeight = 17.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = .25.sp,
+    ),
+    labelLarge = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 14.5.sp,
+        lineHeight = 18.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = .3.sp,
+    ),
+    labelMedium = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 12.5.sp,
+        lineHeight = 17.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = .25.sp,
+    ),
+    labelSmall = TextStyle(
+        fontFamily = UiSans,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = .25.sp,
+    ),
 )
 
 @Composable
@@ -144,6 +225,8 @@ fun LanghuanStableTheme(
         cardForeground = colors.onSurface,
         muted = colors.surfaceContainer,
         mutedForeground = colors.onSurfaceVariant,
+        strong = colors.onSurface.copy(alpha = .82f),
+        track = colors.onSurface.copy(alpha = if (dark) .12f else .075f),
         border = colors.outlineVariant,
         input = colors.surfaceContainerHigh,
         primary = colors.primary,
@@ -159,9 +242,9 @@ fun LanghuanStableTheme(
         ring = colors.primary.copy(alpha = .55f),
         warmSurface = colors.surfaceContainerLow,
         radiusSm = 12.dp,
-        radiusMd = 16.dp,
-        radiusLg = 20.dp,
-        radiusXl = 26.dp,
+        radiusMd = 15.dp,
+        radiusLg = 18.dp,
+        radiusXl = 24.dp,
     )
 
     MaterialTheme(
