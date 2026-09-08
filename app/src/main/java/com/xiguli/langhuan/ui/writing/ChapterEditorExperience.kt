@@ -1,7 +1,6 @@
 package com.xiguli.langhuan.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -20,6 +20,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlin.math.max
 import kotlin.math.min
@@ -71,10 +73,14 @@ fun ChapterEditorExperience(
         containerColor = t.background,
         topBar = {
             TopAppBar(
-                navigationIcon = { IconButton(onClick = ::closeSafely) { Icon(Icons.Rounded.ArrowBack, "保存并返回", tint = t.foreground) } },
+                navigationIcon = {
+                    Box(Modifier.padding(start = 10.dp)) {
+                        LanghuanIconButton(Icons.Rounded.ArrowBack, "保存并返回", ::closeSafely)
+                    }
+                },
                 title = {
-                    Column {
-                        Text("正文编辑", color = t.foreground, fontWeight = FontWeight.SemiBold)
+                    Column(Modifier.padding(start = 4.dp)) {
+                        Text("写作", color = t.foreground, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text(
                             state.draft?.let { "第 ${it.chapterNumber} 章 · ${it.title}" } ?: "正在载入",
                             style = MaterialTheme.typography.labelSmall,
@@ -85,8 +91,9 @@ fun ChapterEditorExperience(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showAdvanced = true }, enabled = state.ready) { Icon(Icons.Rounded.Tune, "高级检查", tint = t.foreground) }
-                    TextButton(onClick = viewModel::saveCheckpoint, enabled = state.ready && !state.busy) { Text("建版本") }
+                    LanghuanIconButton(Icons.Rounded.Tune, "高级检查", { showAdvanced = true }, selected = showAdvanced)
+                    TextButton(onClick = viewModel::saveCheckpoint, enabled = state.ready && !state.busy) { Text("建版本", color = t.primary) }
+                    Spacer(Modifier.width(8.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = t.background),
             )
@@ -96,7 +103,7 @@ fun ChapterEditorExperience(
         if (state.isLoading || !state.ready) {
             Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CircularProgressIndicator(strokeWidth = 2.dp)
+                    CircularProgressIndicator(strokeWidth = 2.dp, color = t.primary)
                     Text("正在载入正文……", color = t.mutedForeground)
                 }
             }
@@ -123,18 +130,25 @@ fun ChapterEditorExperience(
 
         Column(Modifier.fillMaxSize().padding(inner)) {
             Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(t.radiusLg),
                 color = t.card,
-                border = BorderStroke(1.dp, t.border),
+                shadowElevation = 4.dp,
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box {
-                            AssistChip(
+                            Surface(
                                 onClick = { chapterMenu = true },
-                                label = { Text("第 ${draft.chapterNumber} 章") },
-                                trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, null) },
-                            )
-                            DropdownMenu(expanded = chapterMenu, onDismissRequest = { chapterMenu = false }) {
+                                shape = RoundedCornerShape(999.dp),
+                                color = t.muted,
+                            ) {
+                                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("第 ${draft.chapterNumber} 章", color = t.foreground, style = MaterialTheme.typography.labelLarge)
+                                    Icon(Icons.Rounded.ArrowDropDown, null, Modifier.size(18.dp), tint = t.mutedForeground)
+                                }
+                            }
+                            DropdownMenu(expanded = chapterMenu, onDismissRequest = { chapterMenu = false }, containerColor = t.card) {
                                 chapters.forEach { chapter ->
                                     DropdownMenuItem(
                                         text = { Text("第 ${chapter.chapterNumber} 章 · ${chapter.title}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -147,59 +161,74 @@ fun ChapterEditorExperience(
                         EditorSaveState(state)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                        Button(
                             onClick = { previous?.let { viewModel.openChapter(it.chapterNumber) } },
                             enabled = previous != null && !state.busy,
                             modifier = Modifier.weight(1f),
-                        ) { Icon(Icons.Rounded.ChevronLeft, null); Text("上一章") }
-                        OutlinedButton(
+                            shape = RoundedCornerShape(t.radiusMd),
+                            colors = ButtonDefaults.buttonColors(containerColor = t.muted, contentColor = t.foreground),
+                        ) {
+                            Icon(Icons.Rounded.ChevronLeft, null)
+                            Text("上一章")
+                        }
+                        Button(
                             onClick = { next?.let { viewModel.openChapter(it.chapterNumber) } },
                             enabled = next != null && !state.busy,
                             modifier = Modifier.weight(1f),
-                        ) { Text("下一章"); Icon(Icons.Rounded.ChevronRight, null) }
+                            shape = RoundedCornerShape(t.radiusMd),
+                            colors = ButtonDefaults.buttonColors(containerColor = t.muted, contentColor = t.foreground),
+                        ) {
+                            Text("下一章")
+                            Icon(Icons.Rounded.ChevronRight, null)
+                        }
                     }
                 }
             }
 
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalArrangement = Arrangement.spacedBy(13.dp),
             ) {
                 OutlinedTextField(
                     value = draft.title,
                     onValueChange = viewModel::updateTitle,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("章节标题") },
+                    placeholder = { Text("章节标题") },
                     singleLine = true,
+                    textStyle = MaterialTheme.typography.headlineSmall.copy(color = t.foreground),
                     shape = RoundedCornerShape(t.radiusMd),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedTextColor = t.foreground,
+                        unfocusedTextColor = t.foreground,
+                    ),
                 )
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(t.radiusLg),
-                    color = t.card,
-                    border = BorderStroke(1.dp, t.border),
-                ) {
-                    Column(Modifier.padding(14.dp)) {
+                LanghuanCard(modifier = Modifier.fillMaxWidth(), depth = 2, contentPadding = 0.dp) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("正文", color = t.foreground, fontWeight = FontWeight.SemiBold)
+                            Text("正文", color = t.foreground, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.weight(1f))
                             Text("${editor.text.length} 字", style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
                         }
                         OutlinedTextField(
                             value = editor,
                             onValueChange = { value -> editor = value; viewModel.updateContent(value.text) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                             minLines = 22,
                             maxLines = 60,
-                            placeholder = { Text("直接写正文；选中一段后，下方会出现 AI 局部精修。") },
-                            textStyle = LocalTextStyle.current.copy(fontSize = 17.sp, lineHeight = 29.sp),
+                            placeholder = { Text("直接写正文；选中一段后，下方会出现 AI 局部精修。", color = t.mutedForeground) },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 17.sp, lineHeight = 29.sp, color = t.foreground),
                             shape = RoundedCornerShape(t.radiusMd),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = t.background,
-                                unfocusedContainerColor = t.background,
-                                focusedBorderColor = t.ring,
-                                unfocusedBorderColor = t.border,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                cursorColor = t.primary,
                             ),
                         )
                     }
@@ -209,11 +238,11 @@ fun ChapterEditorExperience(
                     Surface(
                         shape = RoundedCornerShape(t.radiusLg),
                         color = t.warmSurface,
-                        border = BorderStroke(1.dp, t.accent.copy(alpha = .24f)),
+                        shadowElevation = 5.dp,
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.AutoFixHigh, null, tint = t.accent)
+                                Icon(Icons.Rounded.AutoFixHigh, null, tint = t.primary)
                                 Text("AI 局部精修 · 已选 ${selectedText.length} 字", Modifier.padding(start = 8.dp), color = t.foreground, fontWeight = FontWeight.SemiBold)
                             }
                             Text(selectedText.take(180) + if (selectedText.length > 180) "……" else "", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
@@ -221,16 +250,24 @@ fun ChapterEditorExperience(
                                 rewriteInstruction,
                                 { rewriteInstruction = it },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("怎么改（可留空）") },
                                 placeholder = { Text("例如：对白更自然、减少网文腔，但不要改变剧情事实") },
                                 minLines = 2,
+                                shape = RoundedCornerShape(t.radiusMd),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = t.card.copy(alpha = .72f),
+                                    unfocusedContainerColor = t.card.copy(alpha = .58f),
+                                    focusedBorderColor = Color.Transparent,
+                                    unfocusedBorderColor = Color.Transparent,
+                                ),
                             )
                             Button(
                                 onClick = { viewModel.rewriteSelection(selectionStart, selectionEnd, rewriteInstruction) },
                                 enabled = !state.busy,
                                 modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(t.radiusMd),
+                                colors = ButtonDefaults.buttonColors(containerColor = t.primary, contentColor = t.primaryForeground),
                             ) {
-                                if (state.isRewriting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                if (state.isRewriting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.primaryForeground)
                                 else Icon(Icons.Rounded.AutoAwesome, null)
                                 Spacer(Modifier.width(7.dp))
                                 Text(if (state.isRewriting) "正在精修" else "只重写选中部分")
@@ -252,15 +289,17 @@ fun ChapterEditorExperience(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("只替换刚才选中的正文，剧情事实与选区外内容保持不变。", color = t.mutedForeground)
-                    Text("原文", fontWeight = FontWeight.SemiBold)
-                    SelectionContainer { Text(proposal.original) }
-                    HorizontalDivider(color = t.border)
-                    Text("修改后", fontWeight = FontWeight.SemiBold, color = t.accent)
-                    SelectionContainer { Text(proposal.replacement) }
+                    Text("原文", fontWeight = FontWeight.SemiBold, color = t.foreground)
+                    SelectionContainer { Text(proposal.original, color = t.foreground) }
+                    HorizontalDivider(color = t.track)
+                    Text("修改后", fontWeight = FontWeight.SemiBold, color = t.primary)
+                    SelectionContainer { Text(proposal.replacement, color = t.foreground) }
                 }
             },
             confirmButton = { Button(onClick = viewModel::applyRewrite) { Text("应用替换") } },
             dismissButton = { TextButton(onClick = viewModel::dismissRewrite) { Text("不要这版") } },
+            containerColor = t.card,
+            shape = RoundedCornerShape(t.radiusLg),
         )
     }
 }
@@ -270,7 +309,7 @@ private fun EditorSaveState(state: ChapterEditorUiState) {
     val t = LocalLanghuanUiTokens.current
     val (label, color) = when {
         state.isSaving -> "保存中" to t.warning
-        state.dirty -> "待自动保存" to t.accent
+        state.dirty -> "待自动保存" to t.primary
         else -> "已保存" to t.success
     }
     Surface(shape = RoundedCornerShape(99.dp), color = color.copy(alpha = .10f)) {
@@ -287,13 +326,8 @@ private fun EditorAdvancedSummary(state: ChapterEditorUiState, onOpen: () -> Uni
     val t = LocalLanghuanUiTokens.current
     val chronology = state.chronologyReport
     val dependency = state.dependencyReport
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
-        color = t.card,
-        border = BorderStroke(1.dp, t.border),
-    ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LanghuanCard(modifier = Modifier.fillMaxWidth(), contentPadding = 15.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = RoundedCornerShape(t.radiusMd), color = t.muted) {
                     Icon(Icons.Rounded.FactCheck, null, Modifier.padding(8.dp).size(18.dp), tint = t.foreground)
@@ -313,7 +347,12 @@ private fun EditorAdvancedSummary(state: ChapterEditorUiState, onOpen: () -> Uni
                     }
                 }
             }
-            OutlinedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onOpen,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusMd),
+                colors = ButtonDefaults.buttonColors(containerColor = t.muted, contentColor = t.foreground),
+            ) {
                 Icon(Icons.Rounded.Tune, null)
                 Spacer(Modifier.width(7.dp))
                 Text("打开高级检查")
