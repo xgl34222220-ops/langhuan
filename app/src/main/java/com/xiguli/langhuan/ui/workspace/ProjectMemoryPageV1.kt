@@ -3,6 +3,7 @@ package com.xiguli.langhuan.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -154,6 +155,15 @@ fun ProjectMemoryPageV1(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = t.mutedForeground,
                                 )
+                                if (character.relationshipNotes.isNotEmpty()) {
+                                    Text(
+                                        character.relationshipNotes.entries.take(4).joinToString(" · ") { (name, relation) -> "$name：$relation" },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = t.mutedForeground,
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                     }
@@ -220,7 +230,7 @@ fun ProjectMemoryPageV1(
 private fun MemorySectionCardV1(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    content: @Composable Column.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp) {
