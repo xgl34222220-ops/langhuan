@@ -1,0 +1,73 @@
+name: Apply alpha25 reader typography patch
+
+on:
+  push:
+    branches: [fix/reader-alpha25-layout-transition]
+    paths:
+      - '.github/workflows/alpha25-reader-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/reader-alpha25-layout-transition
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch reader typography
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          hero = Path('app/src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt')
+          s = hero.read_text()
+          replacements = {
+              'HeroReaderPresetV13("langhuan", "琅嬛星图", "轻雾星图 · 正文优先 · 低干扰", "langhuan", 18f, 1.56f, 0f, 18f, true, "sans")': 'HeroReaderPresetV13("langhuan", "琅嬛星图", "轻雾星图 · 正文优先 · 低干扰", "langhuan", 17.5f, 1.48f, 0f, 16f, true, "sans")',
+              'HeroReaderPresetV13("qingmo", "清墨", "成熟网文密度 · 克制留白", "tea", 18f, 1.56f, 0f, 18f, true, "sans")': 'HeroReaderPresetV13("qingmo", "清墨", "成熟网文密度 · 克制留白", "tea", 17.5f, 1.48f, 0f, 16f, true, "sans")',
+              'HeroReaderPresetV13("tomato", "番茄小说风格", "稍大字号 · 紧凑行距 · 暖色背景", "tea", 19f, 1.50f, 0f, 16f, true, "sans")': 'HeroReaderPresetV13("tomato", "番茄小说风格", "稍大字号 · 紧凑行距 · 暖色背景", "tea", 18.5f, 1.46f, 0f, 15f, true, "sans")',
+              'HeroReaderPresetV13("weread", "微信读书风格", "适中字号 · 轻纸白 · 稍宽页边距", "paper", 17.5f, 1.62f, 1f, 21f, true, "sans")': 'HeroReaderPresetV13("weread", "微信读书风格", "适中字号 · 轻纸白 · 稍宽页边距", "paper", 17.5f, 1.52f, 0f, 18f, true, "sans")',
+              'HeroReaderPresetV13("qidian", "起点阅读风格", "正文密度均衡 · 窄页边距", "paper", 18f, 1.54f, 0f, 17f, true, "sans")': 'HeroReaderPresetV13("qidian", "起点阅读风格", "正文密度均衡 · 窄页边距", "paper", 18f, 1.48f, 0f, 16f, true, "sans")',
+              'HeroReaderPresetV13("ireader", "掌阅风格", "宋体阅读 · 适度舒展", "tea", 18f, 1.62f, 1f, 20f, true, "serif")': 'HeroReaderPresetV13("ireader", "掌阅风格", "宋体阅读 · 适度舒展", "tea", 18f, 1.54f, 1f, 18f, true, "serif")',
+              'HeroReaderPresetV13("compact", "紧凑阅读", "一屏更多正文", "paper", 17f, 1.42f, 0f, 15f, true, "sans")': 'HeroReaderPresetV13("compact", "紧凑阅读", "一屏更多正文", "paper", 17f, 1.40f, 0f, 14f, true, "sans")',
+              'HeroReaderPresetV13("comfort", "舒适阅读", "大字号 · 仍保持正文密度", "tea", 19f, 1.66f, 1f, 21f, true, "serif")': 'HeroReaderPresetV13("comfort", "舒适阅读", "大字号 · 仍保持正文密度", "tea", 19f, 1.58f, 1f, 20f, true, "serif")',
+          }
+          for old, new in replacements.items():
+              if old not in s:
+                  raise SystemExit(f'missing preset pattern: {old}')
+              s = s.replace(old, new, 1)
+
+          if s.count('textAlign = TextAlign.Justify') < 2:
+              raise SystemExit('expected reader justify patterns')
+          s = s.replace('textAlign = TextAlign.Justify', 'textAlign = TextAlign.Start')
+          s = s.replace('paragraph.trimEnd(),', 'paragraph.trim(),')
+
+          marker = '            // Make each tap visually meaningful while keeping the exact value in state/prefs.\n            LanghuanRowV4("减小行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor - .10f).coerceAtLeast(1.30f)) })'
+          replacement = '            // Make each tap visually meaningful while keeping the exact value in state/prefs.\n            LanghuanRowV4("恢复推荐排版", tokens, trailing = "1.48 · 0dp · 16dp", onClick = { onLine(1.48f); onParagraph(0f); onPadding(16f) })\n            LanghuanRowV4("减小行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor - .10f).coerceAtLeast(1.30f)) })'
+          if marker not in s:
+              raise SystemExit('missing type-sheet marker')
+          s = s.replace(marker, replacement, 1)
+          hero.write_text(s)
+
+          pagination = Path('app/src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt')
+          p = pagination.read_text()
+          p = p.replace('textAlign = TextAlign.Justify,', 'textAlign = TextAlign.Start,', 1)
+          old = '    val normalized = remember(text) { readerNormalizeBodyV14(text) }'
+          new = '''    val normalized = remember(text) {\n        readerNormalizeBodyV14(text)\n            .lineSequence()\n            .map { it.trim() }\n            .filter { it.isNotBlank() }\n            .joinToString("\\n")\n    }'''
+          if old not in p:
+              raise SystemExit('missing pagination normalization marker')
+          p = p.replace(old, new, 1)
+          pagination.write_text(p)
+          PY
+
+          git config user.name "xgl34222220-ops"
+          git config user.email "xgl34222220@gmail.com"
+          git add app/src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt app/src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt
+          git commit -m "fix: normalize reader typography and spacing" 
+          git push origin HEAD:fix/reader-alpha25-layout-transition
