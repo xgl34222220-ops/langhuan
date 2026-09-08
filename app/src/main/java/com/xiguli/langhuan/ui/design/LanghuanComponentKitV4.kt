@@ -61,7 +61,7 @@ internal fun langhuanTokensV4(background: Color, foreground: Color, accent: Colo
         background = background,
         foreground = foreground,
         surface = Color.White.copy(alpha = if (light) .78f else .08f),
-        surfaceRaised = Color.White.copy(alpha = if (light) .94f else .13f),
+        surfaceRaised = Color.White.copy(alpha = if (light) .97f else .09f).compositeOver(background),
         muted = foreground.copy(alpha = .075f),
         mutedForeground = foreground.copy(alpha = .54f),
         strong = foreground.copy(alpha = .82f),
@@ -84,10 +84,10 @@ internal fun LanghuanSheetV4(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         color = tokens.surfaceRaised,
         tonalElevation = 0.dp,
-        shadowElevation = 16.dp,
+        shadowElevation = 8.dp,
     ) {
         Column(
             Modifier
@@ -140,7 +140,7 @@ internal fun LanghuanTabsV4(
             Box(
                 Modifier
                     .weight(1f)
-                    .shadow(if (active) 6.dp else 3.dp, RoundedCornerShape(15.dp), clip = false)
+                    .shadow(if (active) 2.dp else 0.dp, RoundedCornerShape(15.dp), clip = false)
                     .clip(RoundedCornerShape(15.dp))
                     .background(bg)
                     .clickable { onSelected(index) }
@@ -196,7 +196,7 @@ internal fun LanghuanActionTileV4(
         Box(
             modifier = Modifier
                 .size(44.dp)
-                .shadow(6.dp, CircleShape, clip = false)
+                .shadow(2.dp, CircleShape, clip = false)
                 .clip(CircleShape)
                 .background(v4DepthBrush(base, .24f)),
             contentAlignment = Alignment.Center,
@@ -299,3 +299,4 @@ internal fun LanghuanDividerV4(tokens: LanghuanTokensV4, inset: Dp = 0.dp) {
             .background(tokens.track),
     )
 }
+

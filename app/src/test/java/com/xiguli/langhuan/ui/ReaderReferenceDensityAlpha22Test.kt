@@ -26,11 +26,11 @@ class ReaderReferenceDensityAlpha22Test {
         val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")
         assertTrue(reader.contains("1.48f"))
         assertTrue(reader.contains("16f"))
-        assertTrue(reader.contains("reader_density_v22"))
+        assertTrue(reader.contains("reader_comfort_v26"))
         assertTrue(reader.contains("textAlign = TextAlign.Start"))
         assertTrue(reader.contains("恢复推荐排版"))
-        assertTrue(reader.contains("point.x < size.width * .33f -> previousPage()"))
-        assertTrue(reader.contains("point.x > size.width * .67f -> nextPage()"))
+        assertTrue(reader.contains("point.x < size.width * .28f -> turnPrevious()"))
+        assertTrue(reader.contains("point.x > size.width * .72f -> turnNext()"))
     }
 
     @Test
@@ -41,3 +41,4 @@ class ReaderReferenceDensityAlpha22Test {
         assertTrue(pager.contains("lastCompleteLineEndV18"))
     }
 }
+

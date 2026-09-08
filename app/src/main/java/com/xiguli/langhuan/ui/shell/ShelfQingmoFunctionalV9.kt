@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -347,21 +348,21 @@ private fun QingmoShelfHomeV9(
     onOpenBook: (String) -> Unit,
     onLongPress: (ReaderBookUi) -> Unit,
 ) {
-    val ink = Color(0xFF17191D)
-    val secondary = Color(0xFF8A8D93)
+    val ink = Color(0xFF302D28)
+    val secondary = Color(0xFF898278)
     val books = remember(state.stories, query) {
         state.stories.sortedByDescending { it.updatedAt }.filter {
             query.isBlank() || it.title.contains(query, true) || it.genre.contains(query, true)
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Color.White)) {
+    Box(Modifier.fillMaxSize().background(Color(0xFFF5F1E9))) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 28.dp, end = 18.dp, top = 10.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("正在阅读", Modifier.weight(1f), color = ink, fontSize = 25.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold)
+                Text("琅嬛", Modifier.weight(1f), color = ink, fontSize = 28.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold)
                 IconButton(onClick = { onSearchOpen(!searchOpen) }, modifier = Modifier.size(42.dp)) {
                     Icon(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "搜索", Modifier.size(23.dp), tint = ink)
                 }
@@ -381,7 +382,7 @@ private fun QingmoShelfHomeV9(
                     placeholder = { Text("搜索书名或类型") },
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
                     singleLine = true,
-                    shape = RoundedCornerShape(4.dp),
+                    shape = RoundedCornerShape(18.dp),
                 )
             }
 
@@ -391,16 +392,45 @@ private fun QingmoShelfHomeV9(
                 }
 
                 books.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(if (query.isBlank()) "还没有作品" else "没有匹配的作品", color = secondary, fontSize = 14.sp)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Rounded.Book, null, Modifier.size(44.dp), tint = Color(0xFFA77836))
+                        Text(if (query.isBlank()) "把喜欢的故事放进琅嬛" else "没有匹配的作品", color = ink, fontSize = 18.sp)
+                        if (query.isBlank()) TextButton(onClick = onAdd) { Text("导入小说 / 开始创作", color = Color(0xFFA77836)) }
+                    }
                 }
 
                 else -> LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 28.dp, end = 28.dp, top = 18.dp, bottom = 30.dp),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
-                    verticalArrangement = Arrangement.spacedBy(30.dp),
+                    contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
+                    if (query.isBlank()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            val recent = books.first()
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().combinedClickable(enabled = openingBookId == null, onClick = { onOpenBook(recent.id) }, onLongClick = { onLongPress(recent) }),
+                                shape = RoundedCornerShape(26.dp), color = Color(0xFFFFFCF5), shadowElevation = 2.dp,
+                            ) {
+                                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    QingmoMiniCoverV9(recent, Modifier.width(74.dp).aspectRatio(.71f), openingBookId == recent.id)
+                                    Column(Modifier.padding(start = 20.dp).weight(1f)) {
+                                        Text("接着上次，读下去", color = secondary, fontSize = 12.sp)
+                                        Text(recent.title, Modifier.padding(top = 8.dp), color = ink, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text("第 ${recent.currentChapter.coerceAtLeast(1)} 章", Modifier.padding(top = 6.dp), color = secondary, fontSize = 12.sp)
+                                        Text("继续阅读  →", Modifier.padding(top = 16.dp), color = Color(0xFFA77836), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("我的书库", Modifier.weight(1f), color = ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${books.size} 本", color = secondary, fontSize = 12.sp)
+                        }
+                    }
                     gridItems(books, key = { it.id }) { book ->
                         Column(
                             Modifier.fillMaxWidth().combinedClickable(
@@ -718,12 +748,19 @@ private fun QingmoMedalsV9(books: List<ReaderBookUi>, checkedIn: Boolean, onBack
 
 @Composable
 private fun QingmoToolsV9(onBack: () -> Unit, onAi: () -> Unit, onRun: () -> Unit, onSkills: () -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            QingmoPageHeaderV9("设置", onBack)
-            QingmoProfileRowV9(Icons.Rounded.Settings, "AI 服务", "模型、中转站与路由", onAi)
-            QingmoProfileRowV9(Icons.Rounded.AutoAwesome, "写作能力", "Skill 管理", onSkills)
-            QingmoProfileRowV9(Icons.Rounded.TaskAlt, "运行中心", "查看执行任务", onRun)
+    Column(Modifier.fillMaxSize().background(Color(0xFFF5F1E9)).statusBarsPadding().padding(horizontal = 22.dp)) {
+        QingmoPageHeaderV9("设置", onBack)
+        Text("创作与服务", Modifier.padding(top = 24.dp, bottom = 12.dp), color = Color(0xFF898278), fontSize = 13.sp)
+        Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF5), shadowElevation = 2.dp) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+                QingmoProfileRowV9(Icons.Rounded.AutoAwesome, "AI 与模型", "管理服务、模型和连接", onAi)
+                QingmoProfileRowV9(Icons.Rounded.TaskAlt, "创作技能", "选择和管理写作能力", onSkills)
+                QingmoProfileRowV9(Icons.Rounded.History, "运行中心", "查看生成进度与任务记录", onRun)
+            }
+        }
+        Text("阅读", Modifier.padding(top = 24.dp, bottom = 12.dp), color = Color(0xFF898278), fontSize = 13.sp)
+        Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF5)) {
+            Text("阅读时轻点屏幕中间，即可调整字号、行距、背景与翻页方式。设置会自动保存。", Modifier.padding(20.dp), color = Color(0xFF625D54), fontSize = 14.sp, lineHeight = 23.sp)
         }
     }
 }
@@ -811,3 +848,4 @@ private fun QingmoActionV9(icon: ImageVector, title: String, subtitle: String, d
         }
     }
 }
+
