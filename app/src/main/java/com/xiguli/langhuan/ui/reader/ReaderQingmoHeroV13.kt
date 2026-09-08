@@ -727,7 +727,7 @@ private fun HeroReaderPageV13(
                             .pointerInput(chapter.id, pagerPage, panelVisible, interactionEnabled) {
                                 if (!interactionEnabled) return@pointerInput
                                 detectTapGestures(
-                                                onLongPress = { panelVisible = true },
+                                    onLongPress = { panelVisible = true },
                                     onTap = { point ->
                                         if (panelVisible) panelVisible = false
                                         else when {
@@ -1018,6 +1018,7 @@ private fun HeroReaderPageBodyV13(
                 paragraph.trim(),
                 style = TextStyle(
                     fontSize = fontSize.sp,
+                    letterSpacing = 0.sp,
                     lineHeight = (fontSize * lineFactor).sp,
                     fontFamily = family,
                     fontWeight = FontWeight.Normal,
@@ -1047,6 +1048,7 @@ private fun HeroReaderWholeBodyV13(
             paragraph.trim(),
             style = TextStyle(
                 fontSize = fontSize.sp,
+                letterSpacing = 0.sp,
                 lineHeight = (fontSize * lineFactor).sp,
                 fontFamily = family,
                 color = color,

@@ -389,7 +389,7 @@ private fun QingmoHomeV26(
                     QingmoMiniCoverV9(recent, Modifier.width(86.dp).aspectRatio(.71f), openingBookId == recent.id)
                     Column(Modifier.padding(start = 20.dp).weight(1f)) {
                         Text(recent.title, color = Color(0xFF302D28), fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        Text("第 ${recent.currentChapter.coerceAtLeast(1)} 章", Modifier.padding(top = 8.dp), color = Color(0xFF898278), fontSize = 13.sp)
+                        Text("第 ${ReaderProgressStoreV11.load(context, recent.id, recent.currentChapter.coerceAtLeast(1)).chapterNumber} 章", Modifier.padding(top = 8.dp), color = Color(0xFF898278), fontSize = 13.sp)
                         Text("继续阅读  →", Modifier.padding(top = 22.dp), color = Color(0xFFA77836), fontSize = 14.sp)
                     }
                 }
@@ -463,6 +463,7 @@ private fun QingmoShelfHomeV9(
     onOpenBook: (String) -> Unit,
     onLongPress: (ReaderBookUi) -> Unit,
 ) {
+    val context = LocalContext.current
     val ink = Color(0xFF302D28)
     val secondary = Color(0xFF898278)
     val books = remember(state.stories, query) {
@@ -533,7 +534,7 @@ private fun QingmoShelfHomeV9(
                                     Column(Modifier.padding(start = 20.dp).weight(1f)) {
                                         Text("接着上次，读下去", color = secondary, fontSize = 12.sp)
                                         Text(recent.title, Modifier.padding(top = 8.dp), color = ink, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                        Text("第 ${recent.currentChapter.coerceAtLeast(1)} 章", Modifier.padding(top = 6.dp), color = secondary, fontSize = 12.sp)
+                                        Text("第 ${ReaderProgressStoreV11.load(context, recent.id, recent.currentChapter.coerceAtLeast(1)).chapterNumber} 章", Modifier.padding(top = 6.dp), color = secondary, fontSize = 12.sp)
                                         Text("继续阅读  →", Modifier.padding(top = 16.dp), color = Color(0xFFA77836), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                     }
                                 }

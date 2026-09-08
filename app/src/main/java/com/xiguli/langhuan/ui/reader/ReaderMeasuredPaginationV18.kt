@@ -92,6 +92,7 @@ internal fun rememberReaderPaginationV18(
     )
     val bodyStyle = TextStyle(
         fontSize = fontSize.coerceIn(13f, 32f).sp,
+        letterSpacing = 0.sp,
         lineHeight = (fontSize.coerceIn(13f, 32f) * lineFactor.coerceIn(1.25f, 2.35f)).sp,
         fontFamily = family,
         fontWeight = FontWeight.Normal,
