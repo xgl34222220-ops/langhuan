@@ -75,6 +75,7 @@ fun ReaderNativeExperienceV4(
 
     // Pager state still resets per chapter so saved page/offset restoration remains deterministic,
     // while the outer reader surface stays mounted and visually continuous.
+    ReaderWindowSessionV27(resumeRequested)
     key(chapterKey) {
         ReaderQingmoHeroV13(
             viewModel = viewModel,

@@ -12,13 +12,13 @@ class ReaderReferenceDensityAlpha22Test {
     fun renderAndPaginationUseSameCompactChromeGeometry() {
         val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")
         val pager = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderMeasuredPaginationV18.kt")
-        assertTrue(reader.contains("top = 8.dp, bottom = 6.dp"))
-        assertTrue(reader.contains("Spacer(Modifier.height(7.dp))"))
-        assertTrue(reader.contains("Spacer(Modifier.height(4.dp))"))
-        assertTrue(pager.contains("pageTop = with(density) { 8.dp.roundToPx() }"))
-        assertTrue(pager.contains("pageBottom = with(density) { 6.dp.roundToPx() }"))
-        assertTrue(pager.contains("headerGap = with(density) { 7.dp.roundToPx() }"))
-        assertTrue(pager.contains("footerGap = with(density) { 4.dp.roundToPx() }"))
+        assertTrue(reader.contains("top = 12.dp, bottom = 10.dp"))
+        assertTrue(reader.contains("Spacer(Modifier.height(12.dp))"))
+        assertTrue(reader.contains("Spacer(Modifier.height(10.dp))"))
+        assertTrue(pager.contains("pageTop = with(density) { 12.dp.roundToPx() }"))
+        assertTrue(pager.contains("pageBottom = with(density) { 10.dp.roundToPx() }"))
+        assertTrue(pager.contains("headerGap = with(density) { 12.dp.roundToPx() }"))
+        assertTrue(pager.contains("footerGap = with(density) { 10.dp.roundToPx() }"))
     }
 
     @Test

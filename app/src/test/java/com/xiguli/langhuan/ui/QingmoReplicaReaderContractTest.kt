@@ -12,6 +12,7 @@ class QingmoReplicaReaderContractTest {
         val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt").readText()
         val kit = File(root, "src/main/java/com/xiguli/langhuan/ui/design/LanghuanComponentKitV4.kt").readText()
+        val window = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderWindowSessionV27.kt").readText()
 
         assertTrue(entry.contains("ReaderQingmoHeroV13("))
         assertTrue(reader.contains("HeroReaderTabV13.DETAILS"))
@@ -26,9 +27,9 @@ class QingmoReplicaReaderContractTest {
         assertTrue(kit.contains("LanghuanActionTileV4"))
         assertTrue(kit.contains("LanghuanRowV4"))
 
-        assertTrue(reader.contains("FLAG_KEEP_SCREEN_ON"))
-        assertTrue(reader.contains("SCREEN_ORIENTATION_PORTRAIT"))
-        assertTrue(reader.contains("WindowCompat.getInsetsController"))
+        assertTrue(window.contains("FLAG_KEEP_SCREEN_ON"))
+        assertTrue(window.contains("SCREEN_ORIENTATION_PORTRAIT"))
+        assertTrue(window.contains("WindowCompat.getInsetsController"))
         assertTrue(reader.contains("Key.VolumeUp"))
         assertTrue(reader.contains("Key.VolumeDown"))
         assertTrue(reader.contains("detectVerticalDragGestures"))
@@ -61,7 +62,7 @@ class QingmoReplicaReaderContractTest {
         assertTrue(reader.contains("HeroReaderCanvasV13("))
         assertTrue(reader.contains(".weight(1f)"))
         assertTrue(reader.contains(".onSizeChanged(onBodyViewportChanged)"))
-        assertTrue(reader.contains("Spacer(Modifier.height(4.dp))"))
+        assertTrue(reader.contains("Spacer(Modifier.height(10.dp))"))
         assertTrue(reader.contains("Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically)"))
 
         assertTrue(reader.contains("pageStartsParagraph"))
@@ -123,7 +124,7 @@ class QingmoReplicaReaderContractTest {
 
         assertTrue(reader.contains("sidePadding"))
         assertTrue(reader.contains("sidePadding, 12f..40f, tokens, onPadding"))
-        assertTrue(reader.contains("Slider(value = value.coerceIn(range)"))
+        assertTrue(reader.contains("ReaderSliderV27(label, value"))
         assertTrue(reader.contains("presetKey = \"custom\""))
     }
 
