@@ -1,0 +1,33 @@
+name: Apply Alpha24 Reader Chat Hotfix
+
+on:
+  push:
+    branches:
+      - fix/reader-chat-alpha24
+    paths:
+      - .github/workflows/apply-alpha24-reader-chat-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/reader-chat-alpha24
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply hotfix
+        run: python .github/scripts/apply_alpha24_reader_chat_hotfix.py
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: restore reader controls and creation chat fallback"
+          git push origin HEAD:fix/reader-chat-alpha24
