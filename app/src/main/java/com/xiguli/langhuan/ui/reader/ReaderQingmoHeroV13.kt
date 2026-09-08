@@ -164,14 +164,14 @@ private data class HeroReaderPresetV13(
 )
 
 private val HERO_READER_PRESETS_V13 = listOf(
-    HeroReaderPresetV13("langhuan", "琅嬛星图", "轻雾星图 · 正文优先 · 低干扰", "langhuan", 18f, 1.56f, 0f, 18f, true, "sans"),
-    HeroReaderPresetV13("qingmo", "清墨", "成熟网文密度 · 克制留白", "tea", 18f, 1.56f, 0f, 18f, true, "sans"),
-    HeroReaderPresetV13("tomato", "番茄小说风格", "稍大字号 · 紧凑行距 · 暖色背景", "tea", 19f, 1.50f, 0f, 16f, true, "sans"),
-    HeroReaderPresetV13("weread", "微信读书风格", "适中字号 · 轻纸白 · 稍宽页边距", "paper", 17.5f, 1.62f, 1f, 21f, true, "sans"),
-    HeroReaderPresetV13("qidian", "起点阅读风格", "正文密度均衡 · 窄页边距", "paper", 18f, 1.54f, 0f, 17f, true, "sans"),
-    HeroReaderPresetV13("ireader", "掌阅风格", "宋体阅读 · 适度舒展", "tea", 18f, 1.62f, 1f, 20f, true, "serif"),
-    HeroReaderPresetV13("compact", "紧凑阅读", "一屏更多正文", "paper", 17f, 1.42f, 0f, 15f, true, "sans"),
-    HeroReaderPresetV13("comfort", "舒适阅读", "大字号 · 仍保持正文密度", "tea", 19f, 1.66f, 1f, 21f, true, "serif"),
+    HeroReaderPresetV13("langhuan", "琅嬛星图", "轻雾星图 · 正文优先 · 低干扰", "langhuan", 17.5f, 1.48f, 0f, 16f, true, "sans"),
+    HeroReaderPresetV13("qingmo", "清墨", "成熟网文密度 · 克制留白", "tea", 17.5f, 1.48f, 0f, 16f, true, "sans"),
+    HeroReaderPresetV13("tomato", "番茄小说风格", "稍大字号 · 紧凑行距 · 暖色背景", "tea", 18.5f, 1.46f, 0f, 15f, true, "sans"),
+    HeroReaderPresetV13("weread", "微信读书风格", "适中字号 · 轻纸白 · 稍宽页边距", "paper", 17.5f, 1.52f, 0f, 18f, true, "sans"),
+    HeroReaderPresetV13("qidian", "起点阅读风格", "正文密度均衡 · 窄页边距", "paper", 18f, 1.48f, 0f, 16f, true, "sans"),
+    HeroReaderPresetV13("ireader", "掌阅风格", "宋体阅读 · 适度舒展", "tea", 18f, 1.54f, 1f, 18f, true, "serif"),
+    HeroReaderPresetV13("compact", "紧凑阅读", "一屏更多正文", "paper", 17f, 1.40f, 0f, 14f, true, "sans"),
+    HeroReaderPresetV13("comfort", "舒适阅读", "大字号 · 仍保持正文密度", "tea", 19f, 1.58f, 1f, 20f, true, "serif"),
 )
 
 private enum class HeroReaderTabV13 { DETAILS, DIRECTORY, MORE }
@@ -938,14 +938,14 @@ private fun HeroReaderPageBodyV13(
         paragraphs.forEachIndexed { index, paragraph ->
             val shouldIndent = indent && (index > 0 || pageStartsParagraph)
             Text(
-                paragraph.trimEnd(),
+                paragraph.trim(),
                 style = TextStyle(
                     fontSize = fontSize.sp,
                     lineHeight = (fontSize * lineFactor).sp,
                     fontFamily = family,
                     fontWeight = FontWeight.Normal,
                     color = color,
-                    textAlign = TextAlign.Justify,
+                    textAlign = TextAlign.Start,
                     textIndent = TextIndent(firstLine = if (shouldIndent) (fontSize * 2f).sp else 0.sp),
                 ),
             )
@@ -967,13 +967,13 @@ private fun HeroReaderWholeBodyV13(
     val paragraphs = remember(text) { text.split(Regex("\\n+")).filter { it.isNotEmpty() } }
     paragraphs.forEachIndexed { index, paragraph ->
         Text(
-            paragraph.trimEnd(),
+            paragraph.trim(),
             style = TextStyle(
                 fontSize = fontSize.sp,
                 lineHeight = (fontSize * lineFactor).sp,
                 fontFamily = family,
                 color = color,
-                textAlign = TextAlign.Justify,
+                textAlign = TextAlign.Start,
                 textIndent = TextIndent(firstLine = if (indent) (fontSize * 2f).sp else 0.sp),
             ),
         )
@@ -1195,6 +1195,7 @@ private fun HeroTypeSheetV13(
             LanghuanRowV4("增大字号", tokens, trailing = "${fontSize.roundToInt()}sp", onClick = { onFontSize((fontSize + 1f).coerceAtMost(30f)) })
         } else {
             // Make each tap visually meaningful while keeping the exact value in state/prefs.
+            LanghuanRowV4("恢复推荐排版", tokens, trailing = "1.48 · 0dp · 16dp", onClick = { onLine(1.48f); onParagraph(0f); onPadding(16f) })
             LanghuanRowV4("减小行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor - .10f).coerceAtLeast(1.30f)) })
             LanghuanRowV4("增大行距", tokens, trailing = String.format(Locale.US, "%.2f", lineFactor), onClick = { onLine((lineFactor + .10f).coerceAtMost(2.30f)) })
             LanghuanRowV4("减小段距", tokens, trailing = "${paragraphSpacing.roundToInt()}dp", onClick = { onParagraph((paragraphSpacing - 2f).coerceAtLeast(0f)) })
