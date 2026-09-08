@@ -40,6 +40,7 @@ jobs:
           script: |
             adb shell wm size 1080x2400
             adb shell wm density 420
+            adb shell settings put secure immersive_mode_confirmations confirmed
             gradle --no-daemon :app:connectedDebugAndroidTest || { adb pull /sdcard/Download/reader-qa reader-qa; exit 1; }
             adb pull /sdcard/Download/reader-qa reader-qa
       - uses: actions/upload-artifact@v4

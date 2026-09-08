@@ -33,6 +33,7 @@ class ReaderSessionV27Test {
 
     private fun screenshot(name: String) {
         rule.waitForIdle()
+        android.os.SystemClock.sleep(500) // Wait for SurfaceFlinger to present the settled frame.
         val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         val dir = File(rule.activity.getExternalFilesDir(null), "reader-qa").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
