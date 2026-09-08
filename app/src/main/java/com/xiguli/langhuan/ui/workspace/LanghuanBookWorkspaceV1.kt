@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.History
@@ -50,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
@@ -57,6 +59,15 @@ import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LanghuanMenuRow
 import com.xiguli.langhuan.ui.design.LanghuanSeparator
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+
+private enum class WorkspaceToolV1 {
+    OVERVIEW,
+    OUTLINE,
+    WORLD,
+    CHARACTERS,
+    TIMELINE,
+    MEMORY,
+}
 
 /**
  * Project-level hub between the shelf and all book-specific experiences.
@@ -79,7 +90,10 @@ fun LanghuanBookWorkspaceV1(
 ) {
     val t = LocalLanghuanUiTokens.current
     val editViewModel: BookEditViewModelV5 = viewModel()
+    val studioVm: StudioViewModel = viewModel()
+    val studioState by studioVm.state.collectAsStateWithLifecycle()
     var editing by rememberSaveable(book.id) { mutableStateOf(false) }
+    var activeTool by rememberSaveable(book.id) { mutableStateOf<WorkspaceToolV1?>(null) }
 
     if (editing) {
         BookEditPageV5(
@@ -90,6 +104,47 @@ fun LanghuanBookWorkspaceV1(
                 editing = false
             },
         )
+        return
+    }
+
+    activeTool?.let { tool ->
+        if (studioState.snapshot.novel.id != book.id) {
+            onIntelligence()
+            activeTool = null
+            return
+        }
+        when (tool) {
+            WorkspaceToolV1.MEMORY -> ProjectMemoryPageV1(
+                state = studioState,
+                vm = studioVm,
+                onClose = { activeTool = null },
+            )
+            WorkspaceToolV1.OVERVIEW -> StoryIntelligencePage(
+                state = studioState,
+                initialSection = StoryIntelligenceSectionV1.OVERVIEW,
+                onClose = { activeTool = null },
+            )
+            WorkspaceToolV1.OUTLINE -> StoryIntelligencePage(
+                state = studioState,
+                initialSection = StoryIntelligenceSectionV1.OUTLINE,
+                onClose = { activeTool = null },
+            )
+            WorkspaceToolV1.WORLD -> StoryIntelligencePage(
+                state = studioState,
+                initialSection = StoryIntelligenceSectionV1.WORLD,
+                onClose = { activeTool = null },
+            )
+            WorkspaceToolV1.CHARACTERS -> StoryIntelligencePage(
+                state = studioState,
+                initialSection = StoryIntelligenceSectionV1.CHARACTERS,
+                onClose = { activeTool = null },
+            )
+            WorkspaceToolV1.TIMELINE -> StoryIntelligencePage(
+                state = studioState,
+                initialSection = StoryIntelligenceSectionV1.TIMELINE,
+                onClose = { activeTool = null },
+            )
+        }
         return
     }
 
@@ -184,6 +239,38 @@ fun LanghuanBookWorkspaceV1(
         }
 
         item {
+            val snapshot = studioState.snapshot
+            val outline = if (snapshot.outline.isEmpty()) snapshot.activeOutline else snapshot.outline
+            Surface(
+                onClick = { activeTool = WorkspaceToolV1.OVERVIEW },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusLg),
+                color = t.warmSurface,
+                shadowElevation = 3.dp,
+            ) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Dashboard, null, Modifier.size(20.dp), tint = t.accent)
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text("项目状态", style = MaterialTheme.typography.titleSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
+                            Text("查看单一事实源与长篇连续性", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                        }
+                        Text("总览", style = MaterialTheme.typography.labelMedium, color = t.accent)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 11.dp),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        LanghuanBadge("大纲 ${outline.size}")
+                        LanghuanBadge("Canon ${snapshot.bible.size}")
+                        LanghuanBadge("角色 ${snapshot.characters.size}")
+                        LanghuanBadge("伏笔 ${snapshot.relevantForeshadowing.size}")
+                    }
+                }
+            }
+        }
+
+        item {
             Surface(
                 onClick = onRead,
                 modifier = Modifier.fillMaxWidth(),
@@ -228,7 +315,7 @@ fun LanghuanBookWorkspaceV1(
                         icon = Icons.Rounded.FormatListBulleted,
                         title = "大纲与章纲",
                         subtitle = "总纲、卷纲、章纲与当前写作计划",
-                        onClick = onWrite,
+                        onClick = { activeTool = WorkspaceToolV1.OUTLINE },
                     )
                     LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
                     LanghuanMenuRow(
@@ -249,21 +336,21 @@ fun LanghuanBookWorkspaceV1(
                         icon = Icons.Rounded.Public,
                         title = "世界与规则",
                         subtitle = "世界观、地点、势力、能力体系与硬规则",
-                        onClick = onIntelligence,
+                        onClick = { activeTool = WorkspaceToolV1.WORLD },
                     )
                     LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
                     LanghuanMenuRow(
                         icon = Icons.Rounded.Person,
                         title = "角色与关系",
                         subtitle = "人物状态、关系网、目标、秘密与群像信息",
-                        onClick = onIntelligence,
+                        onClick = { activeTool = WorkspaceToolV1.CHARACTERS },
                     )
                     LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
                     LanghuanMenuRow(
                         icon = Icons.Rounded.History,
                         title = "时间线与伏笔",
                         subtitle = "事件顺序、已埋伏笔、回收状态与连续性检查",
-                        onClick = onIntelligence,
+                        onClick = { activeTool = WorkspaceToolV1.TIMELINE },
                     )
                 }
             }
@@ -276,8 +363,8 @@ fun LanghuanBookWorkspaceV1(
                     LanghuanMenuRow(
                         icon = Icons.Rounded.AutoStories,
                         title = "项目记忆",
-                        subtitle = "已确认事实、创作上下文与需要长期保持的约束",
-                        onClick = onAgent,
+                        subtitle = "已确认事实、Candidate 候选区与长期状态",
+                        onClick = { activeTool = WorkspaceToolV1.MEMORY },
                     )
                     LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
                     LanghuanMenuRow(
@@ -293,7 +380,7 @@ fun LanghuanBookWorkspaceV1(
 
         item {
             Text(
-                "作品工作台负责创作与设定；阅读器只负责阅读、目录、搜索、书签和排版。",
+                "作品工作台负责创作、设定、记忆与 AI；阅读器只负责阅读、目录、搜索、书签和排版。",
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
