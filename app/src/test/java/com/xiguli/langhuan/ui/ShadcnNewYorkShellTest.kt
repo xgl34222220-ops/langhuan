@@ -41,7 +41,8 @@ class ShadcnNewYorkShellTest {
         assertTrue(kit.contains("fun ShadcnInput("))
         assertTrue(theme.contains("dynamicColor: Boolean = true"))
         assertTrue(theme.contains("accent = colors.primaryContainer"))
-        assertTrue(theme.contains("radiusMd = 16.dp"))
-        assertTrue(theme.contains("large = RoundedCornerShape(24.dp)"))
+        // New depth hierarchy: 12 / 15 / 18 rather than the older flat 16 / 24 contract.
+        assertTrue(theme.contains("radiusMd = 15.dp"))
+        assertTrue(theme.contains("large = RoundedCornerShape(18.dp)"))
     }
 }
