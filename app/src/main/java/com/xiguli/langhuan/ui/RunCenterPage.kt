@@ -46,10 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.engine.ChapterRunKeepAliveRegistry
 import com.xiguli.langhuan.engine.DurableRunPhase
 import com.xiguli.langhuan.engine.RunStatus
-import com.xiguli.langhuan.ui.design.LanghuanAmbientBackdrop
-import com.xiguli.langhuan.ui.design.LanghuanCard
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
-import com.xiguli.langhuan.ui.design.LanghuanOrb
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.delay
 
@@ -73,8 +70,6 @@ fun RunCenterPage(
 
     Surface(Modifier.fillMaxSize(), color = t.background) {
         Box(Modifier.fillMaxSize()) {
-            LanghuanAmbientBackdrop(Modifier.fillMaxSize(), active = live.active)
-
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
@@ -89,7 +84,7 @@ fun RunCenterPage(
                             color = if (live.active) t.primary else t.mutedForeground,
                         )
                     }
-                    if (live.active) LanghuanOrb(active = true, size = 34.dp)
+                    if (live.active) RunStatusPill("执行中", t.primary)
                 }
 
                 when {
@@ -101,8 +96,16 @@ fun RunCenterPage(
                         Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 30.dp, vertical = 72.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        LanghuanCard(modifier = Modifier.fillMaxWidth(), contentPadding = 22.dp, depth = 2) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(t.radiusLg),
+                            color = t.card,
+                            shadowElevation = 5.dp,
+                        ) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(22.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
                                 Surface(Modifier.size(52.dp), shape = CircleShape, color = t.warmSurface) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(Icons.Rounded.TaskAlt, null, Modifier.size(24.dp), tint = t.primary)
@@ -212,12 +215,13 @@ private fun RunCenterRow(
     val actionIcon = if (isLive || item.phase == DurableRunPhase.READY_TO_COMMIT) Icons.Rounded.OpenInNew else Icons.Rounded.PlayArrow
     val latest = item.events.lastOrNull()
 
-    LanghuanCard(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = 16.dp,
-        depth = if (isLive) 2 else 1,
+        shape = RoundedCornerShape(t.radiusLg),
+        color = if (isLive) t.warmSurface else t.card,
+        shadowElevation = if (isLive) 7.dp else 3.dp,
     ) {
-        Column {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Surface(Modifier.size(40.dp), shape = RoundedCornerShape(t.radiusSm), color = statusColor.copy(alpha = .11f)) {
                     Box(contentAlignment = Alignment.Center) {
