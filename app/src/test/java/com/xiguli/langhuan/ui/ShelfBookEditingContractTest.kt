@@ -36,8 +36,12 @@ class ShelfBookEditingContractTest {
         assertTrue(workspace.contains("contentDescription = \"编辑书籍\""))
         assertTrue(workspace.contains("\"继续正文\""))
         assertTrue(workspace.contains("\"写作\""))
+        assertTrue(workspace.contains("\"大纲与章纲\""))
         assertTrue(workspace.contains("\"故事\""))
-        assertTrue(workspace.contains("\"世界与角色\""))
+        assertTrue(workspace.contains("\"世界与规则\""))
+        assertTrue(workspace.contains("\"角色与关系\""))
+        assertTrue(workspace.contains("\"时间线与伏笔\""))
+        assertTrue(workspace.contains("\"项目记忆\""))
         assertTrue(workspace.contains("\"AI 助手\""))
 
         assertTrue(editor.contains("ActivityResultContracts.GetContent()"))
