@@ -2,7 +2,12 @@ package com.xiguli.langhuan.ui
 
 import androidx.compose.runtime.Composable
 
-/** Compatibility entry kept for the current root router. */
+/**
+ * Compatibility entry kept for the current root router.
+ *
+ * V5 now points at the Literary MIUIx / Langhuan Glass shell. The previous
+ * ShelfQingmoFunctionalV9 implementation remains in-tree as a fallback during migration.
+ */
 @Composable
 fun ShelfLibraryV5(
     state: LibraryExperienceState,
@@ -16,7 +21,7 @@ fun ShelfLibraryV5(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
-) = ShelfQingmoFunctionalV9(
+) = LanghuanLiteraryShelfV1(
     state = state,
     importState = importState,
     openingBookId = openingBookId,
