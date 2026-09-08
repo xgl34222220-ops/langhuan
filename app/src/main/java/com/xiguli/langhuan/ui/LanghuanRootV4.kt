@@ -18,6 +18,7 @@ import com.xiguli.langhuan.engine.ProjectConversationStore
 
 private enum class RootRouteV4 {
     SHELF,
+    WORKSPACE,
     BOOK,
     CREATION,
     CREATION_RESEARCH,
@@ -46,6 +47,9 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterSkills by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterEditor by remember { mutableStateOf(RootRouteV4.BOOK) }
+    var returnAfterWriting by remember { mutableStateOf(RootRouteV4.WORKSPACE) }
+    var returnAfterProjectTool by remember { mutableStateOf(RootRouteV4.BOOK) }
+    var returnAfterTavern by remember { mutableStateOf(RootRouteV4.SHELF) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
@@ -77,9 +81,12 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         libraryVm.openBook(id)
     }
 
+    fun openWorkspace(id: String) = requestBook(id, RootRouteV4.WORKSPACE, showInfo = false)
+
     fun openBook(id: String) = requestBook(id, RootRouteV4.BOOK, showInfo = false)
 
-    fun openTavern(id: String) {
+    fun openTavern(id: String, returnTo: RootRouteV4 = RootRouteV4.SHELF) {
+        returnAfterTavern = returnTo
         tavernStoryId = id
         studioVm.selectStory(id)
         if (studioState.provider.ready) {
@@ -94,6 +101,14 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     fun backToBook() {
         val id = libraryState.openedBook?.id ?: writingStoryId
         if (id != null) openBook(id) else route = RootRouteV4.SHELF
+    }
+
+    fun closeProjectTool() {
+        if (returnAfterProjectTool == RootRouteV4.WORKSPACE && libraryState.openedBook != null) {
+            route = RootRouteV4.WORKSPACE
+        } else {
+            backToBook()
+        }
     }
 
     fun openAiSetup(from: RootRouteV4) {
@@ -111,6 +126,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         projectConversationStore.handoffFromCreation(id, creationMessages)
         creationVm.reset()
         writingStoryId = id
+        returnAfterWriting = RootRouteV4.WORKSPACE
         libraryVm.openBook(id)
         studioVm.selectStory(id)
         route = RootRouteV4.WRITING
@@ -164,7 +180,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         val id = localImportState.importedBookId ?: return@LaunchedEffect
         if (libraryState.stories.any { it.id == id }) {
             localImportVm.consumeImportedBook()
-            openBook(id)
+            openWorkspace(id)
         }
     }
 
@@ -176,8 +192,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                         state = libraryState,
                         importState = localImportState,
                         openingBookId = pendingBookId,
-                        onOpenBook = ::openBook,
-                        onOpenTavern = ::openTavern,
+                        onOpenBook = ::openWorkspace,
+                        onOpenTavern = { id -> openTavern(id, RootRouteV4.SHELF) },
                         onImportLocal = { localBookLauncher.launch(arrayOf("*/*")) },
                         onDeleteBook = libraryVm::deleteBook,
                         onCreate = {
@@ -190,18 +206,60 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                     )
                 }
 
+                RootRouteV4.WORKSPACE -> {
+                    val book = libraryState.openedBook
+                    if (book == null) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(strokeWidth = 2.dp)
+                        }
+                    } else {
+                        LanghuanBookWorkspaceV1(
+                            book = book,
+                            chapterCount = libraryState.chapters.size,
+                            aiReady = studioState.provider.ready,
+                            onBack = {
+                                libraryVm.closeBook()
+                                route = RootRouteV4.SHELF
+                            },
+                            onRead = {
+                                openBookOnInfo = false
+                                route = RootRouteV4.BOOK
+                            },
+                            onWrite = {
+                                writingStoryId = book.id
+                                returnAfterWriting = RootRouteV4.WORKSPACE
+                                studioVm.selectStory(book.id)
+                                route = RootRouteV4.WRITING
+                            },
+                            onStory = { openTavern(book.id, RootRouteV4.WORKSPACE) },
+                            onIntelligence = {
+                                returnAfterProjectTool = RootRouteV4.WORKSPACE
+                                route = RootRouteV4.INTELLIGENCE
+                            },
+                            onAgent = {
+                                if (studioState.provider.ready) {
+                                    returnAfterProjectTool = RootRouteV4.WORKSPACE
+                                    route = RootRouteV4.AGENT
+                                } else {
+                                    openAiSetup(RootRouteV4.WORKSPACE)
+                                }
+                            },
+                        )
+                    }
+                }
+
                 RootRouteV4.BOOK -> {
                     if (libraryState.openedBook != null) {
                         ReaderNativeExperienceV4(
                             viewModel = libraryVm,
                             studioState = studioState,
                             onBackToShelf = {
-                                libraryVm.closeBook()
                                 editorChapter = null
-                                route = RootRouteV4.SHELF
+                                route = RootRouteV4.WORKSPACE
                             },
                             onEnterWriting = { id ->
                                 writingStoryId = id
+                                returnAfterWriting = RootRouteV4.BOOK
                                 studioVm.selectStory(id)
                                 route = RootRouteV4.WRITING
                             },
@@ -263,10 +321,14 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                                 IconButton(
                                     onClick = {
                                         tavernStoryId = null
-                                        libraryVm.closeBook()
-                                        route = RootRouteV4.SHELF
+                                        if (returnAfterTavern == RootRouteV4.WORKSPACE) {
+                                            route = RootRouteV4.WORKSPACE
+                                        } else {
+                                            libraryVm.closeBook()
+                                            route = RootRouteV4.SHELF
+                                        }
                                     },
-                                ) { Icon(Icons.Rounded.ArrowBack, "返回书架") }
+                                ) { Icon(Icons.Rounded.ArrowBack, "返回") }
                             }
                         }
                     }
@@ -278,7 +340,9 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                     WritingFlowPage(
                         novelId = id,
                         viewModel = writingVm,
-                        onClose = { openBook(id) },
+                        onClose = {
+                            if (returnAfterWriting == RootRouteV4.WORKSPACE) openWorkspace(id) else openBook(id)
+                        },
                         onEditChapter = { storyId, chapter ->
                             editorStoryId = storyId
                             editorChapter = chapter
@@ -313,11 +377,11 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                         vm = studioVm,
                         onProjectBackup = { backupLauncher.launch("${studioState.snapshot.novel.title}.lhproj") },
                         onProjectRestore = { restoreLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) },
-                        onClose = ::backToBook,
+                        onClose = ::closeProjectTool,
                     )
                 }
 
-                RootRouteV4.INTELLIGENCE -> StoryIntelligencePage(state = studioState, onClose = ::backToBook)
+                RootRouteV4.INTELLIGENCE -> StoryIntelligencePage(state = studioState, onClose = ::closeProjectTool)
 
                 RootRouteV4.RUN_CENTER -> {
                     val runCenterVm: RunCenterViewModel = viewModel()
@@ -326,6 +390,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                         runCenterState.openRequest?.let { request ->
                             runCenterVm.consumeOpenRequest()
                             writingStoryId = request.novelId
+                            returnAfterWriting = RootRouteV4.WORKSPACE
                             libraryVm.openBook(request.novelId)
                             studioVm.selectStory(request.novelId)
                             route = RootRouteV4.WRITING
@@ -333,7 +398,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                     }
                     RunCenterPage(
                         viewModel = runCenterVm,
-                        onClose = { route = if (libraryState.openedBook != null) RootRouteV4.BOOK else RootRouteV4.SHELF },
+                        onClose = { route = if (libraryState.openedBook != null) RootRouteV4.WORKSPACE else RootRouteV4.SHELF },
                     )
                 }
 
@@ -363,7 +428,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                         CoverStudioV3(
                             bookId = id,
                             libraryViewModel = libraryVm,
-                            onClose = { route = RootRouteV4.BOOK },
+                            onClose = { route = RootRouteV4.WORKSPACE },
                         )
                     }
                 }
