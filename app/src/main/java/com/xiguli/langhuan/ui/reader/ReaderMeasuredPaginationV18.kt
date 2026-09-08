@@ -95,7 +95,7 @@ internal fun rememberReaderPaginationV18(
         lineHeight = (fontSize.coerceIn(13f, 32f) * lineFactor.coerceIn(1.25f, 2.35f)).sp,
         fontFamily = family,
         fontWeight = FontWeight.Normal,
-        textAlign = TextAlign.Justify,
+        textAlign = TextAlign.Start,
     )
 
     val headerHeight = measurer.measure(
@@ -119,7 +119,13 @@ internal fun rememberReaderPaginationV18(
     val bodyWidth = viewportWidthPx.takeIf { it > 0 } ?: fallbackBodyWidth
     val bodyHeight = viewportHeightPx.takeIf { it > 0 } ?: fallbackBodyHeight
 
-    val normalized = remember(text) { readerNormalizeBodyV14(text) }
+    val normalized = remember(text) {
+        readerNormalizeBodyV14(text)
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+    }
     val token = "$stableWidth:$stableHeight:$bodyWidth:$bodyHeight:$viewportWidthPx:$viewportHeightPx:$fontSize:$lineFactor:$paragraphSpacing:$firstLineIndent:${family.hashCode()}"
 
     return remember(normalized, bodyWidth, bodyHeight, bodyStyle, paragraphGap, firstLineIndent, fontSize, token) {

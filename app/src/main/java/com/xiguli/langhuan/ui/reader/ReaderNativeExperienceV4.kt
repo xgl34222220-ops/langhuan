@@ -18,8 +18,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 
 /**
- * Stable reader entry. The active chapter owns its own pager subtree, and the subtree is unmounted
- * outside RESUMED so recents/system-gesture transitions cannot become page turns.
+ * Stable reader entry. The active chapter owns a fresh pager subtree, but chapter switches no
+ * longer unmount the whole reader or wait through the resume guard. The guard only follows the
+ * Activity lifecycle, preventing recents/system-gesture false turns without adding a blank frame
+ * between adjacent chapters.
  */
 @Composable
 fun ReaderNativeExperienceV4(
@@ -34,12 +36,12 @@ fun ReaderNativeExperienceV4(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val chapterKey = state.readingChapter?.id ?: "reader-loading"
     val lifecycleOwner = LocalLifecycleOwner.current
-    var resumeRequested by remember(chapterKey) {
+    var resumeRequested by remember {
         mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
     }
-    var readerMounted by remember(chapterKey) { mutableStateOf(resumeRequested) }
+    var readerMounted by remember { mutableStateOf(resumeRequested) }
 
-    DisposableEffect(lifecycleOwner, chapterKey) {
+    DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> resumeRequested = true
@@ -55,11 +57,13 @@ fun ReaderNativeExperienceV4(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(resumeRequested, chapterKey) {
+    LaunchedEffect(resumeRequested) {
         if (!resumeRequested) {
             readerMounted = false
             return@LaunchedEffect
         }
+        // Only a real lifecycle resume gets the stabilization delay. Changing chapters must not
+        // blank the reading surface for 120ms and then rebuild it like a navigation transition.
         delay(120)
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             readerMounted = true
@@ -71,6 +75,8 @@ fun ReaderNativeExperienceV4(
         return
     }
 
+    // Pager state still resets per chapter so saved page/offset restoration remains deterministic,
+    // while the outer reader surface stays mounted and visually continuous.
     key(chapterKey) {
         ReaderQingmoHeroV13(
             viewModel = viewModel,

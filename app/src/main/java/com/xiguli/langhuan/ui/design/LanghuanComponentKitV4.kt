@@ -142,11 +142,28 @@ internal fun LanghuanTabsV4(
                     .weight(1f)
                     .shadow(if (active) 6.dp else 3.dp, RoundedCornerShape(15.dp), clip = false)
                     .clip(RoundedCornerShape(15.dp))
-                    .background(v4DepthBrush(bg, if (active) .24f else .14f))
+                    .background(bg)
                     .clickable { onSelected(index) }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
+                // Keep the requested inset highlight as a shallow 6dp top sheen. The old
+                // full-height white gradient crossed the label area and rendered as a white bar
+                // on light reader themes.
+                Box(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth(.72f)
+                        .height(6.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = if (active) .16f else .10f),
+                                    Color.Transparent,
+                                ),
+                            ),
+                        ),
+                )
                 Text(
                     label,
                     color = if (active) tokens.foreground else tokens.mutedForeground,

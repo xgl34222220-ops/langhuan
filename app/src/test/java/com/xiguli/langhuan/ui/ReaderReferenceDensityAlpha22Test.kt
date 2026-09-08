@@ -24,10 +24,11 @@ class ReaderReferenceDensityAlpha22Test {
     @Test
     fun matureReaderDefaultsUseContentFirstDensity() {
         val reader = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt")
-        assertTrue(reader.contains("1.56f"))
-        assertTrue(reader.contains("initialSide = if (densityMigrationNeeded) 18f"))
+        assertTrue(reader.contains("1.48f"))
+        assertTrue(reader.contains("16f"))
         assertTrue(reader.contains("reader_density_v22"))
-        assertTrue(reader.contains("textAlign = TextAlign.Justify"))
+        assertTrue(reader.contains("textAlign = TextAlign.Start"))
+        assertTrue(reader.contains("恢复推荐排版"))
         assertTrue(reader.contains("point.x < size.width * .33f -> previousPage()"))
         assertTrue(reader.contains("point.x > size.width * .67f -> nextPage()"))
     }

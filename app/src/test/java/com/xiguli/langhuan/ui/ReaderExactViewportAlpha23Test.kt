@@ -18,6 +18,6 @@ class ReaderExactViewportAlpha23Test {
         assertTrue(paginator.contains("viewportHeightPx: Int = 0"))
         assertTrue(paginator.contains("val bodyWidth = viewportWidthPx.takeIf { it > 0 } ?: fallbackBodyWidth"))
         assertTrue(paginator.contains("val bodyHeight = viewportHeightPx.takeIf { it > 0 } ?: fallbackBodyHeight"))
-        assertTrue(paginator.contains("textAlign = TextAlign.Justify"))
+        assertTrue(paginator.contains("textAlign = TextAlign.Start"))
     }
 }
