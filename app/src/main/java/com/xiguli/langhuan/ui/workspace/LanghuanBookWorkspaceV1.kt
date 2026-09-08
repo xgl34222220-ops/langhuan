@@ -3,13 +3,11 @@ package com.xiguli.langhuan.ui
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,8 +23,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.TheaterComedy
 import androidx.compose.material3.Icon
@@ -57,11 +59,11 @@ import com.xiguli.langhuan.ui.design.LanghuanSeparator
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
- * A calm project hub between the shelf and the reader.
+ * Project-level hub between the shelf and all book-specific experiences.
  *
- * Reading remains content-first; writing, story, intelligence and AI live here instead of being
- * crowded into reader chrome. Book identity editing is also retained here during the new-shell
- * migration so the Literary Shelf never regresses the existing editing capability.
+ * The reader remains content-first. Writing, story, outlines, world state, character state,
+ * continuity and AI memory belong to the book workspace and can evolve independently without
+ * turning the reading chrome into a creator dashboard.
  */
 @Composable
 fun LanghuanBookWorkspaceV1(
@@ -120,7 +122,7 @@ fun LanghuanBookWorkspaceV1(
                         color = t.foreground,
                     )
                     Text(
-                        "阅读、创作与世界设定",
+                        "阅读、创作、设定与长期记忆",
                         style = MaterialTheme.typography.bodySmall,
                         color = t.mutedForeground,
                     )
@@ -218,7 +220,14 @@ fun LanghuanBookWorkspaceV1(
                     LanghuanMenuRow(
                         icon = Icons.Rounded.Edit,
                         title = "写作",
-                        subtitle = "章纲、正文生成与章节编辑",
+                        subtitle = "正文生成、续写与章节编辑",
+                        onClick = onWrite,
+                    )
+                    LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
+                    LanghuanMenuRow(
+                        icon = Icons.Rounded.FormatListBulleted,
+                        title = "大纲与章纲",
+                        subtitle = "总纲、卷纲、章纲与当前写作计划",
                         onClick = onWrite,
                     )
                     LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
@@ -238,15 +247,43 @@ fun LanghuanBookWorkspaceV1(
                 Column {
                     LanghuanMenuRow(
                         icon = Icons.Rounded.Public,
-                        title = "世界与角色",
-                        subtitle = "人物、关系、时间线、伏笔与世界状态",
+                        title = "世界与规则",
+                        subtitle = "世界观、地点、势力、能力体系与硬规则",
                         onClick = onIntelligence,
+                    )
+                    LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
+                    LanghuanMenuRow(
+                        icon = Icons.Rounded.Person,
+                        title = "角色与关系",
+                        subtitle = "人物状态、关系网、目标、秘密与群像信息",
+                        onClick = onIntelligence,
+                    )
+                    LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
+                    LanghuanMenuRow(
+                        icon = Icons.Rounded.History,
+                        title = "时间线与伏笔",
+                        subtitle = "事件顺序、已埋伏笔、回收状态与连续性检查",
+                        onClick = onIntelligence,
+                    )
+                }
+            }
+        }
+
+        item { WorkspaceSectionTitleV1("记忆与 AI") }
+        item {
+            LanghuanCard(modifier = Modifier.fillMaxWidth(), contentPadding = 0.dp) {
+                Column {
+                    LanghuanMenuRow(
+                        icon = Icons.Rounded.AutoStories,
+                        title = "项目记忆",
+                        subtitle = "已确认事实、创作上下文与需要长期保持的约束",
+                        onClick = onAgent,
                     )
                     LanghuanSeparator(Modifier.padding(horizontal = 14.dp))
                     LanghuanMenuRow(
                         icon = Icons.Rounded.AutoAwesome,
                         title = "AI 助手",
-                        subtitle = if (aiReady) "已连接 · 与当前作品上下文对话" else "未配置 AI · 点击后可继续配置",
+                        subtitle = if (aiReady) "已连接 · 基于当前作品上下文对话" else "未配置 AI · 点击后可继续配置",
                         onClick = onAgent,
                         trailing = { LanghuanBadge(if (aiReady) "就绪" else "未配置", accent = aiReady) },
                     )
@@ -256,7 +293,7 @@ fun LanghuanBookWorkspaceV1(
 
         item {
             Text(
-                "阅读器只保留阅读操作；创作、故事和 AI 都从作品工作台进入。",
+                "作品工作台负责创作与设定；阅读器只负责阅读、目录、搜索、书签和排版。",
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
