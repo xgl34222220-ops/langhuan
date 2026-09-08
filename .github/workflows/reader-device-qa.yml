@@ -40,8 +40,8 @@ jobs:
           script: |
             adb shell wm size 1080x2400
             adb shell wm density 420
-            gradle --no-daemon :app:connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/com.xiguli.langhuan/files/reader-qa reader-qa
+            gradle --no-daemon :app:connectedDebugAndroidTest || { adb pull /sdcard/Download/reader-qa reader-qa; exit 1; }
+            adb pull /sdcard/Download/reader-qa reader-qa
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -37,6 +37,13 @@ class ReaderSessionV27Test {
         val dir = File(rule.activity.getExternalFilesDir(null), "reader-qa").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
+        // AGP uninstalls the target after tests; preserve images outside app storage.
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
+            "mkdir -p /sdcard/Download/reader-qa"
+        ).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
+            "cp ${File(dir, "$name.png").absolutePath} /sdcard/Download/reader-qa/$name.png"
+        ).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
     }
 
     private fun barsVisible(): Boolean = ViewCompat.getRootWindowInsets(rule.activity.window.decorView)
