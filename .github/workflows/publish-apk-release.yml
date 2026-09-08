@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha25-reader-polish
+# Manual publish trigger: 0.28.0-alpha26-reading-comfort
 on:
   push:
     branches: [main]
@@ -41,8 +41,8 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Build Debug APK
-        run: gradle --no-daemon :app:assembleDebug
+      - name: Test and build Debug APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
 
       - name: Prepare asset
         shell: bash
@@ -64,3 +64,4 @@ jobs:
               --notes "琅嬛 $VERSION 自动构建。公开 Release APK，无需登录 GitHub 即可下载。" \
               --prerelease
           fi
+

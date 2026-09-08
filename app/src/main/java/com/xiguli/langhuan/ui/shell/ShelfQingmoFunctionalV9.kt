@@ -1,6 +1,10 @@
 package com.xiguli.langhuan.ui
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -96,6 +100,8 @@ import java.util.Date
 import java.util.Locale
 
 private enum class QingmoShelfScreenV9 {
+    HOME,
+    CREATE,
     SHELF,
     PROFILE,
     PROFILE_EDIT,
@@ -127,7 +133,7 @@ fun ShelfQingmoFunctionalV9(
     val t = LocalLanghuanUiTokens.current
     val editViewModel: BookEditViewModelV5 = viewModel()
 
-    var screen by rememberSaveable { mutableStateOf(QingmoShelfScreenV9.SHELF) }
+    var screen by rememberSaveable { mutableStateOf(QingmoShelfScreenV9.HOME) }
     var addOpen by remember { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -154,6 +160,12 @@ fun ShelfQingmoFunctionalV9(
         return
     }
 
+    val mainScreens = listOf(QingmoShelfScreenV9.HOME, QingmoShelfScreenV9.SHELF, QingmoShelfScreenV9.CREATE, QingmoShelfScreenV9.PROFILE)
+    BackHandler(enabled = screen != QingmoShelfScreenV9.HOME) {
+        screen = if (screen in mainScreens) QingmoShelfScreenV9.HOME else QingmoShelfScreenV9.PROFILE
+    }
+    Column(Modifier.fillMaxSize().background(Color(0xFFF5F1E9))) {
+    Box(Modifier.weight(1f)) {
     AnimatedContent(
         targetState = screen,
         transitionSpec = {
@@ -163,6 +175,12 @@ fun ShelfQingmoFunctionalV9(
         label = "qingmoShelfRouteV9",
     ) { current ->
         when (current) {
+            QingmoShelfScreenV9.HOME -> QingmoHomeV26(
+                books = state.stories, openingBookId = openingBookId,
+                onOpenBook = onOpenBook, onLibrary = { screen = QingmoShelfScreenV9.SHELF },
+                onImport = onImportLocal, onCreate = onCreate,
+            )
+            QingmoShelfScreenV9.CREATE -> QingmoCreateV26(onCreate, onImportLocal, onSkills)
             QingmoShelfScreenV9.SHELF -> QingmoShelfHomeV9(
                 state = state,
                 importState = importState,
@@ -260,6 +278,24 @@ fun ShelfQingmoFunctionalV9(
         }
     }
 
+    }
+    if (screen in mainScreens) {
+        val labels = listOf("首页", "书库", "创作", "我的")
+        val icons = listOf(Icons.Rounded.Home, Icons.Rounded.Book, Icons.Rounded.AutoAwesome, Icons.Outlined.Person)
+        Surface(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp), shape = RoundedCornerShape(30.dp), color = Color(0xFFFFFCF5), shadowElevation = 4.dp) {
+            Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                mainScreens.forEachIndexed { index, target ->
+                    val active = target == screen
+                    Column(Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(if (active) Color(0xFFDDEAE6) else Color.Transparent).clickable { screen = target }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(icons[index], null, Modifier.size(21.dp), tint = if (active) Color(0xFF3F625A) else Color(0xFF898278))
+                        Text(labels[index], Modifier.padding(top = 3.dp), color = if (active) Color(0xFF3F625A) else Color(0xFF898278), fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+    }
+
     if (addOpen) {
         ModalBottomSheet(
             onDismissRequest = { addOpen = false },
@@ -335,6 +371,85 @@ fun ShelfQingmoFunctionalV9(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
+private fun QingmoHomeV26(
+    books: List<ReaderBookUi>, openingBookId: String?, onOpenBook: (String) -> Unit,
+    onLibrary: () -> Unit, onImport: () -> Unit, onCreate: () -> Unit,
+) {
+    val context = LocalContext.current
+    val progressPrefs = remember { context.getSharedPreferences("reader_progress_v1", 0) }
+    val recent = books.maxByOrNull { progressPrefs.getLong("last_${it.id}", it.updatedAt) }
+    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Text("留一点时间，给故事", color = Color(0xFF898278), fontSize = 13.sp)
+        Text("琅嬛", Modifier.padding(top = 6.dp, bottom = 28.dp), color = Color(0xFF302D28), fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
+        Text("继续阅读", color = Color(0xFF302D28), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(14.dp))
+        if (recent != null) {
+            Surface(onClick = { onOpenBook(recent.id) }, enabled = openingBookId == null, shape = RoundedCornerShape(26.dp), color = Color(0xFFFFFCF5), shadowElevation = 2.dp) {
+                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    QingmoMiniCoverV9(recent, Modifier.width(86.dp).aspectRatio(.71f), openingBookId == recent.id)
+                    Column(Modifier.padding(start = 20.dp).weight(1f)) {
+                        Text(recent.title, color = Color(0xFF302D28), fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Text("第 ${recent.currentChapter.coerceAtLeast(1)} 章", Modifier.padding(top = 8.dp), color = Color(0xFF898278), fontSize = 13.sp)
+                        Text("继续阅读  →", Modifier.padding(top = 22.dp), color = Color(0xFFA77836), fontSize = 14.sp)
+                    }
+                }
+            }
+        } else {
+            Surface(onClick = onImport, shape = RoundedCornerShape(26.dp), color = Color(0xFFFFFCF5)) {
+                Text("导入一本小说，开始阅读  →", Modifier.fillMaxWidth().padding(24.dp), color = Color(0xFFA77836), fontSize = 16.sp)
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Surface(onClick = onImport, modifier = Modifier.weight(1f), shape = RoundedCornerShape(22.dp), color = Color(0xFFE6EDE6)) {
+                Column(Modifier.padding(18.dp)) {
+                    Icon(Icons.Rounded.FolderOpen, null, tint = Color(0xFF49665A))
+                    Text("导入小说", Modifier.padding(top = 14.dp), color = Color(0xFF302D28), fontSize = 16.sp)
+                    Text("TXT · EPUB", Modifier.padding(top = 5.dp), color = Color(0xFF898278), fontSize = 11.sp)
+                }
+            }
+            Surface(onClick = onCreate, modifier = Modifier.weight(1f), shape = RoundedCornerShape(22.dp), color = Color(0xFFF0E4D0)) {
+                Column(Modifier.padding(18.dp)) {
+                    Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFA77836))
+                    Text("开始创作", Modifier.padding(top = 14.dp), color = Color(0xFF302D28), fontSize = 16.sp)
+                    Text("从一个想法开始", Modifier.padding(top = 5.dp), color = Color(0xFF898278), fontSize = 11.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        Surface(onClick = onLibrary, shape = RoundedCornerShape(20.dp), color = Color.Transparent) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("我的书库", Modifier.weight(1f), color = Color(0xFF302D28), fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                Text("${books.size} 本作品  →", color = Color(0xFF898278), fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun QingmoCreateV26(onCreate: () -> Unit, onImport: () -> Unit, onSkills: () -> Unit) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Text("创作", color = Color(0xFF302D28), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text("让脑海里的故事，有一个开始。", Modifier.padding(top = 10.dp, bottom = 28.dp), color = Color(0xFF898278), fontSize = 14.sp)
+        Surface(onClick = onCreate, shape = RoundedCornerShape(28.dp), color = Color(0xFFF0E4D0)) {
+            Column(Modifier.fillMaxWidth().padding(26.dp)) {
+                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(30.dp), tint = Color(0xFFA77836))
+                Text("和 AI 一起写一本书", Modifier.padding(top = 22.dp), color = Color(0xFF302D28), fontSize = 23.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold)
+                Text("聊设定、人物与情节，逐步整理成你的作品。", Modifier.padding(top = 12.dp), color = Color(0xFF766D60), fontSize = 14.sp, lineHeight = 24.sp)
+                Text("开始创作  →", Modifier.padding(top = 28.dp), color = Color(0xFFA77836), fontSize = 16.sp)
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF5)) {
+            Column(Modifier.padding(16.dp)) {
+                QingmoProfileRowV9(Icons.Rounded.FolderOpen, "导入已有作品", "TXT · EPUB · Markdown", onImport)
+                QingmoProfileRowV9(Icons.Rounded.TaskAlt, "创作技能", "管理写作时使用的能力", onSkills)
+            }
+        }
+    }
+}
+
+@Composable
 private fun QingmoShelfHomeV9(
     state: LibraryExperienceState,
     importState: LocalBookImportUiStateV1,
@@ -362,7 +477,7 @@ private fun QingmoShelfHomeV9(
                 Modifier.fillMaxWidth().padding(start = 28.dp, end = 18.dp, top = 10.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("琅嬛", Modifier.weight(1f), color = ink, fontSize = 28.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold)
+                Text("书库", Modifier.weight(1f), color = ink, fontSize = 28.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold)
                 IconButton(onClick = { onSearchOpen(!searchOpen) }, modifier = Modifier.size(42.dp)) {
                     Icon(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "搜索", Modifier.size(23.dp), tint = ink)
                 }
@@ -498,7 +613,7 @@ private fun QingmoProfileV9(
 ) {
     val ink = Color(0xFF17191D)
     val secondary = Color(0xFF92959A)
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             IconButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp, top = 4.dp)) {
                 Icon(Icons.Rounded.ArrowBack, "返回", tint = ink)
@@ -542,7 +657,7 @@ private fun QingmoProfileV9(
 @Composable
 private fun QingmoProfileEditV9(initial: String, onBack: () -> Unit, onSave: (String) -> Unit) {
     var value by rememberSaveable(initial) { mutableStateOf(initial) }
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
@@ -575,7 +690,7 @@ private fun QingmoShelfManagerV9(
     onDeleteShelf: (String) -> Unit,
 ) {
     val ink = Color(0xFF17191D)
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
@@ -621,7 +736,7 @@ private fun QingmoNewShelfV9(onBack: () -> Unit, onSave: (String) -> Unit) {
     var grid by rememberSaveable { mutableStateOf(true) }
     var convenient by rememberSaveable { mutableStateOf(true) }
     var newest by rememberSaveable { mutableStateOf(true) }
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
@@ -649,7 +764,7 @@ private fun QingmoExploreV9(
     onImport: () -> Unit,
     onOpenBook: (String) -> Unit,
 ) {
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             QingmoPageHeaderV9("探索", onBack)
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -687,7 +802,7 @@ private fun QingmoExploreV9(
 
 @Composable
 private fun QingmoHistoryV9(books: List<ReaderBookUi>, onBack: () -> Unit, onOpenBook: (String) -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             QingmoPageHeaderV9("阅历 / 读过", onBack)
             if (books.isEmpty()) {
@@ -723,7 +838,7 @@ private fun QingmoMedalsV9(books: List<ReaderBookUi>, checkedIn: Boolean, onBack
         Triple("今日有约", "完成今日签到", checkedIn),
         Triple("创作旅人", "书架中拥有至少 5 本作品", books.size >= 5),
     )
-    Surface(Modifier.fillMaxSize(), color = Color.White) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F1E9)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             QingmoPageHeaderV9("勋章", onBack)
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
@@ -748,7 +863,7 @@ private fun QingmoMedalsV9(books: List<ReaderBookUi>, checkedIn: Boolean, onBack
 
 @Composable
 private fun QingmoToolsV9(onBack: () -> Unit, onAi: () -> Unit, onRun: () -> Unit, onSkills: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFFF5F1E9)).statusBarsPadding().padding(horizontal = 22.dp)) {
+    Column(Modifier.fillMaxSize().background(Color(0xFFF5F1E9)).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
         QingmoPageHeaderV9("设置", onBack)
         Text("创作与服务", Modifier.padding(top = 24.dp, bottom = 12.dp), color = Color(0xFF898278), fontSize = 13.sp)
         Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF5), shadowElevation = 2.dp) {
@@ -848,4 +963,3 @@ private fun QingmoActionV9(icon: ImageVector, title: String, subtitle: String, d
         }
     }
 }
-
