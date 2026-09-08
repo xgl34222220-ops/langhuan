@@ -1,6 +1,6 @@
 name: Publish APK Release
 
-# Manual publish trigger: 0.28.0-alpha23-reader-exact-viewport
+# Manual publish trigger: 0.28.0-alpha24-reader-chat-hotfix
 on:
   push:
     branches: [main]
