@@ -39,9 +39,15 @@ class ShadcnNewYorkShellTest {
 
         assertTrue(kit.contains("enum class ShadcnButtonVariant"))
         assertTrue(kit.contains("fun ShadcnInput("))
-        assertTrue(theme.contains("dynamicColor: Boolean = true"))
-        assertTrue(theme.contains("accent = colors.primaryContainer"))
-        // New depth hierarchy: 12 / 15 / 18 rather than the older flat 16 / 24 contract.
+
+        // Literary MIUIx / Langhuan Glass owns a stable brand palette by default.
+        assertTrue(theme.contains("dynamicColor: Boolean = false"))
+        assertTrue(theme.contains("primary = Color(0xFFB47A32)"))
+        assertTrue(theme.contains("background = Color(0xFFE8E5DF)"))
+        assertTrue(theme.contains("secondaryContainer = Color(0xFFC6D9DC)"))
+        assertTrue(theme.contains("accent = colors.secondaryContainer"))
+
+        // Depth hierarchy remains 12 / 15 / 18 rather than the older flat 16 / 24 contract.
         assertTrue(theme.contains("radiusMd = 15.dp"))
         assertTrue(theme.contains("large = RoundedCornerShape(18.dp)"))
     }

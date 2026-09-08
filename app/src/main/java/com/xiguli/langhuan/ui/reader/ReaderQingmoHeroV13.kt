@@ -731,7 +731,6 @@ private fun HeroReaderPageV13(
             )
         }
 
-
         AnimatedVisibility(
             visible = panelVisible && overlay == HeroReaderOverlayV13.NONE,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -1059,10 +1058,7 @@ private fun HeroReaderControlsV13(
                     }
                 }
                 LanghuanDividerV4(tokens)
-                LanghuanRowV4("编辑本章", tokens, icon = Icons.Rounded.Edit, onClick = onEdit)
-                LanghuanRowV4("AI 创作", tokens, icon = Icons.Rounded.AutoStories, onClick = onWriting)
-                LanghuanRowV4("进入故事", tokens, icon = Icons.Rounded.TouchApp, onClick = onStory)
-                LanghuanRowV4("返回书架", tokens, trailing = "‹", onClick = onBack)
+                LanghuanRowV4("返回作品", tokens, trailing = "‹", onClick = onBack)
             }
             HeroReaderTabV13.DIRECTORY -> LazyColumn(
                 Modifier.heightIn(max = 430.dp),

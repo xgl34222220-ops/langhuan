@@ -25,65 +25,71 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 /**
  * 琅嬛稳定主题。
  *
- * UI typography follows an Inter Tight-like compact rhythm while keeping SansSerif fallback for
- * Chinese glyphs. Reader body typography remains completely independent from this UI theme.
+ * Literary MIUIx / Langhuan Glass:
+ * - warm paper background instead of clinical white/blue
+ * - amber primary + pale-cyan secondary accent
+ * - hierarchy comes from soft surfaces, radius and shadow, not visible borders
+ * - UI typography keeps the compact Inter Tight rhythm; reader body typography stays independent
+ *
+ * Dynamic color remains available for future appearance settings, but the default is intentionally
+ * disabled so the product keeps a stable literary identity across devices and ROMs.
  */
 private val LanghuanLightColors = lightColorScheme(
-    primary = Color(0xFF245FD3),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDDE8FF),
-    onPrimaryContainer = Color(0xFF0C326D),
-    secondary = Color(0xFF596273),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE7EAF1),
-    onSecondaryContainer = Color(0xFF252A33),
-    tertiary = Color(0xFF7A5AA6),
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFEEDCFF),
-    onTertiaryContainer = Color(0xFF392151),
-    background = Color(0xFFF4F3FA),
-    onBackground = Color(0xFF171923),
-    surface = Color(0xFFFBFAFE),
-    onSurface = Color(0xFF171923),
-    surfaceVariant = Color(0xFFEAE9F1),
-    onSurfaceVariant = Color(0xFF666B7A),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF8F7FD),
-    surfaceContainer = Color(0xFFF0EFF6),
-    surfaceContainerHigh = Color(0xFFE9E8F0),
-    surfaceContainerHighest = Color(0xFFE2E1E9),
-    outline = Color(0xFFC9C8D2),
-    outlineVariant = Color(0xFFDFDEE7),
-    error = Color(0xFFBA1A1A),
+    primary = Color(0xFFB47A32),
+    onPrimary = Color(0xFFFFFBF5),
+    primaryContainer = Color(0xFFF1DFC2),
+    onPrimaryContainer = Color(0xFF4F3517),
+    secondary = Color(0xFF617B7E),
+    onSecondary = Color(0xFFF9FFFF),
+    secondaryContainer = Color(0xFFC6D9DC),
+    onSecondaryContainer = Color(0xFF263E41),
+    tertiary = Color(0xFF7C6A58),
+    onTertiary = Color(0xFFFFFBF6),
+    tertiaryContainer = Color(0xFFEADFD2),
+    onTertiaryContainer = Color(0xFF3D3025),
+    background = Color(0xFFE8E5DF),
+    onBackground = Color(0xFF292724),
+    surface = Color(0xFFF4F1EA),
+    onSurface = Color(0xFF292724),
+    surfaceVariant = Color(0xFFE3DED5),
+    onSurfaceVariant = Color(0xFF77736D),
+    surfaceContainerLowest = Color(0xFFF9F6EF),
+    surfaceContainerLow = Color(0xFFF1EEE7),
+    surfaceContainer = Color(0xFFECE8E0),
+    surfaceContainerHigh = Color(0xFFE5E0D8),
+    surfaceContainerHighest = Color(0xFFDDD8CF),
+    outline = Color(0xFFD6D1C9),
+    outlineVariant = Color(0xFFD6D1C9),
+    error = Color(0xFFB64B45),
     onError = Color.White,
 )
 
 private val LanghuanDarkColors = darkColorScheme(
-    primary = Color(0xFFAFC6FF),
-    onPrimary = Color(0xFF07346E),
-    primaryContainer = Color(0xFF174986),
-    onPrimaryContainer = Color(0xFFD9E5FF),
-    secondary = Color(0xFFC6CAD5),
-    onSecondary = Color(0xFF2B303A),
-    secondaryContainer = Color(0xFF3A404C),
-    onSecondaryContainer = Color(0xFFE2E6F0),
-    tertiary = Color(0xFFD8B9FF),
-    onTertiary = Color(0xFF442661),
-    tertiaryContainer = Color(0xFF5C3E79),
-    onTertiaryContainer = Color(0xFFEEDCFF),
-    background = Color(0xFF101116),
-    onBackground = Color(0xFFE7E7ED),
-    surface = Color(0xFF17181E),
-    onSurface = Color(0xFFE7E7ED),
-    surfaceVariant = Color(0xFF292A32),
-    onSurfaceVariant = Color(0xFFB9BAC4),
-    surfaceContainerLowest = Color(0xFF0C0D11),
-    surfaceContainerLow = Color(0xFF15161B),
-    surfaceContainer = Color(0xFF1C1D23),
-    surfaceContainerHigh = Color(0xFF24252C),
-    surfaceContainerHighest = Color(0xFF2D2E36),
-    outline = Color(0xFF74757F),
-    outlineVariant = Color(0xFF3E3F47),
+    primary = Color(0xFFD9A968),
+    onPrimary = Color(0xFF442B0E),
+    primaryContainer = Color(0xFF62451F),
+    onPrimaryContainer = Color(0xFFF3DFC3),
+    secondary = Color(0xFFA9C5C8),
+    onSecondary = Color(0xFF193538),
+    secondaryContainer = Color(0xFF354F52),
+    onSecondaryContainer = Color(0xFFD3E7E9),
+    tertiary = Color(0xFFCDBAA8),
+    onTertiary = Color(0xFF392C21),
+    tertiaryContainer = Color(0xFF514236),
+    onTertiaryContainer = Color(0xFFEADFD2),
+    background = Color(0xFF171613),
+    onBackground = Color(0xFFE9E3DA),
+    surface = Color(0xFF201E1A),
+    onSurface = Color(0xFFE9E3DA),
+    surfaceVariant = Color(0xFF302D28),
+    onSurfaceVariant = Color(0xFFBBB4AA),
+    surfaceContainerLowest = Color(0xFF12110F),
+    surfaceContainerLow = Color(0xFF1B1916),
+    surfaceContainer = Color(0xFF24211D),
+    surfaceContainerHigh = Color(0xFF2C2924),
+    surfaceContainerHighest = Color(0xFF37332D),
+    outline = Color(0xFF49443D),
+    outlineVariant = Color(0xFF49443D),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
 )
@@ -194,7 +200,7 @@ private val LanghuanTypography = Typography(
 
 @Composable
 fun LanghuanStableTheme(
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
@@ -205,8 +211,8 @@ fun LanghuanStableTheme(
         if (dark) LanghuanDarkColors else LanghuanLightColors
     }
 
-    val success = if (dark) Color(0xFF74D9AD) else Color(0xFF1B8A61)
-    val warning = if (dark) Color(0xFFFFC46B) else Color(0xFFC47700)
+    val success = if (dark) Color(0xFF8BD4AD) else Color(0xFF4F856B)
+    val warning = if (dark) Color(0xFFE6B86F) else Color(0xFFA96F27)
 
     val legacyTokens = MiuixTokens(
         pageBackground = colors.background,
@@ -226,21 +232,21 @@ fun LanghuanStableTheme(
         muted = colors.surfaceContainer,
         mutedForeground = colors.onSurfaceVariant,
         strong = colors.onSurface.copy(alpha = .82f),
-        track = colors.onSurface.copy(alpha = if (dark) .12f else .075f),
-        border = colors.outlineVariant,
+        track = if (dark) Color(0xFF49443D) else Color(0xFFD6D1C9),
+        border = if (dark) Color(0xFF49443D) else Color(0xFFD6D1C9),
         input = colors.surfaceContainerHigh,
         primary = colors.primary,
         primaryForeground = colors.onPrimary,
-        accent = colors.primaryContainer,
-        accentForeground = colors.onPrimaryContainer,
+        accent = colors.secondaryContainer,
+        accentForeground = colors.onSecondaryContainer,
         destructive = colors.error,
         destructiveForeground = colors.onError,
         success = success,
-        successForeground = if (dark) Color(0xFF063824) else Color.White,
+        successForeground = if (dark) Color(0xFF153728) else Color.White,
         warning = warning,
-        warningForeground = if (dark) Color(0xFF4A2C00) else Color.White,
-        ring = colors.primary.copy(alpha = .55f),
-        warmSurface = colors.surfaceContainerLow,
+        warningForeground = if (dark) Color(0xFF422C10) else Color.White,
+        ring = colors.primary.copy(alpha = .48f),
+        warmSurface = if (dark) Color(0xFF2A251E) else Color(0xFFF1E9DD),
         radiusSm = 12.dp,
         radiusMd = 15.dp,
         radiusLg = 18.dp,
