@@ -9,11 +9,11 @@ class LuoShuUiFoundationContractTest {
     private fun source(path: String): String = File(path).readText()
 
     @Test
-    fun activeShelfNoLongerRoutesToLegacyQingmoReplica() {
+    fun shelfMigrationKeepsFunctionalEntryUntilNativeSurfaceReachesParity() {
         val shelfEntry = source("src/main/java/com/xiguli/langhuan/ui/shell/ShelfLibraryV5.kt")
-        assertTrue(shelfEntry.contains("ShelfNativeExperienceV4("))
-        assertFalse(shelfEntry.contains("ShelfQingmoFunctionalV9("))
+        assertTrue(shelfEntry.contains("ShelfQingmoFunctionalV9("))
         assertFalse(shelfEntry.contains("ShelfQingmoReplicaV8("))
+        assertFalse(shelfEntry.contains("ShelfNativeExperienceV4("))
     }
 
     @Test
