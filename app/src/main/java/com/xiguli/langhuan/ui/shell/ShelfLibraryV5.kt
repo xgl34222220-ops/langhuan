@@ -5,8 +5,10 @@ import androidx.compose.runtime.Composable
 /**
  * Stable shelf entry for the current root router.
  *
- * LuoShu is now the visual baseline, so the active shelf uses the native surface instead of the
- * legacy Qingmo replica. Keep this wrapper so navigation call sites remain stable during migration.
+ * LuoShu is the visual baseline, but the functional V9 shelf currently owns book editing, profile,
+ * custom-shelf and history flows that have not all been ported to the newer native shelf yet.
+ * Keep the complete functional route active while those surfaces are rebuilt in-place; do not trade
+ * working features for a cosmetic route switch.
  */
 @Composable
 fun ShelfLibraryV5(
@@ -21,7 +23,7 @@ fun ShelfLibraryV5(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
-) = ShelfNativeExperienceV4(
+) = ShelfQingmoFunctionalV9(
     state = state,
     importState = importState,
     openingBookId = openingBookId,
