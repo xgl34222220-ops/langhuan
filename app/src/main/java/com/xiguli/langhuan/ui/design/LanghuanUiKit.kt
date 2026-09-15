@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,21 +26,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/**
- * Langhuan's semantic UI tokens.
- *
- * Layering is expressed by radius + shadow + inset highlight. Visible borders are intentionally
- * not part of the hierarchy language. `track` is the only neutral 1 px separator role.
- */
+/** Semantic UI tokens. LuoShu is the visual baseline for all non-reader-body surfaces. */
 @Immutable
 data class LanghuanUiTokens(
     val background: Color,
@@ -64,68 +58,64 @@ data class LanghuanUiTokens(
     val warningForeground: Color,
     val ring: Color,
     val warmSurface: Color,
-    val radiusSm: Dp = 12.dp,
-    val radiusMd: Dp = 15.dp,
-    val radiusLg: Dp = 18.dp,
-    val radiusXl: Dp = 24.dp,
+    val radiusSm: Dp = 11.dp,
+    val radiusMd: Dp = 18.dp,
+    val radiusLg: Dp = 24.dp,
+    val radiusXl: Dp = 30.dp,
 )
 
 val LocalLanghuanUiTokens = staticCompositionLocalOf {
     LanghuanUiTokens(
-        background = Color(0xFFF4F3FA),
-        foreground = Color(0xFF171923),
-        card = Color(0xFFFBFAFE),
-        cardForeground = Color(0xFF171923),
-        muted = Color(0xFFF0EFF6),
-        mutedForeground = Color(0xFF666B7A),
-        strong = Color(0xFF323746),
-        track = Color(0x17171923),
-        border = Color(0xFFDFDEE7),
-        input = Color(0xFFE9E8F0),
-        primary = Color(0xFF245FD3),
+        background = Color(0xFFF4F6FA),
+        foreground = Color(0xFF171A1F),
+        card = Color.White,
+        cardForeground = Color(0xFF171A1F),
+        muted = Color(0xFFF0F3F7),
+        mutedForeground = Color(0xFF646A72),
+        strong = Color(0xFF30363D),
+        track = Color(0x13171A1F),
+        border = Color(0xFFDDE2E8),
+        input = Color(0xFFE9EDF2),
+        primary = Color(0xFF315F8C),
         primaryForeground = Color.White,
-        accent = Color(0xFFDDE8FF),
-        accentForeground = Color(0xFF0C326D),
+        accent = Color(0xFFD7E8FA),
+        accentForeground = Color(0xFF153451),
         destructive = Color(0xFFBA1A1A),
         destructiveForeground = Color.White,
         success = Color(0xFF1B8A61),
         successForeground = Color.White,
         warning = Color(0xFFC47700),
         warningForeground = Color.White,
-        ring = Color(0xFF245FD3).copy(alpha = .55f),
-        warmSurface = Color(0xFFF8F4ED),
+        ring = Color(0xFF315F8C).copy(alpha = .48f),
+        warmSurface = Color(0xFFF8F5EF),
     )
-}
-
-private fun depthBrush(base: Color, highlightAlpha: Float = .18f): Brush {
-    val highlight = Color.White.copy(alpha = highlightAlpha).compositeOver(base)
-    return Brush.verticalGradient(listOf(highlight, base, base))
 }
 
 @Composable
 fun LanghuanCard(
     modifier: Modifier = Modifier,
-    contentPadding: Dp = 16.dp,
+    contentPadding: Dp = 20.dp,
     depth: Int = 1,
     content: @Composable () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val radius = when (depth.coerceIn(0, 2)) {
-        0 -> t.radiusSm
-        2 -> t.radiusLg
-        else -> t.radiusMd
+    val level = depth.coerceIn(0, 2)
+    val radius = when (level) {
+        0 -> t.radiusMd
+        2 -> t.radiusXl
+        else -> t.radiusLg
     }
-    val shadow = when (depth.coerceIn(0, 2)) {
-        0 -> 2.dp
-        2 -> 10.dp
-        else -> 6.dp
+    val shadow = when (level) {
+        0 -> 0.dp
+        2 -> 2.dp
+        else -> 1.dp
     }
     val shape = RoundedCornerShape(radius)
     Box(
         modifier = modifier
             .shadow(shadow, shape, clip = false)
             .clip(shape)
-            .background(depthBrush(t.card, if (depth >= 2) .22f else .16f)),
+            .background(t.card),
     ) {
         Box(Modifier.padding(contentPadding)) { content() }
     }
@@ -143,31 +133,26 @@ fun LanghuanPageHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             if (!eyebrow.isNullOrBlank()) {
-                Text(
-                    text = eyebrow,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
-                    color = t.mutedForeground,
-                    fontWeight = FontWeight.Normal,
-                )
-                Spacer(Modifier.height(4.dp))
+                Text(eyebrow, style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground)
+                Spacer(Modifier.height(3.dp))
             }
             Text(
                 text = title,
-                style = androidx.compose.material3.MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium,
                 color = t.foreground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (!subtitle.isNullOrBlank()) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     text = subtitle,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = t.mutedForeground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -175,13 +160,14 @@ fun LanghuanPageHeader(
             }
         }
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = actions,
         )
     }
 }
 
+/** 48 dp touch target, 44 dp visible circle, 21 dp glyph — matching LuoShu headers. */
 @Composable
 fun LanghuanIconButton(
     icon: ImageVector,
@@ -195,14 +181,21 @@ fun LanghuanIconButton(
     val foreground = if (selected) t.accentForeground else t.strong
     Box(
         modifier = modifier
-            .size(42.dp)
-            .shadow(6.dp, CircleShape, clip = false)
+            .size(48.dp)
             .clip(CircleShape)
-            .background(depthBrush(base, .24f))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription, Modifier.size(20.dp), tint = foreground)
+        Box(
+            Modifier
+                .size(44.dp)
+                .shadow(1.dp, CircleShape, clip = false)
+                .clip(CircleShape)
+                .background(base),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription, Modifier.size(21.dp), tint = foreground)
+        }
     }
 }
 
@@ -224,7 +217,7 @@ fun LanghuanBadge(
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
         )
     }
@@ -244,32 +237,33 @@ fun LanghuanMenuRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val iconShape = RoundedCornerShape(t.radiusSm)
         Box(
             modifier = Modifier
-                .size(38.dp)
-                .shadow(4.dp, CircleShape, clip = false)
-                .clip(CircleShape)
-                .background(depthBrush(t.card, .22f)),
+                .size(40.dp)
+                .shadow(1.dp, iconShape, clip = false)
+                .clip(iconShape)
+                .background(t.card),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, Modifier.size(18.dp), tint = t.strong)
+            Icon(icon, null, Modifier.size(20.dp), tint = t.strong)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = t.foreground,
                 fontWeight = FontWeight.Medium,
             )
             if (!subtitle.isNullOrBlank()) {
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = t.mutedForeground,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
