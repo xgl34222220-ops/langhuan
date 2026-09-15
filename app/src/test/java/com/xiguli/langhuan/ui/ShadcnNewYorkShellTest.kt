@@ -7,7 +7,7 @@ import org.junit.Test
 
 class ShadcnNewYorkShellTest {
     @Test
-    fun shadcnStaysAComponentBaselineWhileMainShellIsMiuixMobileFirst() {
+    fun shadcnStaysAComponentBaselineWhileMainShellUsesLuoShuMobileGeometry() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfMobileExperience.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt").readText()
@@ -41,8 +41,9 @@ class ShadcnNewYorkShellTest {
         assertTrue(kit.contains("fun ShadcnInput("))
         assertTrue(theme.contains("dynamicColor: Boolean = true"))
         assertTrue(theme.contains("accent = colors.primaryContainer"))
-        // New depth hierarchy: 12 / 15 / 18 rather than the older flat 16 / 24 contract.
-        assertTrue(theme.contains("radiusMd = 15.dp"))
-        assertTrue(theme.contains("large = RoundedCornerShape(18.dp)"))
+        // LuoShu / MIUIX hierarchy is the active shell contract; Shadcn stays a component library.
+        assertTrue(theme.contains("radiusMd = 18.dp"))
+        assertTrue(theme.contains("large = RoundedCornerShape(24.dp)"))
+        assertTrue(theme.contains("extraLarge = RoundedCornerShape(30.dp)"))
     }
 }

@@ -9,12 +9,13 @@ class ReaderAlpha25PolishContractTest {
     private fun source(path: String): String = File(path).readText()
 
     @Test
-    fun tabHighlightStaysAtTopInsteadOfCrossingLabel() {
+    fun tabSelectionUsesCalmLuoShuSurfaceInsteadOfLegacyHighlightStrip() {
         val kit = source("src/main/java/com/xiguli/langhuan/ui/design/LanghuanComponentKitV4.kt")
         val tabs = kit.substringAfter("internal fun LanghuanTabsV4(").substringBefore("internal fun LanghuanActionTileV4(")
         assertTrue(tabs.contains(".background(bg)"))
-        assertTrue(tabs.contains(".height(6.dp)"))
-        assertTrue(tabs.contains("Color.Transparent"))
+        assertTrue(tabs.contains("RoundedCornerShape(18.dp)"))
+        assertTrue(tabs.contains(".shadow(if (active) 1.dp else 0.dp"))
+        assertFalse(tabs.contains(".height(6.dp)"))
         assertFalse(tabs.contains(".background(v4DepthBrush(bg"))
     }
 
@@ -43,4 +44,3 @@ class ReaderAlpha25PolishContractTest {
         assertTrue(pagination.contains(".filter { it.isNotBlank() }"))
     }
 }
-
