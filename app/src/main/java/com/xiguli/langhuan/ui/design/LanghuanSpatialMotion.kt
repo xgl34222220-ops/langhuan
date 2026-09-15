@@ -36,7 +36,7 @@ fun LanghuanAmbientBackdrop(
     active: Boolean = true,
 ) {
     val t = LocalLanghuanUiTokens.current
-    Box(modifier.background(t.background))
+    Box(modifier.background(t.background)) {}
 }
 
 /** Constellation decoration is intentionally neutralized on production surfaces. */
@@ -45,7 +45,7 @@ fun LanghuanConstellationField(
     modifier: Modifier = Modifier,
     active: Boolean = true,
 ) {
-    Box(modifier)
+    Box(modifier) {}
 }
 
 /** Small status accent; no drifting/glowing orb animation. */
