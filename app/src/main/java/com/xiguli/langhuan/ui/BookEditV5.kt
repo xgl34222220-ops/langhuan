@@ -29,7 +29,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -44,13 +43,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -158,13 +157,13 @@ fun BookEditPageV5(
     Surface(Modifier.fillMaxSize(), color = t.background) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "返回", tint = t.foreground) }
-                Column(Modifier.weight(1f)) {
-                    Text("编辑书籍", style = MaterialTheme.typography.titleLarge, color = t.foreground, fontWeight = FontWeight.SemiBold)
-                    Text("书名、封面、类型和简介", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onClose)
+                Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                    Text("编辑书籍", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+                    Text("书名、封面、类型和简介", style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground)
                 }
             }
 
@@ -173,8 +172,8 @@ fun BookEditPageV5(
             ) {
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.Top) {
                     Surface(
-                        modifier = Modifier.width(136.dp).aspectRatio(.68f),
-                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.width(140.dp).aspectRatio(.70f),
+                        shape = RoundedCornerShape(18.dp),
                         color = t.muted,
                         shadowElevation = 2.dp,
                     ) {
@@ -182,7 +181,7 @@ fun BookEditPageV5(
                             Image(
                                 cover.asImageBitmap(),
                                 book.title,
-                                Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                                Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)),
                                 contentScale = ContentScale.Crop,
                             )
                         } else {
@@ -195,15 +194,15 @@ fun BookEditPageV5(
                         Button(
                             onClick = { coverLauncher.launch("image/*") },
                             enabled = !editState.busy,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(18.dp),
                         ) {
                             Icon(Icons.Rounded.FolderOpen, null, Modifier.size(18.dp))
                             Text("更换封面", Modifier.padding(start = 7.dp))
                         }
                         Text(
                             "从相册或文件选择竖版图片，保存后立即同步到书架。",
-                            Modifier.padding(top = 9.dp),
+                            Modifier.padding(top = 10.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = t.mutedForeground,
                         )
@@ -217,7 +216,7 @@ fun BookEditPageV5(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("书名") },
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(18.dp),
                 )
                 OutlinedTextField(
                     value = genre,
@@ -225,7 +224,7 @@ fun BookEditPageV5(
                     modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                     label = { Text("类型") },
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(18.dp),
                 )
                 OutlinedTextField(
                     value = premise,
@@ -234,14 +233,14 @@ fun BookEditPageV5(
                     label = { Text("简介") },
                     minLines = 5,
                     maxLines = 9,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(18.dp),
                 )
 
                 Button(
                     onClick = { editViewModel.save(book.id, title, genre, premise) },
                     enabled = !editState.busy && title.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp).height(52.dp),
+                    shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = t.primary, contentColor = t.primaryForeground),
                 ) {
                     if (editState.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.primaryForeground)

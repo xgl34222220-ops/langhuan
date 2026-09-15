@@ -28,6 +28,7 @@ class GlobalDepthTypographyContractTest {
         assertTrue(kit.contains("val strong: Color"))
         assertTrue(kit.contains("val track: Color"))
         assertTrue(kit.contains("contentPadding: Dp = 20.dp"))
+        assertTrue(kit.contains("Column(Modifier.padding(contentPadding)) { content() }"))
         assertTrue(kit.contains(".size(48.dp)"))
         assertTrue(kit.contains(".size(44.dp)"))
         assertTrue(kit.contains(".size(21.dp)"))
