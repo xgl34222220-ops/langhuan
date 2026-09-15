@@ -9,11 +9,15 @@ class LuoShuUiFoundationContractTest {
     private fun source(path: String): String = File(path).readText()
 
     @Test
-    fun shelfMigrationKeepsFunctionalEntryUntilNativeSurfaceReachesParity() {
+    fun stableShelfUsesFeatureCompleteLuoShuSurface() {
         val shelfEntry = source("src/main/java/com/xiguli/langhuan/ui/shell/ShelfLibraryV5.kt")
-        assertTrue(shelfEntry.contains("ShelfQingmoFunctionalV9("))
+        val shelf = source("src/main/java/com/xiguli/langhuan/ui/shell/ShelfLuoShuFunctionalV1.kt")
+        assertTrue(shelfEntry.contains("ShelfLuoShuFunctionalV1("))
+        assertFalse(shelfEntry.contains("ShelfQingmoFunctionalV9("))
         assertFalse(shelfEntry.contains("ShelfQingmoReplicaV8("))
-        assertFalse(shelfEntry.contains("ShelfNativeExperienceV4("))
+        assertTrue(shelf.contains("GridCells.Fixed(2)"))
+        assertTrue(shelf.contains("RoundedCornerShape(30.dp)"))
+        assertTrue(shelf.contains("BookEditPageV5("))
     }
 
     @Test
