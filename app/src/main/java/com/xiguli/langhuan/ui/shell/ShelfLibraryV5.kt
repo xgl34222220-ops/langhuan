@@ -2,7 +2,12 @@ package com.xiguli.langhuan.ui
 
 import androidx.compose.runtime.Composable
 
-/** Compatibility entry kept for the current root router. */
+/**
+ * Stable shelf entry for the current root router.
+ *
+ * LuoShu is now the visual baseline, so the active shelf uses the native surface instead of the
+ * legacy Qingmo replica. Keep this wrapper so navigation call sites remain stable during migration.
+ */
 @Composable
 fun ShelfLibraryV5(
     state: LibraryExperienceState,
@@ -16,7 +21,7 @@ fun ShelfLibraryV5(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
-) = ShelfQingmoFunctionalV9(
+) = ShelfNativeExperienceV4(
     state = state,
     importState = importState,
     openingBookId = openingBookId,
