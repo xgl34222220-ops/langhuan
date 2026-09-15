@@ -117,7 +117,7 @@ fun LanghuanCard(
             .clip(shape)
             .background(t.card),
     ) {
-        Box(Modifier.padding(contentPadding)) { content() }
+        Column(Modifier.padding(contentPadding)) { content() }
     }
 }
 
