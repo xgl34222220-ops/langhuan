@@ -2,7 +2,6 @@ package com.xiguli.langhuan.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -31,6 +30,10 @@ import com.xiguli.langhuan.engine.ReferenceResearchGroup
 import com.xiguli.langhuan.engine.ResearchFallbackEngine
 import com.xiguli.langhuan.engine.WebResearchEngine
 import com.xiguli.langhuan.engine.WebResearchSource
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanGlassPanel
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
+import com.xiguli.langhuan.ui.design.LanghuanSpatialHero
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.launch
 
@@ -193,59 +196,66 @@ fun ResearchNewBookConversationPage(
     }
 
     val busy = state.isBusy || researching || state.isLoadingAttachments
+    val headerSubtitle = when {
+        researching -> "正在补全长期研究档案"
+        state.foundation != null && state.blueprintDirty -> "蓝图有新要求待同步"
+        state.foundation != null -> "继续聊天修改，满意后正式建书"
+        state.proposal != null -> "方案已整理，可继续修改"
+        archiveState.entries.isNotEmpty() -> "${archiveState.entries.size} 个长期研究档案可复用"
+        else -> "联网研究 · Reference DNA · 正常 AI 会谈"
+    }
 
     Scaffold(
         containerColor = t.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("高级研究建书", style = MaterialTheme.typography.titleLarge, color = t.foreground)
-                        Text(
-                            when {
-                                researching -> "正在补全长期研究档案"
-                                state.foundation != null && state.blueprintDirty -> "蓝图有新要求待同步"
-                                state.foundation != null -> "继续聊天修改，满意后正式建书"
-                                state.proposal != null -> "方案已整理，可继续修改"
-                                archiveState.entries.isNotEmpty() -> "${archiveState.entries.size} 个长期研究档案可复用"
-                                else -> "联网研究 + Reference DNA + 正常 AI 会谈"
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onClose)
+                Column(Modifier.padding(horizontal = 10.dp).weight(1f)) {
+                    Text("高级研究建书", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+                    Text(headerSubtitle, style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (archiveState.entries.isNotEmpty()) {
+                    LanghuanBadge("${archiveState.entries.size} 档案")
+                    Spacer(Modifier.width(4.dp))
+                }
+                LanghuanIconButton(Icons.Rounded.Tune, "切换 AI 服务 / 模型", onSwitchModel)
+                Box {
+                    LanghuanIconButton(Icons.Rounded.MoreHoriz, "更多", { topMenuExpanded = true })
+                    DropdownMenu(
+                        expanded = topMenuExpanded,
+                        onDismissRequest = { topMenuExpanded = false },
+                        shape = RoundedCornerShape(t.radiusMd),
+                        containerColor = t.card,
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("AI 服务") },
+                            leadingIcon = { Icon(Icons.Rounded.Key, null) },
+                            onClick = { topMenuExpanded = false; onConfigureAi() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("重新开始") },
+                            leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
+                            enabled = !busy,
+                            onClick = {
+                                topMenuExpanded = false
+                                viewModel.reset()
+                                research.resetContext()
+                                archiveState = archiveStore.clearSessionContext()
+                                lastSources = emptyList()
+                                lastTargets = emptyList()
+                                researchMessage = null
+                                retryFoundation = false
                             },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = t.mutedForeground,
                         )
                     }
-                },
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "返回") } },
-                actions = {
-                    IconButton(onClick = onSwitchModel) { Icon(Icons.Rounded.Tune, "切换 AI 服务 / 模型") }
-                    Box {
-                        IconButton(onClick = { topMenuExpanded = true }) { Icon(Icons.Rounded.MoreVert, "更多") }
-                        DropdownMenu(expanded = topMenuExpanded, onDismissRequest = { topMenuExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("AI 服务") },
-                                leadingIcon = { Icon(Icons.Rounded.Key, null) },
-                                onClick = { topMenuExpanded = false; onConfigureAi() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("重新开始") },
-                                leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
-                                enabled = !busy,
-                                onClick = {
-                                    topMenuExpanded = false
-                                    viewModel.reset()
-                                    research.resetContext()
-                                    archiveState = archiveStore.clearSessionContext()
-                                    lastSources = emptyList()
-                                    lastTargets = emptyList()
-                                    researchMessage = null
-                                    retryFoundation = false
-                                },
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = t.background),
-            )
+                }
+            }
         },
         bottomBar = {
             ResearchWorkspaceDock(
@@ -287,7 +297,7 @@ fun ResearchNewBookConversationPage(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { Spacer(Modifier.height(4.dp)) }
             if (state.messages.none { it.role == "user" }) {
@@ -347,18 +357,19 @@ fun ResearchNewBookConversationPage(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(t.radiusMd),
                         color = t.destructive.copy(alpha = .08f),
-                        border = BorderStroke(1.dp, t.destructive.copy(alpha = .22f)),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
                     ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(friendlyResearchError(error), color = t.destructive)
                             if (!state.isBusy && !researching && retryFoundation && state.proposal != null) {
-                                OutlinedButton(onClick = { viewModel.generateFoundation(state.foundation != null) }) {
+                                FilledTonalButton(onClick = { viewModel.generateFoundation(state.foundation != null) }) {
                                     Icon(Icons.Rounded.Refresh, null)
                                     Spacer(Modifier.width(6.dp))
                                     Text(if (state.foundation == null) "重试生成蓝图" else "重试重构蓝图")
                                 }
                             } else if (lastSubmitted.isNotBlank() && !state.isBusy && !researching) {
-                                OutlinedButton(onClick = { submit(lastSubmitted) }) {
+                                FilledTonalButton(onClick = { submit(lastSubmitted) }) {
                                     Icon(Icons.Rounded.Refresh, null)
                                     Spacer(Modifier.width(6.dp))
                                     Text("重试上一句")
@@ -397,105 +408,116 @@ private fun ResearchWorkspaceDock(
     val t = LocalLanghuanUiTokens.current
     val busy = state.isBusy || researching || state.isLoadingAttachments
     val hasConversation = state.messages.any { it.role == "user" }
-    Surface(
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
-        color = t.background,
-        border = BorderStroke(1.dp, t.border),
-        shadowElevation = 8.dp,
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+        LanghuanGlassPanel(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp),
+            radius = 24.dp,
         ) {
-            if (state.pendingAttachments.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    state.pendingAttachments.forEach { attachment ->
-                        InputChip(
-                            selected = true,
-                            onClick = { onRemoveAttachment(attachment.id) },
-                            label = { Text(attachment.fileName, maxLines = 1) },
-                            leadingIcon = {
-                                Icon(if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description, null)
-                            },
-                            trailingIcon = { Icon(Icons.Rounded.Close, "移除附件") },
-                        )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (state.pendingAttachments.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.pendingAttachments.forEach { attachment ->
+                            InputChip(
+                                selected = true,
+                                onClick = { onRemoveAttachment(attachment.id) },
+                                label = { Text(attachment.fileName, maxLines = 1) },
+                                leadingIcon = {
+                                    Icon(if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description, null)
+                                },
+                                trailingIcon = { Icon(Icons.Rounded.Close, "移除附件") },
+                            )
+                        }
                     }
                 }
-            }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ResearchDockToggle(
-                    icon = Icons.Rounded.TravelExplore,
-                    label = if (webResearchEnabled) "联网研究 开" else "联网研究 关",
-                    selected = webResearchEnabled,
-                    enabled = !researching,
-                    onClick = { onToggleWeb(!webResearchEnabled) },
-                )
-                ResearchDockToggle(Icons.Rounded.AutoStories, "Reference DNA", referenceOpen, !busy, onToggleReference)
-                if (archiveCount > 0) {
-                    ResearchDockToggle(Icons.Rounded.Memory, "研究记忆 $archiveCount", memoryOpen, !busy, onToggleMemory)
-                }
-                if (hasConversation && state.foundation == null) {
-                    ResearchDockAction(
-                        label = if (state.proposal == null) "整理方案" else "同步方案",
-                        icon = Icons.Rounded.AutoAwesome,
-                        enabled = !busy,
-                        onClick = onProposal,
-                    )
-                }
-                if (hasConversation) {
-                    ResearchDockAction(
-                        label = when {
-                            state.foundation == null -> "建书蓝图"
-                            state.blueprintDirty -> "同步蓝图"
-                            else -> "查看蓝图"
-                        },
-                        icon = Icons.Rounded.AccountTree,
-                        enabled = !busy,
-                        onClick = onBlueprint,
-                    )
-                }
-                if (state.foundation != null && !state.blueprintDirty) {
-                    ResearchDockAction("正式建书", Icons.Rounded.CheckCircle, !busy, onCreate, accent = true)
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(t.radiusLg),
-                color = t.card,
-                border = BorderStroke(1.dp, t.border),
-            ) {
                 Row(
-                    Modifier.padding(start = 4.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = onAttach, enabled = !busy) { Icon(Icons.Rounded.AttachFile, "上传文件", tint = t.mutedForeground) }
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = onInput,
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (state.foundation == null) "继续说你的要求……" else "继续聊天修改这本书……") },
-                        minLines = 1,
-                        maxLines = 4,
-                        enabled = !busy,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            disabledBorderColor = Color.Transparent,
-                        ),
+                    ResearchDockToggle(
+                        icon = Icons.Rounded.TravelExplore,
+                        label = if (webResearchEnabled) "联网研究 开" else "联网研究 关",
+                        selected = webResearchEnabled,
+                        enabled = !researching,
+                        onClick = { onToggleWeb(!webResearchEnabled) },
                     )
-                    FilledIconButton(
-                        onClick = onSend,
-                        enabled = (input.isNotBlank() || state.pendingAttachments.isNotEmpty()) && !busy,
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+                    ResearchDockToggle(Icons.Rounded.AutoStories, "Reference DNA", referenceOpen, !busy, onToggleReference)
+                    if (archiveCount > 0) {
+                        ResearchDockToggle(Icons.Rounded.Memory, "研究记忆 $archiveCount", memoryOpen, !busy, onToggleMemory)
+                    }
+                    if (hasConversation && state.foundation == null) {
+                        ResearchDockAction(
+                            label = if (state.proposal == null) "整理方案" else "同步方案",
+                            icon = Icons.Rounded.AutoAwesome,
+                            enabled = !busy,
+                            onClick = onProposal,
+                        )
+                    }
+                    if (hasConversation) {
+                        ResearchDockAction(
+                            label = when {
+                                state.foundation == null -> "建书蓝图"
+                                state.blueprintDirty -> "同步蓝图"
+                                else -> "查看蓝图"
+                            },
+                            icon = Icons.Rounded.AccountTree,
+                            enabled = !busy,
+                            onClick = onBlueprint,
+                        )
+                    }
+                    if (state.foundation != null && !state.blueprintDirty) {
+                        ResearchDockAction("正式建书", Icons.Rounded.CheckCircle, !busy, onCreate, accent = true)
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    color = t.card,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    Row(
+                        Modifier.padding(start = 4.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.Bottom,
                     ) {
-                        if (researching) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = t.primaryForeground)
-                        else Icon(Icons.Rounded.Send, "发送")
+                        LanghuanIconButton(Icons.Rounded.AttachFile, "上传文件", onAttach, selected = false)
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = onInput,
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(if (state.foundation == null) "继续说你的要求……" else "继续聊天修改这本书……") },
+                            minLines = 1,
+                            maxLines = 4,
+                            enabled = !busy,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                disabledBorderColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                            ),
+                        )
+                        FilledIconButton(
+                            onClick = onSend,
+                            enabled = (input.isNotBlank() || state.pendingAttachments.isNotEmpty()) && !busy,
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = t.primary, contentColor = t.primaryForeground),
+                        ) {
+                            if (researching) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = t.primaryForeground)
+                            else Icon(Icons.Rounded.Send, "发送")
+                        }
                     }
                 }
             }
@@ -515,12 +537,14 @@ private fun ResearchDockToggle(
     Surface(
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(999.dp),
-        color = if (selected) t.warmSurface else t.card,
-        border = BorderStroke(1.dp, if (selected) t.accent.copy(alpha = .35f) else t.border),
+        color = if (selected) t.accent else t.muted,
+        contentColor = if (selected) t.accentForeground else t.foreground,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(15.dp), tint = if (selected) t.accent else t.mutedForeground)
-            Text(label, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelSmall, color = if (selected) t.accent else t.foreground)
+            Icon(icon, null, Modifier.size(15.dp), tint = if (selected) t.accentForeground else t.mutedForeground)
+            Text(label, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelSmall, color = if (selected) t.accentForeground else t.foreground)
         }
     }
 }
@@ -537,8 +561,10 @@ private fun ResearchDockAction(
     Surface(
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(999.dp),
-        color = if (accent) t.accent else t.foreground,
-        contentColor = if (accent) t.accentForeground else t.primaryForeground,
+        color = if (accent) t.primary else t.muted,
+        contentColor = if (accent) t.primaryForeground else t.foreground,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
         Row(Modifier.padding(horizontal = 11.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(15.dp))
@@ -550,28 +576,26 @@ private fun ResearchDockAction(
 @Composable
 private fun ResearchWelcomeCard(webResearchEnabled: Boolean, archiveCount: Int) {
     val t = LocalLanghuanUiTokens.current
-    Surface(
+    LanghuanSpatialHero(
+        title = "高级研究模式",
+        subtitle = "像普通 AI 一样直接聊天。需要核对公开资料时再联网；Reference DNA 和长期研究档案会作为隐藏上下文参与，不会把搜索摘要铺满对话。",
+        eyebrow = "Research / Reference DNA",
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(t.radiusLg),
-        color = t.card,
-        border = BorderStroke(1.dp, t.border),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.TravelExplore, null, tint = t.accent)
-                Text("高级研究模式", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground)
-            }
-            Text(
-                "像普通 AI 一样直接聊天。需要核对公开资料时再联网；Reference DNA 和长期研究档案会作为隐藏上下文参与，不会把搜索摘要铺满对话。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = t.mutedForeground,
-            )
-            Text(
-                "联网研究：${if (webResearchEnabled) "开启" else "关闭"} · 长期档案：$archiveCount",
-                style = MaterialTheme.typography.labelSmall,
-                color = t.accent,
-            )
+        Row(
+            modifier = Modifier.padding(top = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LanghuanBadge(if (webResearchEnabled) "联网研究已开启" else "联网研究已关闭", accent = webResearchEnabled)
+            if (archiveCount > 0) LanghuanBadge("长期档案 $archiveCount")
         }
+        Text(
+            "资料只是创作辅助，聊天与蓝图才是主流程。",
+            modifier = Modifier.padding(top = 10.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+        )
     }
 }
 
@@ -579,7 +603,7 @@ private fun ResearchWelcomeCard(webResearchEnabled: Boolean, archiveCount: Int) 
 private fun ResearchBusyRow(text: String) {
     val t = LocalLanghuanUiTokens.current
     Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.accent)
+        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.primary)
         Spacer(Modifier.width(9.dp))
         Text(text, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
     }
@@ -682,13 +706,14 @@ private fun ResearchArchiveMemoryCard(archive: CreationResearchArchive) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(t.radiusMd),
-        color = t.warmSurface,
-        border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
+        color = t.muted,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Memory, null, tint = t.accent)
-                Spacer(Modifier.width(6.dp))
+                Icon(Icons.Rounded.Memory, null, tint = t.strong)
+                Spacer(Modifier.width(7.dp))
                 Text("长期研究记忆", fontWeight = FontWeight.SemiBold, color = t.foreground)
             }
             archive.lastAuthorTarget?.let { Text("当前作者：$it", style = MaterialTheme.typography.bodySmall, color = t.foreground) }
@@ -713,16 +738,17 @@ private fun ResearchChatBubble(message: CreationChatMessage) {
         Surface(
             modifier = Modifier.fillMaxWidth(if (user) .86f else .96f),
             shape = RoundedCornerShape(t.radiusLg),
-            color = if (user) t.foreground else t.card,
-            contentColor = if (user) t.primaryForeground else t.foreground,
-            border = if (user) null else BorderStroke(1.dp, t.border),
+            color = if (user) t.accent else t.card,
+            contentColor = if (user) t.accentForeground else t.foreground,
+            tonalElevation = 0.dp,
+            shadowElevation = if (user) 0.dp else 1.dp,
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                 Text(
                     if (user) "你" else "琅嬛 AI",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (user) t.primaryForeground.copy(alpha = .72f) else t.accent,
+                    color = if (user) t.accentForeground.copy(alpha = .72f) else t.mutedForeground,
                 )
                 Spacer(Modifier.height(5.dp))
                 Text(display, style = MaterialTheme.typography.bodyLarge)
@@ -730,7 +756,8 @@ private fun ResearchChatBubble(message: CreationChatMessage) {
                     Spacer(Modifier.height(8.dp))
                     Surface(
                         shape = RoundedCornerShape(t.radiusSm),
-                        color = if (user) t.primaryForeground.copy(alpha = .08f) else t.muted,
+                        color = if (user) t.accentForeground.copy(alpha = .07f) else t.muted,
+                        tonalElevation = 0.dp,
                     ) {
                         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.Description, null)
@@ -756,13 +783,14 @@ private fun ResearchStatusCard(message: String, targets: List<String>, sources: 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(t.radiusMd),
-        color = t.warmSurface,
-        border = BorderStroke(1.dp, t.accent.copy(alpha = .18f)),
+        color = t.muted,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.TravelExplore, null, tint = t.accent)
-                Spacer(Modifier.width(6.dp))
+                Icon(Icons.Rounded.TravelExplore, null, tint = t.strong)
+                Spacer(Modifier.width(7.dp))
                 Text(message, fontWeight = FontWeight.SemiBold, color = t.foreground)
             }
             if (targets.isNotEmpty()) Text("参考对象：${targets.joinToString(" · ")}", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
@@ -781,10 +809,11 @@ private fun ResearchProposalCard(proposal: NewBookProposal, busy: Boolean, onNex
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(t.radiusLg),
         color = t.card,
-        border = BorderStroke(1.dp, t.border),
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text("新书方案", style = MaterialTheme.typography.labelMedium, color = t.accent)
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            LanghuanBadge("新书方案")
             Text(proposal.title, style = MaterialTheme.typography.headlineSmall, color = t.foreground)
             Text("${proposal.genre} · 目标 ${proposal.targetWords / 10_000} 万字", color = t.mutedForeground)
             Text("简介", fontWeight = FontWeight.SemiBold, color = t.foreground)
@@ -793,7 +822,7 @@ private fun ResearchProposalCard(proposal: NewBookProposal, busy: Boolean, onNex
             Text(proposal.coreHook, color = t.foreground)
             Text("主题", fontWeight = FontWeight.SemiBold, color = t.foreground)
             Text(proposal.theme, color = t.foreground)
-            OutlinedButton(onClick = onNext, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onNext, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(t.radiusMd)) {
                 Icon(Icons.Rounded.AccountTree, null)
                 Spacer(Modifier.width(8.dp))
                 Text("生成建书蓝图")
@@ -817,23 +846,17 @@ private fun ResearchFoundationCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(t.radiusLg),
         color = t.card,
-        border = BorderStroke(1.dp, t.border),
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("建书蓝图", style = MaterialTheme.typography.labelMedium, color = t.accent)
+                    Text("建书蓝图", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
                     Text(foundation.title, style = MaterialTheme.typography.headlineSmall, color = t.foreground)
                     Text("${foundation.genre} · ${foundation.targetWords / 10_000} 万字", color = t.mutedForeground)
                 }
-                Surface(shape = RoundedCornerShape(999.dp), color = if (outOfSync) t.warning.copy(alpha = .12f) else t.success.copy(alpha = .12f)) {
-                    Text(
-                        if (outOfSync) "待同步" else "已同步",
-                        Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (outOfSync) t.warning else t.success,
-                    )
-                }
+                LanghuanBadge(if (outOfSync) "待同步" else "已同步", accent = !outOfSync)
             }
             Text("故事承诺", fontWeight = FontWeight.SemiBold, color = t.foreground)
             Text(foundation.storyPromise, color = t.foreground)
@@ -841,20 +864,25 @@ private fun ResearchFoundationCard(
             Text("${foundation.masterObjective}\n${foundation.masterConflict}\n${foundation.masterTurningPoint}", color = t.foreground)
             Text("角色 ${foundation.characters.size} · 分卷 ${foundation.volumes.size} · 伏笔 ${foundation.foreshadowing.size} · 圣经 ${foundation.bible.size}", color = t.mutedForeground)
             if (outOfSync) {
-                Surface(shape = RoundedCornerShape(t.radiusMd), color = t.warning.copy(alpha = .08f), border = BorderStroke(1.dp, t.warning.copy(alpha = .18f))) {
+                Surface(
+                    shape = RoundedCornerShape(t.radiusMd),
+                    color = t.warning.copy(alpha = .08f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("聊天里有新要求，当前蓝图仍是上一次同步版本。", color = t.foreground)
                         pendingProposal?.let { proposal ->
                             Text(proposal.title, fontWeight = FontWeight.SemiBold, color = t.foreground)
                             Text(proposal.premise, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 4, overflow = TextOverflow.Ellipsis)
                         }
-                        Button(onClick = onSync, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("同步当前聊天到蓝图") }
+                        Button(onClick = onSync, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(t.radiusMd)) { Text("同步当前聊天到蓝图") }
                     }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onRegenerate, enabled = !busy, modifier = Modifier.weight(1f)) { Text("整套重做") }
-                Button(onClick = onCreate, enabled = !outOfSync && !busy, modifier = Modifier.weight(1f)) { Text("正式建书") }
+                FilledTonalButton(onClick = onRegenerate, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(t.radiusMd)) { Text("整套重做") }
+                Button(onClick = onCreate, enabled = !outOfSync && !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(t.radiusMd)) { Text("正式建书") }
             }
         }
     }
