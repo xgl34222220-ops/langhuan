@@ -1,6 +1,5 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,9 +25,10 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,13 +70,7 @@ private val DnaCategories = listOf(
     DnaCategory("AVOID", "AVOID", kinds = setOf("AVOID")),
 )
 
-/**
- * Full Reference DNA inspector.
- *
- * This is intentionally a data browser, not a one-line summary. It exposes the retained
- * character/relationship, rule, event, mystery, world and style items so users can verify what
- * distillation actually produced before binding a reference to a new project.
- */
+/** Full Reference DNA inspector. Keeps all retained data visible instead of reducing it to one summary. */
 @Composable
 internal fun ReferenceDistillationDataBrowserDialog(
     report: ReferenceDistillationReport,
@@ -109,33 +103,32 @@ internal fun ReferenceDistillationDataBrowserDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.96f),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(.96f),
             shape = RoundedCornerShape(t.radiusXl),
             color = t.background,
             contentColor = t.foreground,
-            border = BorderStroke(1.dp, t.border),
-            shadowElevation = 12.dp,
+            shadowElevation = 8.dp,
         ) {
             Column(Modifier.fillMaxWidth()) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 18.dp, top = 14.dp, end = 14.dp, bottom = 9.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 18.dp, top = 14.dp, end = 14.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Surface(
                         modifier = Modifier.size(40.dp),
                         shape = RoundedCornerShape(t.radiusSm),
-                        color = t.warmSurface,
-                        contentColor = t.accent,
-                        border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
+                        color = t.card,
+                        contentColor = t.strong,
+                        shadowElevation = 1.dp,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.DataObject, null, Modifier.size(21.dp), tint = t.accent)
+                            Icon(Icons.Rounded.DataObject, null, Modifier.size(21.dp), tint = t.strong)
                         }
                     }
                     Column(Modifier.padding(start = 11.dp).weight(1f)) {
                         Text(
                             report.title,
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.headlineSmall,
                             color = t.foreground,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -167,7 +160,7 @@ internal fun ReferenceDistillationDataBrowserDialog(
                     }
 
                     item {
-                        OutlinedTextField(
+                        TextField(
                             value = query,
                             onValueChange = { query = it },
                             modifier = Modifier.fillMaxWidth(),
@@ -175,6 +168,14 @@ internal fun ReferenceDistillationDataBrowserDialog(
                             shape = RoundedCornerShape(t.radiusMd),
                             leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(19.dp)) },
                             placeholder = { Text("搜索人物、关系、能力、规则、事件、地点……") },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = t.card,
+                                unfocusedContainerColor = t.card,
+                                disabledContainerColor = t.muted,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                            ),
                         )
                     }
 
@@ -262,32 +263,12 @@ private fun DnaCoverageCard(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DnaMetric(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.Group,
-                    label = "人物 / 关系",
-                    value = categoryCounts["CHARACTER"] ?: 0,
-                )
-                DnaMetric(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.Hub,
-                    label = "规则 / 能力",
-                    value = categoryCounts["POWER"] ?: 0,
-                )
+                DnaMetric(Modifier.weight(1f), Icons.Rounded.Group, "人物 / 关系", categoryCounts["CHARACTER"] ?: 0)
+                DnaMetric(Modifier.weight(1f), Icons.Rounded.Hub, "规则 / 能力", categoryCounts["POWER"] ?: 0)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DnaMetric(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.MenuBook,
-                    label = "剧情 / 事件",
-                    value = categoryCounts["PLOT"] ?: 0,
-                )
-                DnaMetric(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.Style,
-                    label = "Style DNA",
-                    value = categoryCounts["STYLE"] ?: 0,
-                )
+                DnaMetric(Modifier.weight(1f), Icons.Rounded.MenuBook, "剧情 / 事件", categoryCounts["PLOT"] ?: 0)
+                DnaMetric(Modifier.weight(1f), Icons.Rounded.Style, "Style DNA", categoryCounts["STYLE"] ?: 0)
             }
 
             Text(
@@ -316,7 +297,6 @@ private fun DnaMetric(
         modifier = modifier,
         shape = RoundedCornerShape(t.radiusSm),
         color = t.muted,
-        border = BorderStroke(1.dp, t.border),
     ) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(17.dp), tint = t.mutedForeground)
@@ -337,25 +317,24 @@ private fun DnaCategoryChip(
 ) {
     val t = LocalLanghuanUiTokens.current
     Surface(
-        shape = RoundedCornerShape(t.radiusSm),
-        color = if (selected) t.foreground else t.card,
-        contentColor = if (selected) t.primaryForeground else t.foreground,
-        border = BorderStroke(1.dp, if (selected) t.foreground else t.border),
+        shape = RoundedCornerShape(t.radiusMd),
+        color = if (selected) t.accent else t.muted,
+        contentColor = if (selected) t.accentForeground else t.mutedForeground,
     ) {
         Row(
-            Modifier.clickable(onClick = onClick).padding(horizontal = 9.dp, vertical = 7.dp),
+            Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 label,
                 style = MaterialTheme.typography.labelMedium,
-                color = if (selected) t.primaryForeground else t.foreground,
+                color = if (selected) t.accentForeground else t.foreground,
             )
             Text(
                 count.toString(),
                 modifier = Modifier.padding(start = 5.dp),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (selected) t.primaryForeground.copy(alpha = .72f) else t.mutedForeground,
+                color = if (selected) t.accentForeground.copy(alpha = .72f) else t.mutedForeground,
             )
         }
     }
@@ -389,7 +368,6 @@ private fun DnaBrowserItem(item: ReferenceDistillationReportItem) {
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(t.radiusSm),
                     color = t.muted,
-                    border = BorderStroke(1.dp, t.border),
                 ) {
                     Text(
                         "依据：${item.evidence}",
