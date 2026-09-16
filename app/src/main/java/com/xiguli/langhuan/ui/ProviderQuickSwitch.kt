@@ -9,9 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CloudDone
-import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +27,10 @@ import com.xiguli.langhuan.data.StoredAiProvider
 import com.xiguli.langhuan.engine.AiTaskRoutingStore
 import com.xiguli.langhuan.engine.DiscoveredModel
 import com.xiguli.langhuan.engine.ProviderAutoDetector
+import com.xiguli.langhuan.ui.design.LanghuanBadge
+import com.xiguli.langhuan.ui.design.LanghuanCard
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -176,9 +178,14 @@ fun ProviderQuickSwitchSheet(
     onDismiss: () -> Unit,
 ) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
+    val t = LocalLanghuanUiTokens.current
     LaunchedEffect(preferredProviderId) { viewModel.prepare(preferredProviderId) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = t.card,
+        shape = RoundedCornerShape(topStart = t.radiusXl, topEnd = t.radiusXl),
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -186,69 +193,109 @@ fun ProviderQuickSwitchSheet(
                 .padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("快速切换模型", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(
-                "一个 AI 服务可以直接读取并切换它提供的模型，不需要复制成多个服务。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("快速切换模型", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+                    Text(
+                        "同一个 AI 服务直接切模型，不需要复制多份连接。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
+                LanghuanIconButton(Icons.Rounded.Close, "关闭", onDismiss)
+            }
 
             if (state.providers.isEmpty()) {
-                Text("还没有保存 AI 服务，请先到设置中添加。")
+                LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+                    Text("还没有保存 AI 服务，请先到 AI 服务页添加。", color = t.mutedForeground)
+                }
             } else {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     state.providers.forEach { provider ->
-                        FilterChip(
-                            selected = provider.id == state.selectedProviderId,
-                            onClick = {
-                                onProviderActivated(provider.id)
-                                viewModel.selectProvider(provider.id)
-                            },
-                            label = { Text(provider.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            leadingIcon = if (provider.isDefault) {
-                                { Icon(Icons.Rounded.CloudDone, null, Modifier.size(18.dp)) }
-                            } else null,
-                        )
+                        val selected = provider.id == state.selectedProviderId
+                        Surface(
+                            shape = RoundedCornerShape(999.dp),
+                            color = if (selected) t.accent else t.muted,
+                            contentColor = if (selected) t.accentForeground else t.foreground,
+                        ) {
+                            Row(
+                                Modifier
+                                    .clickable {
+                                        onProviderActivated(provider.id)
+                                        viewModel.selectProvider(provider.id)
+                                    }
+                                    .padding(horizontal = 11.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (provider.isDefault) {
+                                    Icon(Icons.Rounded.CloudDone, null, Modifier.size(16.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                }
+                                Text(provider.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
                     }
                 }
 
                 state.selectedProvider?.let { provider ->
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
-                    ) {
-                        Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(provider.name, fontWeight = FontWeight.Bold)
+                    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 13.dp, depth = 0) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = RoundedCornerShape(t.radiusSm),
+                                color = t.accent,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.CloudDone, null, Modifier.size(19.dp), tint = t.accentForeground)
+                                }
+                            }
+                            Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                                Text(provider.name, style = MaterialTheme.typography.titleSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     "当前：${provider.model} · ${provider.protocol.label}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = t.mutedForeground,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            IconButton(onClick = viewModel::refreshModels, enabled = !state.isLoadingModels) {
-                                if (state.isLoadingModels) {
-                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(Icons.Rounded.Refresh, "重新读取模型")
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = RoundedCornerShape(t.radiusSm),
+                                color = t.muted,
+                                contentColor = t.strong,
+                            ) {
+                                Box(
+                                    Modifier.clickable(enabled = !state.isLoadingModels, onClick = viewModel::refreshModels),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (state.isLoadingModels) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Rounded.Refresh, "重新读取模型", Modifier.size(19.dp))
                                 }
                             }
                         }
                     }
                 }
 
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                state.error?.let {
+                    Surface(shape = RoundedCornerShape(t.radiusSm), color = t.destructive.copy(alpha = .08f)) {
+                        Text(it, Modifier.fillMaxWidth().padding(10.dp), style = MaterialTheme.typography.bodySmall, color = t.destructive)
+                    }
+                }
                 state.message?.let {
-                    Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                    Surface(shape = RoundedCornerShape(t.radiusSm), color = t.accent.copy(alpha = .55f)) {
+                        Text(it, Modifier.fillMaxWidth().padding(10.dp), style = MaterialTheme.typography.bodySmall, color = t.accentForeground)
+                    }
                 }
 
                 if (state.isLoadingModels) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = t.accentForeground, trackColor = t.muted)
                 } else if (state.models.isNotEmpty()) {
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 430.dp),
                         verticalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
                         items(state.models.take(60), key = { it.id }) { model ->
@@ -262,40 +309,50 @@ fun ProviderQuickSwitchSheet(
                                         state.selectedProviderId?.let(onProviderActivated)
                                         viewModel.switchModel(model.id)
                                     },
-                                shape = RoundedCornerShape(16.dp),
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (route.supported) .45f else .25f)
+                                shape = RoundedCornerShape(t.radiusMd),
+                                color = when {
+                                    selected -> t.accent
+                                    route.supported -> t.muted
+                                    else -> t.muted.copy(alpha = .48f)
                                 },
+                                contentColor = if (selected) t.accentForeground else t.foreground,
                             ) {
-                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         Icons.Rounded.Psychology,
                                         null,
-                                        tint = if (route.supported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        Modifier.size(19.dp),
+                                        tint = when {
+                                            !route.supported -> t.mutedForeground
+                                            selected -> t.accentForeground
+                                            else -> t.strong
+                                        },
                                     )
                                     Column(Modifier.padding(start = 9.dp).weight(1f)) {
                                         Text(
                                             model.displayName,
                                             fontWeight = FontWeight.SemiBold,
+                                            color = if (selected) t.accentForeground else t.foreground,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                         Text(
                                             if (provider?.baseUrl?.contains("opencode.ai/zen/go", ignoreCase = true) == true) route.label else model.id,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = if (route.supported) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                                            color = if (!route.supported) t.destructive else if (selected) t.accentForeground.copy(alpha = .72f) else t.mutedForeground,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                     }
-                                    if (selected) {
-                                        Text("当前", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                    }
+                                    if (selected) LanghuanBadge("当前", accent = true)
+                                    else if (!route.supported) LanghuanBadge("暂不可用")
                                 }
                             }
                         }
+                    }
+                } else if (state.selectedProvider != null) {
+                    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp, depth = 0) {
+                        Text("没有从接口读取到模型列表。可以回到 AI 服务页手动填写模型名。", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                     }
                 }
             }
