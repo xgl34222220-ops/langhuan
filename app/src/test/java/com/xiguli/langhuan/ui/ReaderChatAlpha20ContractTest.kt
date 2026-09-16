@@ -17,12 +17,16 @@ class ReaderChatAlpha20ContractTest {
     }
 
     @Test
-    fun creationComposerKeepsSpatialBackgroundVisible() {
+    fun creationComposerUsesQuietLuoShuSurface() {
         val creation = source("src/main/java/com/xiguli/langhuan/ui/CreationChatV4.kt")
-        assertTrue(creation.contains("color = Color.Transparent"))
+        assertFalse(creation.contains("LanghuanAmbientBackdrop"))
+        assertFalse(creation.contains("LanghuanConstellationField"))
         assertTrue(creation.contains("creationChatDisplayTextV20(text)"))
+        assertTrue(creation.contains("LanghuanGlassPanel("))
         val glass = source("src/main/java/com/xiguli/langhuan/ui/design/LanghuanSpatialMotion.kt")
-        assertTrue(glass.contains("t.card.copy(alpha = .74f)"))
+        assertTrue(glass.contains("t.card.copy(alpha = .94f)"))
+        assertFalse(glass.contains("rememberInfiniteTransition"))
+        assertFalse(glass.contains("Canvas("))
     }
 
     @Test

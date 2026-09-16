@@ -2,8 +2,6 @@ package com.xiguli.langhuan.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -27,22 +25,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.ui.design.LanghuanBadge
-import com.xiguli.langhuan.ui.design.LanghuanCard
-import com.xiguli.langhuan.ui.design.LanghuanIconButton
-import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
-import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
-import com.xiguli.langhuan.ui.design.LanghuanAmbientBackdrop
-import com.xiguli.langhuan.ui.design.LanghuanConstellationField
 import com.xiguli.langhuan.ui.design.LanghuanGlassPanel
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
+import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
 import com.xiguli.langhuan.ui.design.LanghuanOrb
 import com.xiguli.langhuan.ui.design.LanghuanSpatialHero
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
  * Conversation-first creation shell.
  *
- * The user can keep talking naturally while proposal / blueprint / create-book actions stay next
- * to the composer. This avoids the old workflow where important actions lived far away from the
- * latest conversation state.
+ * LuoShu is the visual baseline: the conversation owns the page, decoration stays quiet, and glass
+ * is reserved for the composer/floating interaction layers. Proposal/blueprint business logic is
+ * deliberately unchanged here.
  */
 @Composable
 fun CreationChatV4(
@@ -95,10 +90,7 @@ fun CreationChatV4(
     }
 
     Surface(Modifier.fillMaxSize(), color = t.background) {
-        Box(Modifier.fillMaxSize()) {
-            LanghuanAmbientBackdrop(Modifier.fillMaxSize(), active = state.isBusy)
-            LanghuanConstellationField(Modifier.fillMaxSize(), active = state.isBusy)
-            Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
             CreationHeaderV4(
                 stageLabel = stageLabel,
                 menuOpen = menuOpen,
@@ -118,9 +110,7 @@ fun CreationChatV4(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (!hasUser) {
-                    item {
-                        CreationWelcomeV4(onAdvancedResearch = onAdvancedResearch)
-                    }
+                    item { CreationWelcomeV4(onAdvancedResearch = onAdvancedResearch) }
                 }
 
                 itemsIndexed(state.messages) { index, message ->
@@ -184,7 +174,6 @@ fun CreationChatV4(
                 onCreate = viewModel::createCurrentFoundation,
                 onCancelCurrent = viewModel::cancelCurrentAiOperation,
             )
-            }
         }
     }
 }
@@ -206,16 +195,16 @@ private fun CreationHeaderV4(
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 11.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onBack)
-        Column(Modifier.padding(horizontal = 12.dp).weight(1f)) {
-            Text("创作", style = MaterialTheme.typography.titleLarge, color = t.foreground)
-            Text("像聊天一样把一本书聊清楚", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+        Column(Modifier.padding(horizontal = 10.dp).weight(1f)) {
+            Text("创作", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+            Text("像聊天一样把一本书聊清楚", style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground)
         }
         LanghuanBadge(stageLabel, accent = stageLabel == "蓝图完整")
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(4.dp))
         Box {
             LanghuanIconButton(Icons.Rounded.MoreHoriz, "更多", onOpenMenu)
             DropdownMenu(
@@ -223,7 +212,6 @@ private fun CreationHeaderV4(
                 onDismissRequest = onDismissMenu,
                 shape = RoundedCornerShape(t.radiusMd),
                 containerColor = t.card,
-                border = BorderStroke(1.dp, t.border),
             ) {
                 DropdownMenuItem(
                     text = { Text("高级研究 / Reference DNA") },
@@ -252,27 +240,22 @@ private fun CreationWelcomeV4(onAdvancedResearch: () -> Unit) {
     LanghuanSpatialHero(
         title = "和琅嬛聊一本书",
         subtitle = "不用填表。说题材、人物、画面、参考作品，或者直接上传设定文件；对话会逐步沉淀成方案和蓝图。",
-        eyebrow = "CREATION SPACE",
+        eyebrow = "小说创作",
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
-        trailing = {
-            LanghuanOrb(
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 18.dp),
-                size = 48.dp,
-            )
-        },
     ) {
         Surface(
             modifier = Modifier.padding(top = 16.dp).clickable(onClick = onAdvancedResearch),
             shape = RoundedCornerShape(t.radiusMd),
-            color = t.card.copy(alpha = .78f),
+            color = t.muted,
             contentColor = t.foreground,
-            border = BorderStroke(1.dp, t.border.copy(alpha = .8f)),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
         ) {
             Row(
                 Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.TravelExplore, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Rounded.TravelExplore, null, Modifier.size(17.dp), tint = t.strong)
                 Text(
                     "高级研究 / Reference DNA",
                     modifier = Modifier.padding(start = 7.dp),
@@ -295,17 +278,18 @@ private fun CreationMessageV4(message: CreationChatMessage, isFirstAssistant: Bo
             Surface(
                 modifier = Modifier.widthIn(max = 320.dp),
                 shape = RoundedCornerShape(t.radiusMd),
-                color = t.foreground,
-                contentColor = t.primaryForeground,
+                color = t.accent,
+                contentColor = t.accentForeground,
+                tonalElevation = 0.dp,
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
-                    Text(message.text, color = t.primaryForeground, lineHeight = 22.sp)
+                    Text(message.text, color = t.accentForeground, lineHeight = 22.sp)
                     if (message.attachments.isNotEmpty()) {
                         Text(
                             message.attachments.joinToString(" · ") { it.fileName },
                             modifier = Modifier.padding(top = 7.dp),
                             style = MaterialTheme.typography.labelSmall,
-                            color = t.primaryForeground.copy(alpha = .68f),
+                            color = t.accentForeground.copy(alpha = .68f),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -323,18 +307,24 @@ private fun CreationAssistantTextV4(text: String, streaming: Boolean) {
     val t = LocalLanghuanUiTokens.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Surface(
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier.size(32.dp),
             shape = RoundedCornerShape(t.radiusSm),
-            color = t.warmSurface,
-            contentColor = t.accent,
-            border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
+            color = t.muted,
+            contentColor = t.strong,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(16.dp), tint = t.accent)
+                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(16.dp), tint = t.strong)
             }
         }
         Column(Modifier.padding(start = 11.dp).weight(1f)) {
-            Text(creationChatDisplayTextV20(text), style = MaterialTheme.typography.bodyLarge, lineHeight = 25.sp, color = t.foreground)
+            Text(
+                creationChatDisplayTextV20(text),
+                style = MaterialTheme.typography.bodyLarge,
+                lineHeight = 25.sp,
+                color = t.foreground,
+            )
             if (streaming) {
                 Row(Modifier.padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     LanghuanOrb(active = true, size = 18.dp)
@@ -342,14 +332,13 @@ private fun CreationAssistantTextV4(text: String, streaming: Boolean) {
                         "正在生成",
                         modifier = Modifier.padding(start = 6.dp),
                         style = MaterialTheme.typography.labelSmall,
-                        color = t.accent,
+                        color = t.mutedForeground,
                     )
                 }
             }
         }
     }
 }
-
 
 internal fun creationChatDisplayTextV20(raw: String): String = raw
     .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s+"), "")
@@ -384,7 +373,16 @@ private fun CreationErrorPanelV4(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                LanghuanOrb(active = false, size = 26.dp)
+                Surface(
+                    modifier = Modifier.size(30.dp),
+                    shape = RoundedCornerShape(t.radiusSm),
+                    color = t.muted,
+                    tonalElevation = 0.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(17.dp), tint = t.destructive)
+                    }
+                }
                 Column(Modifier.padding(start = 9.dp).weight(1f)) {
                     Text("这一轮没有正常完成", style = MaterialTheme.typography.labelLarge, color = t.foreground, fontWeight = FontWeight.SemiBold)
                     Text(error, modifier = Modifier.padding(top = 3.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall)
@@ -396,7 +394,7 @@ private fun CreationErrorPanelV4(
                         onClick = onRetry,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(t.radiusMd),
-                        colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+                        colors = ButtonDefaults.buttonColors(containerColor = t.primary, contentColor = t.primaryForeground),
                     ) {
                         Icon(Icons.Rounded.Refresh, null, Modifier.size(17.dp))
                         Spacer(Modifier.width(6.dp))
@@ -495,7 +493,7 @@ private fun CreationComposerV4(
                             shape = RoundedCornerShape(t.radiusSm),
                             color = t.muted,
                             contentColor = t.foreground,
-                            border = BorderStroke(1.dp, t.border),
+                            tonalElevation = 0.dp,
                         ) {
                             Row(
                                 Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
@@ -524,7 +522,7 @@ private fun CreationComposerV4(
             LanghuanGlassPanel(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(5.dp),
-                radius = 20.dp,
+                radius = 24.dp,
             ) {
                 Row(
                     Modifier.fillMaxWidth(),
@@ -542,7 +540,7 @@ private fun CreationComposerV4(
                             .padding(horizontal = 4.dp, vertical = 11.dp),
                         enabled = !busy,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = t.foreground),
-                        cursorBrush = SolidColor(t.accent),
+                        cursorBrush = SolidColor(t.primary),
                         decorationBox = { inner ->
                             Box {
                                 if (input.isBlank()) {
@@ -563,10 +561,11 @@ private fun CreationComposerV4(
                         shape = RoundedCornerShape(t.radiusSm),
                         color = when {
                             canStop -> t.destructive
-                            canSend -> t.foreground
+                            canSend -> t.primary
                             else -> t.muted
                         },
                         contentColor = if (actionEnabled) t.primaryForeground else t.mutedForeground,
+                        tonalElevation = 0.dp,
                     ) {
                         Box(
                             Modifier.clickable(
@@ -598,13 +597,14 @@ private fun CreationStageActionV4(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val container = if (emphasized) t.foreground else t.card
+    val container = if (emphasized) t.primary else t.card
     val foreground = if (emphasized) t.primaryForeground else t.foreground
     Surface(
         shape = RoundedCornerShape(t.radiusSm),
         color = if (enabled) container else t.muted,
         contentColor = if (enabled) foreground else t.mutedForeground,
-        border = BorderStroke(1.dp, if (emphasized && enabled) t.foreground else t.border),
+        tonalElevation = 0.dp,
+        shadowElevation = if (emphasized && enabled) 1.dp else 0.dp,
     ) {
         Row(
             Modifier.clickable(enabled = enabled, onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp),
