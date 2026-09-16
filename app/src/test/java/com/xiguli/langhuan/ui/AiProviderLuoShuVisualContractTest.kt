@@ -47,7 +47,7 @@ class AiProviderLuoShuVisualContractTest {
         assertTrue(source.contains("routingStore.rememberDiscovery"))
         assertTrue(source.contains("repository.saveProvider("))
         assertTrue(source.contains("makeDefault = true"))
-        assertTrue(source.contains("viewModel.refreshModels"))
+        assertTrue(source.contains("viewModel::refreshModels"))
         assertTrue(source.contains("viewModel.switchModel(model.id)"))
         assertTrue(source.contains("modelRoute(provider.baseUrl, model.id)"))
     }
