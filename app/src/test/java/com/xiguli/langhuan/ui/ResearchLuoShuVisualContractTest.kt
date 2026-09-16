@@ -26,4 +26,34 @@ class ResearchLuoShuVisualContractTest {
         assertTrue(source.contains("generateFoundation(false)"))
         assertTrue(source.contains("createCurrentFoundation"))
     }
+
+    @Test
+    fun referenceDnaSurfacesStayLuoShuAndKeepFullDataBrowser() {
+        val picker = source("src/main/java/com/xiguli/langhuan/ui/ReferenceTemplateSelectionPanel.kt")
+        val browser = source("src/main/java/com/xiguli/langhuan/ui/ReferenceDistillationDataBrowser.kt")
+        val report = source("src/main/java/com/xiguli/langhuan/ui/ReferenceDistillationReportDialog.kt")
+
+        assertFalse(picker.contains("AlertDialog("))
+        assertFalse(picker.contains("BorderStroke"))
+        assertFalse(picker.contains("OutlinedButton("))
+        assertTrue(picker.contains("ReferenceDistillationDataBrowserDialog"))
+        assertTrue(picker.contains("setReferenceTemplateIds"))
+
+        assertFalse(browser.contains("BorderStroke"))
+        assertFalse(browser.contains("OutlinedTextField("))
+        assertTrue(browser.contains("DnaCategory(\"CHARACTER\""))
+        assertTrue(browser.contains("DnaCategory(\"POWER\""))
+        assertTrue(browser.contains("DnaCategory(\"PLOT\""))
+        assertTrue(browser.contains("DnaCategory(\"MYSTERY\""))
+        assertTrue(browser.contains("DnaCategory(\"WORLD\""))
+        assertTrue(browser.contains("report.retrievalItems + report.items"))
+
+        assertFalse(report.contains("AlertDialog("))
+        assertFalse(report.contains("BorderStroke"))
+        assertTrue(report.contains("Story DNA · 作品结构"))
+        assertTrue(report.contains("Style DNA · 写法"))
+        assertTrue(report.contains("KEEP · 可借鉴的高层机制"))
+        assertTrue(report.contains("TRANSFORM · 必须原创化改造"))
+        assertTrue(report.contains("AVOID · 禁止照搬"))
+    }
 }
