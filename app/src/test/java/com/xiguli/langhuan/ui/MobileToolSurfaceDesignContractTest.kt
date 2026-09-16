@@ -23,11 +23,18 @@ class MobileToolSurfaceDesignContractTest {
         assertTrue(ai.contains("var showRouting by remember { mutableStateOf(false) }"))
         assertTrue(ai.contains("任务模型路由"))
 
-        assertFalse(runCenter.contains("LanghuanCard("))
+        assertTrue(runCenter.contains("LanghuanCard("))
+        assertTrue(runCenter.contains("LanghuanIconButton("))
+        assertFalse(runCenter.contains("HorizontalDivider("))
+        assertFalse(runCenter.contains("AlertDialog("))
         assertFalse(runCenter.contains("\"IDLE\""))
-        assertFalse(skillsPage.contains("LanghuanCard("))
-        assertFalse(skills.contains("LanghuanCard("))
+
+        assertTrue(skillsPage.contains("LanghuanIconButton("))
+        assertTrue(skillsPage.contains("LanghuanBadge("))
+        assertTrue(skills.contains("LanghuanCard("))
         assertTrue(skills.contains("expandedSkillId"))
+        assertFalse(skills.contains("HorizontalDivider("))
+        assertFalse(skills.contains("AlertDialog("))
 
         // Shelf v3: one recent-reading anchor + cover wall, no floating dock.
         assertTrue(shelf.contains("ContinueReadingHeroV3("))
