@@ -147,7 +147,7 @@ fun RunCenterPage(
                     item {
                         Text(
                             "运行断点只保存执行进度，不会改写小说 Canon。",
-                            Modifier.padding(horizontal = 4.dp, bottom = 2.dp),
+                            Modifier.padding(horizontal = 4.dp).padding(bottom = 2.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = t.mutedForeground,
                         )
