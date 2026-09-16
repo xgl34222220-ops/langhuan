@@ -1,6 +1,5 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,7 +21,6 @@ import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Science
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,12 +74,11 @@ fun ReferenceDistillationReportDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(.94f),
             shape = RoundedCornerShape(t.radiusXl),
             color = t.background,
             contentColor = t.foreground,
-            border = BorderStroke(1.dp, t.border),
-            shadowElevation = 12.dp,
+            shadowElevation = 8.dp,
         ) {
             Column {
                 Row(
@@ -92,16 +88,16 @@ fun ReferenceDistillationReportDialog(
                     Surface(
                         modifier = Modifier.size(40.dp),
                         shape = RoundedCornerShape(t.radiusSm),
-                        color = t.warmSurface,
-                        contentColor = t.accent,
-                        border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
+                        color = t.card,
+                        contentColor = t.strong,
+                        shadowElevation = 1.dp,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Science, null, Modifier.size(21.dp), tint = t.accent)
+                            Icon(Icons.Rounded.Science, null, Modifier.size(21.dp), tint = t.strong)
                         }
                     }
                     Column(Modifier.padding(start = 11.dp).weight(1f)) {
-                        Text("蒸馏报告", style = MaterialTheme.typography.titleLarge, color = t.foreground)
+                        Text("蒸馏报告", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
                         Text(title, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                     }
                     if (report != null && !report!!.taskId.startsWith("builtin:")) {
@@ -119,7 +115,7 @@ fun ReferenceDistillationReportDialog(
                     !loaded -> {
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = t.accent)
+                                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = t.primary)
                                 Text(
                                     "正在读取 Story DNA / Style DNA……",
                                     Modifier.padding(top = 10.dp),
@@ -166,26 +162,36 @@ fun ReferenceDistillationReportDialog(
     }
 
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            shape = RoundedCornerShape(t.radiusXl),
-            containerColor = t.background,
-            title = { Text("删除这份蒸馏数据？", color = t.foreground) },
-            text = {
-                Text(
-                    "《${report?.title ?: title}》的 Story DNA、Style DNA 和可检索数据会从本机删除。原始 EPUB 文件不会被删除。",
-                    color = t.mutedForeground,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    report?.taskId?.let(store::delete) ?: store.delete(taskId)
-                    confirmDelete = false
-                    onDismiss()
-                }) { Text("删除", color = t.destructive) }
-            },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
-        )
+        Dialog(onDismissRequest = { confirmDelete = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusXl),
+                color = t.card,
+                contentColor = t.foreground,
+                shadowElevation = 8.dp,
+            ) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("删除这份蒸馏数据？", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "《${report?.title ?: title}》的 Story DNA、Style DNA 和可检索数据会从本机删除。原始 EPUB 文件不会被删除。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = t.mutedForeground,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TextButton(onClick = { confirmDelete = false }, modifier = Modifier.weight(1f)) { Text("取消") }
+                        Button(
+                            onClick = {
+                                report?.taskId?.let(store::delete) ?: store.delete(taskId)
+                                confirmDelete = false
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = t.destructive, contentColor = t.destructiveForeground),
+                        ) { Text("删除") }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -221,10 +227,10 @@ private fun DistillationReportContent(
                         Surface(
                             modifier = Modifier.size(34.dp),
                             shape = RoundedCornerShape(t.radiusSm),
-                            color = t.warmSurface,
+                            color = t.muted,
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.CheckCircle, null, Modifier.size(18.dp), tint = t.accent)
+                                Icon(Icons.Rounded.CheckCircle, null, Modifier.size(18.dp), tint = t.primary)
                             }
                         }
                         Column(Modifier.padding(start = 9.dp).weight(1f)) {
@@ -271,7 +277,7 @@ private fun DistillationReportContent(
                         onClick = onBrowseAll,
                         enabled = retainedCount > 0,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(t.radiusSm),
+                        shape = RoundedCornerShape(t.radiusMd),
                         colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
                     ) {
                         Icon(Icons.Rounded.DataObject, null, Modifier.size(18.dp))
@@ -313,7 +319,6 @@ private fun DistillationReportContent(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(t.radiusSm),
                 color = t.muted,
-                border = BorderStroke(1.dp, t.border),
             ) {
                 Text(
                     if (report.retrievalItems.isNotEmpty()) {
@@ -336,7 +341,6 @@ private fun ReportWarning(text: String) {
     Surface(
         shape = RoundedCornerShape(t.radiusSm),
         color = t.destructive.copy(alpha = .07f),
-        border = BorderStroke(1.dp, t.destructive.copy(alpha = .16f)),
     ) {
         Text(
             text,
@@ -353,7 +357,6 @@ private fun SmallInfoPill(text: String) {
     Surface(
         shape = RoundedCornerShape(999.dp),
         color = t.muted,
-        border = BorderStroke(1.dp, t.border),
     ) {
         Text(
             text,
@@ -376,9 +379,8 @@ private fun SectionHeader(
             modifier = Modifier.size(34.dp),
             shape = RoundedCornerShape(t.radiusSm),
             color = t.muted,
-            border = BorderStroke(1.dp, t.border),
         ) {
-            Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(18.dp), tint = t.foreground) }
+            Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(18.dp), tint = t.strong) }
         }
         Column(Modifier.padding(start = 9.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = t.foreground)
@@ -428,7 +430,6 @@ private fun DistillationItemCard(item: ReferenceDistillationReportItem, story: B
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(t.radiusSm),
                     color = t.muted,
-                    border = BorderStroke(1.dp, t.border),
                 ) {
                     Text(
                         "依据：${item.evidence}",
