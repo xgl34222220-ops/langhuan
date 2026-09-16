@@ -1,13 +1,13 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,21 +17,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,13 +47,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.engine.BuiltInReferenceLibraryInstaller
 import com.xiguli.langhuan.engine.ReferenceDistillationReport
 import com.xiguli.langhuan.engine.ReferenceDistillationReportStore
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
-import com.xiguli.langhuan.ui.design.LanghuanOrb
+import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LanghuanSpatialHero
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import kotlinx.coroutines.Dispatchers
@@ -99,38 +99,26 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
             selectedReports.size == 1 -> "已绑定《${selectedReports.first().title}》 · $totalSearchable 条可检索 DNA"
             else -> "已绑定 ${selectedReports.size} 本 · $totalSearchable 条可检索 DNA"
         },
-        eyebrow = "REFERENCE CONSTELLATION",
+        eyebrow = "REFERENCE DNA",
         modifier = Modifier.fillMaxWidth(),
-        trailing = {
-            LanghuanOrb(
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 18.dp),
-                size = 44.dp,
-                active = loading,
-            )
-        },
     ) {
-        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+        Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(40.dp),
                     shape = RoundedCornerShape(t.radiusSm),
-                    color = t.warmSurface,
-                    contentColor = t.accent,
-                    border = BorderStroke(1.dp, t.accent.copy(alpha = .14f)),
+                    color = t.muted,
+                    contentColor = t.strong,
+                    shadowElevation = 1.dp,
                 ) {
-                    androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.LibraryBooks, null, Modifier.size(21.dp), tint = t.accent)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.LibraryBooks, null, Modifier.size(21.dp), tint = t.strong)
                     }
                 }
                 Column(Modifier.padding(start = 11.dp).weight(1f)) {
-                    Text("Reference DNA", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                    Text("参考库", style = MaterialTheme.typography.titleMedium, color = t.foreground)
                     Text(
-                        when {
-                            loading -> "正在校验内置参考库……"
-                            selectedReports.isEmpty() -> "共 ${reports.size} 本参考 · 本次创作尚未绑定"
-                            selectedReports.size == 1 -> "已绑定《${selectedReports.first().title}》 · $totalSearchable 条可检索 DNA"
-                            else -> "已绑定 ${selectedReports.size} 本 · $totalSearchable 条可检索 DNA"
-                        },
+                        if (selectedReports.isEmpty()) "选择一本或多本参考，完整 DNA 仍可单独查看" else "Story / Style / 群像 / 关系 / 规则会按需检索",
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -151,22 +139,21 @@ internal fun ReferenceTemplateSelectionPanel(viewModel: NewBookConversationViewM
             if (state.lastReferenceUsage.isNotBlank()) {
                 Surface(
                     shape = RoundedCornerShape(t.radiusSm),
-                    color = t.warmSurface,
-                    contentColor = t.accent,
-                    border = BorderStroke(1.dp, t.accent.copy(alpha = .12f)),
+                    color = t.accent.copy(alpha = .34f),
+                    contentColor = t.accentForeground,
                 ) {
                     Text(
                         state.lastReferenceUsage,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 9.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = t.accent,
+                        color = t.accentForeground,
                         fontWeight = FontWeight.Medium,
                     )
                 }
             }
 
             Text(
-                "每份参考都可以单独打开完整蒸馏数据库，查看 Story / Style DNA 与全部可检索条目；选择参考和查看数据是两个独立动作。",
+                "每份参考都可以展开完整蒸馏数据库；选择引用与查看数据相互独立，不会因为没勾选就把蒸馏内容藏起来。",
                 style = MaterialTheme.typography.bodySmall,
                 color = t.mutedForeground,
             )
@@ -217,10 +204,9 @@ private fun DnaBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, text
         shape = RoundedCornerShape(999.dp),
         color = t.muted,
         contentColor = t.mutedForeground,
-        border = BorderStroke(1.dp, t.border),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, null, Modifier.size(14.dp), tint = t.mutedForeground)
@@ -245,76 +231,99 @@ private fun ReferenceTemplatePickerDialog(
     val builtIns = reports.filter { it.taskId.startsWith("builtin:") }
     val userReports = reports.filterNot { it.taskId.startsWith("builtin:") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(t.radiusXl),
-        containerColor = t.background,
-        title = {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Reference DNA", style = MaterialTheme.typography.titleLarge, color = t.foreground)
-                Text(
-                    "共 ${reports.size} 本 · 内置 ${builtIns.size} · 我的蒸馏 ${userReports.size} · 已选 ${selectedIds.size}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = t.mutedForeground,
-                )
-            }
-        },
-        text = {
-            if (reports.isEmpty()) {
-                LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 18.dp) {
-                    Text("没有找到参考 DNA。", color = t.mutedForeground)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(.90f),
+            shape = RoundedCornerShape(t.radiusXl),
+            color = t.background,
+            contentColor = t.foreground,
+            shadowElevation = 8.dp,
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 16.dp, end = 14.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (builtIns.isNotEmpty()) {
-                        item { DnaSectionLabel("内置参考", "随琅嬛提供，可直接选择和查看") }
-                        items(builtIns, key = { it.taskId }) { report ->
-                            TemplateReportCard(
-                                report = report,
-                                checked = report.taskId in selectedIds,
-                                store = store,
-                                deletable = false,
-                                onToggle = { value ->
-                                    onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
-                                },
-                                onView = { browseTarget = report },
-                                onDelete = {},
-                            )
+                    Column(Modifier.weight(1f)) {
+                        Text("Reference DNA", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
+                        Text(
+                            "共 ${reports.size} 本 · 内置 ${builtIns.size} · 我的蒸馏 ${userReports.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
+                    }
+                    if (selectedIds.isNotEmpty()) LanghuanBadge("${selectedIds.size} 已选", accent = true)
+                    Spacer(Modifier.width(6.dp))
+                    LanghuanIconButton(Icons.Rounded.Close, "关闭", onDismiss)
+                }
+
+                if (reports.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().weight(1f).padding(18.dp), contentAlignment = Alignment.Center) {
+                        LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 20.dp) {
+                            Text("没有找到参考 DNA。", color = t.mutedForeground)
                         }
                     }
-                    if (userReports.isNotEmpty()) {
-                        item { DnaSectionLabel("我的蒸馏", "由你导入的作品生成") }
-                        items(userReports, key = { it.taskId }) { report ->
-                            TemplateReportCard(
-                                report = report,
-                                checked = report.taskId in selectedIds,
-                                store = store,
-                                deletable = true,
-                                onToggle = { value ->
-                                    onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
-                                },
-                                onView = { browseTarget = report },
-                                onDelete = { deleteTarget = report },
-                            )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (builtIns.isNotEmpty()) {
+                            item { DnaSectionLabel("内置参考", "随琅嬛提供，可直接选择和查看") }
+                            items(builtIns, key = { it.taskId }) { report ->
+                                TemplateReportCard(
+                                    report = report,
+                                    checked = report.taskId in selectedIds,
+                                    store = store,
+                                    deletable = false,
+                                    onToggle = { value ->
+                                        onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
+                                    },
+                                    onView = { browseTarget = report },
+                                    onDelete = {},
+                                )
+                            }
+                        }
+                        if (userReports.isNotEmpty()) {
+                            item { DnaSectionLabel("我的蒸馏", "由你导入的作品生成") }
+                            items(userReports, key = { it.taskId }) { report ->
+                                TemplateReportCard(
+                                    report = report,
+                                    checked = report.taskId in selectedIds,
+                                    store = store,
+                                    deletable = true,
+                                    onToggle = { value ->
+                                        onSelectedIds(if (value) (selectedIds + report.taskId).distinct() else selectedIds - report.taskId)
+                                    },
+                                    onView = { browseTarget = report },
+                                    onDelete = { deleteTarget = report },
+                                )
+                            }
                         }
                     }
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    FilledTonalButton(
+                        onClick = { onSelectedIds(emptyList()) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(t.radiusMd),
+                        enabled = selectedIds.isNotEmpty(),
+                    ) { Text("清空选择") }
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(t.radiusMd),
+                        colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
+                    ) { Text("完成") }
+                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(t.radiusSm),
-                colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
-            ) { Text("完成") }
-        },
-        dismissButton = {
-            TextButton(onClick = { onSelectedIds(emptyList()) }) { Text("清空选择", color = t.mutedForeground) }
-        },
-    )
+        }
+    }
 
     browseTarget?.let { report ->
         ReferenceDistillationDataBrowserDialog(
@@ -325,27 +334,41 @@ private fun ReferenceTemplatePickerDialog(
     }
 
     deleteTarget?.let { report ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text("删除《${report.title}》的蒸馏数据？") },
-            text = { Text("会删除这份 Story DNA、Style DNA 和可检索条目。不会删除你手机上的原始 EPUB/TXT 文件。") },
-            confirmButton = {
-                Button(
-                    onClick = { onDelete(report); deleteTarget = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = t.destructive, contentColor = t.destructiveForeground),
-                ) { Text("删除") }
-            },
-            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
-        )
+        Dialog(onDismissRequest = { deleteTarget = null }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(t.radiusXl),
+                color = t.card,
+                contentColor = t.foreground,
+                shadowElevation = 8.dp,
+            ) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("删除《${report.title}》的蒸馏数据？", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "会删除这份 Story DNA、Style DNA 和可检索条目。不会删除你手机上的原始 EPUB/TXT 文件。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = t.mutedForeground,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TextButton(onClick = { deleteTarget = null }, modifier = Modifier.weight(1f)) { Text("取消") }
+                        Button(
+                            onClick = { onDelete(report); deleteTarget = null },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = t.destructive, contentColor = t.destructiveForeground),
+                        ) { Text("删除") }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun DnaSectionLabel(title: String, subtitle: String) {
     val t = LocalLanghuanUiTokens.current
-    Column(Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 1.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, color = t.foreground)
-        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = t.foreground)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
     }
 }
 
@@ -365,8 +388,8 @@ private fun TemplateReportCard(
     val storyCount = counts["STORY"] ?: 0
     val styleCount = counts["STYLE"] ?: 0
 
-    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 12.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = checked, onCheckedChange = onToggle)
                 Column(Modifier.weight(1f)) {
@@ -383,7 +406,7 @@ private fun TemplateReportCard(
                                 Icons.Rounded.CheckCircle,
                                 "已选择",
                                 modifier = Modifier.padding(start = 6.dp).size(16.dp),
-                                tint = t.accent,
+                                tint = t.primary,
                             )
                         }
                     }
@@ -396,9 +419,11 @@ private fun TemplateReportCard(
                     )
                 }
                 if (deletable) {
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Rounded.DeleteOutline, "删除蒸馏数据", tint = t.destructive)
-                    }
+                    LanghuanIconButton(
+                        icon = Icons.Rounded.DeleteOutline,
+                        contentDescription = "删除蒸馏数据",
+                        onClick = onDelete,
+                    )
                 }
             }
 
@@ -419,18 +444,17 @@ private fun TemplateReportCard(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = { onToggle(!checked) },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(t.radiusSm),
-                    border = BorderStroke(1.dp, t.border),
+                    shape = RoundedCornerShape(t.radiusMd),
                 ) {
                     Text(if (checked) "取消引用" else "引用这份 DNA")
                 }
                 Button(
                     onClick = onView,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(t.radiusSm),
+                    shape = RoundedCornerShape(t.radiusMd),
                     colors = ButtonDefaults.buttonColors(containerColor = t.foreground, contentColor = t.primaryForeground),
                 ) {
                     Icon(Icons.Rounded.DataObject, null, Modifier.size(17.dp))
