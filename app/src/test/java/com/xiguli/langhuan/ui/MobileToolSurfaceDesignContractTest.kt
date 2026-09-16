@@ -19,7 +19,7 @@ class MobileToolSurfaceDesignContractTest {
         val design = File(root.parentFile ?: root, "design-systems/langhuan/DESIGN.md").takeIf { it.exists() }?.readText().orEmpty()
 
         assertFalse(ai.contains("WritingSkillPanel("))
-        assertFalse(ai.contains("LanghuanBadge("))
+        assertTrue(ai.contains("LanghuanBadge("))
         assertTrue(ai.contains("var showRouting by remember { mutableStateOf(false) }"))
         assertTrue(ai.contains("任务模型路由"))
 
