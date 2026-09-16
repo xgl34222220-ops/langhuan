@@ -16,8 +16,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 /**
- * Novel Skill OS V10 entry: keeps V8/V9 authoring surfaces intact and adds one lightweight,
- * read-only Story Graph health affordance. The health analyzer never mutates the project.
+ * Novel Skill OS V10 entry.
+ *
+ * LuoShu V11 is the production authoring surface; V10 keeps the read-only Story Graph health
+ * affordance layered above it. The health analyzer never mutates the project.
  */
 @Composable
 fun WritingWorkspaceV10(
@@ -45,7 +47,7 @@ fun WritingWorkspaceV10(
     }
 
     Box {
-        WritingWorkspaceV8(
+        WritingWorkspaceLuoShuV11(
             novelId = novelId,
             viewModel = viewModel,
             onClose = onClose,
