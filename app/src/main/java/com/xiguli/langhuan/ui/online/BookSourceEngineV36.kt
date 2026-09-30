@@ -488,22 +488,145 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
         cover = ruleStringV36(page, source.infoCover).ifBlank { book.cover }.let { if (it.isBlank()) it else resolveUrlV36(page.location(), it) },
         intro = ruleStringV36(page, source.infoIntro).ifBlank { book.intro },
     )
-    val tocStart = ruleStringV36(page, source.infoTocUrl).takeIf { it.isNotBlank() }?.let { resolveUrlV36(page.location(), it) }
-    var doc = if (tocStart != null && tocStart != page.location()) fetchDocumentV36(source, SourceRequestV36(tocStart)) else page
+
+    // Prefer the source rule, but never let one bad AI rule prevent the generic directory detector
+    // from trying the actual book page.
+    val declaredToc = ruleStringV36(page, source.infoTocUrl)
+        .takeIf { it.isNotBlank() }
+        ?.let { resolveUrlV36(page.location(), it) }
+    val heuristicToc = heuristicTocUrlV39(page)
+    val firstToc = listOfNotNull(declaredToc, heuristicToc)
+        .firstOrNull { it != page.location() }
+    var doc = firstToc?.let { runCatching { fetchDocumentV36(source, SourceRequestV36(it)) }.getOrNull() } ?: page
+
     val chapters = ArrayList<OnlineChapterV36>()
-    val visited = HashSet<String>()
+    val visited = LinkedHashSet<String>()
+    var triedHeuristicFromBookPage = doc.location() != page.location()
+
     repeat(40) {
         visited += doc.location()
-        ruleElementsV36(doc, source.tocList).forEach { item ->
-            val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }
+
+        val ruleFound = ruleElementsV36(doc, source.tocList).mapNotNull { item ->
+            val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }.trim()
             val url = ruleStringV36(item, source.tocUrl).ifBlank { item.selectFirst("a[href]")?.absUrl("href").orEmpty() }
-            if (title.isNotBlank() && url.isNotBlank()) chapters += OnlineChapterV36(title, resolveUrlV36(doc.location(), url))
+            if (title.isNotBlank() && url.isNotBlank()) OnlineChapterV36(title, resolveUrlV36(doc.location(), url)) else null
         }
-        val next = ruleStringV36(doc, source.tocNext).takeIf { it.isNotBlank() }?.let { resolveUrlV36(doc.location(), it) }
-        if (next == null || next in visited) return detailed to chapters.distinctBy { it.url }
-        doc = fetchDocumentV36(source, SourceRequestV36(next))
+        chapters += ruleFound
+
+        // Generic fallback for pages whose structure changed or whose AI/Legado rule missed the list.
+        // 101 看书, for example, uses /txt/<bookId>/<chapterId>.html chapter links.
+        chapters += heuristicChapterLinksV39(doc, book.bookUrl)
+
+        val distinct = chapters.distinctBy { it.url }
+        if (distinct.isEmpty() && !triedHeuristicFromBookPage) {
+            triedHeuristicFromBookPage = true
+            val alternate = heuristicTocUrlV39(page)
+            if (alternate != null && alternate !in visited) {
+                val fetched = runCatching { fetchDocumentV36(source, SourceRequestV36(alternate)) }.getOrNull()
+                if (fetched != null) {
+                    doc = fetched
+                    return@repeat
+                }
+            }
+        }
+
+        val ruleNext = ruleStringV36(doc, source.tocNext)
+            .takeIf { it.isNotBlank() }
+            ?.let { resolveUrlV36(doc.location(), it) }
+        val next = ruleNext ?: heuristicTocNextUrlV39(doc)
+        if (next == null || next in visited || isLikelyChapterUrlV39(next)) {
+            return detailed to distinct
+        }
+        val fetched = runCatching { fetchDocumentV36(source, SourceRequestV36(next)) }.getOrNull()
+            ?: return detailed to distinct
+        doc = fetched
     }
     return detailed to chapters.distinctBy { it.url }
+}
+
+/**
+ * Finds a separate catalogue entry on a book page when the configured infoTocUrl no longer works.
+ * Text labels are deliberately multilingual because many imported sources use simplified/traditional
+ * Chinese interchangeably.
+ */
+internal fun heuristicTocUrlV39(doc: Document): String? {
+    val labels = listOf("全部章节", "全部章節", "章节目录", "章節目錄", "目录", "目錄", "查看目录", "查看目錄")
+    val candidates = doc.select("a[href]").mapNotNull { a ->
+        val text = a.text().replace("\\s+".toRegex(), "").trim()
+        val href = a.absUrl("href").ifBlank { resolveUrlV36(doc.location(), a.attr("href")) }
+        if (href.isBlank() || href == doc.location() || isLikelyChapterUrlV39(href)) return@mapNotNull null
+        val labelScore = labels.indexOfFirst { text.equals(it, true) }.let { if (it >= 0) 100 - it else 0 }
+        val containsScore = if (labels.any { text.contains(it, true) }) 45 else 0
+        val urlScore = if (Regex("(?i)(catalog|chapter|list|dir|menu|book)").containsMatchIn(href)) 18 else 0
+        val score = maxOf(labelScore, containsScore) + urlScore
+        if (score <= 0) null else score to href
+    }
+    return candidates.maxByOrNull { it.first }?.second
+}
+
+/**
+ * Extracts chapter links without a configured toc rule. It first chooses the most chapter-dense
+ * DOM container so "latest chapters" widgets do not jump ahead of the actual full catalogue.
+ */
+internal fun heuristicChapterLinksV39(doc: Document, bookUrl: String = ""): List<OnlineChapterV36> {
+    val all = doc.select("a[href]").mapNotNull { a ->
+        val href = a.absUrl("href").ifBlank { resolveUrlV36(doc.location(), a.attr("href")) }
+        val title = a.text().replace("\\s+".toRegex(), " ").trim()
+        if (!isLikelyChapterLinkV39(title, href, bookUrl)) null else a to OnlineChapterV36(title, href)
+    }
+    if (all.isEmpty()) return emptyList()
+
+    val candidates = LinkedHashSet<Element>()
+    all.forEach { (anchor, _) ->
+        var p: Element? = anchor.parent()
+        repeat(5) {
+            if (p == null) return@repeat
+            candidates += p!!
+            p = p!!.parent()
+        }
+    }
+
+    val best = candidates.mapNotNull { container ->
+        val links = all.filter { (anchor, _) -> anchor === container || container.getAllElements().contains(anchor) }
+            .map { it.second }
+            .distinctBy { it.url }
+        if (links.isEmpty()) return@mapNotNull null
+        val totalAnchors = container.select("a[href]").size.coerceAtLeast(links.size)
+        val density = links.size.toDouble() / totalAnchors.toDouble()
+        val score = links.size.coerceAtMost(800) + density * 500.0
+        Triple(score, container, links)
+    }.maxByOrNull { it.first }
+
+    val picked = best?.third?.takeIf { it.size >= 2 } ?: all.map { it.second }.distinctBy { it.url }
+    return picked.filter { it.title.isNotBlank() }.distinctBy { it.url }
+}
+
+internal fun heuristicTocNextUrlV39(doc: Document): String? {
+    val labels = setOf("下一页", "下一頁", "下页", "下頁", "后一页", "後一頁", "next", "›", "»", ">")
+    return doc.select("a[href]").firstNotNullOfOrNull { a ->
+        val text = a.text().replace("\\s+".toRegex(), "").trim().lowercase()
+        if (text !in labels) return@firstNotNullOfOrNull null
+        val href = a.absUrl("href").ifBlank { resolveUrlV36(doc.location(), a.attr("href")) }
+        href.takeIf { it.isNotBlank() && it != doc.location() && !isLikelyChapterUrlV39(it) }
+    }
+}
+
+internal fun isLikelyChapterUrlV39(url: String): Boolean {
+    val clean = runCatching { URL(url).path }.getOrDefault(url)
+    return Regex("(?i)/(txt|read|chapter|chapters?)/[^/]+/[^/]+(?:\\.html?)?$").containsMatchIn(clean) ||
+        Regex("(?i)/txt/\\d+/\\d+(?:[_-]\\d+)?\\.html?$").containsMatchIn(clean)
+}
+
+private fun isLikelyChapterLinkV39(title: String, url: String, bookUrl: String): Boolean {
+    if (title.isBlank() || url.isBlank() || url == bookUrl) return false
+    if (isLikelyChapterUrlV39(url)) return true
+    val chapterTitle = Regex(
+        "^(第.{1,16}[章节章節回卷]|番外|楔子|序章|序言|后记|後記|尾声|尾聲|chapter\\s*\\d+)",
+        RegexOption.IGNORE_CASE,
+    ).containsMatchIn(title.trim())
+    if (!chapterTitle) return false
+    val path = runCatching { URL(url).path.lowercase() }.getOrDefault(url.lowercase())
+    return listOf("/read/", "/chapter/", "/chapters/", "/txt/", ".html").any(path::contains)
 }
 
 /** Chapter body; follows "next page" links that stay inside the same chapter. */
