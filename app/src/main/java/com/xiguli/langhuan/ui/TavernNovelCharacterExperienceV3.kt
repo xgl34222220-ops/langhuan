@@ -2,6 +2,7 @@ package com.xiguli.langhuan.ui
 
 import android.app.Application
 import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -575,6 +576,7 @@ fun TavernNovelCharacterExperienceV3(
     libraryState: LibraryExperienceState,
     aiReady: Boolean,
     onAiSetup: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     val vm: TavernNovelCharacterViewModelV3 = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
@@ -592,6 +594,14 @@ fun TavernNovelCharacterExperienceV3(
     }
 
     val selected = state.profiles.firstOrNull { it.id == selectedId }
+    // One back path for the whole area: sub-pages step back inside, the library leaves.
+    BackHandler(enabled = screen != NovelCharacterScreenV3.LIBRARY || onBack != null) {
+        when (screen) {
+            NovelCharacterScreenV3.LIBRARY -> onBack?.invoke()
+            NovelCharacterScreenV3.CHAT -> screen = NovelCharacterScreenV3.DETAIL
+            else -> screen = NovelCharacterScreenV3.LIBRARY
+        }
+    }
     LaunchedEffect(selectedId, state.profiles) {
         if (selectedId != null && selected == null) {
             selectedId = null
@@ -610,6 +620,7 @@ fun TavernNovelCharacterExperienceV3(
                 onOpen = { profile -> selectedId = profile.id; screen = NovelCharacterScreenV3.DETAIL },
                 onChatImport = { screen = NovelCharacterScreenV3.CHAT_IMPORT },
                 onStory = { screen = NovelCharacterScreenV3.STORY },
+                onBack = onBack,
             )
             NovelCharacterScreenV3.DETAIL -> if (selected != null) {
                 NovelCharacterDetailV3(
@@ -630,10 +641,10 @@ fun TavernNovelCharacterExperienceV3(
                     onClear = { vm.clearChat(selected.id) },
                 )
             }
-            NovelCharacterScreenV3.CHAT_IMPORT -> SecondaryTavernRouteV3(onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
+            NovelCharacterScreenV3.CHAT_IMPORT -> SecondaryTavernRouteV3("导入聊天角色", onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
                 TavernCharacterHubV2(book, libraryState, aiReady, onAiSetup)
             }
-            NovelCharacterScreenV3.STORY -> SecondaryTavernRouteV3(onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
+            NovelCharacterScreenV3.STORY -> SecondaryTavernRouteV3("故事分支", onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
                 StoryCoreExperience(book, libraryState, aiReady, onAiSetup)
             }
         }
@@ -646,16 +657,18 @@ fun TavernNovelCharacterExperienceV3(
 }
 
 @Composable
-private fun SecondaryTavernRouteV3(onBack: () -> Unit, content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize()) {
-        content()
-        Surface(
-            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 8.dp, end = 10.dp),
-            shape = CircleShape,
-            tonalElevation = 4.dp,
+private fun SecondaryTavernRouteV3(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+    // A real top bar instead of a floating button that covered the child's own header actions.
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回人物蒸馏") }
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
+        // The child already pads for the status bar; our bar has taken that space.
+        Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) { content() }
     }
 }
 
@@ -669,13 +682,17 @@ private fun NovelCharacterLibraryV3(
     onOpen: (NovelCharacterProfileV3) -> Unit,
     onChatImport: () -> Unit,
     onStory: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 72.dp, bottom = 36.dp),
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = if (onBack != null) 4.dp else 24.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
+            if (onBack != null) {
+                IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp)) { Icon(Icons.Rounded.ArrowBack, "返回") }
+            }
             Text("人物蒸馏", fontSize = 32.sp, fontWeight = FontWeight.Black)
             Text("从《${book.title}》正文提取可聊天的原著人物卡", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
             Spacer(Modifier.height(16.dp))
@@ -769,7 +786,7 @@ private fun NovelCharacterDetailV3(
     onDelete: () -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().padding(top = 58.dp)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
             Text("角色卡", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -875,7 +892,7 @@ private fun NovelCharacterChatV3(
     LaunchedEffect(messages.size, busy) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
-    Column(Modifier.fillMaxSize().padding(top = 58.dp).imePadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
         Surface(tonalElevation = 1.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回人物") }
