@@ -6,6 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import com.xiguli.langhuan.ui.design.LanghuanEnterRegistryV31
+import com.xiguli.langhuan.ui.design.enterOnceV31
+import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -294,6 +298,8 @@ fun ResearchNewBookConversationPage(
             )
         },
     ) { padding ->
+        // History that is already there when the page opens does not animate; new turns do.
+        val bubbleEnter = remember { LanghuanEnterRegistryV31().also { r -> state.messages.indices.forEach { r.markSeenV31("r-$it") } } }
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
@@ -310,7 +316,9 @@ fun ResearchNewBookConversationPage(
             }
             if (showReferenceTools) item { ReferenceTemplateSelectionPanel(viewModel) }
             if (showResearchMemory && archiveState.entries.isNotEmpty()) item { ResearchArchiveMemoryCard(archiveState) }
-            items(state.messages) { message -> ResearchChatBubble(message) }
+            itemsIndexed(state.messages) { index, message ->
+                Box(Modifier.enterOnceV31(bubbleEnter, "r-$index", 0)) { ResearchChatBubble(message) }
+            }
             if (state.streamingReply.isNotBlank()) item {
                 ResearchChatBubble(CreationChatMessage("assistant", state.streamingReply))
             }
@@ -603,9 +611,7 @@ private fun ResearchWelcomeCard(webResearchEnabled: Boolean, archiveCount: Int) 
 private fun ResearchBusyRow(text: String) {
     val t = LocalLanghuanUiTokens.current
     Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = t.primary)
-        Spacer(Modifier.width(9.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+        LanghuanMotionStatus(text)
     }
 }
 
