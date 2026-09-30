@@ -17,7 +17,8 @@ class ShelfOpenHotfixContractTest {
         assertTrue(shelf.contains("onClick = { onOpenBook(book.id) }"))
         assertTrue(library.contains("withContext(Dispatchers.IO) { projects.chapterDrafts(id) }"))
         assertTrue(library.contains("这本小说没有可读取的章节"))
-        assertTrue(rootUi.contains("title = { Text(\"打开失败\") }"))
+        assertTrue(rootUi.contains("libraryState.error?.let { error ->"))
+        assertTrue(rootUi.contains("text = { Text(error) }"))
         assertTrue(rootUi.contains("libraryVm::clearMessage"))
     }
 }
