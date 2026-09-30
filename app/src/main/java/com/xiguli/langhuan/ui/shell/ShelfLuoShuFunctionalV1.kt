@@ -10,6 +10,26 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.shadow
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
+import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.LanghuanSkeletonV31
+import com.xiguli.langhuan.ui.design.enterOnceV31
+import com.xiguli.langhuan.ui.design.rememberEnterRegistryV31
+import com.xiguli.langhuan.ui.design.springClickV31
 import androidx.compose.ui.graphics.graphicsLayer
 import com.xiguli.langhuan.ui.design.rememberLanghuanCoverV30
 import androidx.compose.animation.AnimatedVisibility
@@ -242,6 +262,13 @@ fun ShelfLuoShuFunctionalV1(
                 LanghuanMenuRow(Icons.Rounded.Book, "继续阅读", { actionsFor = null; onOpenBook(book.id) }, subtitle = "回到上次阅读位置")
                 LanghuanMenuRow(Icons.Rounded.TheaterComedy, "进入故事", { actionsFor = null; onOpenTavern(book.id) }, subtitle = "进入互动故事模式")
                 LanghuanMenuRow(Icons.Rounded.DeleteOutline, "删除小说", { actionsFor = null; pendingDelete = book }, subtitle = "删除章节与项目数据")
+                Surface(
+                    Modifier.fillMaxWidth().padding(top = 10.dp).springClickV31(pressedScale = .98f) { actionsFor = null },
+                    shape = RoundedCornerShape(16.dp),
+                    color = t.muted,
+                ) {
+                    Text("取消", Modifier.padding(vertical = 13.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+                }
                 Spacer(Modifier.navigationBarsPadding().height(14.dp))
             }
         }
@@ -263,23 +290,42 @@ private fun LuoFloatingDockV1(screen: LuoShelfScreenV1, onSelect: (LuoShelfScree
     val targets = listOf(LuoShelfScreenV1.HOME, LuoShelfScreenV1.SHELF, LuoShelfScreenV1.CREATE, LuoShelfScreenV1.PROFILE)
     val labels = listOf("首页", "书架", "创作", "我的")
     val icons = listOf(Icons.Rounded.Home, Icons.Rounded.Book, Icons.Rounded.AutoAwesome, Icons.Outlined.Person)
+    val haptics = LocalHapticFeedback.current
     Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
         shape = RoundedCornerShape(30.dp), color = t.card.copy(alpha = .94f), shadowElevation = 4.dp,
     ) {
-        Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            targets.forEachIndexed { index, target ->
-                val active = target == screen
-                val bg by animateColorAsState(if (active) t.accent else Color.Transparent, tween(220), label = "dockBg")
-                val fg by animateColorAsState(if (active) t.accentForeground else t.mutedForeground, tween(220), label = "dockFg")
-                val iconScale by animateFloatAsState(if (active) 1.08f else 1f, spring(dampingRatio = .55f, stiffness = Spring.StiffnessMediumLow), label = "dockScale")
-                Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(bg)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(target) }.padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(icons[index], labels[index], Modifier.size(21.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale }, tint = fg)
-                    Text(labels[index], Modifier.padding(top = 3.dp), color = fg, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(6.dp)) {
+            val gap = 6.dp
+            val slot = (maxWidth - gap * (targets.size - 1)) / targets.size
+            val activeIndex = targets.indexOf(screen).coerceAtLeast(0)
+            // One pill glides between tabs instead of each tab fading its own background.
+            val pillX by animateDpAsState((slot + gap) * activeIndex, LanghuanMotionV31.settle(), label = "dockPill")
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .wrapContentWidth(Alignment.Start)
+                    .offset(x = pillX)
+                    .width(slot)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(t.accent),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                targets.forEachIndexed { index, target ->
+                    val active = target == screen
+                    val fg by animateColorAsState(if (active) t.accentForeground else t.mutedForeground, tween(220), label = "dockFg")
+                    val iconScale by animateFloatAsState(if (active) 1.08f else 1f, spring(dampingRatio = .55f, stiffness = Spring.StiffnessMediumLow), label = "dockScale")
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(24.dp))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                if (!active) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSelect(target)
+                            }.padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(icons[index], labels[index], Modifier.size(21.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale }, tint = fg)
+                        Text(labels[index], Modifier.padding(top = 3.dp), color = fg, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
@@ -292,31 +338,37 @@ private fun LuoShelfHomeV1(books: List<ReaderBookUi>, openingBookId: String?, on
     val t = LocalLanghuanUiTokens.current
     val progressPrefs = remember { context.getSharedPreferences("reader_progress_v1", 0) }
     val recent = books.maxByOrNull { progressPrefs.getLong("last_${it.id}", it.updatedAt) }
+    val enter = rememberEnterRegistryV31()
+    val greeting = remember { luoGreetingV31() }
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp)) {
-        Text("留一点时间，给故事", color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
-        Text("琅嬛", Modifier.padding(top = 4.dp, bottom = 24.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
-        Text("继续阅读", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+        Column(Modifier.enterOnceV31(enter, "home-title", 0)) {
+            Text(greeting, color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+            Text("琅嬛", Modifier.padding(top = 4.dp, bottom = 24.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+        }
+        Text("继续阅读", Modifier.enterOnceV31(enter, "home-continue-title", 1), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
         if (recent != null) {
-            LanghuanCard(Modifier.fillMaxWidth().clickable(enabled = openingBookId == null) { onOpenBook(recent.id) }, depth = 2) {
+            LanghuanCard(Modifier.fillMaxWidth().enterOnceV31(enter, "home-continue", 1), depth = 2, onClick = { if (openingBookId == null) onOpenBook(recent.id) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     LuoBookCoverV1(recent, Modifier.width(88.dp).aspectRatio(.70f), openingBookId == recent.id)
                     Column(Modifier.padding(start = 18.dp).weight(1f)) {
                         Text(recent.title, color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        Text("第 ${ReaderProgressStoreV11.load(context, recent.id, recent.currentChapter.coerceAtLeast(1)).chapterNumber} 章", Modifier.padding(top = 7.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                        Text("继续阅读 →", Modifier.padding(top = 18.dp), color = t.primary, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+                        val progress = remember(recent.id) { ReaderProgressStoreV11.load(context, recent.id, recent.currentChapter.coerceAtLeast(1)) }
+                        Text("第 ${progress.chapterNumber} 章", Modifier.padding(top = 7.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                        LuoProgressBarV31(progress.positionFraction, Modifier.padding(top = 12.dp).fillMaxWidth())
+                        Text("继续阅读 →", Modifier.padding(top = 14.dp), color = t.primary, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
                     }
                 }
             }
         } else {
-            LanghuanCard(Modifier.fillMaxWidth().clickable(onClick = onImport)) { Text("导入一本小说，开始阅读 →", color = t.primary, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge) }
+            LanghuanCard(Modifier.fillMaxWidth().enterOnceV31(enter, "home-empty", 1), onClick = onImport) { Text("导入一本小说，开始阅读 →", color = t.primary, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge) }
         }
         Spacer(Modifier.height(24.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().enterOnceV31(enter, "home-quick", 2), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             LuoQuickCardV1(Icons.Rounded.FolderOpen, "导入小说", "TXT · EPUB", Modifier.weight(1f), onImport)
             LuoQuickCardV1(Icons.Rounded.AutoAwesome, "开始创作", "从一个想法开始", Modifier.weight(1f), onCreate)
         }
-        Row(Modifier.fillMaxWidth().clickable(onClick = onLibrary).padding(vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().enterOnceV31(enter, "home-shelf", 3).springClickV31(pressedScale = .98f, onClick = onLibrary).padding(vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("我的书架", Modifier.weight(1f), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
             Text("${books.size} 本 →", color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
         }
@@ -326,7 +378,7 @@ private fun LuoShelfHomeV1(books: List<ReaderBookUi>, openingBookId: String?, on
 @Composable
 private fun LuoQuickCardV1(icon: ImageVector, title: String, subtitle: String, modifier: Modifier, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    LanghuanCard(modifier.clickable(onClick = onClick), depth = 0) {
+    LanghuanCard(modifier, depth = 0, onClick = onClick) {
         Icon(icon, null, Modifier.size(23.dp), tint = t.strong)
         Text(title, Modifier.padding(top = 14.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
         Text(subtitle, Modifier.padding(top = 4.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
@@ -350,42 +402,58 @@ private fun LuoShelfLibraryV1(
                 LanghuanIconButton(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "搜索", { onSearchOpen(!searchOpen) })
                 LanghuanIconButton(Icons.Rounded.Add, "添加", onAdd)
             }
-            AnimatedVisibility(searchOpen, enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
+            AnimatedVisibility(searchOpen, enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(160)), exit = shrinkVertically(tween(180)) + fadeOut(tween(120))) {
                 OutlinedTextField(value = query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), placeholder = { Text("搜索书名或类型") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true, shape = RoundedCornerShape(18.dp))
             }
             when {
-                !state.libraryLoaded -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
+                !state.libraryLoaded -> LuoShelfSkeletonV31()
                 books.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Rounded.Book, null, Modifier.size(42.dp), tint = t.mutedForeground)
-                        Text(if (query.isBlank()) "把喜欢的故事放进琅嬛" else "没有匹配的作品", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                        if (query.isBlank()) TextButton(onClick = onAdd) { Text("导入小说 / 开始创作") }
+                    val emptyEnter = rememberEnterRegistryV31()
+                    Column(
+                        Modifier.padding(horizontal = 40.dp).padding(bottom = 60.dp).enterOnceV31(emptyEnter, "empty-$query".take(40), 0),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        LuoEmptyStackV31(searching = query.isNotBlank())
+                        Text(if (query.isBlank()) "把喜欢的故事放进琅嬛" else "没有匹配的作品", Modifier.padding(top = 10.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (query.isBlank()) "导入 TXT / EPUB，或者和 AI 一起写一本" else "换个关键词试试，书名和类型都能搜",
+                            color = t.mutedForeground,
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (query.isBlank()) {
+                            Surface(
+                                Modifier.padding(top = 8.dp).springClickV31(onClick = onAdd),
+                                shape = RoundedCornerShape(999.dp),
+                                color = t.primary,
+                            ) {
+                                Text("添加作品", Modifier.padding(horizontal = 22.dp, vertical = 10.dp), color = t.primaryForeground, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+                            }
+                        }
                     }
                 }
                 else -> {
                     val context = LocalContext.current
                     val progressPrefs = remember { context.getSharedPreferences("reader_progress_v2", 0) }
+                    val enter = rememberEnterRegistryV31()
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 32.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
-                        gridItems(books, key = { it.id }) { book ->
-                            val interaction = remember { MutableInteractionSource() }
-                            val pressed by interaction.collectIsPressedAsState()
-                            val scale by animateFloatAsState(if (pressed) .94f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "bookPress")
-                            val chapter = progressPrefs.getInt("chapter_${book.id}", 0)
+                        gridItemsIndexed(books, key = { _, book -> book.id }) { index, book ->
+                            val chapter = remember(book.id, book.updatedAt) { progressPrefs.getInt("chapter_${book.id}", 0) }
                             Column(
                                 Modifier
                                     .animateItem()
+                                    .enterOnceV31(enter, book.id, index)
                                     .fillMaxWidth()
-                                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                                    .combinedClickable(
-                                        interactionSource = interaction,
-                                        indication = null,
+                                    .springClickV31(
                                         enabled = openingBookId == null,
-                                        onClick = { onOpenBook(book.id) },
+                                        pressedScale = .94f,
                                         onLongClick = { onLongPress(book) },
+                                        onClick = { onOpenBook(book.id) },
                                     ),
                             ) {
                                 LuoBookCoverV1(book, Modifier.fillMaxWidth().aspectRatio(.72f), openingBookId == book.id)
@@ -404,8 +472,13 @@ private fun LuoShelfLibraryV1(
                 }
             }
         }
-        if (importState.busy) {
-            Surface(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(18.dp).fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = t.card, shadowElevation = 3.dp) {
+        AnimatedVisibility(
+            visible = importState.busy,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(LanghuanMotionV31.settle()) { it } + fadeIn(tween(160)),
+            exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
+        ) {
+            Surface(Modifier.navigationBarsPadding().padding(18.dp).fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = t.card, shadowElevation = 3.dp) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Text("正在导入 ${importState.currentFileName}", Modifier.padding(start = 10.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -421,7 +494,7 @@ private fun LuoShelfCreateV1(onCreate: () -> Unit, onImport: () -> Unit, onSkill
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Text("创作", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
         Text("让脑海里的故事，有一个开始。", Modifier.padding(top = 5.dp, bottom = 22.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
-        LanghuanCard(Modifier.fillMaxWidth().clickable(onClick = onCreate), depth = 2) {
+        LanghuanCard(Modifier.fillMaxWidth(), depth = 2, onClick = onCreate) {
             Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(28.dp), tint = t.primary)
             Text("和 AI 一起写一本书", Modifier.padding(top = 18.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
             Text("聊设定、人物与情节，逐步整理成可持续创作的小说蓝图。", Modifier.padding(top = 10.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
@@ -448,7 +521,7 @@ private fun LuoShelfProfileV1(
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Text("我的", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(18.dp))
-        LanghuanCard(Modifier.fillMaxWidth().clickable(onClick = onEditProfile), depth = 1) {
+        LanghuanCard(Modifier.fillMaxWidth(), depth = 1, onClick = onEditProfile) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = t.accent) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Person, null, Modifier.size(26.dp), tint = t.accentForeground) } }
                 Column(Modifier.padding(start = 15.dp).weight(1f)) {
@@ -516,7 +589,7 @@ private fun LuoShelfManagerV1(books: List<ReaderBookUi>, customShelves: List<Str
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                LanghuanCard(Modifier.fillMaxWidth().clickable(onClick = onOpenReadingShelf), depth = 0) {
+                LanghuanCard(Modifier.fillMaxWidth(), depth = 0, onClick = onOpenReadingShelf) {
                     Text("正在阅读 (${books.size})", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { books.take(5).forEach { LuoBookCoverV1(it, Modifier.width(42.dp).aspectRatio(.70f)) } }
                 }
@@ -702,3 +775,71 @@ private val LUO_COVER_TONES_V30 = listOf(
     Color(0xFF4A4F6B) to Color(0xFF23263A),
     Color(0xFF6B5A3A) to Color(0xFF362C1A),
 )
+
+
+private fun luoGreetingV31(): String = when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
+    in 5..10 -> "早上好，留一点时间给故事"
+    in 11..13 -> "午间小憩，读一章再出发"
+    in 14..17 -> "下午好，留一点时间给故事"
+    in 18..22 -> "晚上好，今晚读点什么"
+    else -> "夜深了，读完这一章就睡吧"
+}
+
+@Composable
+private fun LuoProgressBarV31(fraction: Float, modifier: Modifier = Modifier) {
+    val t = LocalLanghuanUiTokens.current
+    val animated = remember { Animatable(0f) }
+    LaunchedEffect(fraction) { animated.animateTo(fraction.coerceIn(0f, 1f), tween(700, easing = FastOutSlowInEasing)) }
+    Box(modifier.height(4.dp).clip(RoundedCornerShape(2.dp)).background(t.track)) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(animated.value.coerceAtLeast(.02f)).clip(RoundedCornerShape(2.dp)).background(t.primary))
+    }
+}
+
+/** Placeholder grid with the exact geometry of the real one, so loading never jumps. */
+@Composable
+private fun LuoShelfSkeletonV31() {
+    Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 8.dp)) {
+        repeat(3) { row ->
+            Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                repeat(3) {
+                    Column(Modifier.weight(1f).graphicsLayer { alpha = 1f - row * .22f }) {
+                        LanghuanSkeletonV31(Modifier.fillMaxWidth().aspectRatio(.72f), RoundedCornerShape(6.dp))
+                        LanghuanSkeletonV31(Modifier.padding(top = 9.dp).fillMaxWidth(.8f).height(12.dp), RoundedCornerShape(4.dp))
+                        LanghuanSkeletonV31(Modifier.padding(top = 6.dp).fillMaxWidth(.5f).height(9.dp), RoundedCornerShape(4.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Three fanned book spines; they fan out a little when shown. */
+@Composable
+private fun LuoEmptyStackV31(searching: Boolean) {
+    val t = LocalLanghuanUiTokens.current
+    val fan = remember { Animatable(0f) }
+    LaunchedEffect(searching) {
+        fan.snapTo(0f)
+        fan.animateTo(1f, spring(dampingRatio = .55f, stiffness = Spring.StiffnessLow))
+    }
+    Box(Modifier.size(width = 120.dp, height = 96.dp), contentAlignment = Alignment.BottomCenter) {
+        val tones = listOf(t.accent, t.muted, t.card)
+        listOf(-1, 1, 0).forEach { side ->
+            Box(
+                Modifier
+                    .size(width = 52.dp, height = 74.dp)
+                    .graphicsLayer {
+                        rotationZ = side * 12f * fan.value
+                        translationX = side * 26.dp.toPx() * fan.value
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 1f)
+                    }
+                    .shadow(if (side == 0) 4.dp else 1.dp, RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(tones[side + 1]),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (side == 0) Icon(if (searching) Icons.Rounded.Search else Icons.Rounded.AutoAwesome, null, Modifier.size(22.dp), tint = t.primary)
+            }
+        }
+    }
+}
