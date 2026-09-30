@@ -64,6 +64,10 @@ class StoryProjectManager(context: Context) {
         preferences.edit().putString(KEY_ACTIVE_STORY, id).apply()
     }
 
+    fun clearActiveStoryId() {
+        preferences.edit().remove(KEY_ACTIVE_STORY).apply()
+    }
+
     suspend fun loadStory(id: String): PersistedStory? {
         val entity = storyDao.get(id) ?: return null
         return runCatching {
@@ -148,7 +152,11 @@ class StoryProjectManager(context: Context) {
     }
 
     suspend fun createImportedStory(manuscript: ImportedManuscript): PersistedStory {
-        val created = createStory(
+        // Local reading imports must never hijack the Studio's persisted active project.
+        // Otherwise a reader-only import can poison Studio startup and create a crash loop.
+        val previousActive = activeStoryId()
+        return try {
+            val created = createStory(
             NewStoryRequest(
                 title = manuscript.title,
                 genre = "导入作品",
@@ -215,10 +223,11 @@ class StoryProjectManager(context: Context) {
             activeOutline = activeChain(full, 1),
         )
         val persisted = saveStructure(snapshot, first)
-        setActiveStoryId(snapshot.novel.id)
-        return persisted
+            persisted
+        } finally {
+            if (previousActive != null) setActiveStoryId(previousActive) else clearActiveStoryId()
+        }
     }
-
     suspend fun chapterDrafts(novelId: String): List<ChapterDraft> {
         val loaded = loadStory(novelId) ?: return emptyList()
         val existing = chapterStateDao.allForNovel(novelId).mapNotNull { it.decodeDraftOrNull() }.associateBy { it.chapterNumber }.toMutableMap()
