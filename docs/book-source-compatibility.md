@@ -82,3 +82,12 @@ HTTP 错误保留实际状态码、协议和域名；不再根据 400 推断登�
 Cloudflare 的普通 HTML 页面也可能带有 [JavaScript Detections](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/) 脚本，因此脚本路径 `challenge-platform`、一般“请稍候”文案或书中引用验证提示均不构成拦截证据。优先依据官方 [cf-mitigated: challenge 响应标记](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/)，其次结合验证页标题、可见提示和专有页面结构。
 
 真正的浏览器验证或访问拦截仍会停止生成，并明确说明尚未获得内容。当前不会执行网站脚本、破解验证码或绕过访问控制；外部浏览器会话不会自动共享给 App。首页失败时不会启动模型调用，失败原因在对应步骤只显示一次。
+
+
+## 模型输出格式恢复
+
+生成规则仍接受明确的静态字符串规则。模型额外给出 `type: css/html`，或与当前生成阶段一致的 `type: search/ruleSearch`、`content/ruleContent` 等类型说明时，会先验证语义和全部规则字段，再去掉这项已知元数据；不把任意未知字段当作无害信息忽略。
+
+未知类型、JSON Schema 或嵌套规则结构会提示模型按当前阶段的明确字段重新输出一次。该纠正和原本的“规则没有取到内容”再生成共享每阶段两次调用总额度；提供商网络错误、取消和明确不支持的 JavaScript/JSONPath/XPath 等能力不会触发额外的格式纠正调用。发现导航仍只从已观察的有限页面取证，每页最多两次模型调用，原入口和网络限制不变。
+
+终止异常会结束正在执行的步骤并显示同一个错误原因，避免红字已经失败而步骤还在转动。格式纠正通过后仍须实际验证搜索、目录和正文；没有通过验证的结果不会保存。

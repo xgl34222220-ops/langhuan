@@ -50,6 +50,7 @@ internal class BookSourceAiBuilderV37(
     private val fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
 ) {
     private val steps = ArrayList<AiSourceStepV37>()
+    private val generationCalls = HashMap<String, Int>()
 
     private suspend fun step(label: String) {
         steps += AiSourceStepV37(label)
@@ -70,6 +71,27 @@ internal class BookSourceAiBuilderV37(
     }
 
     suspend fun build(siteUrl: String, keyword: String): AiSourceReportV37 = withContext(Dispatchers.IO) {
+        steps.clear()
+        generationCalls.clear()
+        try {
+            buildSource(siteUrl, keyword)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            val detail = error.message.orEmpty().ifBlank { "书源生成失败，请稍后重试" }.take(500)
+            val last = steps.lastOrNull()
+            if (last?.completed == true && last.ok == false && last.detail == detail) {
+                // fail() already published this exact failure.
+            } else {
+                if (last?.completed != false) step("完成规则检查")
+                finish(false, detail)
+            }
+            if (detail == error.message) throw error
+            throw IllegalStateException(detail, error)
+        }
+    }
+
+    private suspend fun buildSource(siteUrl: String, keyword: String): AiSourceReportV37 {
         val home = normalizeSiteV37(siteUrl)
         val enteredOrigin = canonicalOriginV37(home)
         var source = BookSourceV36(id = enteredOrigin, name = URL(home).host, baseUrl = enteredOrigin)
@@ -171,7 +193,7 @@ internal class BookSourceAiBuilderV37(
         })
         require(bookSourceSupportedV36(source)) { "生成规则包含不支持的语法" }
         currentCoroutineContext().ensureActive()
-        AiSourceReportV37(source, results.size, picked.name, toc.size, text.take(160), labels, warnings, discoveryEvidence)
+        return AiSourceReportV37(source, results.size, picked.name, toc.size, text.take(160), labels, warnings, discoveryEvidence)
     }
 
     private suspend fun buildDiscovery(initial: BookSourceV36, home: Document, warnings: MutableList<String>, evidence: MutableList<AiDiscoveryEvidenceV37>): BookSourceV36 {
@@ -258,19 +280,19 @@ internal class BookSourceAiBuilderV37(
     private suspend fun askDiscoveryLinks(doc: Document): List<AiDiscoveryLinkV37> {
         val links = aiDiscoveryLinkEvidenceV37(doc)
         if (links.isEmpty()) return emptyList()
-        val raw = gateway.generateText(PromptBundle(system = RULE_SYSTEM, user = buildString {
+        val rules = requestRuleObject(AiRuleStageV45.EXPLORE_LINKS, PromptBundle(system = RULE_SYSTEM, user = buildString {
             appendLine("任务：识别网站已有的发现分类、排行榜、新书、完结等导航入口。")
             appendLine("输出 JSON：{\"exploreUrl\":\"分类名::完整地址&&榜单名::完整地址\"}。最多 12 个。")
             appendLine("只能逐字选取下面证据中的名称和地址，不得改名、猜地址、猜分页、虚构榜单。单本书、登录、会员、广告、站外链接不属于分类。没有符合的入口就输出空字符串。")
             appendLine("页面：${doc.location()}")
             appendLine("【已验证的静态链接证据】")
             links.forEach { appendLine("${it.label}::${it.url}") }
-        }))
-        return validateAiDiscoveryLinksV37(parseRulesV37(raw)["exploreUrl"].orEmpty(), doc)
+        }), budgetKey = "links:${doc.location()}")
+        return validateAiDiscoveryLinksV37(rules["exploreUrl"].orEmpty(), doc)
     }
 
     private suspend fun askExploreRules(pages: Map<AiDiscoveryLinkV37, Document>, feedback: String?): Map<String, String> {
-        val raw = gateway.generateText(PromptBundle(system = RULE_SYSTEM, user = buildString {
+        return requestRuleObject(AiRuleStageV45.EXPLORE, PromptBundle(system = RULE_SYSTEM, user = buildString {
             appendLine("任务：为这些真实分类/排行榜页面生成共用的发现书目规则（对应阅读 ruleExplore）。")
             appendLine("输出 JSON 键：exploreList（每本书的外层元素）、exploreName、exploreAuthor、exploreBookUrl（详情页 @href）、exploreCover、exploreIntro、exploreLatest。")
             appendLine("布局不同请使用 CSS 逗号选择器覆盖；只选书目，不要把导航分类当作书。禁止 JavaScript、JSON API 和臆造字段。")
@@ -280,7 +302,6 @@ internal class BookSourceAiBuilderV37(
                 appendLine(pageSkeletonV37(doc, (24_000 / pages.size).coerceAtMost(10_000)))
             }
         }))
-        return parseRulesV37(raw)
     }
 
     private fun BookSourceV36.withExplore(r: Map<String, String>) = copy(
@@ -302,7 +323,7 @@ internal class BookSourceAiBuilderV37(
     // ---- Model calls ---------------------------------------------------------------------------
 
     private suspend fun askSearchUrl(home: Document, origin: String): String? {
-        val raw = gateway.generateText(
+        val rules = requestRuleObject(AiRuleStageV45.SEARCH_URL,
             PromptBundle(
                 system = RULE_SYSTEM,
                 user = buildString {
@@ -315,11 +336,17 @@ internal class BookSourceAiBuilderV37(
                 },
             ),
         )
-        return parseRulesV37(raw)["searchUrl"]?.takeIf { it.contains("{{key}}") }
+        return rules["searchUrl"]?.takeIf { it.contains("{{key}}") }
     }
 
     private suspend fun askRules(task: String, doc: Document, hint: String, feedback: String?): Map<String, String> {
-        val raw = gateway.generateText(
+        val stage = when (task) {
+            SEARCH_TASK -> AiRuleStageV45.SEARCH
+            TOC_TASK -> AiRuleStageV45.TOC
+            CONTENT_TASK -> AiRuleStageV45.CONTENT
+            else -> error("未知的规则生成阶段")
+        }
+        return requestRuleObject(stage,
             PromptBundle(
                 system = RULE_SYSTEM,
                 user = buildString {
@@ -336,7 +363,40 @@ internal class BookSourceAiBuilderV37(
                 },
             ),
         )
-        return parseRulesV37(raw)
+    }
+
+    /** Schema repair and extraction repair share two total model calls, never two each. */
+    private suspend fun requestRuleObject(
+        stage: AiRuleStageV45, prompt: PromptBundle, budgetKey: String = stage.name,
+    ): Map<String, String> {
+        var formattingProblem: String? = null
+        while (true) {
+            val used = generationCalls[budgetKey] ?: 0
+            check(used < 2) { "${stage.label}已生成 2 次，仍未验证通过；已停止，请检查测试书名或更换模型后重试" }
+            currentCoroutineContext().ensureActive()
+            generationCalls[budgetKey] = used + 1
+            val schema = buildJsonObject { stage.fields.forEach { put(it, "") } }.toString()
+            val user = buildString {
+                appendLine(prompt.user)
+                appendLine()
+                appendLine("【严格输出格式】只返回下面键名组成的扁平 JSON 对象，值必须是实际规则字符串；不存在的字段用空字符串。")
+                appendLine(schema)
+                appendLine("不要返回 JSON Schema、type、properties、items、说明、嵌套规则或额外字段。禁止脚本和 JSONPath。")
+                formattingProblem?.let {
+                    appendLine("【格式纠正，最后一次】上次输出未通过：${it.take(300)}。只纠正结构和字段名，仍须依据上面的网页事实，不得编造内容。")
+                }
+            }
+            // Transport/provider failures and unsupported executable rules do not trigger paid repair.
+            val raw = gateway.generateText(PromptBundle(system = prompt.system, user = user))
+            try {
+                return parseRulesV37(raw, stage)
+            } catch (error: AiRuleFormatExceptionV45) {
+                if (generationCalls.getValue(budgetKey) >= 2) {
+                    throw IllegalArgumentException("AI 规则格式经最多 2 次生成仍未通过：${error.message.orEmpty().take(300)}；已停止，未保存书源", error)
+                }
+                formattingProblem = error.message
+            }
+        }
     }
 
     private fun Map<String, String>.compact(): String = entries.joinToString("；") { "${it.key}=${it.value}" }.take(400)
@@ -413,21 +473,50 @@ internal fun normalizeSiteV37(raw: String): String {
 internal fun siteNameV37(doc: Document, host: String): String =
     doc.title().split('-', '_', '|', '–', '—', '·').map { it.trim() }.firstOrNull { it.length in 2..20 } ?: host
 
-internal fun parseRulesV37(raw: String): Map<String, String> {
-    require(raw.length <= 64 * 1024) { "AI 规则响应过大" }
+internal enum class AiRuleStageV45(val label: String, val fields: Set<String>, val typeAliases: Set<String>) {
+    SEARCH_URL("搜索地址", setOf("searchUrl"), setOf("searchurl", "url")),
+    SEARCH("搜索规则", setOf("searchList", "searchName", "searchAuthor", "searchCover", "searchIntro", "searchLatest", "searchBookUrl"), setOf("search", "rulesearch")),
+    TOC("详情和目录规则", setOf("infoName", "infoAuthor", "infoCover", "infoIntro", "infoTocUrl", "tocList", "tocName", "tocUrl", "tocNext"), setOf("toc", "ruletoc", "bookinfo", "rulebookinfo", "detail")),
+    CONTENT("正文规则", setOf("contentText", "contentNext", "contentReplace"), setOf("content", "rulecontent")),
+    EXPLORE_LINKS("发现入口", setOf("exploreUrl"), setOf("exploreurl", "url")),
+    EXPLORE("发现规则", setOf("exploreList", "exploreName", "exploreAuthor", "exploreCover", "exploreIntro", "exploreLatest", "exploreBookUrl"), setOf("explore", "ruleexplore")),
+}
+
+internal class AiRuleFormatExceptionV45(message: String) : IllegalArgumentException(message)
+internal class UnsupportedAiRuleCapabilityV45(message: String) : IllegalArgumentException(message)
+
+internal fun parseRulesV37(raw: String, stage: AiRuleStageV45? = null): Map<String, String> {
+    if (raw.length > 64 * 1024) throw AiRuleFormatExceptionV45("AI 规则响应过大")
     val element = sourceAttemptV36 { BookSourceJsonV36.parseToJsonElement(repairModelJsonV34(raw)) }.getOrNull() as? JsonObject
-        ?: error("AI 未返回有效的 JSON 规则对象")
-    val supported = setOf("searchUrl", "searchList", "searchName", "searchAuthor", "searchCover", "searchIntro", "searchLatest", "searchBookUrl",
-        "infoName", "infoAuthor", "infoCover", "infoIntro", "infoTocUrl", "tocList", "tocName", "tocUrl", "tocNext",
-        "contentText", "contentNext", "contentReplace", "exploreUrl", "exploreList", "exploreName", "exploreAuthor", "exploreCover", "exploreIntro", "exploreLatest", "exploreBookUrl")
-    require(element.keys.all { it in supported }) { "AI 返回不支持的字段：${element.keys - supported}" }
-    return element.mapValues { (key, value) ->
+        ?: throw AiRuleFormatExceptionV45("AI 未返回有效的 JSON 规则对象")
+    val supported = stage?.fields ?: AiRuleStageV45.entries.flatMap { it.fields }.toSet()
+    val unsupportedCapabilities = element.keys.intersect(setOf("jsLib", "mainJs", "loginCheckJs", "webJs", "bodyJs", "coverDecodeJs", "webView"))
+    if (unsupportedCapabilities.isNotEmpty()) throw UnsupportedAiRuleCapabilityV45("AI 返回不支持的脚本能力字段：$unsupportedCapabilities")
+    val unknown = element.keys - supported - "type"
+    if (unknown.isNotEmpty()) throw AiRuleFormatExceptionV45("AI 返回不支持的字段：${unknown.take(12).map { it.take(60) }}")
+    element["type"]?.let { value ->
         val primitive = value as? JsonPrimitive
-        require(primitive != null && primitive.isString) { "AI 字段 $key 必须是字符串，不能静默忽略嵌套规则" }
-        val text = primitive.contentOrNull.orEmpty()
-        require(text.length <= 8192) { "AI 规则过长：$key" }
-        require(!text.contains("<js>", true) && !text.contains("@js:", true) && !text.startsWith("@json:", true) && !text.trimStart().startsWith("$.")) { "AI 字段 $key 返回了不支持的脚本或 JSON 规则" }
-        text.trim()
+        if (primitive == null || !primitive.isString) throw AiRuleFormatExceptionV45("AI 的 type 必须是明确的静态规则类型，不能是嵌套对象或数字")
+        val kind = primitive.content.trim().lowercase(java.util.Locale.ROOT)
+        if (kind in setOf("js", "javascript", "script", "java", "webview", "json", "jsonpath", "xpath")) {
+            throw UnsupportedAiRuleCapabilityV45("AI 返回 type=$kind；当前只支持静态 HTML/CSS 规则，未执行该能力")
+        }
+        val selectorStage = stage == null || stage in setOf(AiRuleStageV45.SEARCH, AiRuleStageV45.TOC, AiRuleStageV45.CONTENT, AiRuleStageV45.EXPLORE)
+        val formatAllowed = selectorStage && kind in setOf("css", "html")
+        if (!formatAllowed && kind !in stage?.typeAliases.orEmpty()) {
+            throw AiRuleFormatExceptionV45("AI 的 type=${kind.take(60)} 与${stage?.label ?: "静态规则"}不匹配；请只返回指定规则字段")
+        }
+        if (element.keys.none { it in supported }) throw AiRuleFormatExceptionV45("AI 只返回了类型说明，没有实际规则字段")
+    }
+    return element.filterKeys { it != "type" }.mapValues { (key, value) ->
+        val primitive = value as? JsonPrimitive
+        if (primitive == null || !primitive.isString) throw AiRuleFormatExceptionV45("AI 字段 $key 必须是字符串，不能静默忽略嵌套规则")
+        val text = primitive.contentOrNull.orEmpty().trim()
+        if (text.length > 8192) throw AiRuleFormatExceptionV45("AI 规则过长：$key")
+        if (text.contains("<js>", true) || text.contains("@js:", true) || text.startsWith("@json:", true) || text.startsWith("$.")) {
+            throw UnsupportedAiRuleCapabilityV45("AI 字段 $key 返回了不支持的脚本或 JSON 规则")
+        }
+        text
     }
 }
 
