@@ -86,8 +86,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         pendingBookFreshReload = libraryState.openedBook?.id == id && libraryState.readingChapter != null
         pendingBookId = id
         pendingBookRoute = target
-        if (target == RootRouteV4.TAVERN) tavernStoryId = id
-        studioVm.selectStory(id)
+        if (target == RootRouteV4.TAVERN) {
+            tavernStoryId = id
+            studioVm.selectStory(id)
+        }
         libraryVm.openBook(id)
     }
 
@@ -170,9 +172,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         }
     }
 
-    LaunchedEffect(libraryState.openedBook?.id) {
-        libraryState.openedBook?.id?.let { id -> studioVm.selectStory(id) }
-    }
+    // Reading a book must not silently switch the Studio's persisted active project.
+    // Studio selection happens only when the user explicitly enters writing/story tools.
 
     LaunchedEffect(localImportState.importedBookId, libraryState.stories) {
         val id = localImportState.importedBookId ?: return@LaunchedEffect
