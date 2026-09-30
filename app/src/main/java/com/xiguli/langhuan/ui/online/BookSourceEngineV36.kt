@@ -333,30 +333,93 @@ internal fun resolveUrlV36(base: String, target: String): String {
 }
 
 internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36): Document {
-    val connection = URL(request.url).openConnection() as HttpURLConnection
-    connection.connectTimeout = 15_000
-    connection.readTimeout = 20_000
-    connection.instanceFollowRedirects = true
-    connection.requestMethod = request.method
-    connection.setRequestProperty("User-Agent", source.headers["User-Agent"] ?: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36")
-    source.headers.forEach { (k, v) -> if (!k.equals("User-Agent", true)) connection.setRequestProperty(k, v) }
-    if (request.body != null) {
-        connection.doOutput = true
-        connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-        connection.outputStream.use { it.write(request.body.toByteArray(Charset.forName(request.charset ?: "UTF-8"))) }
+    val first = runCatching { fetchDocumentFollowingRedirectsV36(source, request) }
+    if (first.isSuccess) return first.getOrThrow()
+
+    // Browsers frequently upgrade an explicitly typed http:// URL to HTTPS through HSTS or an
+    // internal redirect before the request ever reaches the page. HttpURLConnection does not have
+    // the browser's HSTS state, so retry the same URL over HTTPS once before reporting a failure.
+    val https = httpsFallbackUrlV36(request.url)
+    if (https != null) {
+        val retry = runCatching { fetchDocumentFollowingRedirectsV36(source, request.copy(url = https)) }
+        if (retry.isSuccess) return retry.getOrThrow()
+        val firstMessage = first.exceptionOrNull()?.message.orEmpty()
+        val secondMessage = retry.exceptionOrNull()?.message.orEmpty()
+        error(listOf(firstMessage, secondMessage).filter { it.isNotBlank() }.distinct().joinToString("；").ifBlank { "网页请求失败" })
     }
-    try {
-        val code = connection.responseCode
-        check(code in 200..399) { "书源返回 $code" }
-        val bytes = (if (code >= 400) connection.errorStream else connection.inputStream).use { it.readBytes() }
-        val charset = request.charset
-            ?: connection.contentType?.substringAfter("charset=", "")?.trim()?.ifBlank { null }
-            ?: sniffCharsetV36(bytes)
-        val html = String(bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
-        return Jsoup.parse(html, connection.url.toString())
-    } finally {
-        connection.disconnect()
+    throw first.exceptionOrNull() ?: IllegalStateException("网页请求失败")
+}
+
+private fun fetchDocumentFollowingRedirectsV36(source: BookSourceV36, initial: SourceRequestV36): Document {
+    var url = initial.url
+    var method = initial.method.uppercase()
+    var body = initial.body
+    var referer: String? = source.baseUrl.takeIf { it.startsWith("http") }
+    val cookies = LinkedHashMap<String, String>()
+
+    repeat(8) {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 20_000
+        connection.instanceFollowRedirects = false
+        connection.requestMethod = method
+        connection.setRequestProperty(
+            "User-Agent",
+            source.headers["User-Agent"]
+                ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        )
+        connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.6")
+        connection.setRequestProperty("Cache-Control", "no-cache")
+        connection.setRequestProperty("Pragma", "no-cache")
+        connection.setRequestProperty("Upgrade-Insecure-Requests", "1")
+        referer?.takeIf { it.startsWith("http") }?.let { connection.setRequestProperty("Referer", it) }
+        if (cookies.isNotEmpty()) connection.setRequestProperty("Cookie", cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+        source.headers.forEach { (k, v) ->
+            if (!k.equals("User-Agent", true) && !k.equals("Cookie", true)) connection.setRequestProperty(k, v)
+        }
+        if (body != null && method !in setOf("GET", "HEAD")) {
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            connection.outputStream.use { it.write(body!!.toByteArray(Charset.forName(initial.charset ?: "UTF-8"))) }
+        }
+        try {
+            val code = connection.responseCode
+            connection.headerFields["Set-Cookie"].orEmpty().forEach { raw ->
+                val pair = raw.substringBefore(';')
+                val eq = pair.indexOf('=')
+                if (eq > 0) cookies[pair.substring(0, eq).trim()] = pair.substring(eq + 1).trim()
+            }
+            if (code in setOf(301, 302, 303, 307, 308)) {
+                val location = connection.getHeaderField("Location")?.takeIf { it.isNotBlank() }
+                    ?: error("书源返回 $code，但没有跳转地址")
+                val next = resolveUrlV36(url, location)
+                referer = url
+                url = next
+                if (code in setOf(301, 302, 303) && method !in setOf("GET", "HEAD")) {
+                    method = "GET"
+                    body = null
+                }
+                return@repeat
+            }
+            check(code in 200..299) { "书源返回 $code" }
+            val bytes = connection.inputStream.use { it.readBytes() }
+            val charset = initial.charset
+                ?: connection.contentType?.substringAfter("charset=", "")?.substringBefore(';')?.trim()?.ifBlank { null }
+                ?: sniffCharsetV36(bytes)
+            val html = String(bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
+            return Jsoup.parse(html, url)
+        } finally {
+            connection.disconnect()
+        }
     }
+    error("网页跳转次数过多")
+}
+
+internal fun httpsFallbackUrlV36(raw: String): String? {
+    val url = runCatching { URL(raw) }.getOrNull() ?: return null
+    if (!url.protocol.equals("http", true)) return null
+    return URL("https", url.host, if (url.port == 80) -1 else url.port, url.file).toString()
 }
 
 private fun sniffCharsetV36(bytes: ByteArray): String {
