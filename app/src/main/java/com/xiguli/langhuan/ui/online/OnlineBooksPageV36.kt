@@ -260,7 +260,6 @@ private fun OnlineSearchTabV36(
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("全源搜索", color = t.foreground, style = MaterialTheme.typography.labelLarge)
             Text("  ·  $enabled 个书源已启用", Modifier.weight(1f), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = onGoSources) { Text("管理") }
         }
         val discoveries = remember(state.sources) { state.sources.flatMap(::sourceDiscoveriesV41) }
         val discoveryIssues = remember(state.sources) { state.sources.flatMap { src -> sourceDiscoveryCatalogV41(src).issues.map { "${src.name}：$it" } } }
@@ -275,7 +274,6 @@ private fun OnlineSearchTabV36(
             }
             Spacer(Modifier.height(8.dp))
         }
-        state.discoveryLabel?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = t.foreground, style = MaterialTheme.typography.titleSmall) }
         AnimatedVisibility(state.searching) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 LanghuanMotionStatus(if (state.discoveryLabel != null) "正在读取发现分类…" else "正在搜索 ${state.searchedSources}/$enabled 个书源", Modifier.weight(1f))
