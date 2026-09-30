@@ -4,6 +4,12 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -159,6 +165,12 @@ internal fun ReaderMenuV30(
     onEdit: () -> Unit,
     onWriting: () -> Unit,
     onStory: () -> Unit,
+    bookmarkedChapters: Set<Int> = emptySet(),
+    onRenameChapter: (Int, String) -> Unit = { _, _ -> },
+    onAppendChapter: () -> Unit = {},
+    onDeleteLastChapter: () -> Unit = {},
+    listening: Boolean = false,
+    onListen: () -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible = visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(200))) {
@@ -243,8 +255,9 @@ internal fun ReaderMenuV30(
                                 )
                                 ReaderMenuTabV30.DIRECTORY -> ReaderDirectoryTabV30(
                                     book, chapters, chapterIndex, theme, bookmarked, settings, onBack, onToggleBookmark, onJumpChapter,
+                                    bookmarkedChapters, onRenameChapter, onAppendChapter, onDeleteLastChapter,
                                 )
-                                ReaderMenuTabV30.MORE -> ReaderMoreTabV30(settings, theme, onPanel, onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) })
+                                ReaderMenuTabV30.MORE -> ReaderMoreTabV30(settings, theme, onPanel, onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) }, listening = listening, onListen = onListen)
                             }
                             ReaderMenuPanelV30.THEME -> ReaderThemePanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
                             ReaderMenuPanelV30.FONT -> ReaderFontPanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
@@ -252,6 +265,7 @@ internal fun ReaderMenuV30(
                             ReaderMenuPanelV30.SPACING -> ReaderSpacingPanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
                             ReaderMenuPanelV30.TURN -> ReaderTurnPanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
                             ReaderMenuPanelV30.SEARCH -> ReaderSearchPanelV30(chapters, theme, onJumpChapter) { onPanel(ReaderMenuPanelV30.MAIN) }
+                            ReaderMenuPanelV30.STATS -> ReaderStatsPanelV35(theme) { onPanel(ReaderMenuPanelV30.MAIN) }
                         }
                     }
                     AnimatedVisibility(visible = panel == ReaderMenuPanelV30.MAIN) {
@@ -322,6 +336,7 @@ private fun ReaderSheetHeaderV30(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReaderDirectoryTabV30(
     book: ReaderBookUi,
@@ -333,18 +348,65 @@ private fun ReaderDirectoryTabV30(
     onBack: () -> Unit,
     onBookmark: () -> Unit,
     onJumpChapter: (Int, Int) -> Unit,
+    bookmarkedChapters: Set<Int> = emptySet(),
+    onRenameChapter: (Int, String) -> Unit = { _, _ -> },
+    onAppendChapter: () -> Unit = {},
+    onDeleteLastChapter: () -> Unit = {},
 ) {
     val height = (LocalConfiguration.current.screenHeightDp * .46f).dp
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (chapterIndex - 3).coerceAtLeast(0))
     val scope = rememberCoroutineScope()
+    var showBookmarks by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<ChapterDraft?>(null) }
     Column {
         ReaderSheetHeaderV30(book.title, theme, bookmarked, settings, onBack, onBookmark)
-        Text(
-            "共 ${chapters.size} 章",
-            Modifier.padding(start = 20.dp, bottom = 4.dp),
-            color = theme.sheetMuted,
-            fontSize = 12.sp,
-        )
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            ReaderSegmentV30("目录 ${chapters.size}", !showBookmarks, theme) { showBookmarks = false }
+            Spacer(Modifier.width(8.dp))
+            ReaderSegmentV30("书签 ${bookmarkedChapters.size}", showBookmarks, theme) { showBookmarks = true }
+            Spacer(Modifier.weight(1f))
+            if (!showBookmarks) {
+                Text(
+                    "+ 新章",
+                    Modifier.clip(CircleShape).clickable { onAppendChapter() }.padding(horizontal = 10.dp, vertical = 5.dp),
+                    color = theme.accent,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+        if (showBookmarks) {
+            val marked = chapters.withIndex().filter { it.value.chapterNumber in bookmarkedChapters }
+            Box(Modifier.fillMaxWidth().height(height)) {
+                if (marked.isEmpty()) {
+                    Text(
+                        "还没有书签。阅读时点顶部书签图标，或长按段落选「书签」。",
+                        Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+                        color = theme.sheetMuted,
+                        fontSize = 13.sp,
+                    )
+                } else {
+                    LazyColumn(contentPadding = PaddingValues(bottom = 8.dp)) {
+                        itemsIndexed(marked, key = { _, item -> "bm-" + item.value.id }) { _, entry ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { onJumpChapter(entry.index, 0) }.padding(horizontal = 20.dp, vertical = 13.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Outlined.Bookmark, null, Modifier.size(16.dp), tint = theme.accent)
+                                Text(
+                                    readerDisplayChapterTitleV13(entry.value.title, entry.value.chapterNumber),
+                                    Modifier.padding(start = 10.dp).weight(1f),
+                                    color = theme.sheetText,
+                                    fontSize = 15.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
         Box(Modifier.fillMaxWidth().height(height)) {
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 8.dp)) {
                 itemsIndexed(chapters, key = { _, item -> item.id }) { index, item ->
@@ -352,7 +414,8 @@ private fun ReaderDirectoryTabV30(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { onJumpChapter(index, 0) }
+                            // Long press: rename (and delete, for the last chapter).
+                            .combinedClickable(onLongClick = { editing = item }) { onJumpChapter(index, 0) }
                             .padding(start = 20.dp, end = 32.dp, top = 13.dp, bottom = 13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -402,7 +465,42 @@ private fun ReaderDirectoryTabV30(
                 }
             }
         }
+        }
     }
+    editing?.let { chapter ->
+        var title by remember(chapter.id) { mutableStateOf(chapter.title) }
+        val isLast = chapter.chapterNumber == chapters.maxOfOrNull { it.chapterNumber } && chapters.size > 1
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text("第 ${chapter.chapterNumber} 章") },
+            text = {
+                Column {
+                    OutlinedTextField(title, { title = it.take(40) }, label = { Text("章节标题") }, singleLine = true)+                    if (isLast) {
+                        Text(
+                            "删除这一章",
+                            Modifier.padding(top = 14.dp).clip(CircleShape).clickable { editing = null; onDeleteLastChapter() }.padding(vertical = 6.dp),
+                            color = Color(0xFFE5484D),
+                            fontSize = 14.sp,
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { editing = null; onRenameChapter(chapter.chapterNumber, title) }) { Text("保存") } },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun ReaderSegmentV30(label: String, selected: Boolean, theme: ReaderThemeV30, onClick: () -> Unit) {
+    val bg by animateColorAsState(if (selected) theme.accent.copy(alpha = .14f) else Color.Transparent, tween(180), label = "segBg")
+    Text(
+        label,
+        Modifier.clip(CircleShape).background(bg).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 5.dp),
+        color = if (selected) theme.accent else theme.sheetMuted,
+        fontSize = 13.sp,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+    )
 }
 
 @Composable
@@ -499,9 +597,13 @@ private fun ReaderMoreTabV30(
     theme: ReaderThemeV30,
     onPanel: (ReaderMenuPanelV30) -> Unit,
     onLocate: () -> Unit,
+    listening: Boolean = false,
+    onListen: () -> Unit = {},
 ) {
     val mode = settings.turnMode
     val actions = listOf(
+        ReaderMenuActionV30(if (listening) "停止听书" else "听书", Icons.Rounded.Headphones, listening, onListen),
+        ReaderMenuActionV30("阅读统计", Icons.Rounded.BarChart) { onPanel(ReaderMenuPanelV30.STATS) },
         ReaderMenuActionV30("主题", Icons.Rounded.Palette) { onPanel(ReaderMenuPanelV30.THEME) },
         ReaderMenuActionV30("字体", Icons.Rounded.TextFields) { onPanel(ReaderMenuPanelV30.FONT) },
         ReaderMenuActionV30("字号", Icons.Rounded.FormatSize) { onPanel(ReaderMenuPanelV30.SIZE) },
