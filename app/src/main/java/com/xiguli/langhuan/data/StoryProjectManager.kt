@@ -400,7 +400,7 @@ class StoryProjectManager(context: Context) {
         )
         db.openHelper.writableDatabase.execSQL(
             "DELETE FROM memory_chunks WHERE novelId = ? AND sourceType = 'CHAPTER' AND chapterNumber = ?",
-            arrayOf(novelId, last.order),
+            arrayOf<Any?>(novelId, last.order),
         )
         val current = loaded.snapshot.novel.currentChapter.coerceAtMost(last.order - 1).coerceAtLeast(1)
         val draft = loadChapterDraftCursorSafe(novelId, current)
