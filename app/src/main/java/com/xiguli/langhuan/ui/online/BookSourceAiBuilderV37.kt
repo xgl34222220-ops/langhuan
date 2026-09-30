@@ -49,7 +49,7 @@ internal class BookSourceAiBuilderV37(
     private val onSteps: (List<AiSourceStepV37>) -> Unit,
     private val fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
 ) {
-    private val network = SourceRequestSessionV46(fetchDocument, minimumGapMillis = 500)
+    private val network = SourceRequestSessionV46(minimumGapMillis = 500, fetch = fetchDocument)
     private val steps = ArrayList<AiSourceStepV37>()
     private val generationCalls = HashMap<String, Int>()
 

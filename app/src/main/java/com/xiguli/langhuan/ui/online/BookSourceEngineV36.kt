@@ -737,12 +737,28 @@ internal fun loadBookV36(
         intro = ruleStringV36(page, source.infoIntro).ifBlank { book.intro },
     )
 
-    fun declaredChapters(doc: Document): List<OnlineChapterV36> =
-        ruleElementsV36(doc, source.tocList).mapNotNull { item ->
+    fun declaredChapters(doc: Document): List<OnlineChapterV36> {
+        val elements = ruleElementsV36(doc, source.tocList)
+        val found = elements.mapNotNull { item ->
             val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }.trim()
             val url = ruleStringV36(item, source.tocUrl).ifBlank { item.selectFirst("a[href]")?.absUrl("href").orEmpty() }
             if (title.isNotBlank() && url.isNotBlank()) OnlineChapterV36(title, resolveUrlV36(doc.location(), url)) else null
         }
+        // A generated selector can target a labelled "latest chapters" widget even when the
+        // full catalogue is already on this page. Only prefer the larger dense catalogue
+        // when the selected elements are explicitly inside that preview; don't indiscriminately
+        // append recommendation/sidebar links to otherwise working rules.
+        val preview = elements.isNotEmpty() && elements.all { element ->
+            generateSequence(element) { it.parent() }.take(4).any { node ->
+                Regex("(?i)(latest|recent|newest)").containsMatchIn(node.id() + " " + node.className())
+            }
+        }
+        if (preview) {
+            val full = heuristicChapterLinksV39(doc, book.bookUrl)
+            if (full.size > found.size) return full
+        }
+        return found
+    }
 
     // A detail page may contain only a recent-chapter preview. An explicitly labelled full
     // catalogue is stronger evidence than that preview; a path that merely contains "list"

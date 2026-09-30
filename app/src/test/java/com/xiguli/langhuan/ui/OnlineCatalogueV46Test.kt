@@ -49,4 +49,11 @@ class OnlineCatalogueV46Test {
         val doc = Jsoup.parse("<a href='/txt/7/index.html'>全部章节</a>", book.bookUrl)
         assertEquals("https://example.org/txt/7/index.html", heuristicTocUrlV39(doc, explicitOnly = true))
     }
+
+    @Test fun wronglyGeneratedLatestWidgetRuleDoesNotHideExistingFullList() {
+        val html = "<div class='latest'>${links(1000..1035)}</div><ul id='chapter-list'>${links(1..1035)}</ul>"
+        val (_, chapters) = loadBookV36(source.copy(tocList = ".latest a"), book) { _, request -> Jsoup.parse(html, request.url) }
+        assertEquals(1035, chapters.size)
+        assertEquals("第1章 正文", chapters.first().title)
+    }
 }

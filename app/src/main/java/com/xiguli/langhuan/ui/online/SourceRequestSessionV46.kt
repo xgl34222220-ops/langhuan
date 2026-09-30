@@ -37,8 +37,8 @@ internal fun sourceStopFailureV46(error: Throwable): Throwable? =
     }
 
 /** One AI build owns one bounded, credential-scoped cache. Cached DOMs are always cloned. */
-internal class SourceRequestSessionV46(private val fetch: (BookSourceV36, SourceRequestV36) -> Document,
-    private val minimumGapMillis: Long = 0) {
+internal class SourceRequestSessionV46(private val minimumGapMillis: Long = 0,
+    private val fetch: (BookSourceV36, SourceRequestV36) -> Document) {
     private data class Key(val id: String, val base: String, val headers: Map<String, String>, val request: SourceRequestV36)
     private val cache = LinkedHashMap<Key, Document>()
     private var weight = 0L
