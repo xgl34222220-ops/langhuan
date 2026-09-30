@@ -25,7 +25,8 @@ class ReaderEditionV41Test {
     }
 
     private fun saveFrame(name: String) {
-        // Compose's virtual clock must also advance past staggered entry delays.
+        // Wait for lazy content effects to start, then advance past their staggered delays.
+        rule.waitForIdle()
         rule.mainClock.advanceTimeBy(1500)
         rule.waitForIdle()
         android.os.SystemClock.sleep(400)
@@ -39,6 +40,7 @@ class ReaderEditionV41Test {
             android.os.SystemClock.sleep(300)
         }
         val bitmap = automation.takeScreenshot()
+        var shelfInk: Int? = null
         if (name == "v41-shelf") {
             var ink = 0
             for (y in bitmap.height / 6 until bitmap.height / 2 step 3) {
@@ -47,7 +49,7 @@ class ReaderEditionV41Test {
                     if (android.graphics.Color.red(pixel) < 190 && android.graphics.Color.green(pixel) < 190 && android.graphics.Color.blue(pixel) < 190) ink++
                 }
             }
-            assertTrue("Shelf fixture exists semantically but covers were not painted", ink > 150)
+            shelfInk = ink
         }
         val dir = File(rule.activity.getExternalFilesDir(null), "reader-qa").apply { mkdirs() }
         val target = File(dir, "$name.png")
@@ -59,6 +61,7 @@ class ReaderEditionV41Test {
         automation.executeShellCommand("cp ${target.absolutePath} /sdcard/Download/reader-qa/$name.png").use {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()
         }
+        shelfInk?.let { assertTrue("Shelf fixture exists semantically but covers were not painted", it > 150) }
     }
 
     @Test fun measuredFullPagesAlignAcrossWidthsAndFontScales() {

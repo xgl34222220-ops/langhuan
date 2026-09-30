@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -88,10 +89,16 @@ fun Modifier.enterOnceV31(
     index: Int = 0,
     rise: Dp = 14.dp,
 ): Modifier = composed {
+    val context = LocalContext.current
+    val animationsDisabled = remember(context) {
+        android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
     val first = remember(key) { registry.firstTime(key) }
-    val progress = remember(key) { Animatable(if (first) 0f else 1f) }
-    LaunchedEffect(key) {
-        if (progress.value < 1f) {
+    // Content must never depend on an animation frame to become visible when motion is disabled.
+    val progress = remember(key, animationsDisabled) { Animatable(if (first && !animationsDisabled) 0f else 1f) }
+    LaunchedEffect(key, animationsDisabled) {
+        if (animationsDisabled) progress.snapTo(1f)
+        else if (progress.value < 1f) {
             delay((index.coerceIn(0, LanghuanMotionV31.STAGGER_MAX) * LanghuanMotionV31.STAGGER).toLong())
             progress.animateTo(1f, tween(LanghuanMotionV31.SLOW, easing = FastOutSlowInEasing))
         }
