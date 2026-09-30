@@ -84,6 +84,11 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
@@ -147,6 +152,10 @@ fun ShelfLuoShuFunctionalV1(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
+    onCreateBlank: (String, String) -> Unit = { _, _ -> },
+    onExport: (String, com.xiguli.langhuan.data.ExportFormat) -> Unit = { _, _ -> },
+    onOnline: () -> Unit = {},
+    onCheckUpdate: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("qingmo_shelf_v9", 0) }
@@ -155,6 +164,8 @@ fun ShelfLuoShuFunctionalV1(
 
     var screen by rememberSaveable { mutableStateOf(LuoShelfScreenV1.HOME) }
     var addOpen by remember { mutableStateOf(false) }
+    var blankOpen by remember { mutableStateOf(false) }
+    var exportFor by remember { mutableStateOf<ReaderBookUi?>(null) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var actionsFor by remember { mutableStateOf<ReaderBookUi?>(null) }
@@ -280,7 +291,11 @@ fun ShelfLuoShuFunctionalV1(
                 Text("添加作品", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 10.dp))
                 LanghuanMenuRow(Icons.Rounded.FolderOpen, "导入本地小说", { addOpen = false; onImportLocal() }, subtitle = "TXT · EPUB · Markdown")
                 LanghuanSeparator(Modifier.padding(start = 54.dp))
+                LanghuanMenuRow(Icons.Rounded.Search, "在线找书", { addOpen = false; onOnline() }, subtitle = "用你导入的书源搜索、下载、追更")
+                LanghuanSeparator(Modifier.padding(start = 54.dp))
                 LanghuanMenuRow(Icons.Rounded.AutoAwesome, "AI 创建小说", { addOpen = false; onCreate() }, subtitle = "通过对话逐步创建新作品")
+                LanghuanSeparator(Modifier.padding(start = 54.dp))
+                LanghuanMenuRow(Icons.Rounded.Edit, "空白新书", { addOpen = false; blankOpen = true }, subtitle = "不用 AI，直接自己写")
                 Spacer(Modifier.navigationBarsPadding().height(16.dp))
             }
         }
@@ -299,6 +314,10 @@ fun ShelfLuoShuFunctionalV1(
                 LanghuanMenuRow(Icons.Rounded.Edit, "编辑书籍", { actionsFor = null; editingBookId = book.id }, subtitle = "修改书名、类型、简介和封面")
                 LanghuanMenuRow(Icons.Rounded.Book, "继续阅读", { actionsFor = null; onOpenBook(book.id) }, subtitle = "回到上次阅读位置")
                 LanghuanMenuRow(Icons.Rounded.TheaterComedy, "进入故事", { actionsFor = null; onOpenTavern(book.id) }, subtitle = "进入互动故事模式")
+                if (remember(book.id) { BookSourceStoreV36.link(context, book.id) != null }) {
+                    LanghuanMenuRow(Icons.Rounded.Refresh, "检查更新", { actionsFor = null; onCheckUpdate(book.id) }, subtitle = "从原书源下载新章节")
+                }
+                LanghuanMenuRow(Icons.Rounded.IosShare, "导出", { actionsFor = null; exportFor = book }, subtitle = "TXT · EPUB · Markdown")
                 LanghuanMenuRow(
                     Icons.Rounded.FolderOpen,
                     "移动书架",
@@ -370,6 +389,40 @@ fun ShelfLuoShuFunctionalV1(
             dismissButton = { TextButton(onClick = { pendingShelfDelete = null }) { Text("取消") } },
             containerColor = t.card,
         )
+    }
+
+    if (blankOpen) {
+        var blankTitle by remember { mutableStateOf("") }
+        var blankGenre by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { blankOpen = false },
+            title = { Text("空白新书") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    androidx.compose.material3.OutlinedTextField(blankTitle, { blankTitle = it.take(30) }, label = { Text("书名") }, singleLine = true)
+                    androidx.compose.material3.OutlinedTextField(blankGenre, { blankGenre = it.take(16) }, label = { Text("类型（可不填）") }, singleLine = true)
+                    Text("建好后直接进入第 1 章编辑，之后随时可以再用 AI。", color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { blankOpen = false; onCreateBlank(blankTitle, blankGenre) }) { Text("开始写") }
+            },
+            dismissButton = { TextButton(onClick = { blankOpen = false }) { Text("取消") } },
+            containerColor = t.card,
+        )
+    }
+
+    exportFor?.let { book ->
+        ModalBottomSheet(onDismissRequest = { exportFor = null }, containerColor = t.card, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                Text("导出《${book.title}》", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleLarge, maxLines = 1)
+                Text("选择格式后再选保存位置", Modifier.padding(top = 4.dp, bottom = 10.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                LanghuanMenuRow(Icons.Rounded.Description, "TXT 纯文本", { exportFor = null; onExport(book.id, com.xiguli.langhuan.data.ExportFormat.TXT) }, subtitle = "任何阅读器都能打开，适合投稿平台")
+                LanghuanMenuRow(Icons.Rounded.AutoStories, "EPUB 电子书", { exportFor = null; onExport(book.id, com.xiguli.langhuan.data.ExportFormat.EPUB) }, subtitle = "带目录，适合电子书阅读器")
+                LanghuanMenuRow(Icons.Rounded.Code, "Markdown", { exportFor = null; onExport(book.id, com.xiguli.langhuan.data.ExportFormat.MARKDOWN) }, subtitle = "保留标题层级，方便再编辑")
+                Spacer(Modifier.navigationBarsPadding().height(16.dp))
+            }
+        }
     }
 }
 
