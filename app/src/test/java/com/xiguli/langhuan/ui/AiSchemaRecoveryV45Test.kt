@@ -155,7 +155,7 @@ class AiSchemaRecoveryV45Test {
             val expected = IOException("fixture provider unavailable at ${target.name}")
             val fixture = Fixture { stage, _ -> if (stage == target) throw expected else stage.validRules }
             val actual = runCatching { fixture.build() }.exceptionOrNull()
-            assertSame("Non-schema provider errors must keep their cause", expected, actual)
+            assertOriginalFailure(expected, actual)
             fixture.assertFailedStep(target.label, actual!!)
             assertEquals(target.name, 1, fixture.calls(target))
         }
@@ -173,11 +173,84 @@ class AiSchemaRecoveryV45Test {
         }
     }
 
+    @Test fun explicitUnsupportedCapabilitiesTakePrecedenceOverUnknownFields() = runBlocking {
+        for (target in Stage.entries) {
+            val unsupported = listOf("javascript", "jsonpath", "xpath").map { type ->
+                "{\"unexpected\":\"fixture\",${withType(type, target.validRules).removePrefix("{")}"
+            } + "{\"unexpected\":\"fixture\",${target.scriptRules.removePrefix("{")}"
+            for (raw in unsupported) {
+                val fixture = Fixture { stage, attempt ->
+                    if (stage == target && attempt == 1) raw else stage.validRules
+                }
+                val failure = runCatching { fixture.build() }.exceptionOrNull()
+                assertTrue("An explicit unsupported capability must stop without a corrective response: $raw", failure is UnsupportedAiRuleCapabilityV45)
+                fixture.assertFailedStep(target.label, failure!!)
+                assertEquals("Unknown fields must not open a paid format correction for $raw", 1, fixture.calls(target))
+            }
+        }
+    }
+
+    @Test fun correctingTheInitialDiscoverySetDoesNotConsumeTheExpandedSetsBudget() = runBlocking {
+        val fixture = DiscoveryFixture { expanded, attempt ->
+            if (!expanded && attempt == 1) """{"type":"object","exploreList":"@css:li.book"}"""
+            else DiscoveryFixture.ALL_BOOKS
+        }
+        val report = fixture.build()
+        fixture.assertVerified(report, listOf("月榜", "玄幻"))
+        assertTrue(report.discoveryWarnings.toString(), report.discoveryWarnings.isEmpty())
+        assertEquals(2, fixture.calls(expanded = false))
+        assertEquals("New observed child pages need their own bounded generation budget", 1, fixture.calls(expanded = true))
+        assertTrue(fixture.requests.contains("https://books.example/category/fantasy"))
+        assertEquals(true, fixture.steps.last().ok)
+    }
+
+    @Test fun exhaustedDiscoveryCorrectionKeepsOtherVerifiedEntries() = runBlocking {
+        val fixture = DiscoveryFixture(withHub = false) { _, attempt ->
+            if (attempt == 1) """{"unexpected":"fixture"}""" else DiscoveryFixture.ALL_BOOKS
+        }
+        val report = fixture.build()
+        fixture.assertVerified(report, listOf("月榜"))
+        assertTrue("The empty entry must be named rather than erasing the valid rank", report.discoveryWarnings.any { it.contains("空分类") })
+        assertEquals(2, fixture.calls(expanded = false))
+        assertEquals(0, fixture.calls(expanded = true))
+        assertEquals(false, fixture.steps.last().ok)
+    }
+
+    @Test fun expandedDiscoverySchemaAndEmptyResultCorrectionsShareTwoCallsAndKeepValidEntries() = runBlocking {
+        for (schemaFirst in listOf(true, false)) {
+            val fixture = DiscoveryFixture { expanded, attempt ->
+                when {
+                    !expanded -> DiscoveryFixture.ALL_BOOKS
+                    (attempt == 1) == schemaFirst -> """{"unexpected":"fixture"}"""
+                    else -> DiscoveryFixture.RANK_ONLY
+                }
+            }
+            val report = fixture.build()
+            fixture.assertVerified(report, listOf("月榜"))
+            assertTrue("The unverified child must remain visible as a warning", report.discoveryWarnings.any { it.contains("玄幻") })
+            assertEquals(1, fixture.calls(expanded = false))
+            assertEquals("Expanded-set schema and extraction recovery must share two calls", 2, fixture.calls(expanded = true))
+            assertEquals(false, fixture.steps.last().ok)
+        }
+    }
+
+    @Test fun failedExpandedGenerationStillValidatesThePreviousCandidate() = runBlocking {
+        val fixture = DiscoveryFixture { expanded, _ ->
+            if (expanded) """{"unexpected":"fixture"}""" else DiscoveryFixture.ALL_BOOKS
+        }
+        val report = fixture.build()
+        fixture.assertVerified(report, listOf("月榜", "玄幻"))
+        assertTrue("A failed optional regeneration must be reported", report.discoveryWarnings.isNotEmpty())
+        assertEquals(1, fixture.calls(expanded = false))
+        assertEquals(2, fixture.calls(expanded = true))
+        assertEquals(false, fixture.steps.last().ok)
+    }
+
     @Test fun gatewayCancellationPropagatesWithoutAFormatRetryOrLateFailureCallback() = runBlocking {
         val expected = CancellationException("fixture cancelled")
         val fixture = Fixture { stage, _ -> if (stage == Stage.SEARCH) throw expected else stage.validRules }
         val actual = runCatching { fixture.build() }.exceptionOrNull()
-        assertSame(expected, actual)
+        assertOriginalFailure(expected, actual)
         assertEquals(1, fixture.calls(Stage.SEARCH))
         assertEquals("分析搜索结果页", fixture.steps.last().label)
         assertFalse(fixture.steps.last().completed)
@@ -210,6 +283,17 @@ class AiSchemaRecoveryV45Test {
         assertTrue("Unsafe or unsupported schema must be rejected: $raw", runCatching { parseRulesV37(raw, stage) }.isFailure)
     }
 
+    private fun assertOriginalFailure(expected: Throwable, actual: Throwable?) {
+        assertNotNull(actual)
+        // Gradle enables coroutine stack-trace recovery, which may clone the exception
+        // while retaining the original in its cause chain. Identity of the wrapper is not
+        // cancellation/transport semantics; type, message and the original cause are.
+        assertEquals(expected.javaClass, actual!!.javaClass)
+        assertEquals(expected.message, actual.message)
+        assertTrue("The original failure must remain in the causal chain",
+            generateSequence(actual) { it.cause }.take(8).any { it === expected })
+    }
+
     private enum class Stage(val label: String, val validRules: String, val emptyRules: String, val scriptRules: String) {
         SEARCH("分析搜索结果页",
             """{"searchList":"@css:li.book","searchName":"@css:a@text","searchBookUrl":"@css:a@href"}""",
@@ -223,6 +307,82 @@ class AiSchemaRecoveryV45Test {
             """{"contentText":"@css:#content@html"}""",
             """{"contentText":"@css:.missing@html"}""",
             """{"contentText":"@js:document.body.innerText"}"""),
+    }
+
+    private class DiscoveryFixture(
+        private val withHub: Boolean = true,
+        private val respond: suspend (expanded: Boolean, attempt: Int) -> String,
+    ) {
+        val steps = ArrayList<AiSourceStepV37>()
+        val requests = ArrayList<String>()
+        private val prompts = ArrayList<Pair<Boolean, PromptBundle>>()
+        private val base = "https://books.example"
+        private val gateway = object : AiGateway {
+            override suspend fun generate(prompt: PromptBundle): GeneratedChapter = error("Only fixture text generation is supported")
+            override suspend fun generateText(prompt: PromptBundle): String = when {
+                prompt.user.contains("识别网站已有的发现分类") -> when {
+                    prompt.user.contains("页面：$base/categories\n") -> """{"exploreUrl":"玄幻::$base/category/fantasy"}"""
+                    prompt.user.contains("页面：$base/\n") -> if (withHub)
+                        """{"exploreUrl":"月榜::$base/ranking&&分类::$base/categories"}"""
+                    else """{"exploreUrl":"月榜::$base/ranking&&空分类::$base/empty"}"""
+                    else -> error("Unexpected discovery evidence page: ${prompt.user.take(300)}")
+                }
+                prompt.user.contains("共用的发现书目规则") -> {
+                    // Inspect a page header, not a href inside the original category-directory HTML.
+                    val expanded = prompt.user.contains("【玄幻 $base/category/fantasy】")
+                    prompts += expanded to prompt
+                    check(calls(expanded) <= 3) { "Fixture refuses unbounded discovery retries" }
+                    respond(expanded, calls(expanded))
+                }
+                prompt.user.contains("搜索结果页") -> Stage.SEARCH.validRules
+                prompt.user.contains("书籍详情页") -> Stage.TOC.validRules
+                prompt.user.contains("章节正文页") -> Stage.CONTENT.validRules
+                else -> error("Unexpected fixture prompt: ${prompt.user.take(100)}")
+            }
+        }
+
+        fun calls(expanded: Boolean) = prompts.count { it.first == expanded }
+
+        private fun fetch(source: BookSourceV36, request: SourceRequestV36): Document {
+            requests += request.url
+            require(request.url.startsWith("$base/")) { "Fixture refuses an unexpected origin: ${request.url}" }
+            fun bookRow(number: Int, kind: String) = "<li class='book $kind'><a href='/book/$number'>示例小说$number</a></li>"
+            val html = when (val path = request.url.removePrefix(base).substringBefore('?')) {
+                "/" -> "<title>发现预算测试站</title><form action='/search'><input name='q'></form><nav><a href='/ranking'>月榜</a>" +
+                    (if (withHub) "<a href='/categories'>分类</a>" else "<a href='/empty'>空分类</a>") + "</nav>"
+                "/search", "/ranking" -> "<ul>${bookRow(1, "rank")}</ul>"
+                "/categories" -> "<nav><a href='/category/fantasy'>玄幻</a></nav>"
+                "/category/fantasy" -> "<ul>${bookRow(2, "category")}</ul>"
+                "/empty" -> "<p>暂无书籍</p>"
+                "/book/1", "/book/2" -> "<h1>示例小说${path.substringAfterLast('/')}</h1><div id='chapters'><a data-url='/read/1'>第一章</a><a data-url='/read/2'>第二章</a></div>"
+                "/read/1", "/read/2" -> "<div id='content'><p>${"这是发现预算回归的原创正文，用于实际验证保留入口的目录和正文。".repeat(12)}</p></div>"
+                else -> error("No fixture page for ${request.url}")
+            }
+            return Jsoup.parse(html, request.url)
+        }
+
+        suspend fun build() = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it) }, ::fetch)
+            .build("$base/", "示例小说1")
+
+        fun assertVerified(report: AiSourceReportV37, labels: List<String>) {
+            assertTrue("Verified discovery entries must survive optional correction failure: ${report.discoveryWarnings}", report.source.enabledExplore)
+            assertEquals(labels, report.discoveryLabels)
+            assertEquals(labels, report.discoveryEvidence.map { it.label })
+            report.discoveryEvidence.forEach {
+                assertEquals(1, it.bookCount)
+                assertEquals(2, it.chapterCount)
+            }
+            assertEquals(1, report.searchCount)
+            assertEquals(2, report.chapterCount)
+            assertTrue(report.sample.length >= 60)
+            assertTrue(steps.all { it.completed })
+            assertTrue(steps.take(5).all { it.ok == true })
+        }
+
+        companion object {
+            const val ALL_BOOKS = """{"exploreList":"@css:li.book","exploreName":"@css:a@text","exploreBookUrl":"@css:a@href"}"""
+            const val RANK_ONLY = """{"exploreList":"@css:li.rank","exploreName":"@css:a@text","exploreBookUrl":"@css:a@href"}"""
+        }
     }
 
     private class Fixture(private val respond: suspend (Stage, Int) -> String = { stage, _ -> stage.validRules }) {

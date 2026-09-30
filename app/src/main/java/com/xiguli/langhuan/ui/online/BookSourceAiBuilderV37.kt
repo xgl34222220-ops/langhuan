@@ -228,13 +228,28 @@ internal class BookSourceAiBuilderV37(
             }
             if (children.size > previousChildren) pages.remove(hub)
         }
-        if (children.isNotEmpty()) { pages.putAll(children); rules = askExploreRules(pages, null); candidate = initial.withExplore(rules) }
+        var expansionFailed = false
+        if (children.isNotEmpty()) {
+            pages.putAll(children)
+            sourceAttemptV36 { askExploreRules(pages, null) }
+                .onSuccess { rules = it; candidate = initial.withExplore(it) }
+                .onFailure {
+                    expansionFailed = true
+                    warnings += "子分类规则生成失败，继续实测此前规则并保留通过入口（${it.message.orEmpty().take(160)}）"
+                }
+        }
         fun validate(src: BookSourceV36, link: AiDiscoveryLinkV37, doc: Document) = sourceAttemptV36 {
             searchSourceV36(discoveryRuleSourceV41(src, SourceDiscoveryV41(src.id, link.label, link.url)), "", fetchDocument = { _, _ -> doc })
         }.getOrDefault(emptyList())
-        if (pages.any { (link, doc) -> validate(candidate, link, doc).isEmpty() }) {
-            rules = askExploreRules(pages, "上次规则 ${rules.compact()} 没有覆盖全部页面。分类和榜单可能结构不同，请用 CSS 逗号选择器覆盖真实书目元素。")
-            candidate = initial.withExplore(rules)
+        if (pages.any { (link, doc) -> validate(candidate, link, doc).isEmpty() } && !expansionFailed) {
+            if ((generationCalls[exploreEvidenceKey(pages)] ?: 0) < 2) {
+                sourceAttemptV36 {
+                    askExploreRules(pages, "上次规则 ${rules.compact()} 没有覆盖全部页面。分类和榜单可能结构不同，请用 CSS 逗号选择器覆盖真实书目元素。")
+                }.onSuccess { rules = it; candidate = initial.withExplore(it) }
+                    .onFailure { warnings += "发现规则纠正未采用，保留此前可验证入口（${it.message.orEmpty().take(160)}）" }
+            } else {
+                warnings += "这一组发现页面的规则已生成 2 次；不再追加调用，仅保留实测通过的入口"
+            }
         }
         val verified = ArrayList<AiDiscoveryLinkV37>()
         for ((link, doc) in pages) {
@@ -301,8 +316,14 @@ internal class BookSourceAiBuilderV37(
                 appendLine("【${link.label} ${doc.location()}】")
                 appendLine(pageSkeletonV37(doc, (24_000 / pages.size).coerceAtMost(10_000)))
             }
-        }))
+        }), budgetKey = exploreEvidenceKey(pages))
     }
+
+    // Expanding a real category directory changes the input evidence, not the retry attempt.
+    // There are only the initial set and one expanded set; each set shares two calls across
+    // schema repair and empty-result repair. Labels/order cannot reset the same set's budget.
+    private fun exploreEvidenceKey(pages: Map<AiDiscoveryLinkV37, Document>): String =
+        "explore:" + pages.values.map { it.location() }.distinct().sorted().joinToString("\n")
 
     private fun BookSourceV36.withExplore(r: Map<String, String>) = copy(
         exploreList = r["exploreList"].orEmpty(), exploreName = r["exploreName"].orEmpty(),
@@ -485,11 +506,42 @@ internal enum class AiRuleStageV45(val label: String, val fields: Set<String>, v
 internal class AiRuleFormatExceptionV45(message: String) : IllegalArgumentException(message)
 internal class UnsupportedAiRuleCapabilityV45(message: String) : IllegalArgumentException(message)
 
+/** Explicit engine/script declarations outrank malformed shape, even in nested objects. */
+private fun rejectUnsupportedAiCapabilitiesV45(root: JsonObject) {
+    val fields = AiRuleStageV45.entries.flatMap { it.fields }.toSet()
+    val scriptFields = setOf("jsLib", "mainJs", "loginCheckJs", "webJs", "bodyJs", "coverDecodeJs", "webView")
+    val engines = setOf("js", "javascript", "script", "java", "webview", "json", "jsonpath", "xpath")
+    val pending = java.util.ArrayDeque<kotlinx.serialization.json.JsonElement>()
+    pending.add(root)
+    while (pending.isNotEmpty()) {
+        when (val node = pending.removeFirst()) {
+            is JsonObject -> {
+                val declared = node.keys.intersect(scriptFields)
+                if (declared.isNotEmpty()) throw UnsupportedAiRuleCapabilityV45("AI 返回不支持的脚本能力字段：$declared")
+                val type = node["type"] as? JsonPrimitive
+                val kind = type?.takeIf { it.isString }?.content?.trim()?.lowercase(java.util.Locale.ROOT)
+                if (kind in engines) throw UnsupportedAiRuleCapabilityV45("AI 返回 type=$kind；当前只支持静态 HTML/CSS 规则，未执行该能力")
+                node.forEach { (key, value) ->
+                    val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+                    if (key in fields && text != null && (text.contains("<js>", true) || text.contains("@js:", true) ||
+                            text.startsWith("@json:", true) || text.startsWith("$."))) {
+                        throw UnsupportedAiRuleCapabilityV45("AI 字段 $key 返回了不支持的脚本或 JSON 规则")
+                    }
+                    if (value is JsonObject || value is kotlinx.serialization.json.JsonArray) pending.add(value)
+                }
+            }
+            is kotlinx.serialization.json.JsonArray -> node.forEach { pending.add(it) }
+            else -> Unit
+        }
+    }
+}
+
 internal fun parseRulesV37(raw: String, stage: AiRuleStageV45? = null): Map<String, String> {
     if (raw.length > 64 * 1024) throw AiRuleFormatExceptionV45("AI 规则响应过大")
     val element = sourceAttemptV36 { BookSourceJsonV36.parseToJsonElement(repairModelJsonV34(raw)) }.getOrNull() as? JsonObject
         ?: throw AiRuleFormatExceptionV45("AI 未返回有效的 JSON 规则对象")
     val supported = stage?.fields ?: AiRuleStageV45.entries.flatMap { it.fields }.toSet()
+    rejectUnsupportedAiCapabilitiesV45(element)
     val unsupportedCapabilities = element.keys.intersect(setOf("jsLib", "mainJs", "loginCheckJs", "webJs", "bodyJs", "coverDecodeJs", "webView"))
     if (unsupportedCapabilities.isNotEmpty()) throw UnsupportedAiRuleCapabilityV45("AI 返回不支持的脚本能力字段：$unsupportedCapabilities")
     val unknown = element.keys - supported - "type"
