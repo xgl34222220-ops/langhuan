@@ -523,7 +523,7 @@ internal fun readSourceBytesV36(input: InputStream, maxBytes: Int): ByteArray {
 
 private data class SourceResponseV36(
     val code: Int, val url: String, val location: String?, val type: String?, val bytes: ByteArray,
-    val cookies: List<Cookie>, val mitigationHeader: String?,
+    val cookies: List<Cookie>, val mitigationHeader: String?, val retryAfter: String?,
 )
 
 internal const val MAX_SOURCE_ERROR_BYTES_V44 = 8 * 1024
@@ -542,12 +542,15 @@ internal fun readSourceErrorPrefixV44(input: InputStream, maxBytes: Int = MAX_SO
     return out.toByteArray()
 }
 
-internal class SourceHttpStatusExceptionV44(val statusCode: Int, val origin: String, detail: String) :
+internal class SourceHttpStatusExceptionV44(val statusCode: Int, val origin: String, detail: String,
+    val retryAfterMillis: Long? = null, val browserChallenge: Boolean = false) :
     IOException("网站返回 HTTP $statusCode（$origin）：$detail")
+
+internal class SourceBrowserChallengeV46(val origin: String) : IOException("网站要求浏览器验证，尚未取得页面内容；本轮已停止访问该站")
 
 /** Only verified status/evidence is shown. Never echo cookies, query strings or an error page. */
 internal fun sourceHttpFailureV44(
-    code: Int, url: HttpUrl, bytes: ByteArray, mitigationHeader: String? = null,
+    code: Int, url: HttpUrl, bytes: ByteArray, mitigationHeader: String? = null, retryAfter: String? = null,
 ): SourceHttpStatusExceptionV44 {
     val prefix = String(bytes, 0, minOf(bytes.size, MAX_SOURCE_ERROR_BYTES_V44), Charsets.UTF_8)
     val errorText = Jsoup.parse(prefix).text().lowercase()
@@ -555,19 +558,23 @@ internal fun sourceHttpFailureV44(
         "plain http request was sent to https port", "this combination of host and port requires tls",
         "the http request was sent to https port",
     ).any(errorText::contains)
+    val challenge = browserChallengePendingV38(prefix, mitigationHeader)
+    val retryMillis = sourceRetryAfterMillisV46(retryAfter)
     val detail = when {
+        code == 429 -> "网站限制了请求频率，本轮已停止访问" +
+            (retryMillis?.let { "；请至少等待 ${((it + 999) / 1000).coerceAtLeast(1)} 秒后再试" } ?: "；请稍后再试") +
+            if (challenge) "；响应中同时检测到浏览器验证页面" else ""
         requiresHttps -> "服务器明确要求 HTTPS，请改用该站 HTTPS 地址重试"
-        browserChallengePendingV38(prefix, mitigationHeader) -> "网站返回了浏览器验证或访问拦截页面，请先在浏览器中确认访问状态"
+        challenge -> "网站返回了浏览器验证或访问拦截页面，请先在浏览器中确认访问状态"
         code == 400 -> "服务器未接受该请求" + if (!url.isHttps && url.port == 80) "；当前使用 HTTP，可尝试该站 HTTPS 地址" else "；请检查网站地址"
         code == 401 -> "网站要求身份验证"
         code == 403 -> "网站拒绝访问，请先在浏览器中确认该网址能否打开"
         code == 404 || code == 410 -> "该页面不存在或已移除，请检查网站地址"
-        code == 429 -> "网站限制了请求频率，请稍后再试"
         code in 500..599 -> "网站服务暂时出错，请稍后再试"
         else -> "未能取得页面，请在浏览器中确认该网址能否打开"
     }
     val origin = url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString().removeSuffix("/")
-    return SourceHttpStatusExceptionV44(code, origin, detail)
+    return SourceHttpStatusExceptionV44(code, origin, detail, retryMillis, challenge)
 }
 
 // Waiting is interruptible. runInterruptible in callers cancels the actual socket, not just UI state.
@@ -593,7 +600,7 @@ private fun awaitSourceResponseV36(request: Request, maxBytes: Int, remainingMs:
                             body.byteStream().use { stream -> readSourceErrorPrefixV44(stream, minOf(maxBytes, MAX_SOURCE_ERROR_BYTES_V44)) }
                         } catch (_: IOException) { ByteArray(0) }
                     } else ByteArray(0)
-                    result = SourceResponseV36(it.code, it.request.url.toString(), it.header("Location"), it.header("Content-Type"), bytes, Cookie.parseAll(it.request.url, it.headers), it.header("cf-mitigated"))
+                    result = SourceResponseV36(it.code, it.request.url.toString(), it.header("Location"), it.header("Content-Type"), bytes, Cookie.parseAll(it.request.url, it.headers), it.header("cf-mitigated"), it.header("Retry-After"))
                 }
             } catch (e: Exception) { failure = e } finally { latch.countDown() }
         }
@@ -637,6 +644,7 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
             .takeIf { it.isNotEmpty() }?.let { request.header("Cookie", it) }
         val requestBody = if (method == "POST") body.orEmpty().toByteArray(Charset.forName(initial.charset ?: "UTF-8"))
             .toRequestBody("application/x-www-form-urlencoded".toMediaType()) else null
+        SourceCooldownV46.check(url)
         val response = awaitSourceResponseV36(request.method(method, requestBody).build(), maxBytes, remaining)
         response.cookies.forEach { cookie ->
             cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
@@ -648,7 +656,11 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
             if (response.code in setOf(301, 302, 303) && method == "POST") { method = "GET"; body = null }
             url = next
         } else {
-            if (response.code !in 200..299) throw sourceHttpFailureV44(response.code, url, response.bytes, response.mitigationHeader)
+            if (response.code !in 200..299) {
+                val failure = sourceHttpFailureV44(response.code, url, response.bytes, response.mitigationHeader, response.retryAfter)
+                SourceCooldownV46.record(failure)
+                throw failure
+            }
             return response
         }
     }
@@ -670,7 +682,7 @@ internal fun parseSourceDocumentV44(
     val charset = requestedCharset ?: type?.let { Regex("charset=[\"']?([\\w-]+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1) }
         ?: sniffCharsetV36(bytes)
     val html = String(bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
-    check(!browserChallengePendingV38(html, mitigationHeader)) { "网站返回了浏览器验证或访问拦截页面，尚未取得网页内容；请先在浏览器中确认访问状态" }
+    if (browserChallengePendingV38(html, mitigationHeader)) throw SourceBrowserChallengeV46(sourceOriginV46(publicSourceUrlV36(url)))
     return Jsoup.parse(html, url)
 }
 
@@ -732,16 +744,22 @@ internal fun loadBookV36(
             if (title.isNotBlank() && url.isNotBlank()) OnlineChapterV36(title, resolveUrlV36(doc.location(), url)) else null
         }
 
-    // A working on-page source rule is stronger evidence than a guessed directory link.
-    // In particular, never skip page one because its "next page" URL looks like a directory.
+    // A detail page may contain only a recent-chapter preview. An explicitly labelled full
+    // catalogue is stronger evidence than that preview; a path that merely contains "list"
+    // is not. Never skip page one because a "next page" URL looks like a directory.
     val onPageChapters = declaredChapters(page)
     val declaredToc = ruleStringV36(page, source.infoTocUrl)
         .takeIf { it.isNotBlank() }
         ?.let { resolveUrlV36(page.location(), it) }
     val heuristicToc = heuristicTocUrlV39(page)
+    val explicitToc = heuristicTocUrlV39(page, explicitOnly = true)
     val firstToc = declaredToc?.takeIf { it != page.location() }
+        ?: explicitToc?.takeIf { it != page.location() }
         ?: heuristicToc?.takeIf { onPageChapters.isEmpty() && it != page.location() }
-    var doc = firstToc?.let { sourceAttemptV36 { fetchDocument(source, SourceRequestV36(it)) }.getOrNull() } ?: page
+    var doc = firstToc?.let {
+        sourceAttemptV36 { fetchDocument(source, SourceRequestV36(it)) }
+            .getOrElse { failure -> throw IllegalStateException("完整目录读取失败，未将预览章节当作完整目录：${failure.message.orEmpty()}", failure) }
+    } ?: page
 
     val chapters = ArrayList<OnlineChapterV36>()
     val visited = LinkedHashSet<String>()
@@ -790,7 +808,7 @@ internal fun loadBookV36(
  * Text labels are deliberately multilingual because many imported sources use simplified/traditional
  * Chinese interchangeably.
  */
-internal fun heuristicTocUrlV39(doc: Document): String? {
+internal fun heuristicTocUrlV39(doc: Document, explicitOnly: Boolean = false): String? {
     val labels = listOf("全部章节", "全部章節", "章节目录", "章節目錄", "目录", "目錄", "查看目录", "查看目錄")
     val candidates = doc.select("a[href]").mapNotNull { a ->
         val text = a.text().replace("\\s+".toRegex(), "").trim()
@@ -798,6 +816,7 @@ internal fun heuristicTocUrlV39(doc: Document): String? {
         if (href.isBlank() || href == doc.location() || isLikelyChapterUrlV39(href)) return@mapNotNull null
         val labelScore = labels.indexOfFirst { text.equals(it, true) }.let { if (it >= 0) 100 - it else 0 }
         val containsScore = if (labels.any { text.contains(it, true) }) 45 else 0
+        if (explicitOnly && maxOf(labelScore, containsScore) == 0) return@mapNotNull null
         val path = runCatching { URL(href).path }.getOrDefault("")
         val urlScore = if (Regex("(?i)(catalog|chapter|list|dir|menu)").containsMatchIn(path)) 18 else 0
         val score = maxOf(labelScore, containsScore) + urlScore
@@ -869,6 +888,7 @@ internal fun heuristicTocNextUrlV39(doc: Document): String? {
 
 internal fun isLikelyChapterUrlV39(url: String): Boolean {
     val clean = runCatching { URL(url).path }.getOrDefault(url)
+    if (Regex("(?i)/(index|list|catalog|catalogue|toc|menu)(?:[_-]\\d+)?\\.html?$").containsMatchIn(clean)) return false
     return Regex("(?i)/(txt|read|chapter|chapters?)/[^/]+/[^/]+(?:\\.html?)?$").containsMatchIn(clean) ||
         Regex("(?i)/txt/\\d+/\\d+(?:[_-]\\d+)?\\.html?$").containsMatchIn(clean)
 }

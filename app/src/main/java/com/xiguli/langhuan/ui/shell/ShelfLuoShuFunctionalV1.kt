@@ -166,6 +166,7 @@ fun ShelfLuoShuFunctionalV1(
     onExport: (String, com.xiguli.langhuan.data.ExportFormat) -> Unit = { _, _ -> },
     onOnline: () -> Unit = {},
     onCheckUpdate: (String) -> Unit = {},
+    onDownloadBook: (String) -> Unit = {},
     onlineContent: @Composable (Boolean) -> Unit = {},
 ) = PaperReaderThemeV44 {
     val context = LocalContext.current
@@ -328,8 +329,11 @@ fun ShelfLuoShuFunctionalV1(
                 LanghuanMenuRow(Icons.Rounded.Edit, "编辑书籍", { actionsFor = null; editingBookId = book.id }, subtitle = "修改书名、类型、简介和封面")
                 LanghuanMenuRow(Icons.Rounded.Book, "继续阅读", { actionsFor = null; onOpenBook(book.id) }, subtitle = "回到上次阅读位置")
                 LanghuanMenuRow(Icons.Rounded.TheaterComedy, "进入故事", { actionsFor = null; onOpenTavern(book.id) }, subtitle = "进入互动故事模式")
-                if (remember(book.id) { BookSourceStoreV36.link(context, book.id) != null }) {
-                    LanghuanMenuRow(Icons.Rounded.Refresh, "检查更新", { actionsFor = null; onCheckUpdate(book.id) }, subtitle = "从原书源下载新章节")
+                if (book.sourceId.isNotBlank() || remember(book.id) { BookSourceStoreV36.link(context, book.id) != null }) {
+                    LanghuanMenuRow(Icons.Rounded.Refresh, "检查更新", { actionsFor = null; onCheckUpdate(book.id) }, subtitle = "仅更新目录，阅读时加载正文")
+                }
+                if (book.sourceId.isNotBlank()) {
+                    LanghuanMenuRow(Icons.Rounded.Download, "离线下载", { actionsFor = null; onDownloadBook(book.id) }, subtitle = "缓存未下载章节，已保存正文不会覆盖")
                 }
                 LanghuanMenuRow(Icons.Rounded.IosShare, "导出", { actionsFor = null; exportFor = book }, subtitle = "TXT · EPUB · Markdown")
                 LanghuanMenuRow(

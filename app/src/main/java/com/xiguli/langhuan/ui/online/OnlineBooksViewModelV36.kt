@@ -63,7 +63,7 @@ internal object BookSourceStoreV36 {
     }
 }
 
-internal data class OnlineDetailV36(val book: OnlineBookV36, val chapters: List<OnlineChapterV36>)
+internal data class OnlineDetailV36(val book: OnlineBookV36, val chapters: List<OnlineChapterV36>, val shelfStoryId: String? = null)
 
 internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed: Int, val saving: Boolean = false)
 
@@ -88,6 +88,7 @@ internal data class OnlineBooksStateV36(
     val detailLoading: Boolean = false,
     val detail: OnlineDetailV36? = null,
     val download: OnlineDownloadV36? = null,
+    val addingToShelf: Boolean = false,
     val createdStoryId: String? = null,
     val message: String? = null,
     val error: String? = null,
@@ -342,7 +343,10 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         _state.update { it.copy(detailLoading = true, detail = OnlineDetailV36(book, emptyList()), error = null) }
         detailJob = viewModelScope.launch {
             sourceAttemptV36 { runInterruptible(Dispatchers.IO) { loadBookV36(source, book) } }
-                .onSuccess { (detailed, chapters) -> _state.update { it.copy(detailLoading = false, detail = OnlineDetailV36(detailed, chapters)) } }
+                .onSuccess { (detailed, chapters) ->
+                    val existing = withContext(Dispatchers.IO) { projects.findOnlineStory(source.id, detailed.bookUrl) }
+                    _state.update { it.copy(detailLoading = false, detail = OnlineDetailV36(detailed, chapters, existing)) }
+                }
                 .onFailure { e -> _state.update { it.copy(detailLoading = false, error = "读取目录失败：${e.message.orEmpty()}") } }
         }
     }
@@ -353,110 +357,97 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         _state.update { it.copy(detail = null, detailLoading = false) }
     }
 
-    /** Downloads every chapter and puts the book on the shelf. */
+    /** Save identity and catalogue only. Reading and offline caching are separate actions. */
     fun addToShelf() {
         val detail = _state.value.detail ?: return
-        val source = _state.value.sources.firstOrNull { it.id == detail.book.sourceId } ?: return
-        if (detail.chapters.isEmpty() || downloadJob?.isActive == true) return
-        downloadJob = viewModelScope.launch {
-            val texts = downloadChapters(source, detail.chapters) ?: return@launch
-            currentCoroutineContext().ensureActive()
-            _state.update { it.copy(download = it.download?.copy(saving = true)) }
+        if (detail.chapters.isEmpty() || _state.value.detailLoading || _state.value.addingToShelf) return
+        if (detail.shelfStoryId != null) return
+        _state.update { it.copy(addingToShelf = true, error = null) }
+        viewModelScope.launch {
             sourceAttemptV36 {
-                val manuscript = ImportedManuscript(
-                    title = detail.book.name,
-                    chapters = detail.chapters.mapIndexed { i, chapter -> ImportedChapter(chapter.title, texts[i]) },
-                )
-                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
-                    val created = projects.createImportedStory(manuscript)
-                    BookSourceStoreV36.saveLink(context, OnlineLinkV36(created.snapshot.novel.id, source.id, detail.book.bookUrl, detail.chapters.size))
-                    created
+                withContext(Dispatchers.IO) {
+                    projects.createImportedStory(ImportedManuscript(
+                        title = detail.book.name,
+                        chapters = detail.chapters.map { ImportedChapter(it.title, "", it.url) },
+                        sourceId = detail.book.sourceId, sourceBookUrl = detail.book.bookUrl, intro = detail.book.intro,
+                    )).snapshot.novel.id
                 }
-            }.onSuccess { created ->
-                val id = created.snapshot.novel.id
-                _state.update { it.copy(download = null, detail = null, createdStoryId = id, message = "《${detail.book.name}》已加入书架") }
-            }.onFailure { e -> _state.update { it.copy(download = null, error = "保存到书架失败：${e.message.orEmpty()}") } }
+            }.onSuccess { id ->
+                _state.update { state -> state.copy(addingToShelf = false,
+                    detail = state.detail?.takeIf { it.book == detail.book }?.copy(shelfStoryId = id) ?: state.detail,
+                    message = "《${detail.book.name}》已加入书架，正文按阅读需要加载") }
+            }.onFailure { e -> _state.update { it.copy(addingToShelf = false, error = "收藏失败：${e.message.orEmpty()}") } }
         }
     }
 
+    fun readAddedBook() {
+        val id = _state.value.detail?.shelfStoryId ?: return
+        _state.update { it.copy(detail = null, createdStoryId = id) }
+    }
+
+    fun downloadDetail() {
+        val id = _state.value.detail?.shelfStoryId ?: return
+        downloadBook(id)
+    }
+
     fun cancelDownload() {
-        if (_state.value.download?.saving == true) return
         downloadJob?.cancel()
-        _state.update { it.copy(download = null, message = "已取消下载") }
+        _state.update { it.copy(download = null, message = "已停止缓存，已完成的章节保留") }
     }
 
     fun consumeCreated() = _state.update { it.copy(createdStoryId = null) }
-
     fun clearMessage() = _state.update { it.copy(message = null, error = null) }
 
-    /** Checks the source for chapters beyond what is on the shelf and appends them. */
+    /** Refresh only the catalogue. No body request is made by checking for updates. */
     fun checkUpdate(novelId: String, onDone: (String) -> Unit) {
-        val link = BookSourceStoreV36.link(context, novelId) ?: return onDone("这本书不是从书源添加的")
-        val source = _state.value.sources.firstOrNull { it.id == link.sourceId } ?: return onDone("原书源已被删除")
-        if (downloadJob?.isActive == true) return onDone("已有下载正在进行")
-        downloadJob = viewModelScope.launch {
+        if (downloadJob?.isActive == true) return onDone("已有离线缓存正在进行")
+        viewModelScope.launch {
             val result = sourceAttemptV36 {
-                val book = OnlineBookV36(source.id, source.name, "", "", "", "", "", link.bookUrl)
+                val novel = withContext(Dispatchers.IO) { projects.loadStory(novelId)?.snapshot?.novel } ?: error("书籍已移除")
+                check(novel.sourceId.isNotBlank()) { "旧版离线书缺少逐章来源，需核对目录；已保留原正文与阅读进度" }
+                val source = _state.value.sources.firstOrNull { it.id == novel.sourceId } ?: error("原书源已被删除")
+                val book = OnlineBookV36(source.id, source.name, novel.title, "", "", "", "", novel.sourceBookUrl)
                 val (_, chapters) = runInterruptible(Dispatchers.IO) { loadBookV36(source, book) }
-                val fresh = chapters.drop(link.chapterCount)
-                if (fresh.isEmpty()) return@sourceAttemptV36 "已是最新，共 ${chapters.size} 章"
-                val texts = downloadChapters(source, fresh) ?: return@sourceAttemptV36 "下载未完成，本次未更新"
+                val existing = withContext(Dispatchers.IO) { projects.chapterDrafts(novelId) }
+                val fresh = onlineCatalogueAppendV46(existing, chapters)
+                if (fresh.isEmpty()) return@sourceAttemptV36 "目录已是最新，共 ${chapters.size} 章"
                 currentCoroutineContext().ensureActive()
-                _state.update { it.copy(download = it.download?.copy(saving = true)) }
-                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
-                    projects.appendImportedChapters(novelId, fresh.mapIndexed { i, c -> ImportedChapter(c.title, texts[i]) })
-                        ?: error("书架中的书籍已不存在")
-                    BookSourceStoreV36.saveLink(context, link.copy(chapterCount = chapters.size))
+                val added = withContext(Dispatchers.IO) {
+                    projects.appendOnlineCatalogue(novelId, source.id, novel.sourceBookUrl, chapters.map { ImportedChapter(it.title, "", it.url) })
                 }
-                "新增 ${fresh.size} 章"
+                "目录新增 $added 章，正文将在阅读时加载"
             }.getOrElse { e -> "检查更新失败：${e.message.orEmpty()}" }
-            _state.update { it.copy(download = null) }
             onDone(result)
         }
     }
 
-    private suspend fun downloadChapters(source: BookSourceV36, chapters: List<OnlineChapterV36>): List<String>? {
-        val tocUrls = chapters.map { it.url }.toSet()
-        val texts = arrayOfNulls<String>(chapters.size)
-        val nextIndex = java.util.concurrent.atomic.AtomicInteger()
-        var done = 0
-        var failed = 0
-        var totalChars = 0L
-        _state.update { it.copy(download = OnlineDownloadV36(0, chapters.size, 0)) }
-        return sourceAttemptV36 {
-            coroutineScope {
-                // A fixed worker pool avoids creating one suspended coroutine per chapter.
-                List(minOf(4, chapters.size)) {
-                    async(Dispatchers.IO) {
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val index = nextIndex.getAndIncrement()
-                            if (index >= chapters.size) break
-                            var text: String? = null
-                            for (attempt in 0 until 3) {
-                                text = sourceAttemptV36 { runInterruptible { loadChapterTextV36(source, chapters[index], tocUrls) } }
-                                    .getOrNull()?.takeIf { it.isNotBlank() }
-                                if (text != null) break
-                                if (attempt < 2) delay(600L * (attempt + 1))
-                            }
-                            currentCoroutineContext().ensureActive()
-                            texts[index] = text
-                            synchronized(this@OnlineBooksViewModelV36) {
-                                done++
-                                if (text == null) failed++
-                                totalChars += text?.length ?: 0
-                                check(totalChars <= 32L * 1024 * 1024) { "全书超过离线缓存大小限制" }
-                                _state.update { it.copy(download = OnlineDownloadV36(done, chapters.size, failed)) }
-                            }
-                        }
-                    }
-                }.awaitAll()
+    /** An explicit offline action; successful chapters survive cancellation and later failures. */
+    fun downloadBook(novelId: String, onDone: (String) -> Unit = {}) {
+        if (downloadJob?.isActive == true) return onDone("已有离线缓存正在进行")
+        downloadJob = viewModelScope.launch {
+            sourceAttemptV36 {
+                val chapters = withContext(Dispatchers.IO) { projects.chapterDrafts(novelId) }
+                val pending = chapters.filter { it.sourceUrl.isNotBlank() && it.content.isBlank() }
+                if (pending.isEmpty()) return@sourceAttemptV36 "已有正文均已缓存在本机"
+                val urls = chapters.map { it.sourceUrl }.filter(String::isNotBlank).toSet()
+                _state.update { it.copy(download = OnlineDownloadV36(0, pending.size, 0), error = null) }
+                pending.forEachIndexed { index, chapter ->
+                    currentCoroutineContext().ensureActive()
+                    // Sequential requests avoid flooding the source. A network failure stops
+                    // this explicit batch; never loop automatically against a 429/challenge.
+                    OnlineChapterCacheV46.load(context, novelId, chapter.chapterNumber, urls)
+                    _state.update { it.copy(download = OnlineDownloadV36(index + 1, pending.size, 0)) }
+                    if (index < pending.lastIndex) delay(400)
+                }
+                "已离线缓存 ${pending.size} 章"
+            }.onSuccess { message ->
+                _state.update { it.copy(download = null, message = message) }
+                onDone(message)
+            }.onFailure { error ->
+                val message = "离线缓存已停止，已完成章节保留：${error.message.orEmpty()}"
+                _state.update { it.copy(download = null, error = message) }
+                onDone(message)
             }
-            check(failed == 0) { "$failed 章下载失败，本次未写入书架；请重试或更换书源" }
-            texts.map { it.orEmpty() }
-        }.getOrElse { error ->
-            _state.update { it.copy(download = null, error = error.message ?: "下载失败") }
-            null
         }
     }
 

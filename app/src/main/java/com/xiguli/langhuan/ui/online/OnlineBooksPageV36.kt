@@ -195,7 +195,7 @@ private fun OnlineBooksPaperContentV44(
 
     state.detail?.let { detail ->
         ModalBottomSheet(onDismissRequest = { viewModel.closeDetail() }, containerColor = t.card, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)) {
-            OnlineDetailSheetV36(detail, state.detailLoading, state.download, onAdd = viewModel::addToShelf, onCancel = viewModel::cancelDownload)
+            OnlineDetailSheetV36(detail, state.detailLoading, state.download, state.addingToShelf, onAdd = viewModel::addToShelf, onRead = viewModel::readAddedBook, onDownload = viewModel::downloadDetail, onCancel = viewModel::cancelDownload)
         }
     }
 
@@ -576,7 +576,10 @@ private fun OnlineDetailSheetV36(
     detail: OnlineDetailV36,
     loading: Boolean,
     download: OnlineDownloadV36?,
+    adding: Boolean,
     onAdd: () -> Unit,
+    onRead: () -> Unit,
+    onDownload: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
@@ -587,7 +590,7 @@ private fun OnlineDetailSheetV36(
                 Text(detail.book.name, color = t.foreground, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(detail.book.author.ifBlank { "佚名" }, Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    if (loading) "正在读取目录…" else "共 ${detail.chapters.size} 章 · ${detail.book.sourceName}",
+                    if (loading) "正在读取完整目录…" else if (detail.chapters.isEmpty()) "目录未读取完成 · ${detail.book.sourceName}" else "共 ${detail.chapters.size} 章 · ${detail.book.sourceName}",
                     Modifier.padding(top = 4.dp),
                     color = t.mutedForeground,
                     style = MaterialTheme.typography.bodySmall,
@@ -616,7 +619,7 @@ private fun OnlineDetailSheetV36(
                     LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            (if (download.saving) "正在保存到书架…" else "下载中 ${download.done}/${download.total}") + if (download.failed > 0) " · ${download.failed} 章失败" else "",
+                            (if (download.saving) "正在保存缓存…" else "离线缓存 ${download.done}/${download.total}") + if (download.failed > 0) " · ${download.failed} 章失败" else "",
                             Modifier.weight(1f),
                             color = t.mutedForeground,
                             style = MaterialTheme.typography.bodySmall,
@@ -626,12 +629,12 @@ private fun OnlineDetailSheetV36(
                 }
             } else {
                 Surface(
-                    Modifier.fillMaxWidth().springClickV31(enabled = !loading && detail.chapters.isNotEmpty(), pressedScale = .97f, onClick = onAdd),
+                    Modifier.fillMaxWidth().springClickV31(enabled = !loading && !adding && detail.chapters.isNotEmpty(), pressedScale = .97f, onClick = if (detail.shelfStoryId != null) onRead else onAdd),
                     shape = RoundedCornerShape(16.dp),
                     color = if (!loading && detail.chapters.isNotEmpty()) t.primary else t.muted,
                 ) {
                     Text(
-                        "加入书架（下载全部 ${detail.chapters.size} 章）",
+                        if (adding) "正在收藏…" else if (detail.shelfStoryId != null) "开始阅读" else "加入书架",
                         Modifier.fillMaxWidth().padding(vertical = 14.dp),
                         color = if (!loading && detail.chapters.isNotEmpty()) t.primaryForeground else t.mutedForeground,
                         style = MaterialTheme.typography.labelLarge,
@@ -640,6 +643,14 @@ private fun OnlineDetailSheetV36(
                     )
                 }
             }
+        }
+        if (download == null) {
+            if (detail.shelfStoryId != null) TextButton(onClick = onDownload, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text("离线下载", color = t.primary)
+            }
+            Text(if (detail.shelfStoryId == null) "收藏只保存目录，阅读时按需加载正文" else "已加入书架 · 需要无网阅读时可单独离线下载",
+                Modifier.fillMaxWidth().padding(top = 8.dp), color = t.mutedForeground,
+                style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
         Spacer(Modifier.navigationBarsPadding().height(18.dp))
     }

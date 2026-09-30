@@ -61,9 +61,17 @@ class SourceDiscoveryV43DeviceTest {
             saveFrame("v43-rank-page2-test-data")
             rule.onNodeWithText("测试归港记").performClick()
             rule.waitUntil(30000) { !vm.state.value.detailLoading && vm.state.value.detail?.chapters?.size == 1 }
-            rule.onNodeWithText("加入书架（下载全部 1 章）").performClick()
-            rule.waitUntil(30000) { createdId.get() != null }
-            val chapters = StoryProjectManager(context).chapterDrafts(createdId.get()!!)
+            rule.onNodeWithText("加入书架").performClick()
+            rule.waitUntil(30000) { vm.state.value.detail?.shelfStoryId != null && !vm.state.value.addingToShelf }
+            val savedId = vm.state.value.detail!!.shelfStoryId!!
+            createdId.set(savedId)
+            val before = StoryProjectManager(context).chapterDrafts(savedId)
+            assertTrue("Collecting must not download any chapter body", before.all { it.content.isBlank() && it.sourceUrl.isNotBlank() })
+            assertNull(vm.state.value.download)
+            saveFrame("v46-collected-without-download")
+            rule.onNodeWithText("离线下载").performScrollTo().performClick()
+            rule.waitUntil(30000) { vm.state.value.download == null && vm.state.value.message?.contains("已离线缓存") == true }
+            val chapters = StoryProjectManager(context).chapterDrafts(savedId)
             assertEquals(1, chapters.size)
             assertTrue(chapters.single().content.contains("归航的船停在港口"))
             assertTrue(chapters.single().content.contains("沿着岸边的小路走向家门"))
@@ -101,7 +109,11 @@ class SourceDiscoveryV43DeviceTest {
         rule.waitForIdle()
         rule.mainClock.advanceTimeBy(1500)
         rule.waitForIdle()
-        val bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
+        val bitmap = if (name.startsWith("v46-")) {
+            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            assertEquals(rule.activity.packageName, automation.rootInActiveWindow?.packageName?.toString())
+            requireNotNull(automation.takeScreenshot())
+        } else rule.onRoot().captureToImage().asAndroidBitmap()
         val dir = File(rule.activity.getExternalFilesDir(null), "reader-qa").apply { mkdirs() }
         val file = File(dir, "$name.png")
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

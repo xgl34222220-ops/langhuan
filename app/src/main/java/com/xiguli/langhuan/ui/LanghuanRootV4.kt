@@ -112,6 +112,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     }
 
     val onlineVm: OnlineBooksViewModelV36 = viewModel()
+    val onlineState by onlineVm.state.collectAsStateWithLifecycle()
     var pendingOnlineOpen by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 
@@ -346,6 +347,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                                 onConfigureAi = { openAiSetup(RootRouteV4.SHELF) },
                             )
                         },
+                        onDownloadBook = { id -> onlineVm.downloadBook(id) { result -> toast = result to result.contains("停止") } },
                         onCheckUpdate = { id ->
                             onlineVm.checkUpdate(id) { result ->
                                 toast = result to result.contains("失败")
@@ -569,6 +571,15 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                 )
             }
         }
+    }
+
+    if (onlineState.detail == null) onlineState.download?.let { progress ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("离线下载") },
+            text = { Column { Text("已缓存 ${progress.done}/${progress.total} 章"); Text("停止后，已完成的章节仍可离线阅读") } },
+            confirmButton = { TextButton(onClick = onlineVm::cancelDownload) { Text("停止缓存") } },
+        )
     }
 
     libraryState.error?.let { error ->

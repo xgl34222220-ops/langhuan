@@ -49,6 +49,7 @@ internal class BookSourceAiBuilderV37(
     private val onSteps: (List<AiSourceStepV37>) -> Unit,
     private val fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
 ) {
+    private val network = SourceRequestSessionV46(fetchDocument, minimumGapMillis = 500)
     private val steps = ArrayList<AiSourceStepV37>()
     private val generationCalls = HashMap<String, Int>()
 
@@ -71,6 +72,7 @@ internal class BookSourceAiBuilderV37(
     }
 
     suspend fun build(siteUrl: String, keyword: String): AiSourceReportV37 = withContext(Dispatchers.IO) {
+        network.reset()
         steps.clear()
         generationCalls.clear()
         try {
@@ -201,12 +203,17 @@ internal class BookSourceAiBuilderV37(
         if (selected.isEmpty()) return initial.copy(enabledExplore = false)
         val pages = linkedMapOf<AiDiscoveryLinkV37, Document>()
         for (link in selected) {
+            if (network.stopFailure != null) break
             sourceAttemptV36 { fetchAiDocumentV37(initial, SourceRequestV36(link.url)) }
                 .onSuccess {
                     require(sameSourceOriginV36(publicSourceUrlV36(initial.baseUrl), publicSourceUrlV36(it.location()))) { "发现入口跳转到站外，未添加" }
                     pages[link] = it
                 }
                 .onFailure { warnings += "${link.label}：页面读取失败，未添加（${it.message.orEmpty().take(80)}）" }
+        }
+        if (network.stopFailure != null) {
+            warnings += "网站限制访问，已停止其余发现验证；未验证入口未添加"
+            return initial.copy(enabledExplore = false)
         }
         if (pages.isEmpty()) return initial.copy(enabledExplore = false)
         var rules = askExploreRules(pages, null)
@@ -215,8 +222,10 @@ internal class BookSourceAiBuilderV37(
         val hubs = pages.filterValues { ruleElementsV36(it, candidate.exploreList).isEmpty() }
         val children = linkedMapOf<AiDiscoveryLinkV37, Document>()
         for ((hub, doc) in hubs) {
+            if (network.stopFailure != null) break
             val previousChildren = children.size
             for (link in askDiscoveryLinks(doc)) {
+                if (network.stopFailure != null) break
                 if (link.url in pages.keys.map { it.url } || link.url in children.keys.map { it.url }) continue
                 if (pages.size + children.size >= 12) {
                     warnings += "分类较多，本次最多验证 12 个入口；其余可稍后编辑添加"
@@ -229,7 +238,7 @@ internal class BookSourceAiBuilderV37(
             if (children.size > previousChildren) pages.remove(hub)
         }
         var expansionFailed = false
-        if (children.isNotEmpty()) {
+        if (children.isNotEmpty() && network.stopFailure == null) {
             pages.putAll(children)
             sourceAttemptV36 { askExploreRules(pages, null) }
                 .onSuccess { rules = it; candidate = initial.withExplore(it) }
@@ -241,7 +250,7 @@ internal class BookSourceAiBuilderV37(
         fun validate(src: BookSourceV36, link: AiDiscoveryLinkV37, doc: Document) = sourceAttemptV36 {
             searchSourceV36(discoveryRuleSourceV41(src, SourceDiscoveryV41(src.id, link.label, link.url)), "", fetchDocument = { _, _ -> doc })
         }.getOrDefault(emptyList())
-        if (pages.any { (link, doc) -> validate(candidate, link, doc).isEmpty() } && !expansionFailed) {
+        if (pages.any { (link, doc) -> validate(candidate, link, doc).isEmpty() } && !expansionFailed && network.stopFailure == null) {
             if ((generationCalls[exploreEvidenceKey(pages)] ?: 0) < 2) {
                 sourceAttemptV36 {
                     askExploreRules(pages, "上次规则 ${rules.compact()} 没有覆盖全部页面。分类和榜单可能结构不同，请用 CSS 逗号选择器覆盖真实书目元素。")
@@ -253,6 +262,10 @@ internal class BookSourceAiBuilderV37(
         }
         val verified = ArrayList<AiDiscoveryLinkV37>()
         for ((link, doc) in pages) {
+            if (network.stopFailure != null) {
+                warnings += "网站限制访问，已停止其余分类验证；仅保留此前完整验证通过的入口"
+                break
+            }
             val books = validate(candidate, link, doc)
             if (books.isEmpty()) { warnings += "${link.label}：未取到书目，未添加此入口"; continue }
             val reading = sourceAttemptV36 {
@@ -333,13 +346,13 @@ internal class BookSourceAiBuilderV37(
     )
 
     private suspend fun fetchAiDocumentV37(source: BookSourceV36, request: SourceRequestV36) =
-        runInterruptible(Dispatchers.IO) { fetchDocument(source, request) }
+        runInterruptible(Dispatchers.IO) { network.document(source, request) }
     private suspend fun searchAiSourceV37(source: BookSourceV36, key: String) =
-        runInterruptible(Dispatchers.IO) { searchSourceV36(source, key, fetchDocument = fetchDocument) }
+        runInterruptible(Dispatchers.IO) { searchSourceV36(source, key, fetchDocument = network::document) }
     private suspend fun loadAiBookV37(source: BookSourceV36, book: OnlineBookV36) =
-        runInterruptible(Dispatchers.IO) { loadBookV36(source, book, fetchDocument) }
+        runInterruptible(Dispatchers.IO) { loadBookV36(source, book, network::document) }
     private suspend fun loadAiChapterV37(source: BookSourceV36, chapter: OnlineChapterV36, urls: Set<String>) =
-        runInterruptible(Dispatchers.IO) { loadChapterTextV36(source, chapter, urls, fetchDocument) }
+        runInterruptible(Dispatchers.IO) { loadChapterTextV36(source, chapter, urls, network::document) }
 
     // ---- Model calls ---------------------------------------------------------------------------
 
@@ -392,6 +405,7 @@ internal class BookSourceAiBuilderV37(
     ): Map<String, String> {
         var formattingProblem: String? = null
         while (true) {
+            network.checkActive()
             val used = generationCalls[budgetKey] ?: 0
             check(used < 2) { "${stage.label}已生成 2 次，仍未验证通过；已停止，请检查测试书名或更换模型后重试" }
             currentCoroutineContext().ensureActive()
@@ -680,6 +694,9 @@ internal fun aiDiscoveryLinkEvidenceV37(doc: Document): List<AiDiscoveryLinkV37>
         if (label.length !in 1..40 || label.contains("::") || label.contains("&&")) return@mapNotNull null
         val url = runCatching { publicSourceUrlV36(anchor.absUrl("href")) }.getOrNull() ?: return@mapNotNull null
         if (!sameSourceOriginV36(origin, url) || url == origin) return@mapNotNull null
+        val path = url.encodedPath.lowercase()
+        if (isLikelyChapterUrlV39(url.toString()) || Regex("/(news|article|articles|post|posts|book|books)/[^/]+/?$").containsMatchIn(path)) return@mapNotNull null
+        if (label.contains("《") || Regex("(?i)(新闻|新聞|新剧|新劇|电视剧|電視劇|演员|演員|官宣|JTBC)").containsMatchIn(label)) return@mapNotNull null
         val secretQuery = Regex("token|api.?key|secret|signature|session|^sid$|auth|password|^pwd$", RegexOption.IGNORE_CASE)
         if (url.queryParameterNames.any { secretQuery.containsMatchIn(it) }) return@mapNotNull null
         AiDiscoveryLinkV37(label, url.toString())

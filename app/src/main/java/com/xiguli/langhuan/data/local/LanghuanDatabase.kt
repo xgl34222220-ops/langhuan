@@ -94,6 +94,9 @@ interface StoryStateDao {
     @Query("SELECT novelId, snapshotJson, updatedAt FROM story_state ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<StoryStateHeader>>
 
+    @Query("SELECT novelId, snapshotJson, updatedAt FROM story_state ORDER BY updatedAt DESC")
+    suspend fun allHeaders(): List<StoryStateHeader>
+
     @Query("SELECT length(draftJson) FROM story_state WHERE novelId = :novelId LIMIT 1")
     suspend fun draftJsonLength(novelId: String): Int?
 

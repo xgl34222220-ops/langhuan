@@ -20,6 +20,7 @@ fun ShelfLibraryV5(
     onExport: (String, com.xiguli.langhuan.data.ExportFormat) -> Unit = { _, _ -> },
     onOnline: () -> Unit = {},
     onCheckUpdate: (String) -> Unit = {},
+    onDownloadBook: (String) -> Unit = {},
     onlineContent: @Composable (Boolean) -> Unit = {},
 ) = ShelfLuoShuFunctionalV1(
     state = state,
@@ -37,5 +38,6 @@ fun ShelfLibraryV5(
     onExport = onExport,
     onOnline = onOnline,
     onCheckUpdate = onCheckUpdate,
+    onDownloadBook = onDownloadBook,
     onlineContent = onlineContent,
 )

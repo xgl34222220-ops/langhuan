@@ -170,6 +170,7 @@ internal fun ReaderEngineV30(
         return
     }
 
+    LaunchedEffect(book.id, startChapter.id) { viewModel.ensureOnlineChapter(startChapter.chapterNumber) }
     key(book.id) {
     ReaderSessionV30(
         book = book,
@@ -179,6 +180,9 @@ internal fun ReaderEngineV30(
         startOnInfo = startOnInfo,
         interactionEnabled = interactionEnabled,
         onChapterChanged = { number -> viewModel.openReader(number) },
+        onLoadChapter = viewModel::ensureOnlineChapter,
+        loadingChapterNumber = state.loadingChapterNumber,
+        chapterLoadError = state.readerLoadError,
         onBack = onBackToShelf,
         onEdit = { number -> onOpenEditor(book.id, number) },
         onWriting = { onEnterWriting(book.id) },
@@ -208,6 +212,9 @@ internal fun ReaderSessionV30(
     onWriting: () -> Unit,
     onStory: () -> Unit,
     chapterOps: ReaderChapterOpsV35 = ReaderChapterOpsV35(),
+    onLoadChapter: (Int) -> Unit = {},
+    loadingChapterNumber: Int? = null,
+    chapterLoadError: String? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -316,6 +323,7 @@ internal fun ReaderSessionV30(
     }
 
     val currentChapter = chapters.getOrNull(chapterIndex)
+    val waitingForOnlineBody = book.sourceId.isNotBlank() && currentChapter?.sourceUrl?.isNotBlank() == true && currentChapter.content.isBlank()
     val currentLayout = layoutFor(chapterIndex)
     val shownLayout = currentLayout ?: currentChapter?.let { stale[it.id] }
     val shownPageIndex = when {
@@ -390,6 +398,7 @@ internal fun ReaderSessionV30(
     }
 
     fun persist() {
+        if (waitingForOnlineBody) return
         val chapter = chapters.getOrNull(chapterIndex) ?: return
         val layout = layoutFor(chapterIndex)
         val previousLayout = stale[chapter.id]
@@ -773,13 +782,14 @@ internal fun ReaderSessionV30(
             .semantics {
                 contentDescription = "阅读正文"
                 stateDescription = if (!interactionEnabled) "正在恢复阅读"
+                    else if (waitingForOnlineBody) "正在加载在线正文"
                     else if (currentLayout == null || pendingAnchor != null) "正在排版"
                     else "第${chapterIndex + 1}章，第${shownPageIndex + 1}/${currentLayout.pages.size}页"
             }
             .focusRequester(focusRequester)
             .focusable()
             .onPreviewKeyEvent { event ->
-                if (!interactionEnabled || !settings.volumeTurn || menuVisible || event.type != KeyEventType.KeyDown) {
+                if (!interactionEnabled || waitingForOnlineBody || !settings.volumeTurn || menuVisible || event.type != KeyEventType.KeyDown) {
                     return@onPreviewKeyEvent false
                 }
                 when (event.key) {
@@ -810,7 +820,7 @@ internal fun ReaderSessionV30(
                 listState = listState,
                 jumpToken = scrollJump,
                 layoutToken = spec.key,
-                interactionEnabled = interactionEnabled,
+                interactionEnabled = interactionEnabled && !waitingForOnlineBody,
                 onVisible = { index, page ->
                     if (pendingAnchor == null) {
                         val changed = index != chapterIndex
@@ -828,8 +838,8 @@ internal fun ReaderSessionV30(
             Spacer(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(interactionEnabled, spec.key, chapters, mode, settings.fullNext, settings.clickAnimation, geometry) {
-                        if (!interactionEnabled) return@pointerInput
+                    .pointerInput(interactionEnabled, waitingForOnlineBody, spec.key, chapters, mode, settings.fullNext, settings.clickAnimation, geometry) {
+                        if (!interactionEnabled || waitingForOnlineBody) return@pointerInput
                         val flingVelocity = 520.dp.toPx()
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -987,6 +997,19 @@ internal fun ReaderSessionV30(
                     color = theme.accent,
                     trackColor = theme.secondary.copy(alpha = .18f),
                 )
+            }
+        }
+
+        if (waitingForOnlineBody && !menuVisible) {
+            Column(Modifier.align(Alignment.Center).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (loadingChapterNumber == currentChapter?.chapterNumber) "正在加载本章…" else chapterLoadError ?: "本章尚未缓存",
+                    color = theme.secondary, fontSize = 14.sp)
+                if (loadingChapterNumber != currentChapter?.chapterNumber) {
+                    androidx.compose.material3.TextButton(onClick = { currentChapter?.let { onLoadChapter(it.chapterNumber) } }) {
+                        Text("重试加载", color = theme.accent)
+                    }
+                }
+                androidx.compose.material3.TextButton(onClick = { openMenu() }) { Text("打开目录", color = theme.accent) }
             }
         }
 

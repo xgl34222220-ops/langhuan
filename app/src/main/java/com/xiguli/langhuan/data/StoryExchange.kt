@@ -31,11 +31,15 @@ data class ExportArtifact(
 data class ImportedChapter(
     val title: String,
     val content: String,
+    val sourceUrl: String = "",
 )
 
 data class ImportedManuscript(
     val title: String,
     val chapters: List<ImportedChapter>,
+    val sourceId: String = "",
+    val sourceBookUrl: String = "",
+    val intro: String = "",
 )
 
 @Serializable
@@ -58,6 +62,8 @@ private val ExchangeJson = Json {
 
 object StoryExchange {
     fun export(snapshot: StorySnapshot, drafts: List<ChapterDraft>, format: ExportFormat): ExportArtifact {
+        val pending = drafts.count { it.sourceUrl.isNotBlank() && it.content.isBlank() }
+        require(pending == 0) { "还有 $pending 章正文未缓存，不能导出完整小说；请先单独离线下载。项目备份可保留当前目录与缓存" }
         val ordered = drafts.sortedBy { it.chapterNumber }
         val safeName = safeName(snapshot.novel.title)
         val bytes = when (format) {

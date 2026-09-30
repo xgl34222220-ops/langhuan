@@ -17,6 +17,9 @@ data class Novel(
     val status: NovelStatus = NovelStatus.PLANNING,
     /** 应用私有目录中的封面文件路径；默认值保证旧项目可直接升级。 */
     val coverPath: String = "",
+    /** Online books keep their identity even before any chapter body is cached. */
+    val sourceId: String = "",
+    val sourceBookUrl: String = "",
 )
 
 @Serializable
@@ -234,6 +237,8 @@ data class ChapterDraft(
     val contract: ChapterContract = ChapterContract(),
     /** 最近一次正式正文提交的运行 id；只用于 exactly-once 保存，不属于 Canon。 */
     val lastCommittedRunId: String = "",
+    /** Stable online identity; a blank body means it has not been cached yet. */
+    val sourceUrl: String = "",
 )
 
 @Serializable

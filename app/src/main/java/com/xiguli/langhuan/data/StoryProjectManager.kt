@@ -154,6 +154,13 @@ class StoryProjectManager(context: Context) {
     }
 
     suspend fun createImportedStory(manuscript: ImportedManuscript): PersistedStory = db.withTransaction {
+        if (manuscript.sourceId.isNotBlank()) {
+            require(manuscript.sourceBookUrl.isNotBlank() && manuscript.chapters.isNotEmpty()) { "在线书籍缺少来源或目录" }
+            require(manuscript.chapters.all { it.sourceUrl.isNotBlank() } && manuscript.chapters.map { it.sourceUrl }.distinct().size == manuscript.chapters.size) { "在线目录包含空地址或重复章节" }
+            findOnlineStory(manuscript.sourceId, manuscript.sourceBookUrl)?.let { id ->
+                loadStory(id)?.let { return@withTransaction it }
+            }
+        }
         createImportedStoryInTransaction(manuscript)
     }
 
@@ -165,8 +172,8 @@ class StoryProjectManager(context: Context) {
             val created = createStory(
                 NewStoryRequest(
                     title = manuscript.title,
-                    genre = "导入作品",
-                    premise = "从外部稿件导入，待补充核心命题与完整大纲。",
+                    genre = if (manuscript.sourceId.isBlank()) "导入作品" else "网络小说",
+                    premise = manuscript.intro.ifBlank { "从外部稿件导入，待补充核心命题与完整大纲。" },
                     theme = "待完善",
                     targetWords = maxOf(50_000, manuscript.chapters.sumOf { it.content.length } * 2),
                 )
@@ -199,6 +206,7 @@ class StoryProjectManager(context: Context) {
                         objective = node.objective,
                         scenePlan = listOf(defaultScene(number)),
                         content = item.content,
+                        sourceUrl = item.sourceUrl,
                         version = 1,
                     )
                 }
@@ -224,6 +232,8 @@ class StoryProjectManager(context: Context) {
                 novel = base.novel.copy(
                     currentWords = chapters.sumOf { it.content.length },
                     currentChapter = 1,
+                    sourceId = manuscript.sourceId,
+                    sourceBookUrl = manuscript.sourceBookUrl,
                 ),
                 outline = full.sortedWith(compareBy({ it.level.ordinal }, { it.order })),
                 activeOutline = activeChain(full, 1),
@@ -268,6 +278,7 @@ class StoryProjectManager(context: Context) {
                 objective = node.objective,
                 scenePlan = listOf(defaultScene(number)),
                 content = item.content,
+                sourceUrl = item.sourceUrl,
                 version = 1,
             )
         }
@@ -284,6 +295,48 @@ class StoryProjectManager(context: Context) {
             activeOutline = activeChain(full, current),
         )
         return saveStructure(snapshot, loaded.draft)
+    }
+
+    /** Online shelf identity is in the same transaction as its catalogue, not only preferences. */
+    suspend fun findOnlineStory(sourceId: String, bookUrl: String): String? =
+        storyDao.allHeaders().firstNotNullOfOrNull { row ->
+            runCatching { ProjectJson.decodeFromString(StorySnapshot.serializer(), row.snapshotJson).novel }
+                .getOrNull()?.takeIf { it.sourceId == sourceId && it.sourceBookUrl == bookUrl }?.id
+        }
+
+    /** Cache exactly one verified URL without overwriting existing text or changing chapter order. */
+    suspend fun cacheOnlineChapter(novelId: String, number: Int, chapterId: String, sourceUrl: String, text: String,
+        expectedSourceId: String, expectedBookUrl: String): ChapterDraft? = db.withTransaction {
+        require(text.isNotBlank()) { "本章正文为空，未写入缓存" }
+        val loaded = loadStory(novelId) ?: return@withTransaction null
+        check(loaded.snapshot.novel.sourceId == expectedSourceId && loaded.snapshot.novel.sourceBookUrl == expectedBookUrl) { "书籍来源已变化，未保存旧响应" }
+        val chapter = loadChapterDraftCursorSafe(novelId, number) ?: return@withTransaction null
+        check(chapter.id == chapterId && chapter.sourceUrl.isNotBlank() && chapter.sourceUrl == sourceUrl) { "章节来源已变化，未覆盖原正文" }
+        if (chapter.content.isNotBlank()) return@withTransaction chapter
+        val cached = chapter.copy(content = text)
+        val now = System.currentTimeMillis()
+        chapterStateDao.upsert(cached.toEntity(now))
+        // The imported placeholder is not a meaningful old revision. Keep its first version
+        // consistent with the first successfully cached text, so restoring v1 cannot erase it.
+        chapterVersionDao.upsert(ChapterVersionEntity("${cached.id}:v${cached.version}", novelId, number,
+            cached.version, cached.title, cached.content, cached.summary, now))
+        val snapshot = loaded.snapshot.copy(novel = loaded.snapshot.novel.copy(currentWords = loaded.snapshot.novel.currentWords + text.length))
+        persistCurrent(snapshot, if (loaded.draft.chapterNumber == number) cached else loaded.draft, now)
+        cached
+    }
+
+    suspend fun chapterDraft(novelId: String, number: Int): ChapterDraft? = loadChapterDraftCursorSafe(novelId, number)
+
+    suspend fun appendOnlineCatalogue(novelId: String, sourceId: String, bookUrl: String, items: List<ImportedChapter>): Int = db.withTransaction {
+        val novel = loadStory(novelId)?.snapshot?.novel ?: error("书籍已移除")
+        check(novel.sourceId == sourceId && novel.sourceBookUrl == bookUrl) { "书籍来源已变化，未更新目录" }
+        require(items.all { it.sourceUrl.isNotBlank() } && items.map { it.sourceUrl }.distinct().size == items.size) { "新目录包含空地址或重复章节，未更新原目录" }
+        val existing = chapterDrafts(novelId)
+        check(existing.all { it.sourceUrl.isNotBlank() } && items.size >= existing.size &&
+            existing.indices.all { existing[it].sourceUrl == items[it].sourceUrl }) { "目录顺序已变化，已保留原目录与正文" }
+        val added = items.drop(existing.size)
+        if (added.isNotEmpty()) appendImportedChaptersInTransaction(novelId, added)
+        added.size
     }
 
     suspend fun chapterDrafts(novelId: String): List<ChapterDraft> {

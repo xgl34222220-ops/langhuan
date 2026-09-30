@@ -47,6 +47,9 @@ import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import java.io.File
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +76,8 @@ data class ReaderBookUi(
     val targetWords: Int,
     val currentChapter: Int,
     val updatedAt: Long,
+    val sourceId: String = "",
+    val sourceBookUrl: String = "",
 )
 
 data class BookIdentitySuggestion(
@@ -86,6 +91,8 @@ data class LibraryExperienceState(
     val openedBook: ReaderBookUi? = null,
     val chapters: List<ChapterDraft> = emptyList(),
     val readingChapter: ChapterDraft? = null,
+    val loadingChapterNumber: Int? = null,
+    val readerLoadError: String? = null,
     val identitySuggestion: BookIdentitySuggestion? = null,
     val isBusy: Boolean = false,
     val workspaceStoryId: String? = null,
@@ -106,6 +113,7 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
     private val _state = MutableStateFlow(LibraryExperienceState())
     val state: StateFlow<LibraryExperienceState> = _state.asStateFlow()
     private var activeProviderId: String? = null
+    private var onlineReadJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -124,6 +132,8 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
                             targetWords = snapshot.novel.targetWords,
                             currentChapter = snapshot.novel.currentChapter,
                             updatedAt = row.updatedAt,
+                            sourceId = snapshot.novel.sourceId,
+                            sourceBookUrl = snapshot.novel.sourceBookUrl,
                         )
                     }.getOrNull()
                 }
@@ -142,6 +152,7 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
 
     fun openBook(id: String) {
         if (_state.value.isBusy) return
+        onlineReadJob?.cancel()
         viewModelScope.launch {
             _state.update { it.copy(isBusy = true, error = null, identitySuggestion = null) }
             runCatching {
@@ -150,21 +161,54 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
                 require(chapters.isNotEmpty()) { "这本小说没有可读取的章节" }
                 book to chapters
             }.onSuccess { (book, chapters) ->
-                _state.update { it.copy(openedBook = book, chapters = chapters, readingChapter = null, isBusy = false, workspaceStoryId = id) }
+                _state.update { it.copy(openedBook = book, chapters = chapters, readingChapter = null, loadingChapterNumber = null, readerLoadError = null, isBusy = false, workspaceStoryId = id) }
             }.onFailure { e ->
                 _state.update { it.copy(isBusy = false, error = e.message ?: "打开作品失败") }
             }
         }
     }
 
-    fun closeBook() = _state.update { it.copy(openedBook = null, chapters = emptyList(), readingChapter = null, identitySuggestion = null) }
+    fun closeBook() {
+        onlineReadJob?.cancel()
+        _state.update { it.copy(openedBook = null, chapters = emptyList(), readingChapter = null, loadingChapterNumber = null, readerLoadError = null, identitySuggestion = null) }
+    }
 
     fun openReader(chapterNumber: Int) {
         val chapter = _state.value.chapters.firstOrNull { it.chapterNumber == chapterNumber } ?: return
-        _state.update { it.copy(readingChapter = chapter) }
+        _state.update { it.copy(readingChapter = chapter, readerLoadError = null) }
+        ensureOnlineChapter(chapterNumber)
     }
 
-    fun closeReader() = _state.update { it.copy(readingChapter = null) }
+    fun ensureOnlineChapter(chapterNumber: Int) {
+        val state = _state.value
+        val book = state.openedBook ?: return
+        val chapter = state.chapters.firstOrNull { it.chapterNumber == chapterNumber } ?: return
+        if (book.sourceId.isBlank() || chapter.sourceUrl.isBlank() || chapter.content.isNotBlank()) return
+        if (onlineReadJob?.isActive == true && state.loadingChapterNumber == chapterNumber) return
+        onlineReadJob?.cancel()
+        val urls = state.chapters.map { it.sourceUrl }.filter(String::isNotBlank).toSet()
+        _state.update { it.copy(loadingChapterNumber = chapterNumber, readerLoadError = null) }
+        onlineReadJob = viewModelScope.launch {
+            sourceAttemptV36 { OnlineChapterCacheV46.load(getApplication(), book.id, chapterNumber, urls) }
+                .onSuccess { cached ->
+                    currentCoroutineContext().ensureActive()
+                    _state.update { current -> if (current.openedBook?.id != book.id) current else current.copy(
+                        chapters = current.chapters.map { if (it.id == cached.id) cached else it },
+                        readingChapter = if (current.readingChapter?.id == cached.id) cached else current.readingChapter,
+                        loadingChapterNumber = null, readerLoadError = null,
+                    ) }
+                }.onFailure { e ->
+                    _state.update { current -> if (current.openedBook?.id != book.id) current else current.copy(
+                        loadingChapterNumber = null, readerLoadError = e.message ?: "正文暂未加载，可重试",
+                    ) }
+                }
+        }
+    }
+
+    fun closeReader() {
+        onlineReadJob?.cancel()
+        _state.update { it.copy(readingChapter = null, loadingChapterNumber = null, readerLoadError = null) }
+    }
 
     fun readPrevious() {
         val current = _state.value.readingChapter ?: return
