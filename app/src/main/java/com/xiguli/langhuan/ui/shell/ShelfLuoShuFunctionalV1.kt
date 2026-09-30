@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.lazy.itemsIndexed
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -595,7 +597,7 @@ private fun LuoShelfManagerV1(books: List<ReaderBookUi>, customShelves: List<Str
                 }
             }
             items(customShelves, key = { it }) { name ->
-                LanghuanCard(Modifier.fillMaxWidth(), depth = 0, contentPadding = 8.dp) {
+                LanghuanCard(Modifier.fillMaxWidth().animateItem(), depth = 0, contentPadding = 8.dp) {
                     LanghuanMenuRow(Icons.Rounded.Book, name, { }, subtitle = "自定义书架") {
                         LanghuanIconButton(Icons.Rounded.DeleteOutline, "删除书架", { onDeleteShelf(name) })
                     }
@@ -637,6 +639,7 @@ private fun LuoToggleRowV1(label: String, first: String, second: String, selecte
 @Composable
 private fun LuoExploreV1(books: List<ReaderBookUi>, onBack: () -> Unit, onCreate: () -> Unit, onImport: () -> Unit, onOpenBook: (String) -> Unit) {
     val t = LocalLanghuanUiTokens.current
+    val exploreEnter = rememberEnterRegistryV31()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LuoPageHeaderV1("探索", onBack)
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -645,8 +648,8 @@ private fun LuoExploreV1(books: List<ReaderBookUi>, onBack: () -> Unit, onCreate
         }
         Text("最近作品", Modifier.padding(horizontal = 20.dp, vertical = 12.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp)) {
-            items(books.sortedByDescending { it.updatedAt }.take(20), key = { it.id }) { book ->
-                Row(Modifier.fillMaxWidth().clickable { onOpenBook(book.id) }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            itemsIndexed(books.sortedByDescending { it.updatedAt }.take(20), key = { _, it -> it.id }) { index, book ->
+                Row(Modifier.fillMaxWidth().enterOnceV31(exploreEnter, book.id, index + 2).springClickV31(pressedScale = .98f) { onOpenBook(book.id) }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     LuoBookCoverV1(book, Modifier.width(40.dp).aspectRatio(.70f))
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(book.title, color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -663,12 +666,13 @@ private fun LuoExploreV1(books: List<ReaderBookUi>, onBack: () -> Unit, onCreate
 @Composable
 private fun LuoHistoryV1(books: List<ReaderBookUi>, onBack: () -> Unit, onOpenBook: (String) -> Unit) {
     val t = LocalLanghuanUiTokens.current
+    val historyEnter = rememberEnterRegistryV31()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LuoPageHeaderV1("阅读记录", onBack)
         if (books.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("还没有阅读记录", color = t.mutedForeground) }
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp)) {
-            items(books, key = { it.id }) { book ->
-                Row(Modifier.fillMaxWidth().clickable { onOpenBook(book.id) }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            itemsIndexed(books, key = { _, it -> it.id }) { index, book ->
+                Row(Modifier.fillMaxWidth().enterOnceV31(historyEnter, book.id, index).springClickV31(pressedScale = .98f) { onOpenBook(book.id) }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     LuoBookCoverV1(book, Modifier.width(44.dp).aspectRatio(.70f))
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(book.title, color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -685,6 +689,7 @@ private fun LuoHistoryV1(books: List<ReaderBookUi>, onBack: () -> Unit, onOpenBo
 @Composable
 private fun LuoMedalsV1(books: List<ReaderBookUi>, checkedIn: Boolean, onBack: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
+    val medalEnter = rememberEnterRegistryV31()
     val medals = listOf(
         Triple("初入琅嬛", "书架中拥有至少 1 本作品", books.isNotEmpty()),
         Triple("藏书小成", "书架中拥有至少 3 本作品", books.size >= 3),
@@ -694,10 +699,26 @@ private fun LuoMedalsV1(books: List<ReaderBookUi>, checkedIn: Boolean, onBack: (
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LuoPageHeaderV1("勋章", onBack)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(medals) { (title, desc, unlocked) ->
-                LanghuanCard(Modifier.fillMaxWidth(), depth = 0, contentPadding = 14.dp) {
+            itemsIndexed(medals) { index, (title, desc, unlocked) ->
+                LanghuanCard(Modifier.fillMaxWidth().enterOnceV31(medalEnter, title, index), depth = 0, contentPadding = 14.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(Modifier.size(42.dp), shape = CircleShape, color = if (unlocked) t.accent else t.muted) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.WorkspacePremium, null, tint = if (unlocked) t.accentForeground else t.mutedForeground) } }
+                        // Unlocked medals glint once when they appear.
+                        val glint = remember { Animatable(if (unlocked) 0f else 1f) }
+                        LaunchedEffect(unlocked) {
+                            if (unlocked) {
+                                delay(160L + index * 60L)
+                                glint.animateTo(1f, spring(dampingRatio = .45f, stiffness = Spring.StiffnessLow))
+                            }
+                        }
+                        Surface(
+                            Modifier.size(42.dp).graphicsLayer {
+                                val g = glint.value
+                                scaleX = .7f + .3f * g; scaleY = .7f + .3f * g
+                                rotationZ = if (unlocked) (1f - g) * -25f else 0f
+                            },
+                            shape = CircleShape,
+                            color = if (unlocked) t.accent else t.muted,
+                        ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.WorkspacePremium, null, tint = if (unlocked) t.accentForeground else t.mutedForeground) } }
                         Column(Modifier.padding(start = 12.dp).weight(1f)) {
                             Text(title, color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                             Text(desc, color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
