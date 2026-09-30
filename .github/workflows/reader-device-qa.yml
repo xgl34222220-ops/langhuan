@@ -1,5 +1,7 @@
 name: Reader device QA
 on:
+  push:
+    branches: [test/reader-edition-20260930]
   pull_request:
     branches: [main]
     paths:

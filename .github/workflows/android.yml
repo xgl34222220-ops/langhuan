@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, test/reader-edition-20260930]
   pull_request:
     branches: [main]
   workflow_dispatch:
