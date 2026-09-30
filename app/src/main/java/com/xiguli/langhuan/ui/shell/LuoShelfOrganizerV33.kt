@@ -1,4 +1,4 @@
-package com.xiguli.langhuan.ui.shell
+package com.xiguli.langhuan.ui
 
 import android.content.SharedPreferences
 import androidx.compose.animation.animateColorAsState
@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.xiguli.langhuan.ui.ReaderBookUi
 import com.xiguli.langhuan.ui.design.LanghuanMotionV31
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.design.springClickV31
