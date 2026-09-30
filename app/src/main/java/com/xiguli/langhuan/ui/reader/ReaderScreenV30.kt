@@ -103,6 +103,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class ReaderMenuTabV30 { DETAILS, DIRECTORY, MORE }
 internal enum class ReaderMenuPanelV30 { MAIN, THEME, FONT, SIZE, SPACING, TURN, SEARCH }
@@ -426,6 +427,13 @@ private fun ReaderSessionV30(
     var dragX by remember { mutableFloatStateOf(0f) }
     val turn = remember { ReaderTurnHolderV30() }
     var edgeHint by remember { mutableStateOf<String?>(null) }
+    // Long-pressed paragraph (copy / share / look up). Cleared whenever the page changes.
+    var selection by remember { mutableStateOf<ReaderSelectionV30?>(null) }
+    val selectionAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(selection) {
+        if (selection != null) selectionAlpha.animateTo(1f, tween(160)) else selectionAlpha.snapTo(0f)
+    }
+    LaunchedEffect(chapterIndex, pageIndex, mode) { selection = null }
 
     fun resetTurn() {
         turnDir = 0
@@ -506,7 +514,23 @@ private fun ReaderSessionV30(
         menuVisible = true
     }
 
+    fun selectAt(point: Offset) {
+        // Read live state here: this runs from the long-lived pointer coroutine.
+        if (pendingAnchor != null) return
+        val page = layoutFor(chapterIndex)?.pages?.getOrNull(pageIndex) ?: return
+        val chapter = chapters.getOrNull(chapterIndex) ?: return
+        val body = readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
+        val picked = readerParagraphAtV30(page, point, geometry, body) ?: return
+        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        selection = picked
+    }
+
     fun tapAt(point: Offset) {
+        // With a paragraph selected, a tap only clears it; it never turns the page.
+        if (selection != null) {
+            selection = null
+            return
+        }
         val w = geometry.width
         val h = geometry.height
         val inCenterColumn = point.x > w / 3f && point.x < w * 2f / 3f
@@ -639,10 +663,30 @@ private fun ReaderSessionV30(
                             var totalY = 0f
                             var direction = 0
                             var released = false
+                            var longPressed = false
                             val width = size.width.toFloat()
+                            val longPressAt = down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
+                            var lastTime = down.uptimeMillis
                             while (true) {
-                                val event = awaitPointerEvent()
+                                val waitingForHold = !dragging && !blocked && !longPressed
+                                val event = if (waitingForHold) {
+                                    withTimeoutOrNull((longPressAt - lastTime).coerceAtLeast(1L)) { awaitPointerEvent() }
+                                } else {
+                                    awaitPointerEvent()
+                                }
+                                if (event == null) {
+                                    // Held still past the long-press timeout: select the paragraph.
+                                    longPressed = true
+                                    selectAt(down.position)
+                                    continue
+                                }
+                                if (longPressed) {
+                                    event.changes.forEach { it.consume() }
+                                    if (event.changes.all { !it.pressed }) break
+                                    continue
+                                }
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                lastTime = change.uptimeMillis
                                 tracker.addPosition(change.uptimeMillis, change.position)
                                 if (change.changedToUpIgnoreConsumed()) {
                                     released = true
@@ -652,7 +696,11 @@ private fun ReaderSessionV30(
                                 totalX += delta.x
                                 totalY += delta.y
                                 if (!dragging && !blocked) {
-                                    if (abs(totalX) > slop && abs(totalX) > abs(totalY) * .8f) {
+                                    if (selection != null && (abs(totalX) > slop || abs(totalY) > slop)) {
+                                        // Swiping away from a selection clears it rather than turning.
+                                        selection = null
+                                        blocked = true
+                                    } else if (abs(totalX) > slop && abs(totalX) > abs(totalY) * .8f) {
                                         direction = if (totalX < 0f) 1 else -1
                                         if (neighbor(direction) != null) {
                                             dragging = true
@@ -690,7 +738,7 @@ private fun ReaderSessionV30(
                                         if (commit) commitAndReset(direction) else resetTurn()
                                     }
                                 }
-                            } else if (released && !blocked && abs(totalX) <= slop && abs(totalY) <= slop) {
+                            } else if (released && !blocked && !longPressed && abs(totalX) <= slop && abs(totalY) <= slop) {
                                 tapAt(down.position)
                             }
                         }
@@ -703,6 +751,10 @@ private fun ReaderSessionV30(
                                 current, geometry, theme, paints, infoFor(current, chapterIndex),
                                 placeholder = currentChapter?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) },
                             )
+                            val picked = selection
+                            if (picked != null && current != null && picked.chapterIndex == current.chapterIndex && picked.pageIndex == current.index) {
+                                drawReaderSelectionV30(picked, geometry, theme, selectionAlpha.value)
+                            }
                             return@drawBehind
                         }
                         val w = size.width.coerceAtLeast(1f)
@@ -772,6 +824,40 @@ private fun ReaderSessionV30(
                     fontSize = 13.sp,
                 )
             }
+        }
+
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        selection?.takeIf { !menuVisible && mode != ReaderTurnModeV30.SCROLL }?.let { picked ->
+            ReaderSelectionBarV30(
+                selection = picked,
+                geometry = geometry,
+                theme = theme,
+                onCopy = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(picked.text))
+                    selection = null
+                    edgeHint = "已复制这一段"
+                },
+                onShare = {
+                    selection = null
+                    runCatching { context.startActivity(readerShareIntentV30(picked.text, book.title)) }
+                },
+                onSearch = {
+                    selection = null
+                    runCatching { context.startActivity(readerSearchIntentV30(picked.text)) }
+                        .onFailure { edgeHint = "没有可用的搜索应用" }
+                },
+                onBookmark = {
+                    val number = chapters.getOrNull(picked.chapterIndex)?.chapterNumber?.toString()
+                    if (number != null) {
+                        val next = bookmarks + number
+                        prefs.edit().putStringSet("bookmarks", next).apply()
+                        bookmarks = next
+                    }
+                    selection = null
+                    edgeHint = "已加入书签"
+                },
+                onDismiss = { selection = null },
+            )
         }
 
         ReaderMenuV30(
