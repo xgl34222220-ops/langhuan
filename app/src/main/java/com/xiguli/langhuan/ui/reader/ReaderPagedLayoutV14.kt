@@ -98,7 +98,7 @@ internal fun ReaderPagedLayoutV14(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                SimpleDateFormat("HH:mm", androidx.compose.ui.platform.LocalConfiguration.current.locales[0]).format(Date()),
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
                 color = secondary.copy(alpha = .54f),

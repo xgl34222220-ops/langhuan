@@ -335,7 +335,7 @@ private fun ReaderPageV11(
         if (!chrome) {
             val pageText = if (pageMode == ReaderPageModeV10.SCROLL) "${index + 1} / ${ordered.size}" else "${pager.currentPage + 1}/${pages.size}"
             Text(
-                SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                SimpleDateFormat("HH:mm", androidx.compose.ui.platform.LocalConfiguration.current.locales[0]).format(Date()),
                 Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 18.dp, bottom = 8.dp),
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.secondary.copy(alpha = .72f),
@@ -1327,7 +1327,7 @@ private fun ReaderBookInfoPageV11(
                     Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         ReaderMetaBadgeV11("${state.chapters.size} 章")
                         ReaderMetaBadgeV11(humanWordsV11(book.currentWords))
-                        ReaderMetaBadgeV11(format.uppercase(Locale.getDefault()))
+                        ReaderMetaBadgeV11(format.uppercase(Locale.ROOT))
                     }
                 }
             }
@@ -1347,7 +1347,7 @@ private fun ReaderBookInfoPageV11(
                     ) {
                         Column(Modifier.padding(16.dp)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                                Text(String.format(Locale.getDefault(), "%.1f", rawPercent), fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold, color = t.foreground)
+                                Text(String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.1f", rawPercent), fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold, color = t.foreground)
                                 Text("%", Modifier.padding(start = 3.dp, bottom = 3.dp), color = t.mutedForeground)
                                 Spacer(Modifier.weight(1f))
                                 Text("${progress.chapterNumber}/${state.chapters.size} 章", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
@@ -1377,7 +1377,7 @@ private fun ReaderBookInfoPageV11(
                         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                             InfoRowV11("文件名称", fileName.ifBlank { book.title })
                             InfoRowV11("文件大小", if (fileSize > 0) humanBytesV11(fileSize) else "未知")
-                            InfoRowV11("文件格式", format.uppercase(Locale.getDefault()))
+                            InfoRowV11("文件格式", format.uppercase(Locale.ROOT))
                             InfoRowV11("全文字数", humanWordsV11(book.currentWords))
                             InfoRowV11("总章节数", "${state.chapters.size} 章")
                             InfoRowV11("保存位置", "本机")

@@ -177,7 +177,7 @@ private fun readerStaticLayoutV30(text: String, paint: TextPaint, width: Int): S
         .setAlignment(Layout.Alignment.ALIGN_NORMAL)
         .setIncludePad(false)
         .setLineSpacing(0f, 1f)
-        .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE)
+        .setBreakStrategy(if (android.os.Build.VERSION.SDK_INT >= 29) android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE else 0)
         .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
         .build()
 

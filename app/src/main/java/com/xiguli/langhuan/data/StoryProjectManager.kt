@@ -163,73 +163,72 @@ class StoryProjectManager(context: Context) {
         val previousActive = activeStoryId()
         return try {
             val created = createStory(
-            NewStoryRequest(
-                title = manuscript.title,
-                genre = "导入作品",
-                premise = "从外部稿件导入，待补充核心命题与完整大纲。",
-                theme = "待完善",
-                targetWords = maxOf(50_000, manuscript.chapters.sumOf { it.content.length } * 2),
+                NewStoryRequest(
+                    title = manuscript.title,
+                    genre = "导入作品",
+                    premise = "从外部稿件导入，待补充核心命题与完整大纲。",
+                    theme = "待完善",
+                    targetWords = maxOf(50_000, manuscript.chapters.sumOf { it.content.length } * 2),
+                )
             )
-        )
-        val base = created.snapshot
-        val full = effectiveOutline(base).toMutableList()
-        val volume = full.first { it.level == OutlineLevel.VOLUME }
-        full.removeAll { it.level == OutlineLevel.CHAPTER }
-        val chapters = manuscript.chapters.ifEmpty { listOf(ImportedChapter("第一章", "")) }
-            .mapIndexed { index, item ->
-                val number = index + 1
-                val node = OutlineNode(
-                    id = "chapter-${base.novel.id}-$number",
-                    novelId = base.novel.id,
-                    parentId = volume.id,
-                    level = OutlineLevel.CHAPTER,
-                    order = number,
-                    title = item.title.ifBlank { "第${number}章" },
-                    objective = "梳理导入正文后补充本章目标。",
-                    conflict = "待从正文提取冲突。",
-                    turningPoint = "待从正文提取转折。",
-                    locked = false,
+            val base = created.snapshot
+            val full = effectiveOutline(base).toMutableList()
+            val volume = full.first { it.level == OutlineLevel.VOLUME }
+            full.removeAll { it.level == OutlineLevel.CHAPTER }
+            val chapters = manuscript.chapters.ifEmpty { listOf(ImportedChapter("第一章", "")) }
+                .mapIndexed { index, item ->
+                    val number = index + 1
+                    val node = OutlineNode(
+                        id = "chapter-${base.novel.id}-$number",
+                        novelId = base.novel.id,
+                        parentId = volume.id,
+                        level = OutlineLevel.CHAPTER,
+                        order = number,
+                        title = item.title.ifBlank { "第${number}章" },
+                        objective = "梳理导入正文后补充本章目标。",
+                        conflict = "待从正文提取冲突。",
+                        turningPoint = "待从正文提取转折。",
+                        locked = false,
+                    )
+                    full += node
+                    ChapterDraft(
+                        id = "draft-${base.novel.id}-$number",
+                        novelId = base.novel.id,
+                        chapterNumber = number,
+                        title = node.title,
+                        objective = node.objective,
+                        scenePlan = listOf(defaultScene(number)),
+                        content = item.content,
+                        version = 1,
+                    )
+                }
+            val now = System.currentTimeMillis()
+            chapters.forEach { draft ->
+                chapterStateDao.upsert(draft.toEntity(now))
+                chapterVersionDao.upsert(
+                    ChapterVersionEntity(
+                        id = "${draft.id}:v1",
+                        novelId = draft.novelId,
+                        chapterNumber = draft.chapterNumber,
+                        version = 1,
+                        title = draft.title,
+                        content = draft.content,
+                        summary = draft.summary,
+                        createdAt = now,
+                    )
                 )
-                full += node
-                ChapterDraft(
-                    id = "draft-${base.novel.id}-$number",
-                    novelId = base.novel.id,
-                    chapterNumber = number,
-                    title = node.title,
-                    objective = node.objective,
-                    scenePlan = listOf(defaultScene(number)),
-                    content = item.content,
-                    version = 1,
-                )
+                upsertChapterMemory(draft, now)
             }
-        val now = System.currentTimeMillis()
-        chapters.forEach { draft ->
-            chapterStateDao.upsert(draft.toEntity(now))
-            chapterVersionDao.upsert(
-                ChapterVersionEntity(
-                    id = "${draft.id}:v1",
-                    novelId = draft.novelId,
-                    chapterNumber = draft.chapterNumber,
-                    version = 1,
-                    title = draft.title,
-                    content = draft.content,
-                    summary = draft.summary,
-                    createdAt = now,
-                )
+            val first = chapters.first()
+            val snapshot = base.copy(
+                novel = base.novel.copy(
+                    currentWords = chapters.sumOf { it.content.length },
+                    currentChapter = 1,
+                ),
+                outline = full.sortedWith(compareBy({ it.level.ordinal }, { it.order })),
+                activeOutline = activeChain(full, 1),
             )
-            upsertChapterMemory(draft, now)
-        }
-        val first = chapters.first()
-        val snapshot = base.copy(
-            novel = base.novel.copy(
-                currentWords = chapters.sumOf { it.content.length },
-                currentChapter = 1,
-            ),
-            outline = full.sortedWith(compareBy({ it.level.ordinal }, { it.order })),
-            activeOutline = activeChain(full, 1),
-        )
-        val persisted = saveStructure(snapshot, first)
-            persisted
+            saveStructure(snapshot, first)
         } finally {
             if (previousActive != null) setActiveStoryId(previousActive) else clearActiveStoryId()
         }

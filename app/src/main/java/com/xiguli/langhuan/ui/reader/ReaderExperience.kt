@@ -702,7 +702,7 @@ private fun ReaderChromeAction(icon: ImageVector, label: String, color: Color, o
 @Composable
 private fun ReaderQuietFooter(modifier: Modifier, overallFraction: Float, palette: ReaderExperiencePalette) {
     Row(modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()), style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
+        Text(SimpleDateFormat("HH:mm", androidx.compose.ui.platform.LocalConfiguration.current.locales[0]).format(Date()), style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
         Spacer(Modifier.weight(1f))
         Text("全书 ${(overallFraction.coerceIn(0f, 1f) * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = palette.secondary.copy(alpha = .72f))
     }
