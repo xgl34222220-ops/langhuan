@@ -149,18 +149,14 @@ internal fun ReaderEngineV30(
     var storyMode by rememberSaveable(book.id) { mutableStateOf(false) }
     if (storyMode) {
         BackHandler { storyMode = false }
-        Box(Modifier.fillMaxSize()) {
-            StoryCleanExperience(
-                book = book,
-                libraryState = state,
-                aiReady = studioState.provider.ready,
-                onAiSetup = onOpenAiSetup,
-                onAdopted = { viewModel.openBook(book.id) },
-            )
-            IconButton(onClick = { storyMode = false }, modifier = Modifier.padding(10.dp)) {
-                Icon(Icons.Rounded.TouchApp, "返回阅读")
-            }
-        }
+        StoryCleanExperience(
+            book = book,
+            libraryState = state,
+            aiReady = studioState.provider.ready,
+            onAiSetup = onOpenAiSetup,
+            onAdopted = { viewModel.openBook(book.id) },
+            onBack = { storyMode = false },
+        )
         return
     }
 
@@ -371,6 +367,11 @@ private fun ReaderSessionV30(
                 modeKey = mode.key,
             ),
         )
+        // Shelf progress is whole-book progress, not just the fraction within this chapter.
+        context.getSharedPreferences("reader_progress_v2", Context.MODE_PRIVATE).edit()
+            .putInt("total_${book.id}", chapters.size)
+            .putInt("index_${book.id}", chapterIndex)
+            .apply()
     }
 
     // ---- Navigation --------------------------------------------------------------------------
