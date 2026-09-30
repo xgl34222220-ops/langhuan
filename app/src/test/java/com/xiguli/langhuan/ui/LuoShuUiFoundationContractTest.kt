@@ -16,7 +16,7 @@ class LuoShuUiFoundationContractTest {
         assertFalse(shelfEntry.contains("ShelfQingmoFunctionalV9("))
         assertFalse(shelfEntry.contains("ShelfQingmoReplicaV8("))
         assertTrue(shelf.contains("GridCells.Fixed(3)"))
-        assertTrue(shelf.contains("RoundedCornerShape(30.dp)"))
+        assertTrue(shelf.contains("RoundedCornerShape(20.dp)"))
         assertTrue(shelf.contains("BookEditPageV5("))
     }
 

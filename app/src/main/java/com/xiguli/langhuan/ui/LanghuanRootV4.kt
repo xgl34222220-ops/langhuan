@@ -74,6 +74,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
             route = RootRouteV4.SHELF
         }
     }
+    com.xiguli.langhuan.ui.design.PaperReaderSystemBarsV44(
+        lightBackground = route in setOf(RootRouteV4.SHELF, RootRouteV4.ONLINE) || !androidx.compose.foundation.isSystemInDarkTheme(),
+        readerActive = route == RootRouteV4.BOOK,
+    )
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterSkills by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterEditor by remember { mutableStateOf(RootRouteV4.BOOK) }

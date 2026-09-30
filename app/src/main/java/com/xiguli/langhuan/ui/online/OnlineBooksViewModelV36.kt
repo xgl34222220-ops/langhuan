@@ -92,6 +92,7 @@ internal data class OnlineBooksStateV36(
     val message: String? = null,
     val error: String? = null,
     /** AI source builder progress; empty when not running. */
+    val aiProviderLabel: String? = null,
     val aiSteps: List<AiSourceStepV37> = emptyList(),
     val aiRunning: Boolean = false,
     val aiReport: AiSourceReportV37? = null,
@@ -116,7 +117,11 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     init {
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
-                activeProviderId = providers.firstOrNull { it.isDefault }?.id ?: providers.firstOrNull()?.id
+                val selected = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
+                activeProviderId = selected?.id
+                _state.update { it.copy(aiProviderLabel = selected?.let { provider ->
+                    listOf(provider.name, provider.model).filter(String::isNotBlank).joinToString(" · ")
+                }) }
             }
         }
     }

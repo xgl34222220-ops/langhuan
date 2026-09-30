@@ -57,8 +57,7 @@ internal fun ReaderWindowSessionV27(resumed: Boolean) {
         // Runs only when leaving the reader, not when key(chapterKey) is replaced.
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
-            controller.isAppearanceLightStatusBars = oldLightStatus
-            controller.isAppearanceLightNavigationBars = oldLightNavigation
+            com.xiguli.langhuan.ui.design.restoreAppSystemBarsV44(window, oldLightStatus, oldLightNavigation)
             controller.systemBarsBehavior = oldBehavior
             activity.requestedOrientation = oldOrientation
             if (oldKeepScreen) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

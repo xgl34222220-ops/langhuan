@@ -37,7 +37,7 @@ class ReaderEditionV41Test {
         // The last root is the modal's own surface when a bottom sheet is open.
         val bitmap = rule.onAllNodes(isRoot(), useUnmergedTree = true).onLast().captureToImage().asAndroidBitmap()
         var shelfInk: Int? = null
-        if (name == "v41-shelf") {
+        if (name == "v44-shelf") {
             var ink = 0
             for (y in bitmap.height / 6 until bitmap.height / 2 step 3) {
                 for (x in bitmap.width / 12 until bitmap.width * 11 / 12 step 3) {
@@ -272,7 +272,7 @@ class ReaderEditionV41Test {
             }
         }
         rule.onNodeWithText("夜航记").assertIsDisplayed()
-        saveFrame("v41-shelf")
+        saveFrame("v44-shelf")
         rule.onAllNodesWithText("书城").onLast().performClick()
         rule.onNodeWithText("发现下一本好书").assertIsDisplayed()
         saveFrame("v41-bookstore")
@@ -284,8 +284,9 @@ class ReaderEditionV41Test {
         saveFrame("v41-ai-source")
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.onAllNodesWithText("我的").onLast().performClick()
-        rule.onNodeWithText("书源与 AI").assertIsDisplayed()
-        saveFrame("v41-profile")
+        rule.onNodeWithText("阅读，保持简单").assertIsDisplayed()
+        saveFrame("v44-profile")
+        rule.onNodeWithText("AI 配置").performScrollTo().assertIsDisplayed()
         repeat(3) {
             rule.onAllNodesWithText("书架").onLast().performClick()
             rule.onNodeWithText("夜航记").assertIsDisplayed()

@@ -77,7 +77,7 @@ internal class BookSourceAiBuilderV37(
         // 1. Home page and search entry
         step("读取网站首页")
         val homeDoc = sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(home)) }
-            .getOrElse { fail("打不开这个网址：${it.message.orEmpty().take(120)}") }
+            .getOrElse { fail("首页读取失败：${it.message.orEmpty().take(220)}") }
 
         // The typed domain may be only a legacy doorway. Use the final URL after redirects as the
         // canonical base for every generated rule (e.g. http://old.example -> https://new.example).

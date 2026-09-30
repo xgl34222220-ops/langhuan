@@ -74,3 +74,11 @@ AI 生成使用用户已配置的提供商；书源网络请求不会携带 AI �
 `AiDiscoveryJourneyV43Test` 使用受控原创 HTML 和假的模型响应，运行实际 builder/解析器，覆盖完整分类+月榜+分页阅读链路、缺少发现、虚构榜单、部分失败、第二页失败、取消；不调用真实模型或私有 API key。`SourceDiscoveryV41Test` 覆盖静态格式、POST 同 URL 不同 body、分页请求、失败与条数边界、动态能力提示。
 
 Android 的 `SourceHttpsJourneyV41Test` 使用提交固定的公开 HTTPS 夹具验证安全网络传输。`app/src/androidTest/assets/source-fixture/` 的分类、榜单和故事都是明确标注的原创自动化测试数据；它们不会内置为用户书源或真实推荐。完整 APK/设备结果以对应提交的 CI 报告为准，独立 JVM 通过不等于设备全验收。
+
+## HTTP 与网页验证诊断
+
+HTTP 错误保留实际状态码、协议和域名；不再根据 400 推断登录、验证码或动态网页。错误响应最多读取 8 KiB 前缀作分类，不显示服务器返回的原文、查询参数、Cookie 或请求头。HTTP 地址收到 400 时只建议确认 HTTPS 地址，不自动换站或降级安全检查。
+
+Cloudflare 的普通 HTML 页面也可能带有 [JavaScript Detections](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/) 脚本，因此脚本路径 `challenge-platform`、一般“请稍候”文案或书中引用验证提示均不构成拦截证据。优先依据官方 [cf-mitigated: challenge 响应标记](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/)，其次结合验证页标题、可见提示和专有页面结构。
+
+真正的浏览器验证或访问拦截仍会停止生成，并明确说明尚未获得内容。当前不会执行网站脚本、破解验证码或绕过访问控制；外部浏览器会话不会自动共享给 App。首页失败时不会启动模型调用，失败原因在对应步骤只显示一次。

@@ -521,7 +521,54 @@ internal fun readSourceBytesV36(input: InputStream, maxBytes: Int): ByteArray {
     return out.toByteArray()
 }
 
-private data class SourceResponseV36(val code: Int, val url: String, val location: String?, val type: String?, val bytes: ByteArray, val cookies: List<Cookie>)
+private data class SourceResponseV36(
+    val code: Int, val url: String, val location: String?, val type: String?, val bytes: ByteArray,
+    val cookies: List<Cookie>, val mitigationHeader: String?,
+)
+
+internal const val MAX_SOURCE_ERROR_BYTES_V44 = 8 * 1024
+
+/** Read only a bounded diagnostic prefix. A huge error page must not hide its HTTP status. */
+internal fun readSourceErrorPrefixV44(input: InputStream, maxBytes: Int = MAX_SOURCE_ERROR_BYTES_V44): ByteArray {
+    require(maxBytes in 1..MAX_SOURCE_ERROR_BYTES_V44)
+    val out = ByteArrayOutputStream(maxBytes)
+    val buffer = ByteArray(minOf(maxBytes, 1024))
+    while (out.size() < maxBytes) {
+        if (Thread.currentThread().isInterrupted) throw CancellationException("书源请求已取消")
+        val count = input.read(buffer, 0, minOf(buffer.size, maxBytes - out.size()))
+        if (count < 0) break
+        out.write(buffer, 0, count)
+    }
+    return out.toByteArray()
+}
+
+internal class SourceHttpStatusExceptionV44(val statusCode: Int, val origin: String, detail: String) :
+    IOException("网站返回 HTTP $statusCode（$origin）：$detail")
+
+/** Only verified status/evidence is shown. Never echo cookies, query strings or an error page. */
+internal fun sourceHttpFailureV44(
+    code: Int, url: HttpUrl, bytes: ByteArray, mitigationHeader: String? = null,
+): SourceHttpStatusExceptionV44 {
+    val prefix = String(bytes, 0, minOf(bytes.size, MAX_SOURCE_ERROR_BYTES_V44), Charsets.UTF_8)
+    val errorText = Jsoup.parse(prefix).text().lowercase()
+    val requiresHttps = code == 400 && !url.isHttps && listOf(
+        "plain http request was sent to https port", "this combination of host and port requires tls",
+        "the http request was sent to https port",
+    ).any(errorText::contains)
+    val detail = when {
+        requiresHttps -> "服务器明确要求 HTTPS，请改用该站 HTTPS 地址重试"
+        browserChallengePendingV38(prefix, mitigationHeader) -> "网站返回了浏览器验证或访问拦截页面，请先在浏览器中确认访问状态"
+        code == 400 -> "服务器未接受该请求" + if (!url.isHttps && url.port == 80) "；当前使用 HTTP，可尝试该站 HTTPS 地址" else "；请检查网站地址"
+        code == 401 -> "网站要求身份验证"
+        code == 403 -> "网站拒绝访问，请先在浏览器中确认该网址能否打开"
+        code == 404 || code == 410 -> "该页面不存在或已移除，请检查网站地址"
+        code == 429 -> "网站限制了请求频率，请稍后再试"
+        code in 500..599 -> "网站服务暂时出错，请稍后再试"
+        else -> "未能取得页面，请在浏览器中确认该网址能否打开"
+    }
+    val origin = url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString().removeSuffix("/")
+    return SourceHttpStatusExceptionV44(code, origin, detail)
+}
 
 // Waiting is interruptible. runInterruptible in callers cancels the actual socket, not just UI state.
 private fun awaitSourceResponseV36(request: Request, maxBytes: Int, remainingMs: Long): SourceResponseV36 {
@@ -539,8 +586,14 @@ private fun awaitSourceResponseV36(request: Request, maxBytes: Int, remainingMs:
                     val bytes = if (it.code in 200..299 && body != null) {
                         require(body.contentLength() <= maxBytes) { "书源响应超过大小限制" }
                         body.byteStream().use { stream -> readSourceBytesV36(stream, maxBytes) }
+                    } else if (it.code >= 400 && body != null) {
+                        // A broken diagnostic body must not replace a known HTTP status with an
+                        // unrelated stream error. Cancellation still propagates to the caller.
+                        try {
+                            body.byteStream().use { stream -> readSourceErrorPrefixV44(stream, minOf(maxBytes, MAX_SOURCE_ERROR_BYTES_V44)) }
+                        } catch (_: IOException) { ByteArray(0) }
                     } else ByteArray(0)
-                    result = SourceResponseV36(it.code, it.request.url.toString(), it.header("Location"), it.header("Content-Type"), bytes, Cookie.parseAll(it.request.url, it.headers))
+                    result = SourceResponseV36(it.code, it.request.url.toString(), it.header("Location"), it.header("Content-Type"), bytes, Cookie.parseAll(it.request.url, it.headers), it.header("cf-mitigated"))
                 }
             } catch (e: Exception) { failure = e } finally { latch.countDown() }
         }
@@ -595,7 +648,7 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
             if (response.code in setOf(301, 302, 303) && method == "POST") { method = "GET"; body = null }
             url = next
         } else {
-            check(response.code in 200..299) { "书源返回 ${response.code}；可能需要登录、验证码或动态网页，当前仅支持静态 HTML 书源" }
+            if (response.code !in 200..299) throw sourceHttpFailureV44(response.code, url, response.bytes, response.mitigationHeader)
             return response
         }
     }
@@ -607,11 +660,18 @@ internal fun fetchSourceBytesV36(url: String, maxBytes: Int = MAX_SOURCE_BYTES_V
 
 internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36): Document {
     val response = fetchSourceResponseV36(source, request, MAX_SOURCE_BYTES_V36)
-    val charset = request.charset ?: response.type?.let { Regex("charset=[\"']?([\\w-]+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1) }
-        ?: sniffCharsetV36(response.bytes)
-    val html = String(response.bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
-    check(!browserChallengePendingV38(html)) { "网站要求浏览器验证，当前不支持自动执行网页脚本" }
-    return Jsoup.parse(html, response.url)
+    return parseSourceDocumentV44(response.bytes, response.url, request.charset, response.type, response.mitigationHeader)
+}
+
+internal fun parseSourceDocumentV44(
+    bytes: ByteArray, url: String, requestedCharset: String? = null, type: String? = null, mitigationHeader: String? = null,
+): Document {
+    require(bytes.size <= MAX_SOURCE_BYTES_V36) { "书源响应超过大小限制" }
+    val charset = requestedCharset ?: type?.let { Regex("charset=[\"']?([\\w-]+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1) }
+        ?: sniffCharsetV36(bytes)
+    val html = String(bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
+    check(!browserChallengePendingV38(html, mitigationHeader)) { "网站返回了浏览器验证或访问拦截页面，尚未取得网页内容；请先在浏览器中确认访问状态" }
+    return Jsoup.parse(html, url)
 }
 
 internal fun httpsFallbackUrlV36(raw: String): String? {

@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
@@ -44,6 +45,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
@@ -58,6 +61,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -80,9 +84,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.xiguli.langhuan.ui.design.PaperReaderThemeV44
+import com.xiguli.langhuan.ui.design.PaperPageTitleV44
+import com.xiguli.langhuan.ui.design.PaperCardV44
+import com.xiguli.langhuan.ui.design.PaperSectionLabelV44
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
@@ -102,6 +112,21 @@ internal fun OnlineBooksPageV36(
     embedded: Boolean = false,
     startWithSources: Boolean = false,
     onConfigureAi: () -> Unit = {},
+) {
+    PaperReaderThemeV44 {
+        OnlineBooksPaperContentV44(viewModel, onBack, onOpenCreated, embedded, startWithSources, onConfigureAi)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OnlineBooksPaperContentV44(
+    viewModel: OnlineBooksViewModelV36,
+    onBack: () -> Unit,
+    onOpenCreated: (String) -> Unit,
+    embedded: Boolean,
+    startWithSources: Boolean,
+    onConfigureAi: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -124,13 +149,12 @@ internal fun OnlineBooksPageV36(
     BackHandler(enabled = state.detail != null && state.download == null) { viewModel.closeDetail() }
 
     Column(Modifier.fillMaxSize().background(t.background).statusBarsPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!embedded) LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onBack)
-            Column(Modifier.weight(1f).padding(start = if (embedded) 0.dp else 8.dp)) {
-                Text(if (tab == 0) "书城" else "书源管理", color = t.foreground, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text(if (tab == 0) "发现下一本好书" else "连接你信任的阅读世界", Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+            PaperPageTitleV44(if (tab == 0) "书城" else "书源管理", Modifier.weight(1f))
+            TextButton(onClick = { tab = if (tab == 0) 1 else 0 }) {
+                Text(if (tab == 0) "管理书源" else "返回书城", color = t.primary)
             }
-            OnlineTabV36(if (tab == 0) "管理书源" else "返回书城", selected = false) { tab = if (tab == 0) 1 else 0 }
         }
         AnimatedContent(
             targetState = tab,
@@ -178,8 +202,9 @@ internal fun OnlineBooksPageV36(
     if (aiSheet) {
         ModalBottomSheet(
             onDismissRequest = { if (!state.aiRunning) { aiSheet = false; viewModel.cancelAi() } },
-            containerColor = t.card,
-            shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+            containerColor = t.background,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         ) {
             OnlineAiSheetV36(
                 state = state,
@@ -237,7 +262,7 @@ private fun OnlineSearchTabV36(
         TextField(
             value = query,
             onValueChange = onQuery,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             placeholder = { Text("书名或作者") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
             trailingIcon = {
@@ -246,33 +271,56 @@ private fun OnlineSearchTabV36(
                 }
             },
             singleLine = true,
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(28.dp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSearch() }),
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = t.card,
-                unfocusedContainerColor = t.card,
+                focusedContainerColor = t.muted,
+                unfocusedContainerColor = t.muted,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
             ),
         )
         val enabled = state.sources.count { it.enabled && it.searchUrl.isNotBlank() && it.searchList.isNotBlank() }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("全源搜索", color = t.foreground, style = MaterialTheme.typography.labelLarge)
-            Text("  ·  $enabled 个书源已启用", Modifier.weight(1f), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
-        }
         val discoveries = remember(state.sources) { state.sources.flatMap(::sourceDiscoveriesV41) }
         val discoveryIssues = remember(state.sources) { state.sources.flatMap { src -> sourceDiscoveryCatalogV41(src).issues.map { "${src.name}：$it" } } }
+        var sectionGroup by rememberSaveable { mutableStateOf("全部") }
+        fun isRanking(label: String) = isRankingDiscoveryLabelV44(label)
+        val filteredSections = discoveries.filter { section -> when (sectionGroup) {
+            "排行榜" -> isRanking(section.label)
+            "分类" -> !isRanking(section.label)
+            else -> true
+        } }
+        Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), color = t.card,
+            border = BorderStroke(1.dp, t.border), shape = RoundedCornerShape(12.dp)) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(state.discoverySection?.let { section -> state.sources.firstOrNull { it.id == section.sourceId }?.name } ?: "全源搜索",
+                    Modifier.weight(1f), color = t.foreground, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("$enabled 个可搜索书源", color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
+            }
+        }
         discoveryIssues.firstOrNull()?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall) }
         if (discoveries.isNotEmpty()) {
-            Text("发现 · 分类与榜单", Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = t.foreground, style = MaterialTheme.typography.labelLarge)
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(discoveries, key = { it.sourceId + "::" + it.template }) { section ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceAround) {
+                listOf("全部", "分类", "排行榜").forEach { label ->
+                    Column(Modifier.weight(1f).springClickV31 {
+                        sectionGroup = label
+                        discoveries.firstOrNull { section -> label == "全部" || (isRanking(section.label) == (label == "排行榜")) }?.let(onDiscover)
+                    }, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(label, Modifier.padding(vertical = 12.dp), color = if (sectionGroup == label) t.primary else t.mutedForeground,
+                            fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium)
+                        Box(Modifier.width(32.dp).height(2.dp).background(if (sectionGroup == label) t.primary else Color.Transparent))
+                    }
+                }
+            }
+            if (filteredSections.isEmpty()) {
+                Text("已启用书源尚未提供${sectionGroup}入口", Modifier.padding(horizontal = 20.dp, vertical = 12.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+            } else LazyRow(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(filteredSections, key = { it.sourceId + "::" + it.template }) { section ->
                     val sourceName = state.sources.firstOrNull { it.id == section.sourceId }?.name.orEmpty()
                     OnlineTabV36("$sourceName · ${section.label}", state.discoverySection == section, multiline = true) { onDiscover(section) }
                 }
             }
-            Spacer(Modifier.height(8.dp))
         }
         AnimatedVisibility(state.searching) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -283,27 +331,49 @@ private fun OnlineSearchTabV36(
         when {
             state.sources.isEmpty() -> OnlineEmptyV36("为书城添加第一盏灯", "导入你有权使用的书源，或让 AI 为你生成。\n书城会从这些网站搜索真实书籍。", "添加书源 / AI 生成", onGoSources)
             enabled == 0 && discoveries.isEmpty() -> OnlineEmptyV36("书源还没有启用", "到书源管理打开至少一个书源，再来寻找喜欢的故事。", "启用书源", onGoSources)
+            state.discoverySection != null && sectionGroup != "全部" && state.discoverySection !in filteredSections && !state.searching -> OnlineEmptyV36("暂未提供${sectionGroup}入口", "可以在全部发现入口中继续浏览，或添加其他书源。", null, null)
             state.results.isEmpty() && !state.searching && state.discoveryPageError != null -> OnlineEmptyV36("分类暂时打不开", state.discoveryPageError, "重试本页", onLoadMore)
             state.results.isEmpty() && !state.searching && state.discoveryLabel != null -> OnlineEmptyV36("此分类暂时没有书籍", "试试其他分类、搜索书名，或检查这条书源的发现规则。", "检查书源", onGoSources)
             state.results.isEmpty() && !state.searching && state.query.isNotBlank() -> OnlineEmptyV36("没有找到相关书籍", "试试更短的书名、作者名，或换一个可用书源。", "检查书源", onGoSources)
             state.results.isEmpty() && !state.searching -> OnlineEmptyV36("故事，从一个名字开始", "输入书名或作者，会同时搜索你启用的 $enabled 个书源。", null, null)
-            else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                itemsIndexed(state.results, key = { _, it -> it.sourceId + it.bookUrl }) { index, book ->
-                    Surface(
-                        Modifier.fillMaxWidth().animateItem().enterOnceV31(enter, book.sourceId + book.bookUrl, index).springClickV31(pressedScale = .98f) { onOpen(book) },
-                        shape = RoundedCornerShape(16.dp),
-                        color = t.card,
-                        shadowElevation = 1.dp,
-                    ) {
-                        Row(Modifier.padding(12.dp)) {
-                            OnlineCoverV36(book.cover, book.name, Modifier.width(54.dp).aspectRatio(.72f))
-                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                                Text(book.name, color = t.foreground, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(book.author.ifBlank { "佚名" }, Modifier.padding(top = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                if (book.latest.isNotBlank()) Text("最新：${book.latest}", Modifier.padding(top = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(book.sourceName, Modifier.padding(top = 6.dp).clip(RoundedCornerShape(99.dp)).background(t.muted).padding(horizontal = 8.dp, vertical = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
+            else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                item {
+                    PaperSectionLabelV44(state.discoveryLabel ?: if (state.query.isNotBlank()) "搜索结果 · ${state.results.size} 本" else "发现好书")
+                }
+                if (state.discoverySection != null && !isRanking(state.discoverySection.label)) {
+                    items(state.results.chunked(3).size) { rowIndex ->
+                        val books = state.results.chunked(3)[rowIndex]
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            books.forEach { book ->
+                                Column(Modifier.weight(1f).springClickV31(pressedScale = .97f) { onOpen(book) }) {
+                                    OnlineCoverV36(book.cover, book.name, Modifier.fillMaxWidth().aspectRatio(.69f))
+                                    Text(book.name, Modifier.padding(top = 9.dp), color = t.foreground, fontFamily = FontFamily.Serif,
+                                        style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(book.author.ifBlank { "佚名" }, Modifier.padding(top = 4.dp), color = t.mutedForeground,
+                                        style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(book.sourceName, Modifier.padding(top = 3.dp), color = t.mutedForeground,
+                                        style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
+                            repeat(3 - books.size) { Spacer(Modifier.weight(1f)) }
                         }
+                    }
+                } else itemsIndexed(state.results, key = { _, it -> it.sourceId + it.bookUrl }) { index, book ->
+                    Column(Modifier.fillMaxWidth().animateItem().enterOnceV31(enter, book.sourceId + book.bookUrl, index)
+                        .springClickV31(pressedScale = .98f) { onOpen(book) }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (state.discoverySection != null) Text((index + 1).toString().padStart(2, '0'), Modifier.width(30.dp),
+                                color = if (index < 3) t.primary else t.mutedForeground, fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium)
+                            OnlineCoverV36(book.cover, book.name, Modifier.width(55.dp).aspectRatio(.69f))
+                            Column(Modifier.padding(start = 13.dp).weight(1f)) {
+                                Text(book.name, color = t.foreground, fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(book.author.ifBlank { "佚名" }, Modifier.padding(top = 5.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                if (book.latest.isNotBlank()) Text(book.latest, Modifier.padding(top = 3.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(book.sourceName, Modifier.padding(top = 5.dp), color = t.primary, style = MaterialTheme.typography.labelSmall)
+                            }
+                            Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = t.mutedForeground)
+                        }
+                        Box(Modifier.fillMaxWidth().padding(top = 16.dp).height(1.dp).background(t.border.copy(alpha = .6f)))
                     }
                 }
                 if (state.discoverySection != null && !state.searching) {
@@ -343,54 +413,79 @@ private fun OnlineSourcesTabV36(
     var sourceQuery by rememberSaveable { mutableStateOf("") }
     val pendingEdit = state.sources.firstOrNull { it.id == state.sourceEditId }
     var exportConfirm by remember { mutableStateOf(false) }
-    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("${state.sources.count { it.enabled }} 个已启用 · 共 ${state.sources.size} 个书源", Modifier.weight(1f), color = t.foreground, style = MaterialTheme.typography.titleSmall)
-                TextButton(onClick = { exportConfirm = true }, enabled = state.sources.isNotEmpty()) { Text("导出") }
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                TextField(sourceQuery, { sourceQuery = it }, Modifier.fillMaxWidth(),
+                    placeholder = { Text("按名称、分组或网站搜索") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true,
+                    shape = RoundedCornerShape(28.dp), colors = TextFieldDefaults.colors(
+                        focusedContainerColor = t.muted, unfocusedContainerColor = t.muted,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
+                Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${state.sources.size} 个书源 · 已启用 ${state.sources.count { it.enabled }} 个", Modifier.weight(1f), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = { exportConfirm = true }, enabled = state.sources.isNotEmpty()) { Text("导出", color = t.primary) }
+                }
             }
-            Text(
-                "书源由你自己导入和负责。请只使用你有权访问的网站内容。支持阅读（Legado）格式中基于网页规则的书源；需要 JS 或 JSON 接口的书源会被跳过。",
-                Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-                color = t.mutedForeground,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Surface(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp).springClickV31(pressedScale = .98f, onClick = onAi),
-                shape = RoundedCornerShape(18.dp),
-                color = t.accent,
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(24.dp), tint = t.accentForeground)
-                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                        Text("AI 生成书源", color = t.accentForeground, style = MaterialTheme.typography.titleMedium)
-                        Text("给一个网站链接和一本书名，AI 写规则并实测", color = t.accentForeground.copy(alpha = .8f), style = MaterialTheme.typography.bodySmall)
+            if (state.sources.isEmpty()) item {
+                PaperCardV44(Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.MenuBook, null, Modifier.size(32.dp), tint = t.primary)
+                    Text("连接你的阅读世界", Modifier.padding(top = 12.dp), fontFamily = FontFamily.Serif, color = t.foreground, style = MaterialTheme.typography.titleLarge)
+                    Text("导入你有权使用的书源，或从网站链接生成规则。书城会显示网站实际提供的书籍与发现入口。", Modifier.padding(top = 8.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            val filtered = state.sources.filter { sourceQuery.isBlank() || it.name.contains(sourceQuery, true) || it.group.contains(sourceQuery, true) || it.baseUrl.contains(sourceQuery, true) }
+            if (state.sources.isNotEmpty() && filtered.isEmpty()) item {
+                Text("没有匹配的书源", Modifier.padding(vertical = 24.dp), color = t.mutedForeground)
+            }
+            itemsIndexed(filtered, key = { _, it -> it.id }) { _, source ->
+                val catalog = remember(source) { sourceDiscoveryCatalogV41(source.copy(enabled = true, enabledExplore = true)) }
+                val capabilities = buildList {
+                    if (source.searchUrl.isNotBlank() && source.searchList.isNotBlank()) add("搜索")
+                    if (catalog.sections.any { !isRankingDiscoveryLabelV44(it.label) }) add("分类")
+                    if (catalog.sections.any { isRankingDiscoveryLabelV44(it.label) }) add("榜单")
+                    if (source.contentText.isNotBlank()) add("正文")
+                }
+                PaperCardV44(Modifier.fillMaxWidth().animateItem(), contentPadding = 16.dp) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(t.muted), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.MenuBook, null, Modifier.size(26.dp), tint = t.foreground)
+                        }
+                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                            Text(source.name, color = t.foreground, fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(source.baseUrl, Modifier.padding(top = 3.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Switch(checked = source.enabled, onCheckedChange = { onToggle(source.id) }, modifier = Modifier.padding(start = 6.dp))
+                    }
+                    if (capabilities.isNotEmpty()) LazyRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(capabilities) { capability ->
+                            Text(capability, Modifier.clip(RoundedCornerShape(8.dp)).background(t.accent).padding(horizontal = 9.dp, vertical = 5.dp),
+                                color = t.accentForeground, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(catalog.issues.firstOrNull() ?: if (source.enabled) "已启用 · 可在书城实测" else "已停用",
+                            Modifier.weight(1f), color = if (catalog.issues.isNotEmpty()) t.destructive else t.mutedForeground,
+                            style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        LanghuanIconButton(Icons.Rounded.Edit, "编辑书源「${source.name}」", { onBeginEdit(source.id) })
+                        LanghuanIconButton(Icons.Rounded.DeleteOutline, "删除书源", { pendingDelete = source })
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OnlineImportButtonV36(Icons.Rounded.ContentPaste, "剪贴板", Modifier.weight(1f), onPaste)
-                OnlineImportButtonV36(Icons.Rounded.Link, "网址", Modifier.weight(1f), onUrl)
-                OnlineImportButtonV36(Icons.Rounded.FolderOpen, "文件", Modifier.weight(1f), onFile)
+            item {
+                PaperSectionLabelV44("导入书源", Modifier.padding(top = 8.dp, bottom = 10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OnlineImportButtonV36(Icons.Rounded.ContentPaste, "剪贴板", Modifier.weight(1f), onPaste)
+                    OnlineImportButtonV36(Icons.Rounded.Link, "网址", Modifier.weight(1f), onUrl)
+                    OnlineImportButtonV36(Icons.Rounded.FolderOpen, "文件", Modifier.weight(1f), onFile)
+                }
+                Text("支持 Legado 静态网页规则。依赖脚本或 JSON 接口的规则会明确报出未支持项。", Modifier.padding(top = 12.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
             }
         }
-        if (state.sources.isNotEmpty()) item {
-            OutlinedTextField(sourceQuery, { sourceQuery = it }, Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                placeholder = { Text("搜索名称、分组或网站") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true,
-                shape = RoundedCornerShape(16.dp))
-        }
-        itemsIndexed(state.sources.filter { sourceQuery.isBlank() || it.name.contains(sourceQuery, true) || it.group.contains(sourceQuery, true) || it.baseUrl.contains(sourceQuery, true) }, key = { _, it -> it.id }) { _, source ->
-            Surface(Modifier.fillMaxWidth().animateItem(), shape = RoundedCornerShape(14.dp), color = t.card) {
-                Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(source.name, color = t.foreground, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(source.baseUrl, color = t.mutedForeground, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(listOfNotNull(source.group.takeIf { it.isNotBlank() }, if (source.enabled) "已启用" else "已停用", "网页规则").joinToString(" · "), Modifier.padding(top = 5.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
-                    }
-                    Switch(checked = source.enabled, onCheckedChange = { onToggle(source.id) })
-                    LanghuanIconButton(Icons.Rounded.Edit, "编辑书源「${source.name}」", { onBeginEdit(source.id) })
-                    LanghuanIconButton(Icons.Rounded.DeleteOutline, "删除书源", { pendingDelete = source })
-                }
+        Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).springClickV31(pressedScale = .98f, onClick = onAi),
+            shape = RoundedCornerShape(20.dp), color = t.primary, shadowElevation = 2.dp) {
+            Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(24.dp), tint = t.primaryForeground)
+                Text("AI 生成书源", Modifier.padding(start = 12.dp), color = t.primaryForeground, fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium)
             }
         }
     }
@@ -467,7 +562,12 @@ private fun OnlineCoverV36(url: String, title: String, modifier: Modifier) {
     val bitmap = rememberOnlineCoverV36(url)
     Box(modifier.clip(RoundedCornerShape(6.dp)).background(t.muted), contentAlignment = Alignment.Center) {
         if (bitmap != null) Image(bitmap, title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Text(title.take(2), color = t.mutedForeground, style = MaterialTheme.typography.labelMedium)
+        else {
+            Box(Modifier.fillMaxSize().padding(start = 5.dp).background(t.accent.copy(alpha = .6f)))
+            Box(Modifier.align(Alignment.CenterStart).width(3.dp).fillMaxSize().background(t.primary.copy(alpha = .12f)))
+            Text(title.take(12), Modifier.padding(12.dp), color = t.foreground, fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.titleSmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -572,7 +672,7 @@ private fun rememberOnlineCoverV36(url: String): androidx.compose.ui.graphics.Im
 }
 
 @Composable
-private fun OnlineAiSheetV36(
+internal fun OnlineAiSheetV36(
     state: OnlineBooksStateV36,
     onStart: (String, String) -> Unit,
     onCancel: () -> Unit,
@@ -582,24 +682,47 @@ private fun OnlineAiSheetV36(
     val t = LocalLanghuanUiTokens.current
     var site by rememberSaveable { mutableStateOf("") }
     var keyword by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 20.dp)) {
-        Text("AI 生成书源", color = t.foreground, style = MaterialTheme.typography.titleLarge)
-        Text(
-            "AI 会验证搜索、详情、目录、正文，并识别网站已有的分类与排行榜，检查发现分页。只添加网页中真实存在且通过验证的入口；动态 JS 书源会明确提示暂不支持。",
-            Modifier.padding(top = 4.dp, bottom = 12.dp),
-            color = t.mutedForeground,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        TextButton(onClick = onConfigureAi, enabled = !state.aiRunning) { Text("AI 服务与模型设置") }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text("AI 生成书源", Modifier.align(Alignment.CenterHorizontally), color = t.foreground,
+            fontFamily = FontFamily.Serif, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text("理解网站结构，生成规则并逐项实测", Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp),
+            color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
         val editable = !state.aiRunning && state.aiReport == null
-        OutlinedTextField(site, { site = it }, Modifier.fillMaxWidth(), label = { Text("网站链接") }, singleLine = true, enabled = editable)
-        OutlinedTextField(keyword, { keyword = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("该站能搜到的一本书名（用于测试）") }, singleLine = true, enabled = editable)
-
+        PaperCardV44(Modifier.fillMaxWidth()) {
+            PaperSectionLabelV44("网站地址")
+            OutlinedTextField(site, { site = it }, Modifier.fillMaxWidth().padding(top = 10.dp),
+                label = { Text("网站链接") }, placeholder = { Text("https://") }, singleLine = true,
+                enabled = editable, shape = RoundedCornerShape(12.dp), keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri))
+            OutlinedTextField(keyword, { keyword = it }, Modifier.fillMaxWidth().padding(top = 12.dp),
+                label = { Text("该站能搜到的一本书名（用于测试）") }, singleLine = true, enabled = editable, shape = RoundedCornerShape(12.dp))
+        }
+        PaperCardV44(Modifier.fillMaxWidth()) {
+            PaperSectionLabelV44("AI 配置")
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(28.dp), tint = t.primary)
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(state.aiProviderLabel ?: "尚未配置服务", color = t.foreground, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("使用已保存的服务与模型", Modifier.padding(top = 3.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = onConfigureAi, enabled = !state.aiRunning) { Text("设置", color = t.primary) }
+            }
+        }
+        PaperCardV44(Modifier.fillMaxWidth()) {
+            PaperSectionLabelV44("将验证的能力")
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("搜索", "分类", "榜单", "翻页").forEach { label ->
+                    Text(label, Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(t.accent).padding(vertical = 9.dp),
+                        color = t.accentForeground, style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+            }
+            Text("只保留网页中真实存在且验证通过的入口。网站没有的分类与榜单，不会编造。", Modifier.padding(top = 10.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+        }
         if (state.aiSteps.isNotEmpty()) {
-            Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            PaperCardV44(Modifier.fillMaxWidth()) {
+                PaperSectionLabelV44("预览与验证", Modifier.padding(bottom = 12.dp))
                 state.aiSteps.forEachIndexed { index, step ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+                    Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
+                        Box(Modifier.padding(top = 2.dp).size(22.dp), contentAlignment = Alignment.Center) {
                             when (step.ok) {
                                 true -> Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = t.success)
                                 false -> Icon(Icons.Rounded.Close, null, Modifier.size(18.dp), tint = t.destructive)
@@ -608,15 +731,25 @@ private fun OnlineAiSheetV36(
                         }
                         Column(Modifier.padding(start = 10.dp).weight(1f)) {
                             Text("${index + 1}. ${step.label}", color = t.foreground, style = MaterialTheme.typography.bodyMedium)
-                            if (step.detail.isNotBlank()) Text(step.detail, color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (step.detail.isNotBlank()) Text(
+                                step.detail,
+                                color = if (step.ok == false) t.destructive else t.mutedForeground,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = if (step.ok == false) Int.MAX_VALUE else 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
             }
         }
 
-        state.aiError?.let { error ->
-            Text(error, Modifier.padding(top = 12.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall)
+        // A failed step already owns its complete diagnosis. Keep a separate error only
+        // for input/configuration failures that happened before any matching step.
+        state.aiError?.takeUnless { error -> state.aiSteps.any { it.ok == false && it.detail == error } }?.let { error ->
+            Surface(Modifier.fillMaxWidth(), color = t.destructive.copy(alpha = .06f), shape = RoundedCornerShape(12.dp)) {
+                Text(error, Modifier.padding(14.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall)
+            }
         }
 
         state.aiReport?.let { report ->
@@ -667,3 +800,6 @@ private fun OnlineSheetButtonV36(label: String, primary: Boolean, modifier: Modi
         )
     }
 }
+
+private fun isRankingDiscoveryLabelV44(label: String): Boolean =
+    label.contains("榜") || label.contains("排行") || Regex("(?i)^(?:top|rank(?:ing)?)(?:\\b|[0-9_ -])").containsMatchIn(label.trim())
