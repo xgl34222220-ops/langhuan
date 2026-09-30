@@ -9,12 +9,11 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.appcompat.view.ContextThemeWrapper
+import android.view.ContextThemeWrapper
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
-import kotlinx.serialization.json.Json
 
 /**
  * Browser-backed fetcher for sites that reject HttpURLConnection (403/WAF/browser checks).
@@ -27,7 +26,6 @@ internal object BookSourceBrowserV38 {
     @Volatile private var appContext: Context? = null
     private val handler = Handler(Looper.getMainLooper())
     private val lock = ReentrantLock()
-    private val json = Json { ignoreUnknownKeys = true }
 
     fun install(context: Context) {
         appContext = context.applicationContext
@@ -160,7 +158,7 @@ internal object BookSourceBrowserV38 {
                 webView.evaluateJavascript(
                     "(document.documentElement.outerHTML).slice($start,$end)",
                 ) { raw ->
-                    val chunk = runCatching { json.decodeFromString<String>(raw) }.getOrDefault("")
+                    val chunk = runCatching { org.json.JSONTokener(raw).nextValue() as? String }.getOrNull().orEmpty()
                     out.append(chunk)
                     read(end)
                 }
