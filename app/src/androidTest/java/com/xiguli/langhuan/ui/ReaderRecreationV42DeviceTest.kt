@@ -75,6 +75,9 @@ class ReaderRecreationV42DeviceTest {
             rule.onAllNodesWithText("书城").assertCountEquals(0)
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.mainClock.advanceTimeBy(300)
+            // The reader opens its “更多” tab; the shelf button belongs to “目录”/“详情”.
+            rule.onNodeWithText("字号").assertIsDisplayed()
+            rule.onNodeWithText("目录").performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             rule.mainClock.advanceTimeBy(1000)
             val afterRecreate = ReaderProgressStoreV11.load(context, id, 1)
@@ -93,6 +96,9 @@ class ReaderRecreationV42DeviceTest {
             rule.onAllNodesWithText("书城").assertCountEquals(0)
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.mainClock.advanceTimeBy(300)
+            // The reader opens its “更多” tab; the shelf button belongs to “目录”/“详情”.
+            rule.onNodeWithText("字号").assertIsDisplayed()
+            rule.onNodeWithText("目录").performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             val rotated = ReaderProgressStoreV11.load(context, id, 1)
             assertTrue("Rotation lost the sentence anchor", rotated.textOffset > 0)
