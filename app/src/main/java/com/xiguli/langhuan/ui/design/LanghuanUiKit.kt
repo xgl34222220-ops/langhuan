@@ -1,5 +1,15 @@
 package com.xiguli.langhuan.ui.design
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -96,6 +106,7 @@ fun LanghuanCard(
     modifier: Modifier = Modifier,
     contentPadding: Dp = 20.dp,
     depth: Int = 1,
+    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
@@ -111,11 +122,14 @@ fun LanghuanCard(
         else -> 1.dp
     }
     val shape = RoundedCornerShape(radius)
+    val clickModifier = if (onClick != null) Modifier.springClickV31(pressedScale = .975f, onClick = onClick) else Modifier
     Box(
         modifier = modifier
+            .then(clickModifier)
             .shadow(shadow, shape, clip = false)
             .clip(shape)
-            .background(t.card),
+            .background(t.card)
+            .animateContentSize(LanghuanMotionV31.settle()),
     ) {
         Column(Modifier.padding(contentPadding)) { content() }
     }
@@ -177,24 +191,33 @@ fun LanghuanIconButton(
     selected: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val base = if (selected) t.accent else t.card
-    val foreground = if (selected) t.accentForeground else t.strong
+    val base by animateColorAsState(if (selected) t.accent else t.card, tween(LanghuanMotionV31.MEDIUM), label = "iconButtonBg")
+    val foreground by animateColorAsState(if (selected) t.accentForeground else t.strong, tween(LanghuanMotionV31.MEDIUM), label = "iconButtonFg")
+    val interaction = remember { MutableInteractionSource() }
+    val haptics = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .size(48.dp)
             .clip(CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
+                .pressScaleV31(interaction, .88f)
                 .size(44.dp)
                 .shadow(1.dp, CircleShape, clip = false)
                 .clip(CircleShape)
                 .background(base),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription, Modifier.size(21.dp), tint = foreground)
+            // Swapping glyphs (search ⇄ close) cross-fades instead of popping.
+            Crossfade(targetState = icon, animationSpec = tween(LanghuanMotionV31.FAST), label = "iconSwap") { glyph ->
+                Icon(glyph, contentDescription, Modifier.size(21.dp), tint = foreground)
+            }
         }
     }
 }
@@ -206,10 +229,12 @@ fun LanghuanBadge(
     accent: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val bg by animateColorAsState(if (accent) t.accent else t.muted, tween(LanghuanMotionV31.MEDIUM), label = "badgeBg")
+    val fg by animateColorAsState(if (accent) t.accentForeground else t.mutedForeground, tween(LanghuanMotionV31.MEDIUM), label = "badgeFg")
     Surface(
-        modifier = modifier,
-        color = if (accent) t.accent else t.muted,
-        contentColor = if (accent) t.accentForeground else t.mutedForeground,
+        modifier = modifier.animateContentSize(LanghuanMotionV31.settle()),
+        color = bg,
+        contentColor = fg,
         shape = RoundedCornerShape(999.dp),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -233,16 +258,22 @@ fun LanghuanMenuRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val rowBg by animateColorAsState(if (pressed) t.muted else Color.Transparent, tween(LanghuanMotionV31.FAST), label = "menuRowBg")
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(t.radiusMd))
+            .background(rowBg)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val iconShape = RoundedCornerShape(t.radiusSm)
         Box(
             modifier = Modifier
+                .pressScaleV31(interaction, .9f)
                 .size(40.dp)
                 .shadow(1.dp, iconShape, clip = false)
                 .clip(iconShape)
