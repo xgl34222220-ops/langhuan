@@ -78,6 +78,7 @@ class ReaderEditionV41Test {
     @Test fun continuousFullPageScreenshotsUseTheProductionRenderer() {
         val selected = mutableIntStateOf(1)
         rule.setContent {
+            ReaderWindowSessionV27(true)
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
                 val geometry = remember(constraints, density.density) {

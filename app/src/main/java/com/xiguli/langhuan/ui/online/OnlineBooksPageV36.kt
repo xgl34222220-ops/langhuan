@@ -69,8 +69,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -384,37 +382,22 @@ private fun OnlineSourcesTabV36(
         dismissButton = { TextButton(onClick = { exportConfirm = false }) { Text("取消") } }, containerColor = t.card,
     )
     pendingEdit?.let { source ->
-        val editScope = rememberCoroutineScope()
         val raw = state.sourceEditDraft
-        var validation by remember(source.id) { mutableStateOf<String?>(null) }
-        var saving by remember(source.id) { mutableStateOf(false) }
+        val validation = state.sourceEditError
+        val saving = state.sourceEditSaving
         AlertDialog(
             onDismissRequest = onCancelEdit, title = { Text("编辑「${source.name}」") },
             text = {
                 Column {
                     Text("保存只校验格式，网站可用性请返回书城实际搜索确认。", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(raw, { onChangeDraft(it); validation = null }, Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 340.dp), label = { Text("书源 JSON") }, enabled = !saving)
+                    OutlinedTextField(raw, onChangeDraft, Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 340.dp), label = { Text("书源 JSON") }, enabled = !saving)
                     validation?.let { Text(it, color = t.destructive, style = MaterialTheme.typography.bodySmall) }
                 }
             },
             confirmButton = {
-                TextButton(enabled = !saving, onClick = {
-                    if (raw.length > 262144) validation = "单个书源规则不能超过 256 KiB"
-                    else {
-                        val submitted = raw
-                        saving = true
-                        editScope.launch {
-                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                                runCatching { parseBookSourcesV36(submitted) }
-                            }
-                            val parsed = result.getOrNull()
-                            if (parsed == null || parsed.sources.size != 1 || parsed.skipped.isNotEmpty()) {
-                                validation = result.exceptionOrNull()?.message ?: "请提供一个有效的静态网页书源"
-                            } else { onEdit(source.id, submitted) }
-                            saving = false
-                        }
-                    }
-                }) { Text(if (saving) "校验中…" else "保存规则") }
+                TextButton(enabled = !saving, onClick = { onEdit(source.id, raw) }) {
+                    Text(if (saving) "校验中…" else "保存规则")
+                }
             },
             dismissButton = { TextButton(onClick = onCancelEdit) { Text("取消") } }, containerColor = t.card,
         )

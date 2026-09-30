@@ -71,6 +71,8 @@ internal data class OnlineBooksStateV36(
     val sources: List<BookSourceV36> = emptyList(),
     val sourceEditId: String? = null,
     val sourceEditDraft: String = "",
+    val sourceEditSaving: Boolean = false,
+    val sourceEditError: String? = null,
     val query: String = "",
     val discoveryLabel: String? = null,
     val searching: Boolean = false,
@@ -418,24 +420,26 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     fun beginSourceEdit(id: String) {
         val source = _state.value.sources.firstOrNull { it.id == id } ?: return
         sourceEditJob?.cancel()
-        _state.update { it.copy(sourceEditId = id, sourceEditDraft = BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)) }
+        _state.update { it.copy(sourceEditId = id, sourceEditSaving = false, sourceEditError = null, sourceEditDraft = BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)) }
     }
 
     fun updateSourceEditDraft(raw: String) {
+        if (_state.value.sourceEditSaving) return
         if (raw.length > 262144) {
-            _state.update { it.copy(error = "单个书源编辑草稿不能超过 256 KiB") }
+            _state.update { it.copy(sourceEditError = "单个书源编辑草稿不能超过 256 KiB") }
             return
         }
-        _state.update { it.copy(sourceEditDraft = raw) }
+        _state.update { it.copy(sourceEditDraft = raw, sourceEditError = null) }
     }
 
     fun cancelSourceEdit() {
         sourceEditJob?.cancel()
-        _state.update { it.copy(sourceEditId = null, sourceEditDraft = "") }
+        _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null) }
     }
 
     fun editSource(id: String, raw: String) {
-        if (_state.value.sourceEditId != id) return
+        if (_state.value.sourceEditId != id || _state.value.sourceEditSaving) return
+        _state.update { it.copy(sourceEditSaving = true, sourceEditError = null) }
         sourceEditJob?.cancel()
         sourceEditJob = viewModelScope.launch {
             sourceAttemptV36 {
@@ -445,8 +449,8 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 val edited = result.sources.single().copy(id = id)
                 require(_state.value.sourceEditId == id && _state.value.sources.any { it.id == id }) { "书源编辑已取消或原书源已删除" }
                 updateSources { list -> list.map { if (it.id == id) edited else it } }
-                _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", message = "已更新书源「${edited.name}」") }
-            }.onFailure { error -> _state.update { it.copy(error = error.message ?: "书源编辑失败") } }
+                _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null, message = "已更新书源「${edited.name}」") }
+            }.onFailure { error -> _state.update { it.copy(sourceEditSaving = false, sourceEditError = error.message ?: "书源编辑失败") } }
         }
     }
 }
