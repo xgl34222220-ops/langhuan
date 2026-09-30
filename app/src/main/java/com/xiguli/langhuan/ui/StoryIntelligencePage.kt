@@ -63,7 +63,7 @@ fun StoryIntelligencePage(state: StudioUiState, onClose: () -> Unit) {
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().navigationBarsPadding(),
                 contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 30.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
