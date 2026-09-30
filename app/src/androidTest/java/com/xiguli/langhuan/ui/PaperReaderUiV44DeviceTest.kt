@@ -62,6 +62,9 @@ class PaperReaderUiV44DeviceTest {
         saveFrame("v44-ai-http-error-test-data")
         rule.onNodeWithText("重试").performClick()
         assertEquals(1, starts.get())
+        rule.onNodeWithText("AI 生成书源").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("网站链接").assertIsDisplayed()
+        rule.onNodeWithText("网站链接").assertTextContains("http://example.com/")
     }
 
     @Test fun leavingNightReaderRestoresTheCurrentPaperRouteBars() {

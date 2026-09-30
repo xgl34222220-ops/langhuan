@@ -33,12 +33,14 @@ class ReaderEditionV41Test {
         rule.waitForIdle()
         android.os.SystemClock.sleep(400)
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        // Capture the actual Compose root's surface, not another emulator window or launcher.
-        // The last root is the modal's own surface when a bottom sheet is open.
-        val captureRoot = if (name == "v44-ai-source") {
-            rule.onNode(isRoot() and hasAnyDescendant(hasText("网站链接")), useUnmergedTree = true)
-        } else rule.onAllNodes(isRoot(), useUnmergedTree = true).onLast()
-        val bitmap = captureRoot.captureToImage().asAndroidBitmap()
+        // A Compose dialog owns another Window: captureToImage was copying the Activity
+        // surface even after locating the dialog semantics root. Use the compositor for it.
+        val bitmap = if (name == "v44-ai-source") {
+            rule.onNodeWithText("网站链接").assertIsDisplayed()
+            val packageName = automation.rootInActiveWindow?.packageName?.toString()
+            assertEquals("AI dialog must be the app's active window", rule.activity.packageName, packageName)
+            automation.takeScreenshot() ?: error("Unable to capture the active AI window")
+        } else rule.onAllNodes(isRoot(), useUnmergedTree = true).onLast().captureToImage().asAndroidBitmap()
         var shelfInk: Int? = null
         if (name == "v44-shelf") {
             var ink = 0
@@ -284,8 +286,15 @@ class ReaderEditionV41Test {
         saveFrame("v44-sources")
         rule.onNodeWithText("AI 生成书源").performClick()
         rule.onNodeWithText("网站链接").assertIsDisplayed()
+        rule.onNodeWithText("开始生成").performScrollTo().assertIsDisplayed()
+        val aiWindow = isRoot() and hasAnyDescendant(hasText("网站链接"))
+        rule.onNode(hasText("AI 生成书源") and hasAnyAncestor(aiWindow), useUnmergedTree = true)
+            .performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("网站链接").assertIsDisplayed()
         saveFrame("v44-ai-source")
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.onNodeWithText("返回书城").assertIsDisplayed()
+        rule.onAllNodesWithText("网站链接").assertCountEquals(0)
         rule.onAllNodesWithText("我的").onLast().performClick()
         rule.onNodeWithText("阅读，保持简单").assertIsDisplayed()
         saveFrame("v44-profile")
