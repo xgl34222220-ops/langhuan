@@ -107,7 +107,7 @@ data class NewBookProposal(
     val decisionLedger: String = "",
 )
 
-enum class CreationRetryTarget { CHAT, PROPOSAL, BLUEPRINT }
+enum class CreationRetryTarget { CHAT, PROPOSAL, BLUEPRINT, CREATE }
 
 data class NewBookConversationState(
     val messages: List<CreationChatMessage> = listOf(
@@ -585,8 +585,17 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
                     draftStore.clear()
                 }
                 .onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
                     emitRun(RunStage.CREATE_BOOK, RunStatus.FAILED, error.message.orEmpty())
-                    _state.update { it.copy(isBusy = false, busyLabel = "", error = error.message ?: "正式建书失败") }
+                    // Blueprint stays in state; the retry button re-runs only this last step.
+                    _state.update {
+                        it.copy(
+                            isBusy = false,
+                            busyLabel = "",
+                            error = "正式建书失败：${error.message?.take(200) ?: "写入项目时出错"}。蓝图已保留，可直接重试这一步。",
+                            retryTarget = CreationRetryTarget.CREATE,
+                        )
+                    }
                 }
         }
     }
@@ -602,6 +611,7 @@ class NewBookConversationViewModel(application: Application) : AndroidViewModel(
             }
             CreationRetryTarget.PROPOSAL -> syncConversationProposal()
             CreationRetryTarget.BLUEPRINT -> generateFoundation(regenerate = snapshot.blueprintDirty || snapshot.foundationStage >= 3)
+            CreationRetryTarget.CREATE -> createCurrentFoundation()
             null -> Unit
         }
     }
@@ -866,6 +876,8 @@ private fun friendlyAiError(error: Throwable, fallback: String): String {
     return when {
         localSocketTimeout -> "$fallback：等待模型返回超过当前网络容错时间。当前会谈与蓝图断点已保留，可直接重试；连续出现时请切换更稳定的模型或中转站。"
         timeoutText || disconnectText -> "$fallback：AI 服务、中转站或当前网络连接中断：${message.take(260)}"
+        causes.any { it is com.xiguli.langhuan.engine.AiStructuredOutputException } ->
+            "$fallback：模型连续几次给出的蓝图都不完整（多半是输出被长度上限截断，已自动重试并要求精简）。已完成的阶段都保存了断点，点“继续蓝图”会从断点接着跑；反复出现时换一个输出上限更大的模型。"
         message.contains("没有找到可读文本字段") || message.contains("无法解析的响应格式") || message.contains("成功流，但没有可读文本字段") ->
             "$fallback：模型接口已经连通，但这一轮没有给出可读正文。琅嬛已兼容 content、content 数组、text、output_text、reasoning_content 和 Responses API；可直接点“重试上一轮”，连续出现再切换模型。"
         else -> message.ifBlank { fallback }
