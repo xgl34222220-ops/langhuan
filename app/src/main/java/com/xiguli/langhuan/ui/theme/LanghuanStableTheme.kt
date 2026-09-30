@@ -30,10 +30,10 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
  * and glass reserved for navigation/floating layers. Reader body typography remains independent.
  */
 private val LanghuanLightColors = lightColorScheme(
-    primary = Color(0xFF315F8C),
+    primary = Color(0xFF2F7BF6),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD7E8FA),
-    onPrimaryContainer = Color(0xFF153451),
+    primaryContainer = Color(0xFFE3EEFF),
+    onPrimaryContainer = Color(0xFF0F4DB8),
     secondary = Color(0xFF5A6470),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFE5EAF0),
@@ -42,28 +42,28 @@ private val LanghuanLightColors = lightColorScheme(
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFECDDFA),
     onTertiaryContainer = Color(0xFF342843),
-    background = Color(0xFFF4F6FA),
-    onBackground = Color(0xFF171A1F),
+    background = Color(0xFFF6F7F9),
+    onBackground = Color(0xFF16181C),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF171A1F),
+    onSurface = Color(0xFF16181C),
     surfaceVariant = Color(0xFFE9EDF3),
-    onSurfaceVariant = Color(0xFF646A72),
+    onSurfaceVariant = Color(0xFF7A808A),
     surfaceContainerLowest = Color(0xFFFFFFFF),
     surfaceContainerLow = Color(0xFFFBFCFE),
-    surfaceContainer = Color(0xFFF0F3F7),
+    surfaceContainer = Color(0xFFF0F2F5),
     surfaceContainerHigh = Color(0xFFE9EDF2),
     surfaceContainerHighest = Color(0xFFE2E7ED),
     outline = Color(0xFFC8CED6),
-    outlineVariant = Color(0xFFDDE2E8),
+    outlineVariant = Color(0xFFE6E8EC),
     error = Color(0xFFBA1A1A),
     onError = Color.White,
 )
 
 private val LanghuanDarkColors = darkColorScheme(
-    primary = Color(0xFFA4C9F2),
-    onPrimary = Color(0xFF073353),
-    primaryContainer = Color(0xFF244B6C),
-    onPrimaryContainer = Color(0xFFD5E8FC),
+    primary = Color(0xFF5B9CFF),
+    onPrimary = Color(0xFF002C6E),
+    primaryContainer = Color(0xFF1B355E),
+    onPrimaryContainer = Color(0xFFD6E4FF),
     secondary = Color(0xFFC3CAD2),
     onSecondary = Color(0xFF2B3036),
     secondaryContainer = Color(0xFF3A4148),
@@ -72,9 +72,9 @@ private val LanghuanDarkColors = darkColorScheme(
     onTertiary = Color(0xFF3C2C4C),
     tertiaryContainer = Color(0xFF544162),
     onTertiaryContainer = Color(0xFFEEDCF8),
-    background = Color(0xFF101318),
+    background = Color(0xFF111214),
     onBackground = Color(0xFFE5E8EC),
-    surface = Color(0xFF191C21),
+    surface = Color(0xFF1A1B1E),
     onSurface = Color(0xFFE5E8EC),
     surfaceVariant = Color(0xFF292D33),
     onSurfaceVariant = Color(0xFFB8BEC6),
@@ -89,13 +89,13 @@ private val LanghuanDarkColors = darkColorScheme(
     onError = Color(0xFF690005),
 )
 
-/** LuoShu / MIUIX geometry: 7 / 11 / 18 / 24 / 30. */
+/** Reader-first geometry: tighter radii so book covers and pages stay the visual focus. */
 private val LanghuanShapes = Shapes(
-    extraSmall = RoundedCornerShape(7.dp),
-    small = RoundedCornerShape(11.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(30.dp),
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(26.dp),
 )
 
 private val UiSans = FontFamily.SansSerif
@@ -199,7 +199,9 @@ private val LanghuanTypography = Typography(
 
 @Composable
 fun LanghuanStableTheme(
-    dynamicColor: Boolean = true,
+    // A fixed brand palette keeps shelf, reader menu and creation pages visually consistent;
+    // wallpaper-derived colours made every device look like a different app.
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
@@ -249,10 +251,10 @@ fun LanghuanStableTheme(
         warningForeground = if (dark) Color(0xFF4A2C00) else Color.White,
         ring = colors.primary.copy(alpha = .48f),
         warmSurface = colors.surfaceContainerLow,
-        radiusSm = 11.dp,
-        radiusMd = 18.dp,
-        radiusLg = 24.dp,
-        radiusXl = 30.dp,
+        radiusSm = 10.dp,
+        radiusMd = 14.dp,
+        radiusLg = 20.dp,
+        radiusXl = 26.dp,
     )
 
     MaterialTheme(
