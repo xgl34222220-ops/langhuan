@@ -396,7 +396,7 @@ class StoryProjectManager(context: Context) {
         chapterStateDao.delete(novelId, last.order)
         db.openHelper.writableDatabase.execSQL(
             "DELETE FROM chapter_versions WHERE novelId = ? AND chapterNumber = ?",
-            arrayOf(novelId, last.order),
+            arrayOf<Any?>(novelId, last.order),
         )
         db.openHelper.writableDatabase.execSQL(
             "DELETE FROM memory_chunks WHERE novelId = ? AND sourceType = 'CHAPTER' AND chapterNumber = ?",
