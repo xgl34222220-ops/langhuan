@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 110
-        versionName = "0.29.3-alpha31-motion-round3"
+        versionCode = 111
+        versionName = "0.29.4-alpha32-shelf-open-hotfix"
     }
 
     buildFeatures { compose = true }
