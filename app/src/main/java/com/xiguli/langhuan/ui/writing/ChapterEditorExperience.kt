@@ -1,6 +1,23 @@
 package com.xiguli.langhuan.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
+import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.LanghuanSkeletonV31
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -95,9 +112,10 @@ fun ChapterEditorExperience(
     ) { inner ->
         if (state.isLoading || !state.ready) {
             Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CircularProgressIndicator(strokeWidth = 2.dp)
-                    Text("正在载入正文……", color = t.mutedForeground)
+                Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LanghuanSkeletonV31(Modifier.fillMaxWidth().height(56.dp), RoundedCornerShape(t.radiusMd))
+                    LanghuanSkeletonV31(Modifier.fillMaxWidth().weight(1f), RoundedCornerShape(t.radiusLg))
+                    LanghuanMotionStatus("正在载入正文", Modifier.align(Alignment.CenterHorizontally))
                 }
             }
             return@Scaffold
@@ -121,6 +139,12 @@ fun ChapterEditorExperience(
         val selectionEnd = max(editor.selection.start, editor.selection.end).coerceIn(selectionStart, editor.text.length)
         val selectedText = editor.text.substring(selectionStart, selectionEnd)
 
+        // Switching chapters fades the new text in instead of swapping it in one frame.
+        val chapterFade = remember { Animatable(1f) }
+        LaunchedEffect(draft.id) {
+            chapterFade.snapTo(.35f)
+            chapterFade.animateTo(1f, tween(LanghuanMotionV31.SLOW))
+        }
         Column(Modifier.fillMaxSize().padding(inner)) {
             Surface(
                 color = t.card,
@@ -162,7 +186,7 @@ fun ChapterEditorExperience(
             }
 
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+                Modifier.weight(1f).graphicsLayer { alpha = chapterFade.value }.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 OutlinedTextField(
@@ -205,7 +229,11 @@ fun ChapterEditorExperience(
                     }
                 }
 
-                if (selectedText.isNotBlank()) {
+                AnimatedVisibility(
+                    visible = selectedText.isNotBlank(),
+                    enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(LanghuanMotionV31.MEDIUM)),
+                    exit = shrinkVertically(tween(LanghuanMotionV31.MEDIUM)) + fadeOut(tween(LanghuanMotionV31.FAST)),
+                ) {
                     Surface(
                         shape = RoundedCornerShape(t.radiusLg),
                         color = t.warmSurface,
@@ -273,11 +301,24 @@ private fun EditorSaveState(state: ChapterEditorUiState) {
         state.dirty -> "待自动保存" to t.accent
         else -> "已保存" to t.success
     }
-    Surface(shape = RoundedCornerShape(99.dp), color = color.copy(alpha = .10f)) {
-        Row(Modifier.padding(horizontal = 9.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (state.isSaving) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp, color = color)
-            else Icon(if (state.dirty) Icons.Rounded.Edit else Icons.Rounded.Check, null, Modifier.size(13.dp), tint = color)
-            Text(label, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelSmall, color = color)
+    val tone by animateColorAsState(color, tween(LanghuanMotionV31.MEDIUM), label = "saveTone")
+    Surface(shape = RoundedCornerShape(99.dp), color = tone.copy(alpha = .10f), modifier = Modifier.animateContentSize(LanghuanMotionV31.settle())) {
+        AnimatedContent(
+            targetState = label,
+            transitionSpec = {
+                (fadeIn(tween(LanghuanMotionV31.MEDIUM)) + slideInVertically(tween(LanghuanMotionV31.MEDIUM)) { it / 2 }) togetherWith
+                    (fadeOut(tween(LanghuanMotionV31.FAST)) + slideOutVertically(tween(LanghuanMotionV31.FAST)) { -it / 2 })
+            },
+            label = "saveState",
+        ) { shown ->
+            Row(Modifier.padding(horizontal = 9.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                when (shown) {
+                    "保存中" -> CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp, color = tone)
+                    "待自动保存" -> Icon(Icons.Rounded.Edit, null, Modifier.size(13.dp), tint = tone)
+                    else -> Icon(Icons.Rounded.Check, null, Modifier.size(13.dp), tint = tone)
+                }
+                Text(shown, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelSmall, color = tone)
+            }
         }
     }
 }
