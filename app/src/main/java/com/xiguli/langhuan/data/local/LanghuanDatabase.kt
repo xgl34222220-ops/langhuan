@@ -249,6 +249,7 @@ abstract class LanghuanDatabase : RoomDatabase() {
                 LanghuanDatabase::class.java,
                 "langhuan.db",
             )
+                .openHelperFactory(PreservingSQLiteOpenHelperFactory)
                 .addMigrations(MIGRATION_1_2)
                 .build()
                 .also { instance = it }
