@@ -74,7 +74,7 @@ class StoryProjectManager(context: Context) {
             val storedSnapshot = ProjectJson.decodeFromString(StorySnapshot.serializer(), entity.snapshotJson)
             val fallbackDraft = ProjectJson.decodeFromString(ChapterDraft.serializer(), entity.draftJson)
             ensureChapterState(fallbackDraft, entity.updatedAt)
-            val selected = chapterStateDao.get(id, storedSnapshot.novel.currentChapter)?.decodeDraftOrNull() ?: fallbackDraft
+            val selected = loadChapterDraftCursorSafe(id, storedSnapshot.novel.currentChapter) ?: fallbackDraft
             val snapshot = normalizeSnapshot(storedSnapshot, selected.chapterNumber)
             if (snapshot != storedSnapshot || selected != fallbackDraft) {
                 persistCurrent(snapshot, selected, System.currentTimeMillis())
@@ -230,7 +230,13 @@ class StoryProjectManager(context: Context) {
     }
     suspend fun chapterDrafts(novelId: String): List<ChapterDraft> {
         val loaded = loadStory(novelId) ?: return emptyList()
-        val existing = chapterStateDao.allForNovel(novelId).mapNotNull { it.decodeDraftOrNull() }.associateBy { it.chapterNumber }.toMutableMap()
+
+        // Do not SELECT * for the whole book: one giant imported chapter can exceed CursorWindow.
+        val existing = linkedMapOf<Int, ChapterDraft>()
+        chapterStateDao.chapterNumbers(novelId).forEach { number ->
+            loadChapterDraftCursorSafe(novelId, number)?.let { existing[number] = it }
+        }
+
         val nodes = effectiveOutline(loaded.snapshot).filter { it.level == OutlineLevel.CHAPTER }.sortedBy { it.order }
         val now = System.currentTimeMillis()
         nodes.forEach { node ->
@@ -325,9 +331,38 @@ class StoryProjectManager(context: Context) {
     }
 
     private suspend fun ensureChapterState(draft: ChapterDraft, now: Long) {
-        if (chapterStateDao.get(draft.novelId, draft.chapterNumber) == null) {
+        if (chapterStateDao.draftJsonLength(draft.novelId, draft.chapterNumber) == null) {
             chapterStateDao.upsert(draft.toEntity(now))
         }
+    }
+
+    /**
+     * CursorWindow-safe chapter loader.
+     *
+     * SQLite's CursorWindow has a per-row capacity. Imported novels can contain a chapter whose
+     * serialized draftJson is larger than that capacity, so selecting the whole row crashes before
+     * Room can deserialize it. Reading substr() slices keeps every cursor row small.
+     */
+    private suspend fun loadChapterDraftCursorSafe(novelId: String, chapterNumber: Int): ChapterDraft? {
+        val totalChars = chapterStateDao.draftJsonLength(novelId, chapterNumber) ?: return null
+        if (totalChars <= 0) return null
+
+        val json = StringBuilder(totalChars.coerceAtMost(2_000_000))
+        var start = 1 // SQLite substr() is 1-based.
+        while (start <= totalChars) {
+            val chunk = chapterStateDao.draftJsonChunk(
+                novelId = novelId,
+                chapterNumber = chapterNumber,
+                start = start,
+                length = DRAFT_JSON_CHUNK_CHARS,
+            ) ?: return null
+            if (chunk.isEmpty()) break
+            json.append(chunk)
+            start += DRAFT_JSON_CHUNK_CHARS
+        }
+        return runCatching {
+            ProjectJson.decodeFromString(ChapterDraft.serializer(), json.toString())
+        }.getOrNull()
     }
 
     private suspend fun rebuildStructuredMemory(snapshot: StorySnapshot, now: Long) {
@@ -458,5 +493,7 @@ class StoryProjectManager(context: Context) {
 
     companion object {
         private const val KEY_ACTIVE_STORY = "active_story_id"
+        // Keep each SQLite substr() result comfortably below CursorWindow's per-row ceiling.
+        private const val DRAFT_JSON_CHUNK_CHARS = 96 * 1024
     }
 }
