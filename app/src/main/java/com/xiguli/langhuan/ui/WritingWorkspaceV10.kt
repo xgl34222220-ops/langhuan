@@ -46,20 +46,12 @@ fun WritingWorkspaceV10(
         if (flow.ready) healthVm.load(novelId, force = true)
     }
 
-    Box {
-        WritingWorkspaceLuoShuV11(
-            novelId = novelId,
-            viewModel = viewModel,
-            onClose = onClose,
-            onEditChapter = onEditChapter,
-        )
-
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(top = 104.dp, end = 12.dp),
-        ) {
+    WritingWorkspaceLuoShuV11(
+        novelId = novelId,
+        viewModel = viewModel,
+        onClose = onClose,
+        onEditChapter = onEditChapter,
+        statusAccessory = {
             StoryGraphHealthPillV10(
                 state = health,
                 onClick = {
@@ -67,8 +59,8 @@ fun WritingWorkspaceV10(
                     showHealth = true
                 },
             )
-        }
-    }
+        },
+    )
 
     if (showHealth) {
         StoryGraphHealthSheetV10(
