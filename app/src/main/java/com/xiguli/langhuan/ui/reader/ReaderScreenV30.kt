@@ -234,6 +234,10 @@ internal fun ReaderSessionV30(
     }
     var pendingAnchor by remember { mutableStateOf<Int?>(initialAnchor) }
     val anchorHolder = remember { intArrayOf(initialAnchor) }
+    // Reflow may place this sentence in the middle of a different page. Keep the sentence
+    // offset until an actual navigation changes the page, otherwise each transient window
+    // size on Activity recreation can round backwards to another page start.
+    val appliedPageHolder = remember { arrayOfNulls<Pair<String, Int>>(1) }
 
     // ---- Geometry & typography ------------------------------------------------------------
     var viewport by remember { mutableStateOf(IntSize.Zero) }
@@ -323,11 +327,18 @@ internal fun ReaderSessionV30(
     }
     val shownPage = shownLayout?.pages?.getOrNull(shownPageIndex)
     SideEffect {
-        if (currentLayout != null && pendingAnchor != null) {
-            pageIndex = shownPageIndex
-            pendingAnchor = null
+        if (currentLayout != null && shownPage != null && currentChapter != null) {
+            val position = currentChapter.id to shownPageIndex
+            val requestedAnchor = pendingAnchor
+            if (requestedAnchor != null) {
+                anchorHolder[0] = requestedAnchor.coerceIn(0, currentLayout.textLength)
+                pageIndex = shownPageIndex
+                pendingAnchor = null
+            } else if (appliedPageHolder[0] != position) {
+                anchorHolder[0] = shownPage.startOffset
+            }
+            appliedPageHolder[0] = position
         }
-        if (currentLayout != null && shownPage != null) anchorHolder[0] = shownPage.startOffset
     }
 
     // Follow chapter changes that come from outside the reader (root restore, editor return).
@@ -384,7 +395,13 @@ internal fun ReaderSessionV30(
         // the sentence anchor then, rather than dropping the last page turn from the save.
         val textLength = layout?.textLength ?: previousLayout?.textLength
             ?: readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content)).length
-        val offset = (page?.startOffset ?: pendingAnchor ?: anchorHolder[0]).coerceIn(0, textLength)
+        val position = chapter.id to pageIndex
+        val offset = (pendingAnchor ?: when {
+            // A pause can precede SideEffect after a real page turn; save that new page now.
+            page != null && appliedPageHolder[0] != position -> page.startOffset
+            appliedPageHolder[0]?.first != chapter.id -> 0
+            else -> anchorHolder[0]
+        }).coerceIn(0, textLength)
         val savedPage = page?.index ?: (layout ?: previousLayout)?.pageForOffset(offset) ?: 0
         ReaderProgressStoreV11.save(
             context,
