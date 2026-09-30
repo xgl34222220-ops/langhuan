@@ -1,5 +1,8 @@
 package com.xiguli.langhuan.ui
 
+import com.xiguli.langhuan.ui.design.enterOnceV31
+import com.xiguli.langhuan.ui.design.LanghuanEnterRegistryV31
+import com.xiguli.langhuan.ui.design.LanghuanCaretV31
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -103,6 +106,8 @@ fun CreationChatV4(
                 busy = state.isBusy,
             )
 
+            // Messages already present when the page opens are history, not news: no entrance.
+            val enter = remember { LanghuanEnterRegistryV31().also { r -> state.messages.indices.forEach { r.markSeenV31("msg-$it") } } }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -114,10 +119,13 @@ fun CreationChatV4(
                 }
 
                 itemsIndexed(state.messages) { index, message ->
-                    CreationMessageV4(
-                        message = message,
-                        isFirstAssistant = index == 0 && message.role != "user" && !hasUser,
-                    )
+                    // Only new messages animate; history restored on open appears at once.
+                    Box(Modifier.enterOnceV31(enter, "msg-$index", 0, rise = if (message.role == "user") 10.dp else 16.dp)) {
+                        CreationMessageV4(
+                            message = message,
+                            isFirstAssistant = index == 0 && message.role != "user" && !hasUser,
+                        )
+                    }
                 }
 
                 state.lastRouteDecision?.let { route ->
@@ -327,6 +335,7 @@ private fun CreationAssistantTextV4(text: String, streaming: Boolean) {
             )
             if (streaming) {
                 Row(Modifier.padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    LanghuanCaretV31(t.primary, Modifier.padding(end = 8.dp))
                     LanghuanOrb(active = true, size = 18.dp)
                     Text(
                         "正在生成",
