@@ -6,6 +6,7 @@ import com.xiguli.langhuan.data.local.ChapterVersionEntity
 import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.data.local.MemoryChunkEntity
 import com.xiguli.langhuan.data.local.StoryStateEntity
+import com.xiguli.langhuan.data.local.StoryStateHeader
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.Novel
 import com.xiguli.langhuan.domain.NovelStatus
@@ -69,11 +70,11 @@ class StoryProjectManager(context: Context) {
     }
 
     suspend fun loadStory(id: String): PersistedStory? {
-        val entity = storyDao.get(id) ?: return null
+        val header = storyDao.getHeader(id) ?: return null
         return runCatching {
-            val storedSnapshot = ProjectJson.decodeFromString(StorySnapshot.serializer(), entity.snapshotJson)
-            val fallbackDraft = ProjectJson.decodeFromString(ChapterDraft.serializer(), entity.draftJson)
-            ensureChapterState(fallbackDraft, entity.updatedAt)
+            val storedSnapshot = ProjectJson.decodeFromString(StorySnapshot.serializer(), header.snapshotJson)
+            val fallbackDraft = loadStoryDraftCursorSafe(id) ?: return@runCatching null
+            ensureChapterState(fallbackDraft, header.updatedAt)
             val selected = loadChapterDraftCursorSafe(id, storedSnapshot.novel.currentChapter) ?: fallbackDraft
             val snapshot = normalizeSnapshot(storedSnapshot, selected.chapterNumber)
             if (snapshot != storedSnapshot || selected != fallbackDraft) {
@@ -336,6 +337,27 @@ class StoryProjectManager(context: Context) {
         }
     }
 
+    private suspend fun loadStoryDraftCursorSafe(novelId: String): ChapterDraft? {
+        val totalChars = storyDao.draftJsonLength(novelId) ?: return null
+        if (totalChars <= 0) return null
+
+        val json = StringBuilder(totalChars.coerceAtMost(2_000_000))
+        var start = 1
+        while (start <= totalChars) {
+            val chunk = storyDao.draftJsonChunk(
+                novelId = novelId,
+                start = start,
+                length = DRAFT_JSON_CHUNK_CHARS,
+            ) ?: return null
+            if (chunk.isEmpty()) break
+            json.append(chunk)
+            start += DRAFT_JSON_CHUNK_CHARS
+        }
+        return runCatching {
+            ProjectJson.decodeFromString(ChapterDraft.serializer(), json.toString())
+        }.getOrNull()
+    }
+
     /**
      * CursorWindow-safe chapter loader.
      *
@@ -477,7 +499,7 @@ class StoryProjectManager(context: Context) {
         ProjectJson.decodeFromString(ChapterDraft.serializer(), draftJson)
     }.getOrNull()
 
-    private fun StoryStateEntity.toShelfItemOrNull(): StoryShelfItem? = runCatching {
+    private fun StoryStateHeader.toShelfItemOrNull(): StoryShelfItem? = runCatching {
         val snapshot = ProjectJson.decodeFromString(StorySnapshot.serializer(), snapshotJson)
         StoryShelfItem(
             id = novelId,
