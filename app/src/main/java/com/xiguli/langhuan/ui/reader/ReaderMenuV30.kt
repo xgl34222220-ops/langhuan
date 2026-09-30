@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -182,6 +183,7 @@ internal fun ReaderMenuV30(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .offset { IntOffset(0, dragY.value.roundToInt()) },
                 color = theme.sheet,
                 shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
