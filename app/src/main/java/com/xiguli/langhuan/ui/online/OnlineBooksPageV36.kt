@@ -38,6 +38,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -97,6 +99,7 @@ internal fun OnlineBooksPageV36(
     var tab by rememberSaveable { mutableStateOf(if (state.sources.isEmpty()) 1 else 0) }
     var query by rememberSaveable { mutableStateOf(state.query) }
     var urlDialog by remember { mutableStateOf(false) }
+    var aiSheet by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::importFromFile) }
 
@@ -127,6 +130,7 @@ internal fun OnlineBooksPageV36(
                     onFile = { fileLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                     onToggle = viewModel::toggleSource,
                     onDelete = viewModel::deleteSource,
+                    onAi = { aiSheet = true },
                 )
             }
         }
@@ -145,6 +149,21 @@ internal fun OnlineBooksPageV36(
     state.detail?.let { detail ->
         ModalBottomSheet(onDismissRequest = { viewModel.closeDetail() }, containerColor = t.card, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)) {
             OnlineDetailSheetV36(detail, state.detailLoading, state.download, onAdd = viewModel::addToShelf, onCancel = viewModel::cancelDownload)
+        }
+    }
+
+    if (aiSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { if (!state.aiRunning) { aiSheet = false; viewModel.cancelAi() } },
+            containerColor = t.card,
+            shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        ) {
+            OnlineAiSheetV36(
+                state = state,
+                onStart = viewModel::buildWithAi,
+                onCancel = viewModel::cancelAi,
+                onSave = { viewModel.saveAiSource(); aiSheet = false },
+            )
         }
     }
 
@@ -245,6 +264,7 @@ private fun OnlineSourcesTabV36(
     onFile: () -> Unit,
     onToggle: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onAi: () -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
     var pendingDelete by remember { mutableStateOf<BookSourceV36?>(null) }
@@ -256,6 +276,19 @@ private fun OnlineSourcesTabV36(
                 color = t.mutedForeground,
                 style = MaterialTheme.typography.bodySmall,
             )
+            Surface(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp).springClickV31(pressedScale = .98f, onClick = onAi),
+                shape = RoundedCornerShape(18.dp),
+                color = t.accent,
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(24.dp), tint = t.accentForeground)
+                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                        Text("AI 生成书源", color = t.accentForeground, style = MaterialTheme.typography.titleMedium)
+                        Text("给一个网站链接和一本书名，AI 写规则并实测", color = t.accentForeground.copy(alpha = .8f), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OnlineImportButtonV36(Icons.Rounded.ContentPaste, "剪贴板", Modifier.weight(1f), onPaste)
                 OnlineImportButtonV36(Icons.Rounded.Link, "网址", Modifier.weight(1f), onUrl)
@@ -386,7 +419,7 @@ private fun OnlineDetailSheetV36(
                 ) {
                     Text(
                         "加入书架（下载全部 ${detail.chapters.size} 章）",
-                        Modifier.padding(vertical = 14.dp),
+                        Modifier.fillMaxWidth().padding(vertical = 14.dp),
                         color = if (!loading && detail.chapters.isNotEmpty()) t.primaryForeground else t.mutedForeground,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
@@ -426,4 +459,93 @@ private fun rememberOnlineCoverV36(url: String): androidx.compose.ui.graphics.Im
         }?.also { onlineCoverCacheV36.put(url, it) }
     }
     return bitmap
+}
+
+@Composable
+private fun OnlineAiSheetV36(
+    state: OnlineBooksStateV36,
+    onStart: (String, String) -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    var site by rememberSaveable { mutableStateOf("") }
+    var keyword by rememberSaveable { mutableStateOf("") }
+    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 20.dp)) {
+        Text("AI 生成书源", color = t.foreground, style = MaterialTheme.typography.titleLarge)
+        Text(
+            "AI 会依次分析搜索页、目录页和正文页，每一步都用真实网页验证；失败时会带着结果让 AI 再改一次。需要网站不依赖 JS 加载内容。",
+            Modifier.padding(top = 4.dp, bottom = 12.dp),
+            color = t.mutedForeground,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        val editable = !state.aiRunning && state.aiReport == null
+        OutlinedTextField(site, { site = it }, Modifier.fillMaxWidth(), label = { Text("网站链接") }, singleLine = true, enabled = editable)
+        OutlinedTextField(keyword, { keyword = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("该站能搜到的一本书名（用于测试）") }, singleLine = true, enabled = editable)
+
+        if (state.aiSteps.isNotEmpty()) {
+            Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                state.aiSteps.forEachIndexed { index, step ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+                            when (step.ok) {
+                                true -> Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = t.success)
+                                false -> Icon(Icons.Rounded.Close, null, Modifier.size(18.dp), tint = t.destructive)
+                                null -> com.xiguli.langhuan.ui.design.LanghuanTypingDotsV31(t.primary, dot = 4.dp)
+                            }
+                        }
+                        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                            Text("${index + 1}. ${step.label}", color = t.foreground, style = MaterialTheme.typography.bodyMedium)
+                            if (step.detail.isNotBlank()) Text(step.detail, color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
+
+        state.aiError?.let { error ->
+            Text(error, Modifier.padding(top = 12.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall)
+        }
+
+        state.aiReport?.let { report ->
+            Surface(Modifier.fillMaxWidth().padding(top = 14.dp), shape = RoundedCornerShape(14.dp), color = t.muted) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("「${report.source.name}」测试通过", color = t.foreground, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "搜到 ${report.searchCount} 本 · 《${report.bookName}》目录 ${report.chapterCount} 章",
+                        Modifier.padding(top = 4.dp),
+                        color = t.mutedForeground,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(report.sample, Modifier.padding(top = 8.dp), color = t.foreground, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            when {
+                state.aiRunning -> OnlineSheetButtonV36("停止", primary = false, Modifier.weight(1f), onCancel)
+                state.aiReport != null -> {
+                    OnlineSheetButtonV36("重新生成", primary = false, Modifier.weight(1f)) { onCancel(); onStart(site, keyword) }
+                    OnlineSheetButtonV36("保存书源", primary = true, Modifier.weight(1f), onSave)
+                }
+                else -> OnlineSheetButtonV36(if (state.aiError != null) "重试" else "开始生成", primary = true, Modifier.weight(1f)) { onStart(site, keyword) }
+            }
+        }
+        Spacer(Modifier.navigationBarsPadding().height(18.dp))
+    }
+}
+
+@Composable
+private fun OnlineSheetButtonV36(label: String, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    Surface(modifier.springClickV31(pressedScale = .97f, onClick = onClick), shape = RoundedCornerShape(14.dp), color = if (primary) t.primary else t.muted) {
+        Text(
+            label,
+            Modifier.fillMaxWidth().padding(vertical = 13.dp),
+            color = if (primary) t.primaryForeground else t.foreground,
+            style = MaterialTheme.typography.labelLarge,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
 }
