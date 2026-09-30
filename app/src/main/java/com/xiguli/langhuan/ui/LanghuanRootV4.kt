@@ -258,11 +258,18 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
             RootRouteV4.WRITING -> openBook(writingStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id)
             RootRouteV4.EDITOR -> {
                 val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
-                if (returnAfterEditor == RootRouteV4.WRITING) {
-                    writingStoryId = id
-                    route = RootRouteV4.WRITING
-                } else {
-                    openBook(id)
+                when (returnAfterEditor) {
+                    RootRouteV4.WRITING -> {
+                        writingStoryId = id
+                        route = RootRouteV4.WRITING
+                    }
+                    RootRouteV4.SHELF -> {
+                        libraryVm.closeBook()
+                        editorStoryId = null
+                        editorChapter = null
+                        route = RootRouteV4.SHELF
+                    }
+                    else -> openBook(id)
                 }
             }
             RootRouteV4.AGENT, RootRouteV4.INTELLIGENCE -> backToBook()
@@ -415,11 +422,18 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                         initialChapter = editorChapter,
                         viewModel = editorVm,
                         onClose = {
-                            if (returnAfterEditor == RootRouteV4.WRITING) {
-                                writingVm.invalidateAfterExternalEdit(id)
-                                route = RootRouteV4.WRITING
-                            } else {
-                                openBook(id)
+                            when (returnAfterEditor) {
+                                RootRouteV4.WRITING -> {
+                                    writingVm.invalidateAfterExternalEdit(id)
+                                    route = RootRouteV4.WRITING
+                                }
+                                RootRouteV4.SHELF -> {
+                                    libraryVm.closeBook()
+                                    editorStoryId = null
+                                    editorChapter = null
+                                    route = RootRouteV4.SHELF
+                                }
+                                else -> openBook(id)
                             }
                         },
                     )
