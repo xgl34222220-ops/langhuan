@@ -18,7 +18,8 @@ class BookSourceBrowserV38DeviceTest {
               <script>document.getElementById('probe').textContent='after';</script>
             </body></html>
         """.trimIndent()
-        val dataUrl = "data:text/html;charset=utf-8," + java.net.URLEncoder.encode(html, "UTF-8")
+        val encoded = android.util.Base64.encodeToString(html.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+        val dataUrl = "data:text/html;charset=utf-8;base64,$encoded"
         val doc = BookSourceBrowserV38.fetchDocument(
             SourceRequestV36(dataUrl),
             timeoutMs = 12_000L,
