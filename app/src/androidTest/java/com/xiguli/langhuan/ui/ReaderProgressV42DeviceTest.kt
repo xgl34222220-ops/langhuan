@@ -35,7 +35,7 @@ class ReaderProgressV42DeviceTest {
         lateinit var settings: ReaderSettingsV30
         val visible = mutableStateOf(true)
         rule.runOnUiThread {
-            rule.activity.getSharedPreferences("reader_progress_v2", 0).edit().clear().commit()
+            ReaderProgressStoreV11.save(rule.activity, book.id, ReaderProgressV11(chapterNumber = 1))
             owner = Owner().also { it.registry.currentState = Lifecycle.State.RESUMED }
             settings = ReaderSettingsV30(rule.activity.getSharedPreferences("progress-test-settings-v42", 0)).apply {
                 turnMode = ReaderTurnModeV30.NONE
@@ -86,4 +86,96 @@ class ReaderProgressV42DeviceTest {
             rule.mainClock.autoAdvance = true
         }
     }
+    @Test fun sameFramePageTurnAndFontChangeKeepTheNewSentence() {
+        lateinit var owner: Owner
+        lateinit var settings: ReaderSettingsV30
+        rule.runOnUiThread {
+            ReaderProgressStoreV11.save(rule.activity, book.id, ReaderProgressV11(chapterNumber = 1))
+            owner = Owner().also { it.registry.currentState = Lifecycle.State.RESUMED }
+            settings = ReaderSettingsV30(rule.activity.getSharedPreferences("progress-test-settings-v42", 0)).apply {
+                fontSize = 20f
+                turnMode = ReaderTurnModeV30.NONE
+                clickAnimation = false
+                volumeTurn = true
+            }
+        }
+        rule.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                ReaderSessionV30(book, listOf(chapter), chapter.id, settings, false, true, {}, {}, {}, {}, {})
+            }
+        }
+        rule.waitUntil(20000) {
+            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
+                it.config[SemanticsProperties.StateDescription].startsWith("第")
+            }
+        }
+        repeat(3) {
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
+            rule.mainClock.advanceTimeBy(400)
+        }
+        val before = saved().textOffset
+        assertTrue(before > 0)
+        // Both actions run in one UI callback, so no composition can record the turn first.
+        rule.runOnUiThread {
+            assertTrue(rule.activity.dispatchKeyEvent(android.view.KeyEvent(
+                android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_VOLUME_DOWN)))
+            settings.fontSize = 24f
+            rule.activity.dispatchKeyEvent(android.view.KeyEvent(
+                android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_VOLUME_DOWN))
+        }
+        rule.waitUntil(20000) {
+            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
+                it.config[SemanticsProperties.StateDescription].startsWith("第")
+            }
+        }
+        rule.mainClock.advanceTimeBy(1000)
+        rule.waitForIdle()
+        assertTrue("Same-frame reflow discarded the page turn", saved().textOffset > before)
+        val turnedAnchor = saved().textOffset
+        rule.runOnUiThread { settings.fontSize = 18f }
+        rule.waitUntil(20000) {
+            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
+                it.config[SemanticsProperties.StateDescription].startsWith("第")
+            }
+        }
+        rule.mainClock.advanceTimeBy(1000)
+        rule.waitForIdle()
+        assertEquals("A second reflow rounded the sentence backwards", turnedAnchor, saved().textOffset)
+    }
+
+    @Test fun pausingDuringAnAnimatedTurnSavesTheRequestedPage() {
+        lateinit var owner: Owner
+        lateinit var settings: ReaderSettingsV30
+        rule.runOnUiThread {
+            ReaderProgressStoreV11.save(rule.activity, book.id, ReaderProgressV11(chapterNumber = 1))
+            owner = Owner().also { it.registry.currentState = Lifecycle.State.RESUMED }
+            settings = ReaderSettingsV30(rule.activity.getSharedPreferences("progress-test-settings-v42", 0)).apply {
+                fontSize = 20f
+                turnMode = ReaderTurnModeV30.COVER
+                clickAnimation = true
+            }
+        }
+        rule.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                ReaderSessionV30(book, listOf(chapter), chapter.id, settings, false, true, {}, {}, {}, {}, {})
+            }
+        }
+        rule.waitUntil(20000) {
+            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
+                it.config[SemanticsProperties.StateDescription].startsWith("第")
+            }
+        }
+        rule.mainClock.advanceTimeBy(400)
+        val before = saved().textOffset
+        rule.mainClock.autoAdvance = false
+        try {
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
+            rule.mainClock.advanceTimeByFrame()
+            rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.STARTED }
+            assertTrue("Pause discarded the in-flight page turn", saved().textOffset > before)
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
+    }
+
 }

@@ -225,19 +225,21 @@ internal fun ReaderSessionV30(
     }
     var chapterIndex by remember { mutableIntStateOf(initialIndex) }
     var pageIndex by remember { mutableIntStateOf(0) }
-    // Deleting the last chapter from the directory must not leave the reader pointing past the end.
-    LaunchedEffect(chapters.size) {
-        if (chapters.isNotEmpty() && chapterIndex > chapters.lastIndex) {
-            chapterIndex = chapters.lastIndex
-            pageIndex = 0
-        }
-    }
     var pendingAnchor by remember { mutableStateOf<Int?>(initialAnchor) }
     val anchorHolder = remember { intArrayOf(initialAnchor) }
     // Reflow may place this sentence in the middle of a different page. Keep the sentence
     // offset until an actual navigation changes the page, otherwise each transient window
     // size on Activity recreation can round backwards to another page start.
     val appliedPageHolder = remember { arrayOfNulls<Pair<String, Int>>(1) }
+    // Deleting the current last chapter starts the remaining chapter at its beginning.
+    LaunchedEffect(chapters.size) {
+        if (chapters.isNotEmpty() && chapterIndex > chapters.lastIndex) {
+            chapterIndex = chapters.lastIndex
+            pageIndex = 0
+            pendingAnchor = 0
+            anchorHolder[0] = 0
+        }
+    }
 
     // ---- Geometry & typography ------------------------------------------------------------
     var viewport by remember { mutableStateOf(IntSize.Zero) }
@@ -288,7 +290,7 @@ internal fun ReaderSessionV30(
     var lastSpecKey by remember { mutableStateOf(spec.key) }
     if (lastSpecKey != spec.key) {
         lastSpecKey = spec.key
-        pendingAnchor = anchorHolder[0]
+        pendingAnchor = pendingAnchor ?: anchorHolder[0]
     }
 
     LaunchedEffect(spec.key, chapterIndex, chapters) {
@@ -348,6 +350,7 @@ internal fun ReaderSessionV30(
             chapterIndex = index
             pageIndex = 0
             pendingAnchor = 0
+            anchorHolder[0] = 0
         }
     }
 
@@ -442,6 +445,7 @@ internal fun ReaderSessionV30(
         val layout = layoutFor(chapterIndex) ?: return
         val target = pageIndex + delta
         val before = chapterIndex
+        val beforePage = pageIndex
         when {
             target in layout.pages.indices -> pageIndex = target
             delta > 0 && layoutFor(chapterIndex + 1) != null -> {
@@ -453,6 +457,13 @@ internal fun ReaderSessionV30(
                 chapterIndex -= 1
                 pageIndex = previous.pages.lastIndex
             }
+        }
+        // Record navigation synchronously. A same-frame font/window change must reflow
+        // from the page the user just chose, even before the next composition's SideEffect.
+        if (chapterIndex == before && pageIndex == beforePage) return
+        layoutFor(chapterIndex)?.pages?.getOrNull(pageIndex)?.let {
+            anchorHolder[0] = it.startOffset
+            if (pendingAnchor != null) pendingAnchor = it.startOffset
         }
         if (chapterIndex != before) chapters.getOrNull(chapterIndex)?.let { onChapterChanged(it.chapterNumber) }
         ReaderStatsV35.addPage(context)
@@ -659,6 +670,8 @@ internal fun ReaderSessionV30(
                     val target = layout.pageForOffset(offset)
                     if (target != pageIndex) {
                         ttsFollowPage = target
+                        anchorHolder[0] = offset
+                        pendingAnchor = offset
                         pageIndex = target
                         if (mode == ReaderTurnModeV30.SCROLL) scrollJump++
                     }
@@ -674,6 +687,8 @@ internal fun ReaderSessionV30(
                 } else {
                     chapters.getOrNull(chapterIndex)?.let { ReaderStatsV35.markChapterFinished(context, book.id, it.chapterNumber) }
                     ttsAdvancing = true
+                    anchorHolder[0] = 0
+                    pendingAnchor = 0
                     chapterIndex += 1
                     pageIndex = 0
                     onChapterChanged(next.chapterNumber)
@@ -701,7 +716,11 @@ internal fun ReaderSessionV30(
     }
     // An observer outlives a composition's local layout/spec values. Always read the latest
     // saving function; the initial composition has a zero-sized viewport and no layout.
-    val latestPersist = rememberUpdatedState(newValue = { persist() })
+    val latestPersist = rememberUpdatedState(newValue = {
+        // The requested page turn must settle before a pause/rotation saves the position.
+        finishTurnNow()
+        persist()
+    })
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) latestPersist.value()
@@ -795,6 +814,9 @@ internal fun ReaderSessionV30(
                 onVisible = { index, page ->
                     if (pendingAnchor == null) {
                         val changed = index != chapterIndex
+                        if (changed || page != pageIndex) {
+                            anchorHolder[0] = layoutFor(index)?.pages?.getOrNull(page)?.startOffset ?: 0
+                        }
                         chapterIndex = index
                         pageIndex = page
                         if (changed) chapters.getOrNull(index)?.let { onChapterChanged(it.chapterNumber) }
@@ -1088,6 +1110,7 @@ internal fun ReaderSessionV30(
                 val layout = layoutFor(chapterIndex)
                 if (layout != null) {
                     val target = (fraction * layout.pages.lastIndex).roundToInt().coerceIn(0, layout.pages.lastIndex)
+                    anchorHolder[0] = layout.pages[target].startOffset
                     pageIndex = target
                     pendingAnchor = null
                     if (mode == ReaderTurnModeV30.SCROLL) scrollJump++
