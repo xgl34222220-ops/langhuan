@@ -38,6 +38,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
@@ -106,7 +112,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class ReaderMenuTabV30 { DETAILS, DIRECTORY, MORE }
-internal enum class ReaderMenuPanelV30 { MAIN, THEME, FONT, SIZE, SPACING, TURN, SEARCH }
+internal enum class ReaderMenuPanelV30 { MAIN, THEME, FONT, SIZE, SPACING, TURN, SEARCH, STATS }
 
 /** Holds the running page-turn animation and what must happen when it ends. */
 private class ReaderTurnHolderV30 {
@@ -174,6 +180,13 @@ internal fun ReaderEngineV30(
         onEdit = { number -> onOpenEditor(book.id, number) },
         onWriting = { onEnterWriting(book.id) },
         onStory = { storyMode = true },
+        chapterOps = remember(book.id) {
+            ReaderChapterOpsV35(
+                rename = { number, title -> viewModel.renameChapter(book.id, number, title) },
+                append = { viewModel.appendChapter(book.id, "") },
+                deleteLast = { viewModel.deleteLastChapter(book.id) },
+            )
+        },
     )
     }
 }
@@ -191,6 +204,7 @@ private fun ReaderSessionV30(
     onEdit: (Int) -> Unit,
     onWriting: () -> Unit,
     onStory: () -> Unit,
+    chapterOps: ReaderChapterOpsV35 = ReaderChapterOpsV35(),
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -208,6 +222,13 @@ private fun ReaderSessionV30(
     }
     var chapterIndex by remember { mutableIntStateOf(initialIndex) }
     var pageIndex by remember { mutableIntStateOf(0) }
+    // Deleting the last chapter from the directory must not leave the reader pointing past the end.
+    LaunchedEffect(chapters.size) {
+        if (chapters.isNotEmpty() && chapterIndex > chapters.lastIndex) {
+            chapterIndex = chapters.lastIndex
+            pageIndex = 0
+        }
+    }
     var pendingAnchor by remember { mutableStateOf<Int?>(initialAnchor) }
     val anchorHolder = remember { intArrayOf(initialAnchor) }
 
@@ -408,6 +429,9 @@ private fun ReaderSessionV30(
             }
         }
         if (chapterIndex != before) chapters.getOrNull(chapterIndex)?.let { onChapterChanged(it.chapterNumber) }
+        ReaderStatsV35.addPage(context)
+        // Leaving a chapter forward from its last page counts as finishing it.
+        if (chapterIndex == before + 1) chapters.getOrNull(before)?.let { ReaderStatsV35.markChapterFinished(context, book.id, it.chapterNumber) }
     }
 
     var scrollJump by remember { mutableIntStateOf(0) }
@@ -550,6 +574,105 @@ private fun ReaderSessionV30(
         persist()
     }
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // ---- Reading time -----------------------------------------------------------------------
+    LaunchedEffect(book.id) {
+        while (true) {
+            delay(30_000)
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) ReaderStatsV35.addSeconds(context, 30)
+        }
+    }
+
+    // ---- Listen (TTS) ---------------------------------------------------------------------
+    var listening by remember { mutableStateOf(false) }
+    var ttsRate by remember { mutableStateOf(prefs.getFloat("tts_rate", 1f)) }
+    var ttsFollowPage by remember { mutableIntStateOf(-1) }
+    var ttsAdvancing by remember { mutableStateOf(false) }
+    val ttsHolder = remember { arrayOfNulls<ReaderTtsV35>(1) }
+
+    fun ttsStartFromPage() {
+        val tts = ttsHolder[0] ?: return
+        val chapter = chapters.getOrNull(chapterIndex) ?: return
+        val body = readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
+        val from = layoutFor(chapterIndex)?.pages?.getOrNull(pageIndex)?.startOffset ?: 0
+        ttsFollowPage = pageIndex
+        if (!tts.speak(readerTtsChunksV35(body, from))) {
+            listening = false
+            edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
+        }
+    }
+
+    fun stopListening() {
+        listening = false
+        ttsAdvancing = false
+        ttsHolder[0]?.stop()
+    }
+
+    fun startListening() {
+        listening = true
+        val existing = ttsHolder[0]
+        if (existing != null) {
+            ttsStartFromPage()
+            return
+        }
+        ttsHolder[0] = ReaderTtsV35(
+            context,
+            onReady = { ok ->
+                if (!ok) {
+                    listening = false
+                    edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
+                } else if (listening) {
+                    ttsHolder[0]?.rate = ttsRate
+                    ttsStartFromPage()
+                }
+            },
+            onChunkStart = { offset ->
+                // Turn the page under the voice without animation.
+                val layout = layoutFor(chapterIndex)
+                if (listening && layout != null) {
+                    val target = layout.pageForOffset(offset)
+                    if (target != pageIndex) {
+                        ttsFollowPage = target
+                        pageIndex = target
+                        if (mode == ReaderTurnModeV30.SCROLL) scrollJump++
+                    }
+                }
+            },
+            onQueueDone = {
+                val next = chapters.getOrNull(chapterIndex + 1)
+                if (!listening) {
+                    Unit
+                } else if (next == null) {
+                    stopListening()
+                    edgeHint = "已读到最后一章"
+                } else {
+                    chapters.getOrNull(chapterIndex)?.let { ReaderStatsV35.markChapterFinished(context, book.id, it.chapterNumber) }
+                    ttsAdvancing = true
+                    chapterIndex += 1
+                    pageIndex = 0
+                    onChapterChanged(next.chapterNumber)
+                }
+            },
+        )
+    }
+
+    // After an automatic chapter change, resume once the new chapter is paginated.
+    LaunchedEffect(ttsAdvancing, chapterIndex, layouts.size) {
+        if (ttsAdvancing && listening && layoutFor(chapterIndex) != null) {
+            ttsAdvancing = false
+            ttsStartFromPage()
+        }
+    }
+    // A manual page turn while listening restarts the voice from the new page.
+    LaunchedEffect(chapterIndex, pageIndex) {
+        if (listening && !ttsAdvancing && pageIndex != ttsFollowPage) ttsStartFromPage()
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            ttsHolder[0]?.release()
+            ttsHolder[0] = null
+        }
+    }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) persist()
@@ -826,6 +949,39 @@ private fun ReaderSessionV30(
             }
         }
 
+        // Mini player while listening: rate and stop, without opening the menu.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = listening && !menuVisible,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 34.dp),
+            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+        ) {
+            Surface(shape = RoundedCornerShape(999.dp), color = theme.sheet, shadowElevation = 6.dp) {
+                Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    com.xiguli.langhuan.ui.design.LanghuanTypingDotsV31(theme.accent, dot = 5.dp)
+                    Text("正在朗读", Modifier.padding(start = 10.dp, end = 12.dp), color = theme.sheetText, fontSize = 13.sp)
+                    Text(
+                        "${ttsRate}x",
+                        Modifier
+                            .clip(RoundedCornerShape(99.dp))
+                            .clickable {
+                                val rates = listOf(0.8f, 1f, 1.25f, 1.5f, 2f)
+                                ttsRate = rates[(rates.indexOf(ttsRate).coerceAtLeast(0) + 1) % rates.size]
+                                prefs.edit().putFloat("tts_rate", ttsRate).apply()
+                                ttsHolder[0]?.rate = ttsRate
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = theme.accent,
+                        fontSize = 13.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    )
+                    IconButton(onClick = { stopListening() }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.Close, "停止朗读", tint = theme.sheetText)
+                    }
+                }
+            }
+        }
+
         val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
         selection?.takeIf { !menuVisible && mode != ReaderTurnModeV30.SCROLL }?.let { picked ->
             ReaderSelectionBarV30(
@@ -905,6 +1061,17 @@ private fun ReaderSessionV30(
             onEdit = { currentChapter?.let { onEdit(it.chapterNumber) } },
             onWriting = onWriting,
             onStory = onStory,
+            bookmarkedChapters = bookmarks.mapNotNull { it.toIntOrNull() }.toSet(),
+            listening = listening,
+            onListen = {
+                if (listening) stopListening() else {
+                    menuVisible = false
+                    startListening()
+                }
+            },
+            onRenameChapter = chapterOps.rename,
+            onAppendChapter = chapterOps.append,
+            onDeleteLastChapter = chapterOps.deleteLast,
         )
     }
 }
@@ -1045,3 +1212,10 @@ private fun readerBatteryV30(context: Context): Int {
     val manager = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
     return manager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 } ?: 100
 }
+
+/** Chapter-management callbacks handed from the engine (which owns the view model) to the session. */
+internal class ReaderChapterOpsV35(
+    val rename: (Int, String) -> Unit = { _, _ -> },
+    val append: () -> Unit = {},
+    val deleteLast: () -> Unit = {},
+)
