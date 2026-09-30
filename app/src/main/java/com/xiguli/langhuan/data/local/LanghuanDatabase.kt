@@ -109,8 +109,18 @@ interface ChapterStateDao {
     @Query("SELECT * FROM chapter_state WHERE novelId = :novelId AND chapterNumber = :chapterNumber LIMIT 1")
     suspend fun get(novelId: String, chapterNumber: Int): ChapterStateEntity?
 
-    @Query("SELECT * FROM chapter_state WHERE novelId = :novelId ORDER BY chapterNumber ASC")
-    suspend fun allForNovel(novelId: String): List<ChapterStateEntity>
+    /**
+     * Never enumerate full draftJson rows for a whole book. A single imported chapter may exceed
+     * Android's CursorWindow row limit. Read the lightweight index first, then stream JSON chunks.
+     */
+    @Query("SELECT chapterNumber FROM chapter_state WHERE novelId = :novelId ORDER BY chapterNumber ASC")
+    suspend fun chapterNumbers(novelId: String): List<Int>
+
+    @Query("SELECT length(draftJson) FROM chapter_state WHERE novelId = :novelId AND chapterNumber = :chapterNumber LIMIT 1")
+    suspend fun draftJsonLength(novelId: String, chapterNumber: Int): Int?
+
+    @Query("SELECT substr(draftJson, :start, :length) FROM chapter_state WHERE novelId = :novelId AND chapterNumber = :chapterNumber LIMIT 1")
+    suspend fun draftJsonChunk(novelId: String, chapterNumber: Int, start: Int, length: Int): String?
 
     @Query("DELETE FROM chapter_state WHERE novelId = :novelId AND chapterNumber = :chapterNumber")
     suspend fun delete(novelId: String, chapterNumber: Int)
