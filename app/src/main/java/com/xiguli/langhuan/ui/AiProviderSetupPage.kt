@@ -1,6 +1,20 @@
 package com.xiguli.langhuan.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.graphics.graphicsLayer
+import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.springClickV31
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,6 +25,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -84,25 +100,32 @@ fun AiProviderSetupPage(
                     LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 8.dp) {
                         p.savedProviders.forEach { provider ->
                             val active = provider.id == p.activeProviderId
+                            val rowBg by animateColorAsState(if (active) t.accent.copy(alpha = .35f) else Color.Transparent, tween(LanghuanMotionV31.MEDIUM), label = "providerRow")
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { vm.activateProvider(provider.id) }
+                                    .clip(RoundedCornerShape(t.radiusMd))
+                                    .background(rowBg)
+                                    .springClickV31(pressedScale = .98f) { vm.activateProvider(provider.id) }
                                     .padding(horizontal = 6.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                val iconBg by animateColorAsState(if (active) t.accent else t.muted, tween(LanghuanMotionV31.MEDIUM), label = "providerIconBg")
+                                val iconFg by animateColorAsState(if (active) t.accentForeground else t.mutedForeground, tween(LanghuanMotionV31.MEDIUM), label = "providerIconFg")
                                 Surface(
                                     modifier = Modifier.size(40.dp),
                                     shape = RoundedCornerShape(t.radiusSm),
-                                    color = if (active) t.accent else t.muted,
-                                    contentColor = if (active) t.accentForeground else t.mutedForeground,
+                                    color = iconBg,
+                                    contentColor = iconFg,
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            if (active) Icons.Rounded.CloudDone else Icons.Rounded.CloudQueue,
-                                            null,
-                                            Modifier.size(20.dp),
-                                        )
+                                        Crossfade(active, animationSpec = tween(LanghuanMotionV31.MEDIUM), label = "providerIcon") { on ->
+                                            Icon(
+                                                if (on) Icons.Rounded.CloudDone else Icons.Rounded.CloudQueue,
+                                                null,
+                                                Modifier.size(20.dp),
+                                            )
+                                        }
                                     }
                                 }
                                 Column(Modifier.padding(start = 11.dp).weight(1f)) {
@@ -115,9 +138,11 @@ fun AiProviderSetupPage(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
-                                        if (active) {
-                                            Spacer(Modifier.width(7.dp))
-                                            LanghuanBadge("当前", accent = true)
+                                        AnimatedVisibility(active, enter = scaleIn(LanghuanMotionV31.press()) + fadeIn(), exit = scaleOut() + fadeOut()) {
+                                            Row {
+                                                Spacer(Modifier.width(7.dp))
+                                                LanghuanBadge("当前", accent = true)
+                                            }
                                         }
                                     }
                                     Text(
@@ -172,11 +197,10 @@ fun AiProviderSetupPage(
                     AiSectionHeader("高级", "按任务分配模型；不设置时继承当前服务")
                     Spacer(Modifier.height(8.dp))
                     LanghuanCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showRouting = !showRouting },
+                        modifier = Modifier.fillMaxWidth(),
                         contentPadding = 14.dp,
                         depth = 0,
+                        onClick = { showRouting = !showRouting },
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
@@ -192,12 +216,19 @@ fun AiProviderSetupPage(
                                 Text("任务模型路由", style = MaterialTheme.typography.bodyLarge, color = t.foreground, fontWeight = FontWeight.Medium)
                                 Text("长篇规划、正文、审查等任务可指定不同模型", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
                             }
-                            Icon(if (showRouting) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null, tint = t.mutedForeground)
+                            val chevron by animateFloatAsState(if (showRouting) 180f else 0f, LanghuanMotionV31.settle(), label = "routingChevron")
+                            Icon(Icons.Rounded.ExpandMore, null, Modifier.graphicsLayer { rotationZ = chevron }, tint = t.mutedForeground)
                         }
                     }
-                    if (showRouting) {
-                        Spacer(Modifier.height(10.dp))
-                        TaskModelRoutingPanel(taskRoutingVm)
+                    AnimatedVisibility(
+                        showRouting,
+                        enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(LanghuanMotionV31.MEDIUM)),
+                        exit = shrinkVertically(tween(LanghuanMotionV31.MEDIUM)) + fadeOut(tween(LanghuanMotionV31.FAST)),
+                    ) {
+                        Column {
+                            Spacer(Modifier.height(10.dp))
+                            TaskModelRoutingPanel(taskRoutingVm)
+                        }
                     }
                 }
             }
@@ -373,7 +404,7 @@ private fun ProviderMiniAction(
         color = if (destructive) t.destructive.copy(alpha = .07f) else t.muted,
         contentColor = if (destructive) t.destructive else t.strong,
     ) {
-        Box(Modifier.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Box(Modifier.springClickV31(pressedScale = .88f, onClick = onClick), contentAlignment = Alignment.Center) {
             Icon(icon, label, Modifier.size(18.dp))
         }
     }
