@@ -37,4 +37,19 @@ class UiMotionV31ContractTest {
         assertTrue(menu.contains("if (dragY.value > dismissPx) onDismiss()"))
         assertTrue(menu.contains("HapticFeedbackType.TextHandleMove"))
     }
+
+    @Test
+    fun authoringScreensShareTheMotionSystem() {
+        val workspace = source("WritingWorkspaceLuoShuV11.kt")
+        val editor = source("writing/ChapterEditorExperience.kt")
+        val runCenter = source("RunCenterPage.kt")
+        val ai = source("AiProviderSetupPage.kt")
+        assertTrue(workspace.contains("LanghuanSkeletonV31("))
+        assertTrue(workspace.contains("enterOnceV31(enter, \"mission\", 1)"))
+        assertTrue(workspace.contains("label = \"quickAction\""))
+        assertTrue(editor.contains("label = \"saveState\""))
+        assertTrue(editor.contains("visible = selectedText.isNotBlank()"))
+        assertTrue(runCenter.contains("rememberInfiniteTransition(label = \"runPulse\")"))
+        assertTrue(ai.contains("label = \"routingChevron\""))
+    }
 }
