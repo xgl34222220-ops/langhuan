@@ -88,6 +88,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.TheaterComedy
 import androidx.compose.material.icons.rounded.WorkspacePremium
@@ -124,6 +125,11 @@ import com.xiguli.langhuan.ui.design.LanghuanIconButton
 import com.xiguli.langhuan.ui.design.LanghuanMenuRow
 import com.xiguli.langhuan.ui.design.LanghuanSeparator
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.shell.LuoMoveShelfSheetV33
+import com.xiguli.langhuan.ui.shell.LuoShelfAssignmentsV33
+import com.xiguli.langhuan.ui.shell.LuoShelfSortV33
+import com.xiguli.langhuan.ui.shell.LuoShelfTabsV33
+import com.xiguli.langhuan.ui.shell.luoSortBooksV33
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -166,6 +172,16 @@ fun ShelfLuoShuFunctionalV1(
     var checkedIn by rememberSaveable { mutableStateOf(prefs.getString("checkin_date", "") == today) }
     val customShelves = remember(shelfRevision) {
         prefs.getStringSet("custom_shelves", emptySet())?.toList()?.sorted().orEmpty()
+    }
+    val assignments = remember(shelfRevision) { LuoShelfAssignmentsV33.all(prefs) }
+    var activeShelf by rememberSaveable { mutableStateOf<String?>(null) }
+    var sortKey by rememberSaveable {
+        mutableStateOf(prefs.getString("shelf_sort", LuoShelfSortV33.RECENT_READ.key) ?: LuoShelfSortV33.RECENT_READ.key)
+    }
+    var moveFor by remember { mutableStateOf<ReaderBookUi?>(null) }
+    var pendingShelfDelete by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(activeShelf, customShelves) {
+        if (activeShelf != null && activeShelf !in customShelves) activeShelf = null
     }
 
     editingBookId?.let { id -> state.stories.firstOrNull { it.id == id } }?.let { book ->
@@ -211,6 +227,15 @@ fun ShelfLuoShuFunctionalV1(
                             state, importState, openingBookId, query, searchOpen,
                             onSearchOpen = { searchOpen = it; if (!it) query = "" },
                             onQuery = { query = it }, onAdd = { addOpen = true }, onOpenBook = onOpenBook, onLongPress = { actionsFor = it },
+                            shelves = customShelves,
+                            assignments = assignments,
+                            activeShelf = activeShelf,
+                            onShelf = { activeShelf = it },
+                            sort = LuoShelfSortV33.of(sortKey),
+                            onSort = {
+                                sortKey = it.key
+                                prefs.edit().putString("shelf_sort", it.key).apply()
+                            },
                         )
                         LuoShelfScreenV1.CREATE -> LuoShelfCreateV1(onCreate, onImportLocal, onSkills)
                         LuoShelfScreenV1.PROFILE -> LuoShelfProfileV1(
@@ -228,12 +253,16 @@ fun ShelfLuoShuFunctionalV1(
                             screen = LuoShelfScreenV1.PROFILE
                         }
                         LuoShelfScreenV1.SHELF_MANAGER -> LuoShelfManagerV1(
-                            state.stories, customShelves, { screen = LuoShelfScreenV1.PROFILE }, { screen = LuoShelfScreenV1.NEW_SHELF },
-                            { screen = LuoShelfScreenV1.SHELF },
-                        ) { name ->
-                            prefs.edit().putStringSet("custom_shelves", customShelves.filterNot { it == name }.toSet()).apply()
-                            shelfRevision++
-                        }
+                            state.stories,
+                            customShelves,
+                            { screen = LuoShelfScreenV1.PROFILE },
+                            { screen = LuoShelfScreenV1.NEW_SHELF },
+                            { activeShelf = null; screen = LuoShelfScreenV1.SHELF },
+                            counts = customShelves.associateWith { name ->
+                                assignments.count { (id, shelf) -> shelf == name && state.stories.any { it.id == id } }
+                            },
+                            onOpenShelf = { name -> activeShelf = name; screen = LuoShelfScreenV1.SHELF },
+                        ) { name -> pendingShelfDelete = name }
                         LuoShelfScreenV1.NEW_SHELF -> LuoNewShelfV1({ screen = LuoShelfScreenV1.SHELF_MANAGER }) { name ->
                             prefs.edit().putStringSet("custom_shelves", (customShelves + name).toSet()).apply()
                             shelfRevision++
@@ -275,6 +304,12 @@ fun ShelfLuoShuFunctionalV1(
                 LanghuanMenuRow(Icons.Rounded.Edit, "编辑书籍", { actionsFor = null; editingBookId = book.id }, subtitle = "修改书名、类型、简介和封面")
                 LanghuanMenuRow(Icons.Rounded.Book, "继续阅读", { actionsFor = null; onOpenBook(book.id) }, subtitle = "回到上次阅读位置")
                 LanghuanMenuRow(Icons.Rounded.TheaterComedy, "进入故事", { actionsFor = null; onOpenTavern(book.id) }, subtitle = "进入互动故事模式")
+                LanghuanMenuRow(
+                    Icons.Rounded.FolderOpen,
+                    "移动书架",
+                    { actionsFor = null; moveFor = book },
+                    subtitle = assignments[book.id]?.let { "当前在「$it」" } ?: "放进一个自定义书架",
+                )
                 LanghuanMenuRow(Icons.Rounded.DeleteOutline, "删除小说", { actionsFor = null; pendingDelete = book }, subtitle = "删除章节与项目数据")
                 Surface(
                     Modifier.fillMaxWidth().padding(top = 10.dp).springClickV31(pressedScale = .98f) { actionsFor = null },
@@ -292,8 +327,53 @@ fun ShelfLuoShuFunctionalV1(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text("删除《${book.title}》？") }, text = { Text("章节、版本和项目数据会一起删除。") },
-            confirmButton = { TextButton(onClick = { pendingDelete = null; onDeleteBook(book.id) }) { Text("删除", color = t.destructive) } },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    LuoShelfAssignmentsV33.forget(prefs, book.id)
+                    shelfRevision++
+                    onDeleteBook(book.id)
+                }) { Text("删除", color = t.destructive) }
+            },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
+        )
+    }
+
+    moveFor?.let { book ->
+        LuoMoveShelfSheetV33(
+            book = book,
+            shelves = customShelves,
+            current = assignments[book.id],
+            onDismiss = { moveFor = null },
+            onMove = { shelf ->
+                LuoShelfAssignmentsV33.assign(prefs, book.id, shelf)
+                shelfRevision++
+                moveFor = null
+            },
+            onCreateAndMove = { name ->
+                prefs.edit().putStringSet("custom_shelves", (customShelves + name).toSet()).apply()
+                LuoShelfAssignmentsV33.assign(prefs, book.id, name)
+                shelfRevision++
+                moveFor = null
+            },
+        )
+    }
+
+    pendingShelfDelete?.let { name ->
+        AlertDialog(
+            onDismissRequest = { pendingShelfDelete = null },
+            title = { Text("删除书架「$name」？") },
+            text = { Text("只删除书架本身，里面的书会回到「全部」，不会被删除。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingShelfDelete = null
+                    LuoShelfAssignmentsV33.removeShelf(prefs, name)
+                    prefs.edit().putStringSet("custom_shelves", customShelves.filterNot { it == name }.toSet()).apply()
+                    shelfRevision++
+                }) { Text("删除", color = t.destructive) }
+            },
+            dismissButton = { TextButton(onClick = { pendingShelfDelete = null }) { Text("取消") } },
+            containerColor = t.card,
         )
     }
 }
