@@ -9,6 +9,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
+import com.xiguli.langhuan.ui.design.LanghuanEnterRegistryV31
+import com.xiguli.langhuan.ui.design.LanghuanTypingDotsV31
 import com.xiguli.langhuan.ui.design.LanghuanMotionV31
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.design.enterOnceV31
@@ -913,6 +915,8 @@ private fun NovelCharacterChatV3(
     LaunchedEffect(messages.size, busy) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
+    // History already on screen when the chat opens appears at once; only new turns animate.
+    val chatEnter = remember(profile.id) { LanghuanEnterRegistryV31().also { r -> messages.forEach { r.markSeenV31(it.id) } } }
     Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
         Surface(tonalElevation = 1.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -939,16 +943,21 @@ private fun NovelCharacterChatV3(
             }
             items(messages, key = { it.id }) { message ->
                 val mine = message.role == "user"
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+                Row(
+                    Modifier.fillMaxWidth().animateItem().enterOnceV31(chatEnter, message.id, 0, rise = if (mine) 10.dp else 16.dp),
+                    horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+                ) {
                     Surface(modifier = Modifier.widthIn(max = 310.dp), shape = RoundedCornerShape(20.dp), color = if (mine) LocalLanghuanUiTokens.current.primary else LocalLanghuanUiTokens.current.muted) {
                         Text(message.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (mine) LocalLanghuanUiTokens.current.primaryForeground else LocalLanghuanUiTokens.current.foreground, lineHeight = 21.sp)
                     }
                 }
             }
-            if (busy) item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("${profile.name} 正在回复…", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
+            if (busy) item(key = "typing") {
+                // A typing bubble in the character's own colour instead of a spinner.
+                Surface(Modifier.animateItem(), shape = RoundedCornerShape(20.dp), color = LocalLanghuanUiTokens.current.muted) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                        LanghuanTypingDotsV31(LocalLanghuanUiTokens.current.mutedForeground, dot = 6.dp)
+                    }
                 }
             }
         }
