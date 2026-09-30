@@ -15,7 +15,7 @@ class LuoShuUiFoundationContractTest {
         assertTrue(shelfEntry.contains("ShelfLuoShuFunctionalV1("))
         assertFalse(shelfEntry.contains("ShelfQingmoFunctionalV9("))
         assertFalse(shelfEntry.contains("ShelfQingmoReplicaV8("))
-        assertTrue(shelf.contains("GridCells.Fixed(2)"))
+        assertTrue(shelf.contains("GridCells.Fixed(3)"))
         assertTrue(shelf.contains("RoundedCornerShape(30.dp)"))
         assertTrue(shelf.contains("BookEditPageV5("))
     }
@@ -23,12 +23,12 @@ class LuoShuUiFoundationContractTest {
     @Test
     fun activeThemeUsesLuoShuGeometryAndCalmBackground() {
         val theme = source("src/main/java/com/xiguli/langhuan/ui/theme/LanghuanStableTheme.kt")
-        assertTrue(theme.contains("background = Color(0xFFF4F6FA)"))
-        assertTrue(theme.contains("extraSmall = RoundedCornerShape(7.dp)"))
-        assertTrue(theme.contains("small = RoundedCornerShape(11.dp)"))
-        assertTrue(theme.contains("medium = RoundedCornerShape(18.dp)"))
-        assertTrue(theme.contains("large = RoundedCornerShape(24.dp)"))
-        assertTrue(theme.contains("extraLarge = RoundedCornerShape(30.dp)"))
+        assertTrue(theme.contains("background = Color(0xFFF6F7F9)"))
+        assertTrue(theme.contains("extraSmall = RoundedCornerShape(6.dp)"))
+        assertTrue(theme.contains("small = RoundedCornerShape(10.dp)"))
+        assertTrue(theme.contains("medium = RoundedCornerShape(14.dp)"))
+        assertTrue(theme.contains("large = RoundedCornerShape(20.dp)"))
+        assertTrue(theme.contains("extraLarge = RoundedCornerShape(26.dp)"))
         assertTrue(theme.contains("LocalLanghuanUiTokens provides uiTokens"))
     }
 
@@ -36,7 +36,8 @@ class LuoShuUiFoundationContractTest {
     fun readerImmersionContractStaysIndependentFromVisualMigration() {
         val readerEntry = source("src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt")
         assertTrue(readerEntry.contains("ReaderWindowSessionV27("))
-        assertTrue(readerEntry.contains("key(chapterKey)"))
+        assertTrue(readerEntry.contains("ReaderEngineV30("))
+        assertFalse(readerEntry.contains("key(chapterKey)"))
         assertTrue(readerEntry.contains("resumeRequested"))
         assertFalse(readerEntry.contains("statusBarsPadding()"))
     }
