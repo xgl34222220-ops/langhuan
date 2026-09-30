@@ -496,20 +496,52 @@ private fun LuoQuickCardV1(icon: ImageVector, title: String, subtitle: String, m
 private fun LuoShelfLibraryV1(
     state: LibraryExperienceState, importState: LocalBookImportUiStateV1, openingBookId: String?, query: String, searchOpen: Boolean,
     onSearchOpen: (Boolean) -> Unit, onQuery: (String) -> Unit, onAdd: () -> Unit, onOpenBook: (String) -> Unit, onLongPress: (ReaderBookUi) -> Unit,
+    shelves: List<String> = emptyList(),
+    assignments: Map<String, String> = emptyMap(),
+    activeShelf: String? = null,
+    onShelf: (String?) -> Unit = {},
+    sort: LuoShelfSortV33 = LuoShelfSortV33.RECENT_READ,
+    onSort: (LuoShelfSortV33) -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
-    val books = remember(state.stories, query) {
-        state.stories.sortedByDescending { it.updatedAt }.filter { query.isBlank() || it.title.contains(query, true) || it.genre.contains(query, true) }
+    val context = LocalContext.current
+    val readPrefs = remember(context) { context.getSharedPreferences("reader_progress_v1", 0) }
+    val books = remember(state.stories, query, activeShelf, assignments, sort) {
+        luoSortBooksV33(state.stories, sort) { readPrefs.getLong("last_${it.id}", 0L) }
+            .filter { activeShelf == null || assignments[it.id] == activeShelf }
+            .filter { query.isBlank() || it.title.contains(query, true) || it.genre.contains(query, true) }
+    }
+    val shelfCounts = remember(state.stories, assignments, shelves) {
+        buildMap<String?, Int> {
+            put(null, state.stories.size)
+            shelves.forEach { name -> put(name, state.stories.count { assignments[it.id] == name }) }
+        }
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("书架", Modifier.weight(1f), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+                LanghuanIconButton(Icons.Rounded.SwapVert, "排序：${sort.label}", { onSort(sort.next()) })
                 LanghuanIconButton(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "搜索", { onSearchOpen(!searchOpen) })
                 LanghuanIconButton(Icons.Rounded.Add, "添加", onAdd)
             }
             AnimatedVisibility(searchOpen, enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(160)), exit = shrinkVertically(tween(180)) + fadeOut(tween(120))) {
                 OutlinedTextField(value = query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), placeholder = { Text("搜索书名或类型") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true, shape = RoundedCornerShape(18.dp))
+            }
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                AnimatedContent(
+                    targetState = sort,
+                    transitionSpec = {
+                        (fadeIn(tween(200)) + slideInVertically(tween(220)) { it / 2 }) togetherWith
+                            (fadeOut(tween(140)) + slideOutVertically(tween(160)) { -it / 2 })
+                    },
+                    label = "shelfSortLabel",
+                ) { current ->
+                    Text("按${current.label}排列 · ${books.size} 本", color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
+                }
+            }
+            AnimatedVisibility(shelves.isNotEmpty()) {
+                LuoShelfTabsV33(shelves, shelfCounts, activeShelf, onShelf, Modifier.padding(bottom = 8.dp))
             }
             when {
                 !state.libraryLoaded -> LuoShelfSkeletonV31()
@@ -521,14 +553,27 @@ private fun LuoShelfLibraryV1(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         LuoEmptyStackV31(searching = query.isNotBlank())
-                        Text(if (query.isBlank()) "把喜欢的故事放进琅嬛" else "没有匹配的作品", Modifier.padding(top = 10.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
                         Text(
-                            if (query.isBlank()) "导入 TXT / EPUB，或者和 AI 一起写一本" else "换个关键词试试，书名和类型都能搜",
+                            when {
+                                query.isNotBlank() -> "没有匹配的作品"
+                                activeShelf != null -> "「$activeShelf」还是空的"
+                                else -> "把喜欢的故事放进琅嬛"
+                            },
+                            Modifier.padding(top = 10.dp),
+                            color = t.foreground,
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            when {
+                                query.isNotBlank() -> "换个关键词试试，书名和类型都能搜"
+                                activeShelf != null -> "长按任意一本书，选「移动书架」放进来"
+                                else -> "导入 TXT / EPUB，或者和 AI 一起写一本"
+                            },
                             color = t.mutedForeground,
                             style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center,
                         )
-                        if (query.isBlank()) {
+                        if (query.isBlank() && activeShelf == null) {
                             Surface(
                                 Modifier.padding(top = 8.dp).springClickV31(onClick = onAdd),
                                 shape = RoundedCornerShape(999.dp),
@@ -540,8 +585,7 @@ private fun LuoShelfLibraryV1(
                     }
                 }
                 else -> {
-                    val context = LocalContext.current
-                    val progressPrefs = remember { context.getSharedPreferences("reader_progress_v2", 0) }
+                    val progressPrefs = remember(context) { context.getSharedPreferences("reader_progress_v2", 0) }
                     val enter = rememberEnterRegistryV31()
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize(),
@@ -550,6 +594,13 @@ private fun LuoShelfLibraryV1(
                     ) {
                         gridItemsIndexed(books, key = { _, book -> book.id }) { index, book ->
                             val chapter = remember(book.id, book.updatedAt) { progressPrefs.getInt("chapter_${book.id}", 0) }
+                            val readFraction = remember(book.id, book.updatedAt) {
+                                val total = progressPrefs.getInt("total_${book.id}", 0)
+                                val chapterIndex = progressPrefs.getInt("index_${book.id}", -1)
+                                if (total > 0 && chapterIndex >= 0) {
+                                    ((chapterIndex + progressPrefs.getFloat("fraction_${book.id}", 0f)) / total).coerceIn(0f, 1f)
+                                } else -1f
+                            }
                             val interaction = remember { MutableInteractionSource() }
                             val pressed by interaction.collectIsPressedAsState()
                             val scale by animateFloatAsState(
@@ -571,10 +622,28 @@ private fun LuoShelfLibraryV1(
                                         onClick = { onOpenBook(book.id) },
                                     ),
                             ) {
-                                LuoBookCoverV1(book, Modifier.fillMaxWidth().aspectRatio(.72f), openingBookId == book.id)
+                                Box {
+                                    LuoBookCoverV1(book, Modifier.fillMaxWidth().aspectRatio(.72f), openingBookId == book.id)
+                                    if (readFraction > 0f) {
+                                        Box(
+                                            Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp)
+                                                .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp))
+                                                .background(Color.Black.copy(alpha = .18f)),
+                                        ) {
+                                            Box(
+                                                Modifier.fillMaxHeight().fillMaxWidth(readFraction.coerceAtLeast(.03f)).background(t.primary),
+                                            )
+                                        }
+                                    }
+                                }
                                 Text(book.title, Modifier.fillMaxWidth().padding(top = 8.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    if (chapter > 0) "读到第 $chapter 章" else book.genre.ifBlank { "未读" },
+                                    when {
+                                        readFraction >= .995f -> "已读完"
+                                        readFraction > 0f -> "第 $chapter 章 · ${(readFraction * 100).toInt()}%"
+                                        chapter > 0 -> "读到第 $chapter 章"
+                                        else -> book.genre.ifBlank { "未读" }
+                                    },
                                     Modifier.padding(top = 2.dp),
                                     color = t.mutedForeground,
                                     style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
@@ -694,7 +763,16 @@ private fun LuoProfileEditV1(initial: String, onBack: () -> Unit, onSave: (Strin
 }
 
 @Composable
-private fun LuoShelfManagerV1(books: List<ReaderBookUi>, customShelves: List<String>, onBack: () -> Unit, onNewShelf: () -> Unit, onOpenReadingShelf: () -> Unit, onDeleteShelf: (String) -> Unit) {
+private fun LuoShelfManagerV1(
+    books: List<ReaderBookUi>,
+    customShelves: List<String>,
+    onBack: () -> Unit,
+    onNewShelf: () -> Unit,
+    onOpenReadingShelf: () -> Unit,
+    counts: Map<String, Int> = emptyMap(),
+    onOpenShelf: (String) -> Unit = {},
+    onDeleteShelf: (String) -> Unit,
+) {
     val t = LocalLanghuanUiTokens.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -711,12 +789,18 @@ private fun LuoShelfManagerV1(books: List<ReaderBookUi>, customShelves: List<Str
             }
             items(customShelves, key = { it }) { name ->
                 LanghuanCard(Modifier.fillMaxWidth().animateItem(), depth = 0, contentPadding = 8.dp) {
-                    LanghuanMenuRow(Icons.Rounded.Book, name, { }, subtitle = "自定义书架") {
+                    LanghuanMenuRow(Icons.Rounded.Book, name, { onOpenShelf(name) }, subtitle = "${counts[name] ?: 0} 本 · 点按查看") {
                         LanghuanIconButton(Icons.Rounded.DeleteOutline, "删除书架", { onDeleteShelf(name) })
                     }
                 }
             }
-            if (customShelves.isEmpty()) item { Text("还没有自定义书架，右上角 + 可以创建。", color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium) }
+            if (customShelves.isEmpty()) item {
+                Text(
+                    "还没有自定义书架，右上角 + 可以创建；也可以在书架里长按一本书，选「移动书架」时直接新建。",
+                    color = t.mutedForeground,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
