@@ -32,10 +32,11 @@ internal object BookSourceBrowserV38 {
     }
 
     fun fetchDocument(
-        url: String,
+        request: SourceRequestV36,
         headers: Map<String, String> = emptyMap(),
         timeoutMs: Long = 35_000L,
     ): org.jsoup.nodes.Document = lock.withLock {
+        val url = request.url
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "浏览器书源抓取不能阻塞主线程"
         }
@@ -87,6 +88,10 @@ internal object BookSourceBrowserV38 {
             CookieManager.getInstance().apply {
                 setAcceptCookie(true)
                 setAcceptThirdPartyCookies(webView, true)
+                headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value?.takeIf { it.isNotBlank() }?.let {
+                    setCookie(url, it)
+                    flush()
+                }
             }
             webView.settings.apply {
                 javaScriptEnabled = true
@@ -96,6 +101,8 @@ internal object BookSourceBrowserV38 {
                 javaScriptCanOpenWindowsAutomatically = false
                 setSupportMultipleWindows(false)
                 cacheMode = WebSettings.LOAD_DEFAULT
+                userAgentString = headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value
+                    ?: BROWSER_USER_AGENT_V38
             }
             webView.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
@@ -128,8 +135,16 @@ internal object BookSourceBrowserV38 {
                     if (!k.equals("Cookie", true) && !k.equals("User-Agent", true)) put(k, v)
                 }
             }
-            runCatching { webView.loadUrl(url, browserHeaders) }
-                .onFailure { finish(null, it) }
+            runCatching {
+                when (request.method.uppercase()) {
+                    "GET", "HEAD" -> webView.loadUrl(url, browserHeaders)
+                    "POST" -> webView.postUrl(
+                        url,
+                        request.body.orEmpty().toByteArray(java.nio.charset.Charset.forName(request.charset ?: "UTF-8")),
+                    )
+                    else -> error("浏览器模式暂不支持 ${request.method} 请求")
+                }
+            }.onFailure { finish(null, it) }
         }
 
         if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
@@ -174,6 +189,9 @@ internal data class BrowserPageV38(
     val cookie: String,
     val userAgent: String,
 )
+
+private const val BROWSER_USER_AGENT_V38 =
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UQ1A.240205.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
 internal fun browserChallengePendingV38(html: String): Boolean {
     val sample = html.take(200_000).lowercase()
