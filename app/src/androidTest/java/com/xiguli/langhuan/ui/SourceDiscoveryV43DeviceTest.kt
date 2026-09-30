@@ -69,7 +69,7 @@ class SourceDiscoveryV43DeviceTest {
             assertTrue("Collecting must not download any chapter body", before.all { it.content.isBlank() && it.sourceUrl.isNotBlank() })
             assertNull(vm.state.value.download)
             saveFrame("v46-collected-without-download")
-            rule.onNodeWithText("离线下载").performScrollTo().performClick()
+            rule.onNodeWithText("离线下载").assertIsDisplayed().performClick()
             rule.waitUntil(30000) { vm.state.value.download == null && vm.state.value.message?.contains("已离线缓存") == true }
             val chapters = StoryProjectManager(context).chapterDrafts(savedId)
             assertEquals(1, chapters.size)

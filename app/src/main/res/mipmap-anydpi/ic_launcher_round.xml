@@ -1,18 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="1024"
-    android:viewportHeight="1024">
-    <path android:fillColor="#1B1A17" android:pathData="M 180,0 H 844 A 180,180 0 0 1 1024,180 V 844 A 180,180 0 0 1 844,1024 H 180 A 180,180 0 0 1 0,844 V 180 A 180,180 0 0 1 180,0 Z" />
-    <path android:fillColor="#E1F5EE" android:pathData="M 230,461 H 230 A 34,34 0 0 1 264,495 V 819 A 34,34 0 0 1 230,853 H 230 A 34,34 0 0 1 196,819 V 495 A 34,34 0 0 1 230,461 Z" />
-    <path android:fillColor="#F1EFE8" android:pathData="M 324,391 H 324 A 34,34 0 0 1 358,425 V 819 A 34,34 0 0 1 324,853 H 324 A 34,34 0 0 1 290,819 V 425 A 34,34 0 0 1 324,391 Z" />
-    <path android:fillColor="#F1EFE8" android:pathData="M 418,333 H 418 A 34,34 0 0 1 452,367 V 819 A 34,34 0 0 1 418,853 H 418 A 34,34 0 0 1 384,819 V 367 A 34,34 0 0 1 418,333 Z" />
-    <path android:fillColor="#F1EFE8" android:pathData="M 512,297 H 512 A 34,34 0 0 1 546,331 V 819 A 34,34 0 0 1 512,853 H 512 A 34,34 0 0 1 478,819 V 331 A 34,34 0 0 1 512,297 Z" />
-    <path android:fillColor="#F1EFE8" android:pathData="M 606,333 H 606 A 34,34 0 0 1 640,367 V 819 A 34,34 0 0 1 606,853 H 606 A 34,34 0 0 1 572,819 V 367 A 34,34 0 0 1 606,333 Z" />
-    <path android:fillColor="#F1EFE8" android:pathData="M 700,391 H 700 A 34,34 0 0 1 734,425 V 819 A 34,34 0 0 1 700,853 H 700 A 34,34 0 0 1 666,819 V 425 A 34,34 0 0 1 700,391 Z" />
-    <path android:fillColor="#E1F5EE" android:pathData="M 794,461 H 794 A 34,34 0 0 1 828,495 V 819 A 34,34 0 0 1 794,853 H 794 A 34,34 0 0 1 760,819 V 495 A 34,34 0 0 1 794,461 Z" />
-    <path android:fillColor="#EF9F27" android:pathData="M 176,543 H 848 A 8,8 0 0 1 856,551 V 551 A 8,8 0 0 1 848,559 H 176 A 8,8 0 0 1 168,551 V 551 A 8,8 0 0 1 176,543 Z" />
-    <path android:fillColor="#EF9F27" android:pathData="M 176,743 H 848 A 8,8 0 0 1 856,751 V 751 A 8,8 0 0 1 848,759 H 176 A 8,8 0 0 1 168,751 V 751 A 8,8 0 0 1 176,743 Z" />
-    <path android:fillColor="#EF9F27" android:pathData="M 474,209 A 38,38 0 1 0 550,209 A 38,38 0 1 0 474,209 Z" />
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="rectangle"><corners android:radius="24dp" /><gradient android:angle="270" android:startColor="#286BC0" android:centerColor="#10488E" android:endColor="#031431" /></shape></item>
+    <item android:left="6dp" android:top="6dp" android:right="6dp" android:bottom="6dp"><bitmap android:src="@drawable/ic_launcher_book_v46" android:gravity="fill" android:filter="true" /></item>
+</layer-list>
