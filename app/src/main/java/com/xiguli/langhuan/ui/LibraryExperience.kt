@@ -93,6 +93,8 @@ data class LibraryExperienceState(
     val message: String? = null,
     val error: String? = null,
     val libraryLoaded: Boolean = false,
+    /** Set once when a blank book is created, so the root can open the editor on it. */
+    val createdBlankStoryId: String? = null,
 )
 
 class LibraryExperienceViewModel(application: Application) : AndroidViewModel(application) {
@@ -308,6 +310,89 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun consumeWorkspaceStory() = _state.update { it.copy(workspaceStoryId = null) }
+
+    /** Hand-written book: no AI, straight into the editor on chapter 1. */
+    fun createBlankStory(title: String, genre: String) {
+        if (_state.value.isBusy) return
+        viewModelScope.launch {
+            _state.update { it.copy(isBusy = true, error = null) }
+            runCatching {
+                projects.createStory(
+                    NewStoryRequest(
+                        title.trim().ifBlank { "未命名小说" },
+                        genre.trim(),
+                        "",
+                        "",
+                        300_000,
+                    )
+                )
+            }.onSuccess { created ->
+                _state.update {
+                    it.copy(
+                        isBusy = false,
+                        createdBlankStoryId = created.snapshot.novel.id,
+                        message = "已创建《${created.snapshot.novel.title}》",
+                    )
+                }
+            }.onFailure { e ->
+                _state.update { it.copy(isBusy = false, error = e.message ?: "创建小说失败") }
+            }
+        }
+    }
+
+    fun consumeCreatedBlankStory() = _state.update { it.copy(createdBlankStoryId = null) }
+
+    /** Writes TXT / Markdown / EPUB to a user-chosen document. */
+    fun exportBook(id: String, format: com.xiguli.langhuan.data.ExportFormat, uri: android.net.Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val artifact = projects.exportStory(id, format)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use {
+                        it.write(artifact.bytes)
+                    } ?: error("无法写入所选位置")
+                }
+            }.onSuccess {
+                _state.update { it.copy(message = "已导出为 ${format.extension.uppercase()}") }
+            }.onFailure { e ->
+                _state.update { it.copy(error = "导出失败：${e.message.orEmpty()}") }
+            }
+        }
+    }
+
+    private fun chapterOp(id: String, done: String, op: suspend () -> Unit) {
+        if (_state.value.isBusy) return
+        viewModelScope.launch {
+            _state.update { it.copy(isBusy = true, error = null) }
+            runCatching {
+                op()
+                projects.chapterDrafts(id)
+            }.onSuccess { chapters ->
+                _state.update { state ->
+                    val reading = state.readingChapter?.let { current ->
+                        chapters.firstOrNull { it.chapterNumber == current.chapterNumber } ?: chapters.lastOrNull()
+                    }
+                    state.copy(
+                        isBusy = false,
+                        chapters = if (state.openedBook?.id == id) chapters else state.chapters,
+                        readingChapter = reading,
+                        message = done,
+                    )
+                }
+            }.onFailure { e ->
+                _state.update { it.copy(isBusy = false, error = e.message ?: "章节操作失败") }
+            }
+        }
+    }
+
+    fun renameChapter(id: String, chapterNumber: Int, title: String) =
+        chapterOp(id, "章节已重命名") { projects.renameChapter(id, chapterNumber, title) }
+
+    fun appendChapter(id: String, title: String) =
+        chapterOp(id, "已新增一章") { projects.appendChapter(id, title) }
+
+    fun deleteLastChapter(id: String) =
+        chapterOp(id, "已删除最后一章") { projects.deleteLastChapter(id) }
     fun consumeActivityReload() = _state.update { it.copy(requestActivityReload = false) }
     fun clearMessage() = _state.update { it.copy(message = null, error = null) }
 
