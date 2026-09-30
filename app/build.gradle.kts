@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 112
-        versionName = "0.29.5-alpha33-cursorwindow-hotfix"
+        versionCode = 113
+        versionName = "0.29.6-alpha34-ui-audit-round4"
     }
 
     buildFeatures { compose = true }
