@@ -601,8 +601,8 @@ private class ChapterShelfActions(context: Context) {
     suspend fun deleteChapter(novelId: String, chapterNumber: Int) {
         val row = storyDao.get(novelId) ?: error("找不到这本小说")
         val snapshot = decodeSnapshot(row)
-        val entities = chapterStateDao.allForNovel(novelId)
-        val drafts = entities.map { decodeDraft(it) }.sortedBy { it.chapterNumber }
+        // Reuse the CursorWindow-safe project loader; never enumerate full chapter_state rows.
+        val drafts = projects.chapterDrafts(novelId).sortedBy { it.chapterNumber }
         require(drafts.size > 1) { "一本小说至少保留一个章节" }
         val removed = drafts.firstOrNull { it.chapterNumber == chapterNumber } ?: error("找不到这一章")
         val remainingDrafts = drafts
