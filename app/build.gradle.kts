@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 115
-        versionName = "0.30.1-alpha36-select-round6"
+        versionCode = 116
+        versionName = "0.31.0-alpha37-online-round7"
     }
 
     buildFeatures { compose = true }
@@ -70,6 +70,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.jsoup)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.material.kolor)
     implementation(libs.haze)
