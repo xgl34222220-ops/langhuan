@@ -501,7 +501,7 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
 
     val chapters = ArrayList<OnlineChapterV36>()
     val visited = LinkedHashSet<String>()
-    var triedHeuristicFromBookPage = doc.location() != page.location()
+    var triedHeuristicFromBookPage = false
 
     repeat(40) {
         visited += doc.location()
