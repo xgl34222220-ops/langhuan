@@ -2,6 +2,18 @@ package com.xiguli.langhuan.ui
 
 import android.app.Application
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.lazy.itemsIndexed
+import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
+import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.design.enterOnceV31
+import com.xiguli.langhuan.ui.design.rememberEnterRegistryV31
+import com.xiguli.langhuan.ui.design.springClickV31
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -684,6 +696,7 @@ private fun NovelCharacterLibraryV3(
     onStory: () -> Unit,
     onBack: (() -> Unit)? = null,
 ) {
+    val profileEnter = rememberEnterRegistryV31()
     LazyColumn(
         modifier = Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = if (onBack != null) 4.dp else 24.dp, bottom = 36.dp),
@@ -694,17 +707,17 @@ private fun NovelCharacterLibraryV3(
                 IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp)) { Icon(Icons.Rounded.ArrowBack, "返回") }
             }
             Text("人物蒸馏", fontSize = 32.sp, fontWeight = FontWeight.Black)
-            Text("从《${book.title}》正文提取可聊天的原著人物卡", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+            Text("从《${book.title}》正文提取可聊天的原著人物卡", color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 3.dp))
             Spacer(Modifier.height(16.dp))
-            Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+            Surface(shape = RoundedCornerShape(26.dp), color = LocalLanghuanUiTokens.current.card) {
                 Column(Modifier.fillMaxWidth().padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.padding(12.dp).size(26.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Surface(shape = CircleShape, color = LocalLanghuanUiTokens.current.accent) {
+                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.padding(12.dp).size(26.dp), tint = LocalLanghuanUiTokens.current.accentForeground)
                         }
                         Column(Modifier.padding(start = 12.dp).weight(1f)) {
                             Text("当前小说 · $chapterCount 章正文", fontWeight = FontWeight.Bold)
-                            Text("识别别名、性格、能力、关系、经历、对白、世界认知和原文证据", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("识别别名、性格、能力、关系、经历、对白、世界认知和原文证据", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground)
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -716,11 +729,12 @@ private fun NovelCharacterLibraryV3(
                             Icon(Icons.Rounded.TravelExplore, null); Spacer(Modifier.width(6.dp)); Text("深度蒸馏")
                         }
                     }
-                    if (state.distilling) {
-                        Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text(state.progressText, Modifier.padding(start = 9.dp), style = MaterialTheme.typography.bodySmall)
-                        }
+                    AnimatedVisibility(
+                        state.distilling,
+                        enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(),
+                        exit = shrinkVertically() + fadeOut(),
+                    ) {
+                        LanghuanMotionStatus(state.progressText.ifBlank { "正在蒸馏人物" }, Modifier.padding(top = 14.dp))
                     }
                 }
             }
@@ -737,42 +751,49 @@ private fun NovelCharacterLibraryV3(
             Text(
                 if (state.profiles.isEmpty()) "还没有小说人物，先从当前小说蒸馏" else "点击人物查看完整角色卡、原文证据并开始聊天",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = LocalLanghuanUiTokens.current.mutedForeground,
             )
         }
         if (state.profiles.isEmpty()) {
             item {
-                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Surface(shape = RoundedCornerShape(24.dp), color = LocalLanghuanUiTokens.current.card) {
                     Column(Modifier.fillMaxWidth().padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Rounded.Groups, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Rounded.Groups, null, Modifier.size(38.dp), tint = LocalLanghuanUiTokens.current.primary)
                         Text("从小说正文建立人物库", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-                        Text("快速蒸馏先看主要人物；深度蒸馏逐段覆盖全部正文。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
+                        Text("快速蒸馏先看主要人物；深度蒸馏逐段覆盖全部正文。", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 5.dp))
                     }
                 }
             }
         } else {
-            items(state.profiles, key = { it.id }) { profile -> NovelCharacterListCardV3(profile, onOpen) }
+            itemsIndexed(state.profiles, key = { _, it -> it.id }) { index, profile ->
+                Box(Modifier.animateItem().enterOnceV31(profileEnter, profile.id, index)) { NovelCharacterListCardV3(profile, onOpen) }
+            }
         }
     }
 }
 
 @Composable
 private fun NovelCharacterListCardV3(profile: NovelCharacterProfileV3, onOpen: (NovelCharacterProfileV3) -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth().clickable { onOpen(profile) }, shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().springClickV31(pressedScale = .97f) { onOpen(profile) },
+        shape = RoundedCornerShape(LocalLanghuanUiTokens.current.radiusLg),
+        color = LocalLanghuanUiTokens.current.card,
+        shadowElevation = 1.dp,
+    ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(56.dp)) {
+            Surface(shape = CircleShape, color = LocalLanghuanUiTokens.current.accent, modifier = Modifier.size(56.dp)) {
                 Box(contentAlignment = Alignment.Center) { Text(profile.name.take(1).ifBlank { "人" }, fontSize = 23.sp, fontWeight = FontWeight.Black) }
             }
             Column(Modifier.padding(start = 12.dp).weight(1f)) {
                 Text(profile.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(profile.identity.ifBlank { profile.personality.ifBlank { "原著人物" } }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(profile.identity.ifBlank { profile.personality.ifBlank { "原著人物" } }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground)
                 Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(if (profile.distillMode == NovelCharacterDistillModeV3.DEEP) "深度" else "快速", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(if (profile.distillMode == NovelCharacterDistillModeV3.DEEP) "深度" else "快速", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanUiTokens.current.primary)
                     Text("证据 ${profile.evidences.size}", style = MaterialTheme.typography.labelSmall)
                     if (profile.scannedThroughChapter > 0) Text("至 ${profile.scannedThroughChapter} 章", style = MaterialTheme.typography.labelSmall)
                 }
             }
-            Icon(Icons.Rounded.Description, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Rounded.Description, null, tint = LocalLanghuanUiTokens.current.mutedForeground)
         }
     }
 }
@@ -793,10 +814,10 @@ private fun NovelCharacterDetailV3(
             IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.DeleteOutline, "删除") }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
-            Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = RoundedCornerShape(28.dp), color = LocalLanghuanUiTokens.current.accent, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(22.dp)) {
                     Text(profile.name, fontSize = 30.sp, fontWeight = FontWeight.Black)
-                    if (profile.aliases.isNotEmpty()) Text(profile.aliases.joinToString(" · "), color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f), modifier = Modifier.padding(top = 4.dp))
+                    if (profile.aliases.isNotEmpty()) Text(profile.aliases.joinToString(" · "), color = LocalLanghuanUiTokens.current.accentForeground.copy(alpha = .72f), modifier = Modifier.padding(top = 4.dp))
                     Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AssistChip(onClick = {}, label = { Text(if (profile.distillMode == NovelCharacterDistillModeV3.DEEP) "深度蒸馏" else "快速蒸馏") })
                         if (profile.scannedThroughChapter > 0) AssistChip(onClick = {}, label = { Text("覆盖至 ${profile.scannedThroughChapter} 章") })
@@ -826,10 +847,10 @@ private fun NovelCharacterDetailV3(
             if (profile.evidences.isNotEmpty()) {
                 Text("原文证据", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 22.dp))
                 profile.evidences.take(40).forEach { item ->
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = LocalLanghuanUiTokens.current.card, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                         Column(Modifier.padding(11.dp)) {
-                            Text("第 ${item.chapter} 章 · ${item.field.ifBlank { "人物事实" }}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                            Text(item.excerpt, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                            Text("第 ${item.chapter} 章 · ${item.field.ifBlank { "人物事实" }}", style = MaterialTheme.typography.labelMedium, color = LocalLanghuanUiTokens.current.primary)
+                            Text(item.excerpt, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 4.dp))
                         }
                     }
                 }
@@ -847,7 +868,7 @@ private fun NovelCharacterDetailV3(
             onDismissRequest = { confirmDelete = false },
             title = { Text("删除 ${profile.name}？") },
             text = { Text("人物卡、原文证据和这个人物的聊天记录都会删除。") },
-            confirmButton = { TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) } },
+            confirmButton = { TextButton(onClick = onDelete) { Text("删除", color = LocalLanghuanUiTokens.current.destructive) } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
         )
     }
@@ -858,7 +879,7 @@ private fun NovelFieldV3(title: String, value: String) {
     if (value.isBlank()) return
     Column(Modifier.padding(top = 20.dp)) {
         Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text(value, modifier = Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 22.sp)
+        Text(value, modifier = Modifier.padding(top = 6.dp), color = LocalLanghuanUiTokens.current.mutedForeground, lineHeight = 22.sp)
     }
 }
 
@@ -870,8 +891,8 @@ private fun NovelListV3(title: String, values: List<String>) {
         Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         clean.forEach { item ->
             Row(Modifier.padding(top = 6.dp)) {
-                Text("•", color = MaterialTheme.colorScheme.primary)
-                Text(item, Modifier.padding(start = 7.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 21.sp)
+                Text("•", color = LocalLanghuanUiTokens.current.primary)
+                Text(item, Modifier.padding(start = 7.dp), color = LocalLanghuanUiTokens.current.mutedForeground, lineHeight = 21.sp)
             }
         }
     }
@@ -896,12 +917,12 @@ private fun NovelCharacterChatV3(
         Surface(tonalElevation = 1.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回人物") }
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(40.dp)) {
+                Surface(shape = CircleShape, color = LocalLanghuanUiTokens.current.accent, modifier = Modifier.size(40.dp)) {
                     Box(contentAlignment = Alignment.Center) { Text(profile.name.take(1), fontWeight = FontWeight.Black) }
                 }
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text(profile.name, fontWeight = FontWeight.Bold)
-                    Text("原著角色 · 覆盖至第 ${profile.scannedThroughChapter} 章", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("原著角色 · 覆盖至第 ${profile.scannedThroughChapter} 章", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanUiTokens.current.mutedForeground)
                 }
                 IconButton(onClick = { confirmClear = true }) { Icon(Icons.Rounded.DeleteSweep, "清空聊天") }
             }
@@ -910,17 +931,17 @@ private fun NovelCharacterChatV3(
             if (messages.isEmpty()) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(vertical = 72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Rounded.MenuBook, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Rounded.MenuBook, null, Modifier.size(38.dp), tint = LocalLanghuanUiTokens.current.primary)
                         Text("和 ${profile.name} 说点什么", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 12.dp))
-                        Text("人物卡、原文证据、世界认知和聊天记忆会一起约束回复", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                        Text("人物卡、原文证据、世界认知和聊天记忆会一起约束回复", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
             items(messages, key = { it.id }) { message ->
                 val mine = message.role == "user"
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-                    Surface(modifier = Modifier.widthIn(max = 310.dp), shape = RoundedCornerShape(20.dp), color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh) {
-                        Text(message.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, lineHeight = 21.sp)
+                    Surface(modifier = Modifier.widthIn(max = 310.dp), shape = RoundedCornerShape(20.dp), color = if (mine) LocalLanghuanUiTokens.current.primary else LocalLanghuanUiTokens.current.muted) {
+                        Text(message.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (mine) LocalLanghuanUiTokens.current.primaryForeground else LocalLanghuanUiTokens.current.foreground, lineHeight = 21.sp)
                     }
                 }
             }
@@ -966,16 +987,16 @@ private fun NovelCharacterPreviewDialogV3(
             LazyColumn(modifier = Modifier.heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(profiles, key = { it.id }) { profile ->
                     val checked = profile.id in selected
-                    Surface(modifier = Modifier.fillMaxWidth().clickable { selected = if (checked) selected - profile.id else selected + profile.id }, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Surface(modifier = Modifier.fillMaxWidth().clickable { selected = if (checked) selected - profile.id else selected + profile.id }, shape = RoundedCornerShape(18.dp), color = LocalLanghuanUiTokens.current.card) {
                         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = checked, onCheckedChange = null)
-                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(42.dp)) {
+                            Surface(shape = CircleShape, color = LocalLanghuanUiTokens.current.accent, modifier = Modifier.size(42.dp)) {
                                 Box(contentAlignment = Alignment.Center) { Text(profile.name.take(1), fontWeight = FontWeight.Black) }
                             }
                             Column(Modifier.padding(start = 9.dp).weight(1f)) {
                                 Text(profile.name, fontWeight = FontWeight.Bold)
-                                Text(profile.identity.ifBlank { profile.personality.ifBlank { "原著人物" } }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("原文证据 ${profile.evidences.size} 条", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(profile.identity.ifBlank { profile.personality.ifBlank { "原著人物" } }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground)
+                                Text("原文证据 ${profile.evidences.size} 条", style = MaterialTheme.typography.labelSmall, color = LocalLanghuanUiTokens.current.primary)
                             }
                         }
                     }
