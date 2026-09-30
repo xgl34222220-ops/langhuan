@@ -736,7 +736,8 @@ internal fun ReaderSessionV30(
             .onSizeChanged { viewport = it }
             .semantics {
                 contentDescription = "阅读正文"
-                stateDescription = if (currentLayout == null || pendingAnchor != null) "正在排版"
+                stateDescription = if (!interactionEnabled) "正在恢复阅读"
+                    else if (currentLayout == null || pendingAnchor != null) "正在排版"
                     else "第${chapterIndex + 1}章，第${shownPageIndex + 1}/${currentLayout.pages.size}页"
             }
             .focusRequester(focusRequester)

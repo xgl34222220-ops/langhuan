@@ -66,10 +66,15 @@ class ReaderRecreationV42DeviceTest {
             assertTrue("Font reflow jumped back more than a full page", beforeFont.textOffset - beforeRecreate.textOffset < 1200)
             rule.activityRule.scenario.recreate()
             rule.waitUntil(20000) { rule.onAllNodesWithText("正在检查琅嬛数据…").fetchSemanticsNodes().isEmpty() }
-            rule.waitForIdle()
+            rule.waitUntil(20000) {
+                rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
+                    it.config[SemanticsProperties.StateDescription].startsWith("第")
+                }
+            }
             // The shelf has a semantic book title, while the reader title is drawn in Canvas.
             rule.onAllNodesWithText("书城").assertCountEquals(0)
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
+            rule.mainClock.advanceTimeBy(300)
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             rule.mainClock.advanceTimeBy(1000)
             val afterRecreate = ReaderProgressStoreV11.load(context, id, 1)
@@ -87,6 +92,7 @@ class ReaderRecreationV42DeviceTest {
             rule.waitForIdle()
             rule.onAllNodesWithText("书城").assertCountEquals(0)
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
+            rule.mainClock.advanceTimeBy(300)
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             val rotated = ReaderProgressStoreV11.load(context, id, 1)
             assertTrue("Rotation lost the sentence anchor", rotated.textOffset > 0)
