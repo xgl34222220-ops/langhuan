@@ -2,7 +2,21 @@ package com.xiguli.langhuan.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -168,9 +182,17 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         }
     }
 
+    val routeStates = rememberSaveableStateHolder()
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize()) {
-            when (route) {
+        AnimatedContent(
+            targetState = route,
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = { rootRouteTransitionV30(initialState, targetState) },
+            label = "rootRoute",
+        ) { currentRoute ->
+          routeStates.SaveableStateProvider(currentRoute.name) {
+          Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            when (currentRoute) {
                 RootRouteV4.SHELF -> {
                     ShelfLibraryV5(
                         state = libraryState,
@@ -376,6 +398,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                     )
                 }
             }
+          }
+          }
         }
     }
 
@@ -387,4 +411,29 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
             confirmButton = { TextButton(onClick = localImportVm::clearFeedback) { Text("知道了") } },
         )
     }
+}
+
+/**
+ * App-level route motion. Opening a book zooms the page up out of the shelf; everything else is
+ * a short parallax slide. Going back to the shelf always plays the reverse.
+ */
+private fun AnimatedContentTransitionScope<RootRouteV4>.rootRouteTransitionV30(
+    from: RootRouteV4,
+    to: RootRouteV4,
+): ContentTransform {
+    val enterEase = tween<Float>(320, easing = FastOutSlowInEasing)
+    return when {
+        to == RootRouteV4.BOOK && from == RootRouteV4.SHELF ->
+            (fadeIn(tween(220)) + scaleIn(enterEase, initialScale = .92f)) togetherWith
+                (fadeOut(tween(260)) + scaleOut(tween(320), targetScale = 1.03f))
+        from == RootRouteV4.BOOK && to == RootRouteV4.SHELF ->
+            (fadeIn(tween(260)) + scaleIn(tween(320), initialScale = 1.03f)) togetherWith
+                (fadeOut(tween(200)) + scaleOut(tween(280), targetScale = .92f))
+        to == RootRouteV4.SHELF ->
+            (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeIn(tween(240))) togetherWith
+                (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 } + fadeOut(tween(200)))
+        else ->
+            (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(240))) togetherWith
+                (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(200)))
+    }.apply { targetContentZIndex = if (to == RootRouteV4.SHELF) 0f else 1f }
 }
