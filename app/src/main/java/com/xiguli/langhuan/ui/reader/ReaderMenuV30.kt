@@ -475,7 +475,8 @@ private fun ReaderDirectoryTabV30(
             title = { Text("第 ${chapter.chapterNumber} 章") },
             text = {
                 Column {
-                    OutlinedTextField(title, { title = it.take(40) }, label = { Text("章节标题") }, singleLine = true)+                    if (isLast) {
+                    OutlinedTextField(title, { title = it.take(40) }, label = { Text("章节标题") }, singleLine = true)
+                    if (isLast) {
                         Text(
                             "删除这一章",
                             Modifier.padding(top = 14.dp).clip(CircleShape).clickable { editing = null; onDeleteLastChapter() }.padding(vertical = 6.dp),
