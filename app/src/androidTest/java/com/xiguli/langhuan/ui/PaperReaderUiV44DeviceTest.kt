@@ -35,7 +35,7 @@ class PaperReaderUiV44DeviceTest {
         rule.onNodeWithText("尚未配置服务").assertExists()
         rule.onNodeWithText("网站链接").performTextInput("https://example.com/")
         rule.onNodeWithText("该站能搜到的一本书名（用于测试）").performTextInput("测试航行记")
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        hideKeyboard()
         rule.onNodeWithText("设置").performScrollTo().performClick()
         assertEquals(1, settings.get())
         rule.onNodeWithText("开始生成").performScrollTo().performClick()
@@ -55,7 +55,7 @@ class PaperReaderUiV44DeviceTest {
         }
         rule.onNodeWithText("网站链接").performTextInput("http://example.com/")
         rule.onNodeWithText("该站能搜到的一本书名（用于测试）").performTextInput("测试航行记")
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        hideKeyboard()
         rule.onAllNodesWithText(error).assertCountEquals(1)
         rule.onNodeWithText(error).performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("重试").performScrollTo().assertIsDisplayed()
@@ -86,6 +86,15 @@ class PaperReaderUiV44DeviceTest {
         } finally {
             prefs.edit().apply { if (prior == null) remove("theme") else putString("theme", prior) }.commit()
         }
+    }
+
+    private fun hideKeyboard() {
+        rule.runOnUiThread {
+            rule.activity.currentFocus?.clearFocus()
+            val manager = rule.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            manager.hideSoftInputFromWindow(rule.activity.window.decorView.windowToken, 0)
+        }
+        rule.waitForIdle()
     }
 
     private fun saveFrame(name: String) {
