@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 118
-        versionName = "0.31.2-alpha39-source-network-hotfix"
+        versionCode = 119
+        versionName = "0.31.3-alpha40-webview-source-fallback"
     }
 
     buildFeatures { compose = true }
