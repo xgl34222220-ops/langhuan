@@ -76,6 +76,11 @@ internal data class OnlineBooksStateV36(
     val createdStoryId: String? = null,
     val message: String? = null,
     val error: String? = null,
+    /** AI source builder progress; empty when not running. */
+    val aiSteps: List<AiSourceStepV37> = emptyList(),
+    val aiRunning: Boolean = false,
+    val aiReport: AiSourceReportV37? = null,
+    val aiError: String? = null,
 )
 
 internal class OnlineBooksViewModelV36(application: Application) : AndroidViewModel(application) {
@@ -85,6 +90,55 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     val state: StateFlow<OnlineBooksStateV36> = _state.asStateFlow()
     private var searchJob: Job? = null
     private var downloadJob: Job? = null
+    private var aiJob: Job? = null
+    private val repository = com.xiguli.langhuan.data.PersistentStoryRepository(application)
+    private var activeProviderId: String? = null
+
+    init {
+        viewModelScope.launch {
+            repository.observeProviders().collect { providers ->
+                activeProviderId = providers.firstOrNull { it.isDefault }?.id ?: providers.firstOrNull()?.id
+            }
+        }
+    }
+
+    // ---- AI-written sources ---------------------------------------------------------------------
+
+    fun buildWithAi(siteUrl: String, keyword: String) {
+        if (aiJob?.isActive == true) return
+        if (siteUrl.isBlank() || keyword.isBlank()) {
+            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名") }
+            return
+        }
+        _state.update { it.copy(aiSteps = emptyList(), aiRunning = true, aiReport = null, aiError = null) }
+        aiJob = viewModelScope.launch {
+            val config = activeProviderId?.let { repository.providerConfig(it) }
+            if (config == null) {
+                _state.update { it.copy(aiRunning = false, aiError = "请先在设置里添加并启用一个 AI 服务") }
+                return@launch
+            }
+            val builder = BookSourceAiBuilderV37(com.xiguli.langhuan.engine.UniversalAiGateway(config)) { steps ->
+                _state.update { it.copy(aiSteps = steps) }
+            }
+            runCatching { builder.build(siteUrl, keyword) }
+                .onSuccess { report -> _state.update { it.copy(aiRunning = false, aiReport = report) } }
+                .onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    _state.update { it.copy(aiRunning = false, aiError = e.message ?: "生成失败") }
+                }
+        }
+    }
+
+    fun saveAiSource() {
+        val report = _state.value.aiReport ?: return
+        merge(BookSourceImportResultV36(listOf(report.source), emptyList()))
+        _state.update { it.copy(aiReport = null, aiSteps = emptyList(), message = "已保存书源「${report.source.name}」") }
+    }
+
+    fun cancelAi() {
+        aiJob?.cancel()
+        _state.update { it.copy(aiRunning = false, aiSteps = emptyList(), aiReport = null, aiError = null) }
+    }
 
     // ---- Sources ------------------------------------------------------------------------------
 
