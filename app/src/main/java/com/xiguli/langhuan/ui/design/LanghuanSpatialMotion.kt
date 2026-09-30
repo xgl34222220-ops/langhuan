@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui.design
 
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -156,11 +157,27 @@ fun LanghuanMotionStatus(
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         LanghuanOrb(active = active, size = 24.dp)
         Spacer(Modifier.width(9.dp))
-        Text(
-            text,
-            style = MaterialTheme.typography.bodySmall,
-            color = t.mutedForeground,
-            fontWeight = FontWeight.Medium,
-        )
+        // Status text changes (thinking → drafting → checking) slide instead of snapping.
+        androidx.compose.animation.AnimatedContent(
+            targetState = text,
+            transitionSpec = {
+                (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)) +
+                    androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220)) { it / 2 }) togetherWith
+                    (androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)) +
+                        androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(180)) { -it / 2 })
+            },
+            label = "motionStatus",
+        ) { label ->
+            Text(
+                label,
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        if (active) {
+            Spacer(Modifier.width(7.dp))
+            LanghuanTypingDotsV31(t.mutedForeground, dot = 4.dp)
+        }
     }
 }
