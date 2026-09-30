@@ -16,6 +16,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.enterOnceV31
+import com.xiguli.langhuan.ui.design.rememberEnterRegistryV31
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -65,6 +79,7 @@ fun RunCenterPage(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val live by ChapterRunKeepAliveRegistry.state.collectAsState()
+    val runEnter = rememberEnterRegistryV31()
     val t = LocalLanghuanUiTokens.current
     var pendingAbandon by remember { mutableStateOf<RunCenterItemUi?>(null) }
 
@@ -152,15 +167,15 @@ fun RunCenterPage(
                             color = t.mutedForeground,
                         )
                     }
-                    items(state.items, key = { "${it.novelId}:${it.chapterNumber}" }) { item ->
+                    itemsIndexed(state.items, key = { _, it -> "${it.novelId}:${it.chapterNumber}" }) { index, item ->
                         val isLive = live.active && live.novelId == item.novelId && live.chapterNumber == item.chapterNumber
-                        RunCenterCard(
+                        Box(Modifier.animateItem().enterOnceV31(runEnter, "${item.novelId}:${item.chapterNumber}", index)) { RunCenterCard(
                             item = item,
                             isLive = isLive,
                             liveDetail = if (isLive) live.detail else "",
                             onOpen = { viewModel.open(item) },
                             onAbandon = { pendingAbandon = item },
-                        )
+                        ) }
                     }
                     state.error?.let { error ->
                         item {
@@ -367,14 +382,23 @@ private fun CompactAction(
 
 @Composable
 private fun RunStatusPill(text: String, color: Color) {
-    Surface(color = color.copy(alpha = .10f), contentColor = color, shape = RoundedCornerShape(999.dp)) {
-        Text(
-            text,
-            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-        )
+    val tone by animateColorAsState(color, tween(LanghuanMotionV31.MEDIUM), label = "runTone")
+    Surface(color = tone.copy(alpha = .10f), contentColor = tone, shape = RoundedCornerShape(999.dp), modifier = Modifier.animateContentSize()) {
+        Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            // A live run breathes; everything else is still.
+            if (text == "执行中") {
+                val pulse = rememberInfiniteTransition(label = "runPulse")
+                val glow by pulse.animateFloat(.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "runGlow")
+                Box(Modifier.size(6.dp).graphicsLayer { alpha = glow; scaleX = .8f + glow * .3f; scaleY = .8f + glow * .3f }.background(tone, CircleShape))
+                Spacer(Modifier.width(5.dp))
+            }
+            Text(
+                text,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
     }
 }
 
