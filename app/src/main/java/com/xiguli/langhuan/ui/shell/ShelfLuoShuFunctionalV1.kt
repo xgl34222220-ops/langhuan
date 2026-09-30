@@ -350,7 +350,7 @@ private fun LuoShelfHomeV1(books: List<ReaderBookUi>, openingBookId: String?, on
         Text("继续阅读", Modifier.enterOnceV31(enter, "home-continue-title", 1), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
         if (recent != null) {
-            LanghuanCard(Modifier.fillMaxWidth().enterOnceV31(enter, "home-continue", 1), depth = 2, onClick = { if (openingBookId == null) onOpenBook(recent.id) }) {
+            LanghuanCard(Modifier.fillMaxWidth().enterOnceV31(enter, "home-continue", 1), depth = 2, onClick = { onOpenBook(recent.id) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     LuoBookCoverV1(recent, Modifier.width(88.dp).aspectRatio(.70f), openingBookId == recent.id)
                     Column(Modifier.padding(start = 18.dp).weight(1f)) {
@@ -462,7 +462,7 @@ private fun LuoShelfLibraryV1(
                                     .combinedClickable(
                                         interactionSource = interaction,
                                         indication = null,
-                                        enabled = openingBookId == null,
+                                        enabled = true,
                                         onLongClick = { onLongPress(book) },
                                         onClick = { onOpenBook(book.id) },
                                     ),
