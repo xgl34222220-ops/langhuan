@@ -25,10 +25,22 @@ class ReaderEditionV41Test {
     }
 
     private fun saveFrame(name: String) {
+        // Compose's virtual clock must also advance past staggered entry delays.
+        rule.mainClock.advanceTimeBy(1500)
         rule.waitForIdle()
         android.os.SystemClock.sleep(400)
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val bitmap = automation.takeScreenshot()
+        if (name == "v41-shelf") {
+            var ink = 0
+            for (y in bitmap.height / 6 until bitmap.height / 2 step 3) {
+                for (x in bitmap.width / 12 until bitmap.width * 11 / 12 step 3) {
+                    val pixel = bitmap.getPixel(x, y)
+                    if (android.graphics.Color.red(pixel) < 190 && android.graphics.Color.green(pixel) < 190 && android.graphics.Color.blue(pixel) < 190) ink++
+                }
+            }
+            assertTrue("Shelf fixture exists semantically but covers were not painted", ink > 150)
+        }
         val dir = File(rule.activity.getExternalFilesDir(null), "reader-qa").apply { mkdirs() }
         val target = File(dir, "$name.png")
         target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

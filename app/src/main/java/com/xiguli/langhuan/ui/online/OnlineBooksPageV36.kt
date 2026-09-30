@@ -109,11 +109,17 @@ internal fun OnlineBooksPageV36(
     var tab by rememberSaveable { mutableStateOf(if (startWithSources) 1 else 0) }
     var query by rememberSaveable { mutableStateOf(state.query) }
     var urlDialog by remember { mutableStateOf(false) }
-    var aiSheet by remember { mutableStateOf(false) }
+    var aiSheet by rememberSaveable { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::importFromFile) }
 
-    LaunchedEffect(startWithSources) { tab = if (startWithSources) 1 else 0 }
+    var previousSourceEntry by rememberSaveable { mutableStateOf(startWithSources) }
+    LaunchedEffect(startWithSources) {
+        if (previousSourceEntry != startWithSources) {
+            tab = if (startWithSources) 1 else 0
+            previousSourceEntry = startWithSources
+        }
+    }
     LaunchedEffect(state.createdStoryId) { state.createdStoryId?.let { id -> viewModel.consumeCreated(); onOpenCreated(id) } }
     BackHandler(enabled = tab == 1 && state.detail == null && !aiSheet && !urlDialog) { tab = 0 }
     BackHandler(enabled = state.detail != null && state.download == null) { viewModel.closeDetail() }
@@ -144,6 +150,9 @@ internal fun OnlineBooksPageV36(
                     onToggle = viewModel::toggleSource,
                     onDelete = viewModel::deleteSource,
                     onEdit = viewModel::editSource,
+                    onBeginEdit = viewModel::beginSourceEdit,
+                    onChangeDraft = viewModel::updateSourceEditDraft,
+                    onCancelEdit = viewModel::cancelSourceEdit,
                     onExport = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(viewModel.exportSources())) },
                     onAi = { aiSheet = true },
                 )
@@ -177,7 +186,7 @@ internal fun OnlineBooksPageV36(
                 state = state,
                 onStart = viewModel::buildWithAi,
                 onCancel = viewModel::cancelAi,
-                onSave = { viewModel.saveAiSource(); aiSheet = false },
+                onSave = { if (viewModel.saveAiSource()) aiSheet = false },
                 onConfigureAi = onConfigureAi,
             )
         }
@@ -306,15 +315,17 @@ private fun OnlineSourcesTabV36(
     onToggle: (String) -> Unit,
     onDelete: (String) -> Unit,
     onEdit: (String, String) -> Unit,
+    onBeginEdit: (String) -> Unit,
+    onChangeDraft: (String) -> Unit,
+    onCancelEdit: () -> Unit,
     onExport: () -> Unit,
     onAi: () -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
     var pendingDelete by remember { mutableStateOf<BookSourceV36?>(null) }
     var sourceQuery by rememberSaveable { mutableStateOf("") }
-    var pendingEdit by remember { mutableStateOf<BookSourceV36?>(null) }
+    val pendingEdit = state.sources.firstOrNull { it.id == state.sourceEditId }
     var exportConfirm by remember { mutableStateOf(false) }
-    val editScope = rememberCoroutineScope()
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -360,7 +371,7 @@ private fun OnlineSourcesTabV36(
                         Text(listOfNotNull(source.group.takeIf { it.isNotBlank() }, if (source.enabled) "已启用" else "已停用", "网页规则").joinToString(" · "), Modifier.padding(top = 5.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
                     }
                     Switch(checked = source.enabled, onCheckedChange = { onToggle(source.id) })
-                    LanghuanIconButton(Icons.Rounded.Edit, "编辑书源「${source.name}」", { pendingEdit = source })
+                    LanghuanIconButton(Icons.Rounded.Edit, "编辑书源「${source.name}」", { onBeginEdit(source.id) })
                     LanghuanIconButton(Icons.Rounded.DeleteOutline, "删除书源", { pendingDelete = source })
                 }
             }
@@ -373,15 +384,16 @@ private fun OnlineSourcesTabV36(
         dismissButton = { TextButton(onClick = { exportConfirm = false }) { Text("取消") } }, containerColor = t.card,
     )
     pendingEdit?.let { source ->
-        var raw by remember(source.id) { mutableStateOf(BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)) }
+        val editScope = rememberCoroutineScope()
+        val raw = state.sourceEditDraft
         var validation by remember(source.id) { mutableStateOf<String?>(null) }
         var saving by remember(source.id) { mutableStateOf(false) }
         AlertDialog(
-            onDismissRequest = { pendingEdit = null }, title = { Text("编辑「${source.name}」") },
+            onDismissRequest = onCancelEdit, title = { Text("编辑「${source.name}」") },
             text = {
                 Column {
                     Text("保存只校验格式，网站可用性请返回书城实际搜索确认。", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(raw, { raw = it; validation = null }, Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 340.dp), label = { Text("书源 JSON") })
+                    OutlinedTextField(raw, { onChangeDraft(it); validation = null }, Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 340.dp), label = { Text("书源 JSON") }, enabled = !saving)
                     validation?.let { Text(it, color = t.destructive, style = MaterialTheme.typography.bodySmall) }
                 }
             },
@@ -389,21 +401,22 @@ private fun OnlineSourcesTabV36(
                 TextButton(enabled = !saving, onClick = {
                     if (raw.length > 262144) validation = "单个书源规则不能超过 256 KiB"
                     else {
+                        val submitted = raw
                         saving = true
                         editScope.launch {
                             val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                                runCatching { parseBookSourcesV36(raw) }
+                                runCatching { parseBookSourcesV36(submitted) }
                             }
                             val parsed = result.getOrNull()
                             if (parsed == null || parsed.sources.size != 1 || parsed.skipped.isNotEmpty()) {
                                 validation = result.exceptionOrNull()?.message ?: "请提供一个有效的静态网页书源"
-                            } else { onEdit(source.id, raw); pendingEdit = null }
+                            } else { onEdit(source.id, submitted) }
                             saving = false
                         }
                     }
                 }) { Text(if (saving) "校验中…" else "保存规则") }
             },
-            dismissButton = { TextButton(onClick = { pendingEdit = null }) { Text("取消") } }, containerColor = t.card,
+            dismissButton = { TextButton(onClick = onCancelEdit) { Text("取消") } }, containerColor = t.card,
         )
     }
     pendingDelete?.let { source ->
@@ -501,12 +514,12 @@ private fun OnlineDetailSheetV36(
                     LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "下载中 ${download.done}/${download.total}" + if (download.failed > 0) " · ${download.failed} 章失败" else "",
+                            (if (download.saving) "正在保存到书架…" else "下载中 ${download.done}/${download.total}") + if (download.failed > 0) " · ${download.failed} 章失败" else "",
                             Modifier.weight(1f),
                             color = t.mutedForeground,
                             style = MaterialTheme.typography.bodySmall,
                         )
-                        TextButton(onClick = onCancel) { Icon(Icons.Rounded.Close, null, Modifier.size(16.dp)); Text("取消") }
+                        if (!download.saving) TextButton(onClick = onCancel) { Icon(Icons.Rounded.Close, null, Modifier.size(16.dp)); Text("取消") }
                     }
                 }
             } else {
@@ -550,7 +563,7 @@ private fun rememberOnlineCoverV36(url: String): androidx.compose.ui.graphics.Im
                 while (bounds.outWidth / sample > 480 || bounds.outHeight / sample > 720) sample *= 2
                 android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
                     ?.asImageBitmap()
-            }.onFailure { if (it is java.io.InterruptedIOException || it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
+            }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
         }?.also { onlineCoverCacheV36.put(url, it) }
     }
     return bitmap

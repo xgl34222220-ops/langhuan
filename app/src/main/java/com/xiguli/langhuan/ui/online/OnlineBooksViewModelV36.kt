@@ -65,10 +65,12 @@ internal object BookSourceStoreV36 {
 
 internal data class OnlineDetailV36(val book: OnlineBookV36, val chapters: List<OnlineChapterV36>)
 
-internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed: Int)
+internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed: Int, val saving: Boolean = false)
 
 internal data class OnlineBooksStateV36(
     val sources: List<BookSourceV36> = emptyList(),
+    val sourceEditId: String? = null,
+    val sourceEditDraft: String = "",
     val query: String = "",
     val discoveryLabel: String? = null,
     val searching: Boolean = false,
@@ -93,6 +95,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     private val projects = StoryProjectManager(application)
     private val _state = MutableStateFlow(OnlineBooksStateV36(sources = BookSourceStoreV36.load(application)))
     val state: StateFlow<OnlineBooksStateV36> = _state.asStateFlow()
+    private var sourceEditJob: Job? = null
     private var searchJob: Job? = null
     private val searchGeneration = java.util.concurrent.atomic.AtomicLong()
     private val aiGeneration = java.util.concurrent.atomic.AtomicLong()
@@ -139,14 +142,19 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         }
     }
 
-    fun saveAiSource() {
-        val report = _state.value.aiReport ?: return
+    fun saveAiSource(): Boolean {
+        val report = _state.value.aiReport ?: return false
         if (!bookSourceSupportedV36(report.source)) {
             _state.update { it.copy(aiError = "生成的规则包含不支持的语法，无法保存") }
-            return
+            return false
+        }
+        if (_state.value.sources.any { it.id == report.source.id }) {
+            _state.update { it.copy(aiError = "这个网站的书源已存在。为保护原配置，本次没有覆盖；请在书源管理中编辑或移除旧规则后重试。") }
+            return false
         }
         merge(BookSourceImportResultV36(listOf(report.source), emptyList()))
         _state.update { it.copy(aiReport = null, aiSteps = emptyList()) }
+        return true
     }
 
     fun cancelAi() {
@@ -304,21 +312,27 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         if (detail.chapters.isEmpty() || downloadJob?.isActive == true) return
         downloadJob = viewModelScope.launch {
             val texts = downloadChapters(source, detail.chapters) ?: return@launch
+            currentCoroutineContext().ensureActive()
+            _state.update { it.copy(download = it.download?.copy(saving = true)) }
             sourceAttemptV36 {
                 val manuscript = ImportedManuscript(
                     title = detail.book.name,
                     chapters = detail.chapters.mapIndexed { i, chapter -> ImportedChapter(chapter.title, texts[i]) },
                 )
-                projects.createImportedStory(manuscript)
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                    val created = projects.createImportedStory(manuscript)
+                    BookSourceStoreV36.saveLink(context, OnlineLinkV36(created.snapshot.novel.id, source.id, detail.book.bookUrl, detail.chapters.size))
+                    created
+                }
             }.onSuccess { created ->
                 val id = created.snapshot.novel.id
-                BookSourceStoreV36.saveLink(context, OnlineLinkV36(id, source.id, detail.book.bookUrl, detail.chapters.size))
                 _state.update { it.copy(download = null, detail = null, createdStoryId = id, message = "《${detail.book.name}》已加入书架") }
             }.onFailure { e -> _state.update { it.copy(download = null, error = "保存到书架失败：${e.message.orEmpty()}") } }
         }
     }
 
     fun cancelDownload() {
+        if (_state.value.download?.saving == true) return
         downloadJob?.cancel()
         _state.update { it.copy(download = null, message = "已取消下载") }
     }
@@ -339,8 +353,13 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 val fresh = chapters.drop(link.chapterCount)
                 if (fresh.isEmpty()) return@sourceAttemptV36 "已是最新，共 ${chapters.size} 章"
                 val texts = downloadChapters(source, fresh) ?: return@sourceAttemptV36 "下载未完成，本次未更新"
-                projects.appendImportedChapters(novelId, fresh.mapIndexed { i, c -> ImportedChapter(c.title, texts[i]) })
-                BookSourceStoreV36.saveLink(context, link.copy(chapterCount = chapters.size))
+                currentCoroutineContext().ensureActive()
+                _state.update { it.copy(download = it.download?.copy(saving = true)) }
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                    projects.appendImportedChapters(novelId, fresh.mapIndexed { i, c -> ImportedChapter(c.title, texts[i]) })
+                        ?: error("书架中的书籍已不存在")
+                    BookSourceStoreV36.saveLink(context, link.copy(chapterCount = chapters.size))
+                }
                 "新增 ${fresh.size} 章"
             }.getOrElse { e -> "检查更新失败：${e.message.orEmpty()}" }
             _state.update { it.copy(download = null) }
@@ -396,15 +415,37 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     /** Exports the supported stored format; credentials in source headers stay user-visible. */
     fun exportSources(): String = BookSourceJsonV36.encodeToString(ListSerializer(BookSourceV36.serializer()), _state.value.sources)
 
+    fun beginSourceEdit(id: String) {
+        val source = _state.value.sources.firstOrNull { it.id == id } ?: return
+        sourceEditJob?.cancel()
+        _state.update { it.copy(sourceEditId = id, sourceEditDraft = BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)) }
+    }
+
+    fun updateSourceEditDraft(raw: String) {
+        if (raw.length > 262144) {
+            _state.update { it.copy(error = "单个书源编辑草稿不能超过 256 KiB") }
+            return
+        }
+        _state.update { it.copy(sourceEditDraft = raw) }
+    }
+
+    fun cancelSourceEdit() {
+        sourceEditJob?.cancel()
+        _state.update { it.copy(sourceEditId = null, sourceEditDraft = "") }
+    }
+
     fun editSource(id: String, raw: String) {
-        viewModelScope.launch {
+        if (_state.value.sourceEditId != id) return
+        sourceEditJob?.cancel()
+        sourceEditJob = viewModelScope.launch {
             sourceAttemptV36 {
                 val result = withContext(Dispatchers.Default) { parseBookSourcesV36(raw) }
+                currentCoroutineContext().ensureActive()
                 require(result.sources.size == 1 && result.skipped.isEmpty()) { "请提供一个有效的静态 HTML 书源" }
                 val edited = result.sources.single().copy(id = id)
-                require(_state.value.sources.any { it.id == id }) { "原书源已被删除" }
+                require(_state.value.sourceEditId == id && _state.value.sources.any { it.id == id }) { "书源编辑已取消或原书源已删除" }
                 updateSources { list -> list.map { if (it.id == id) edited else it } }
-                _state.update { it.copy(message = "已更新书源「${edited.name}」") }
+                _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", message = "已更新书源「${edited.name}」") }
             }.onFailure { error -> _state.update { it.copy(error = error.message ?: "书源编辑失败") } }
         }
     }

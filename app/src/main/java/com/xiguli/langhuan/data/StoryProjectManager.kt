@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.data
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.xiguli.langhuan.data.local.ChapterStateEntity
 import com.xiguli.langhuan.data.local.ChapterVersionEntity
 import com.xiguli.langhuan.data.local.LanghuanDatabase
@@ -152,7 +153,11 @@ class StoryProjectManager(context: Context) {
         return persisted
     }
 
-    suspend fun createImportedStory(manuscript: ImportedManuscript): PersistedStory {
+    suspend fun createImportedStory(manuscript: ImportedManuscript): PersistedStory = db.withTransaction {
+        createImportedStoryInTransaction(manuscript)
+    }
+
+    private suspend fun createImportedStoryInTransaction(manuscript: ImportedManuscript): PersistedStory {
         // Local reading imports must never hijack the Studio's persisted active project.
         // Otherwise a reader-only import can poison Studio startup and create a crash loop.
         val previousActive = activeStoryId()
@@ -230,7 +235,11 @@ class StoryProjectManager(context: Context) {
         }
     }
     /** Appends downloaded chapters (online-source updates) after the current last chapter. */
-    suspend fun appendImportedChapters(novelId: String, items: List<ImportedChapter>): PersistedStory? {
+    suspend fun appendImportedChapters(novelId: String, items: List<ImportedChapter>): PersistedStory? = db.withTransaction {
+        appendImportedChaptersInTransaction(novelId, items)
+    }
+
+    private suspend fun appendImportedChaptersInTransaction(novelId: String, items: List<ImportedChapter>): PersistedStory? {
         if (items.isEmpty()) return null
         val loaded = loadStory(novelId) ?: return null
         val full = effectiveOutline(loaded.snapshot).toMutableList()
