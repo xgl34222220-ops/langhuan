@@ -424,6 +424,7 @@ private fun CreationErrorPanelV4(
                                 CreationRetryTarget.CHAT -> "重试这一轮"
                                 CreationRetryTarget.PROPOSAL -> "重新整理"
                                 CreationRetryTarget.BLUEPRINT -> "继续蓝图"
+                                CreationRetryTarget.CREATE -> "重试建书"
                             }
                         )
                     }
