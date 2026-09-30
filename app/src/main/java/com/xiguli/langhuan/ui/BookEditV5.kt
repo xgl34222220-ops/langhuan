@@ -1,5 +1,12 @@
 package com.xiguli.langhuan.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import com.xiguli.langhuan.ui.design.rememberLanghuanCoverV30
 import androidx.compose.foundation.layout.imePadding
 import android.app.Application
 import android.net.Uri
@@ -26,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -147,10 +156,19 @@ fun BookEditPageV5(
     var title by remember(book.id, book.title) { mutableStateOf(book.title) }
     var genre by remember(book.id, book.genre) { mutableStateOf(book.genre) }
     var premise by remember(book.id, book.premise) { mutableStateOf(book.premise) }
-    val cover = remember(book.coverPath) {
-        book.coverPath.takeIf { it.isNotBlank() }
-            ?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it) }.getOrNull() }
+    // Async, downsampled, shared with the shelf grid (was a full-size decode on the main thread).
+    val cover = rememberLanghuanCoverV30(book.coverPath, 480)
+    val dirty = title != book.title || genre != book.genre || premise != book.premise
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val closeSafely: () -> Unit = {
+        if (dirty && !editState.busy) {
+            confirmDiscard = true
+        } else {
+            onClose()
+        }
     }
+    // Registered after the shelf's handler, so it wins while this page is open.
+    BackHandler(onBack = closeSafely)
     val coverLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) editViewModel.setLocalCover(book.id, uri)
     }
@@ -161,7 +179,7 @@ fun BookEditPageV5(
                 Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onClose)
+                LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", closeSafely)
                 Column(Modifier.padding(start = 8.dp).weight(1f)) {
                     Text("编辑书籍", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
                     Text("书名、封面、类型和简介", style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground)
@@ -180,7 +198,7 @@ fun BookEditPageV5(
                     ) {
                         if (cover != null) {
                             Image(
-                                cover.asImageBitmap(),
+                                cover,
                                 book.title,
                                 Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)),
                                 contentScale = ContentScale.Crop,
@@ -249,14 +267,27 @@ fun BookEditPageV5(
                     Text(if (editState.busy) "正在保存" else "保存修改", Modifier.padding(start = 8.dp))
                 }
 
-                editState.message?.let {
-                    Text(it, Modifier.padding(top = 12.dp), color = t.success, style = MaterialTheme.typography.bodySmall)
-                }
-                editState.error?.let {
-                    Text(it, Modifier.padding(top = 12.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall)
+                AnimatedContent(
+                    targetState = editState.error?.let { it to true } ?: editState.message?.let { it to false },
+                    transitionSpec = { (fadeIn() + slideInVertically { it / 2 }) togetherWith fadeOut() },
+                    label = "bookEditFeedback",
+                ) { feedback ->
+                    feedback?.let { (text, isError) ->
+                        Text(text, Modifier.padding(top = 12.dp), color = if (isError) t.destructive else t.success, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 Spacer(Modifier.navigationBarsPadding().height(28.dp))
             }
         }
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("放弃未保存的修改？") },
+            text = { Text("书名、类型或简介有改动还没保存。") },
+            confirmButton = { TextButton(onClick = { confirmDiscard = false; onClose() }) { Text("放弃修改", color = t.destructive) } },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") } },
+            containerColor = t.card,
+        )
     }
 }
