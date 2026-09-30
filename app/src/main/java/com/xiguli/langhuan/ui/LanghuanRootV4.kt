@@ -318,6 +318,16 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                         onCreateBlank = { title, genre -> libraryVm.createBlankStory(title, genre) },
                         onExport = ::exportBook,
                         onOnline = { route = RootRouteV4.ONLINE },
+                        onlineContent = { manageSources ->
+                            OnlineBooksPageV36(
+                                viewModel = onlineVm,
+                                onBack = {},
+                                onOpenCreated = { id -> pendingOnlineOpen = id },
+                                embedded = true,
+                                startWithSources = manageSources,
+                                onConfigureAi = { openAiSetup(RootRouteV4.SHELF) },
+                            )
+                        },
                         onCheckUpdate = { id ->
                             onlineVm.checkUpdate(id) { result ->
                                 toast = result to result.contains("失败")

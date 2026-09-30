@@ -56,3 +56,19 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+## OkHttp 4.12.0
+
+The online-source HTTP transport uses [OkHttp](https://github.com/square/okhttp),
+Copyright Square, Inc., under the Apache License, Version 2.0.
+The full license is included in the application at `assets/licenses/okhttp-Apache-2.0.txt`.
+OkHttp source code is not modified.
+
+## Reading-source format references
+
+The reader edition independently implements its UI and a documented subset of declarative
+reading-source rules. Format/architecture references include
+[LegadoTeam/legado](https://github.com/LegadoTeam/legado), a GPL-3.0 project.
+This change does not copy its code, icons, assets, or bundled sources and does not claim
+complete Legado compatibility. No online book source is bundled.

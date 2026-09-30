@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -93,26 +95,32 @@ internal fun OnlineBooksPageV36(
     viewModel: OnlineBooksViewModelV36,
     onBack: () -> Unit,
     onOpenCreated: (String) -> Unit,
+    embedded: Boolean = false,
+    startWithSources: Boolean = false,
+    onConfigureAi: () -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var tab by rememberSaveable { mutableStateOf(if (state.sources.isEmpty()) 1 else 0) }
+    var tab by rememberSaveable { mutableStateOf(if (startWithSources) 1 else 0) }
     var query by rememberSaveable { mutableStateOf(state.query) }
     var urlDialog by remember { mutableStateOf(false) }
     var aiSheet by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::importFromFile) }
 
+    LaunchedEffect(startWithSources) { tab = if (startWithSources) 1 else 0 }
     LaunchedEffect(state.createdStoryId) { state.createdStoryId?.let { id -> viewModel.consumeCreated(); onOpenCreated(id) } }
+    BackHandler(enabled = tab == 1 && state.detail == null && !aiSheet && !urlDialog) { tab = 0 }
     BackHandler(enabled = state.detail != null && state.download == null) { viewModel.closeDetail() }
 
     Column(Modifier.fillMaxSize().background(t.background).statusBarsPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onBack)
-            Text("在线找书", Modifier.padding(start = 8.dp).weight(1f), color = t.foreground, style = MaterialTheme.typography.titleLarge)
-            OnlineTabV36("搜索", tab == 0) { tab = 0 }
-            Spacer(Modifier.width(6.dp))
-            OnlineTabV36("书源 ${state.sources.size}", tab == 1) { tab = 1 }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!embedded) LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onBack)
+            Column(Modifier.weight(1f).padding(start = if (embedded) 0.dp else 8.dp)) {
+                Text(if (tab == 0) "书城" else "书源管理", color = t.foreground, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                Text(if (tab == 0) "发现下一本好书" else "连接你信任的阅读世界", Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+            }
+            OnlineTabV36(if (tab == 0) "管理书源" else "返回书城", selected = false) { tab = if (tab == 0) 1 else 0 }
         }
         AnimatedContent(
             targetState = tab,
@@ -163,6 +171,7 @@ internal fun OnlineBooksPageV36(
                 onStart = viewModel::buildWithAi,
                 onCancel = viewModel::cancelAi,
                 onSave = { viewModel.saveAiSource(); aiSheet = false },
+                onConfigureAi = onConfigureAi,
             )
         }
     }
@@ -211,6 +220,11 @@ private fun OnlineSearchTabV36(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             placeholder = { Text("书名或作者") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
+            trailingIcon = {
+                androidx.compose.material3.IconButton(onClick = onSearch, enabled = query.isNotBlank() && !state.searching) {
+                    Icon(Icons.Rounded.Search, "搜索书名或作者", tint = t.primary)
+                }
+            },
             singleLine = true,
             shape = RoundedCornerShape(18.dp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -223,6 +237,11 @@ private fun OnlineSearchTabV36(
             ),
         )
         val enabled = state.sources.count { it.enabled }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("全源搜索", color = t.foreground, style = MaterialTheme.typography.labelLarge)
+            Text("  ·  $enabled 个书源已启用", Modifier.weight(1f), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onGoSources) { Text("管理") }
+        }
         AnimatedVisibility(state.searching) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 LanghuanMotionStatus("正在搜索 ${state.searchedSources}/$enabled 个书源", Modifier.weight(1f))
@@ -230,8 +249,10 @@ private fun OnlineSearchTabV36(
             }
         }
         when {
-            state.sources.isEmpty() -> OnlineEmptyV36("还没有书源", "琅嬛不内置任何书源。到「书源」页导入你自己的书源（支持阅读 Legado 格式）。", "去导入", onGoSources)
-            state.results.isEmpty() && !state.searching -> OnlineEmptyV36("输入书名开始搜索", "会同时在 $enabled 个已启用书源里查找。", null, null)
+            state.sources.isEmpty() -> OnlineEmptyV36("为书城添加第一盏灯", "导入你有权使用的书源，或让 AI 为你生成。\n书城会从这些网站搜索真实书籍。", "添加书源 / AI 生成", onGoSources)
+            enabled == 0 -> OnlineEmptyV36("书源还没有启用", "到书源管理打开至少一个书源，再来寻找喜欢的故事。", "启用书源", onGoSources)
+            state.results.isEmpty() && !state.searching && state.query.isNotBlank() -> OnlineEmptyV36("没有找到相关书籍", "试试更短的书名、作者名，或换一个可用书源。", "检查书源", onGoSources)
+            state.results.isEmpty() && !state.searching -> OnlineEmptyV36("故事，从一个名字开始", "输入书名或作者，会同时搜索你启用的 $enabled 个书源。", null, null)
             else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 itemsIndexed(state.results, key = { _, it -> it.sourceId + it.bookUrl }) { index, book ->
                     Surface(
@@ -268,8 +289,10 @@ private fun OnlineSourcesTabV36(
 ) {
     val t = LocalLanghuanUiTokens.current
     var pendingDelete by remember { mutableStateOf<BookSourceV36?>(null) }
+    var sourceQuery by rememberSaveable { mutableStateOf("") }
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
+            Text("${state.sources.count { it.enabled }} 个已启用 · 共 ${state.sources.size} 个书源", color = t.foreground, style = MaterialTheme.typography.titleSmall)
             Text(
                 "书源由你自己导入和负责。请只使用你有权访问的网站内容。支持阅读（Legado）格式中基于网页规则的书源；需要 JS 或 JSON 接口的书源会被跳过。",
                 Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
@@ -295,12 +318,18 @@ private fun OnlineSourcesTabV36(
                 OnlineImportButtonV36(Icons.Rounded.FolderOpen, "文件", Modifier.weight(1f), onFile)
             }
         }
-        itemsIndexed(state.sources, key = { _, it -> it.id }) { _, source ->
+        if (state.sources.isNotEmpty()) item {
+            OutlinedTextField(sourceQuery, { sourceQuery = it }, Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                placeholder = { Text("搜索名称、分组或网站") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true,
+                shape = RoundedCornerShape(16.dp))
+        }
+        itemsIndexed(state.sources.filter { sourceQuery.isBlank() || it.name.contains(sourceQuery, true) || it.group.contains(sourceQuery, true) || it.baseUrl.contains(sourceQuery, true) }, key = { _, it -> it.id }) { _, source ->
             Surface(Modifier.fillMaxWidth().animateItem(), shape = RoundedCornerShape(14.dp), color = t.card) {
                 Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(source.name, color = t.foreground, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(source.baseUrl, color = t.mutedForeground, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(listOfNotNull(source.group.takeIf { it.isNotBlank() }, if (source.enabled) "已启用" else "已停用", "网页规则").joinToString(" · "), Modifier.padding(top = 5.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
                     }
                     Switch(checked = source.enabled, onCheckedChange = { onToggle(source.id) })
                     LanghuanIconButton(Icons.Rounded.DeleteOutline, "删除书源", { pendingDelete = source })
@@ -467,11 +496,12 @@ private fun OnlineAiSheetV36(
     onStart: (String, String) -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
+    onConfigureAi: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     var site by rememberSaveable { mutableStateOf("") }
     var keyword by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 20.dp)) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 20.dp)) {
         Text("AI 生成书源", color = t.foreground, style = MaterialTheme.typography.titleLarge)
         Text(
             "AI 会依次分析搜索页、目录页和正文页，每一步都用真实网页验证；失败时会带着结果让 AI 再改一次。需要网站不依赖 JS 加载内容。",
@@ -479,6 +509,7 @@ private fun OnlineAiSheetV36(
             color = t.mutedForeground,
             style = MaterialTheme.typography.bodySmall,
         )
+        TextButton(onClick = onConfigureAi, enabled = !state.aiRunning) { Text("AI 服务与模型设置") }
         val editable = !state.aiRunning && state.aiReport == null
         OutlinedTextField(site, { site = it }, Modifier.fillMaxWidth(), label = { Text("网站链接") }, singleLine = true, enabled = editable)
         OutlinedTextField(keyword, { keyword = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("该站能搜到的一本书名（用于测试）") }, singleLine = true, enabled = editable)

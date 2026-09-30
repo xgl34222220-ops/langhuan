@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 120
-        versionName = "0.31.4-alpha41-toc-fallback"
+        versionCode = 121
+        versionName = "0.32.0-reader-preview01"
     }
 
     buildFeatures { compose = true }
@@ -71,6 +71,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jsoup)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.material.kolor)
     implementation(libs.haze)

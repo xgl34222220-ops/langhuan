@@ -53,9 +53,43 @@ class ReaderEngineV30Test {
     }
 
     @Test
+    fun fullBodyPagesShareFirstAndLastLineRails() {
+        val slots = List(87) { index -> ReaderSlotV30(31f, if (index % 4 == 0) 13f else 0f) }
+        val natural = readerPackSlotsV30(slots, 317f)
+        natural.forEachIndexed { index, page ->
+            val aligned = readerAlignFullPageV41(page, 317f, index < natural.lastIndex)
+            assertEquals(page.first, aligned.first)
+            assertEquals(page.last, aligned.last)
+            assertEquals(0f, aligned.tops.first(), 0.001f)
+            if (index < natural.lastIndex) {
+                assertEquals(286f, aligned.tops.last(), 0.001f)
+                assertEquals(317f, aligned.used, 0.001f)
+            } else {
+                assertEquals(page.used, aligned.used, 0f)
+                assertTrue(page.tops.contentEquals(aligned.tops))
+            }
+            assertTrue(aligned.tops.toList().zipWithNext().all { (a, b) -> b - a >= 31f })
+        }
+    }
+
+    @Test
+    fun shortAndTitlePagesAreNeverStretched() {
+        val page = ReaderPackedPageV30(0, 1, floatArrayOf(0f, 45f), 76f)
+        assertTrue(page === readerAlignFullPageV41(page, 317f, false))
+        val single = ReaderPackedPageV30(0, 0, floatArrayOf(0f), 500f)
+        assertTrue(single === readerAlignFullPageV41(single, 317f, true))
+    }
+
+    @Test
     fun justificationSplitsCjkGlyphsAndKeepsLatinWords() {
         val units = readerJustifyUnitsV30("\u3000\u3000他说hello world，好。")
         assertEquals(listOf("\u3000", "\u3000", "他", "说", "hello", " ", "world", "，", "好", "。"), units)
+    }
+
+    @Test
+    fun justificationKeepsEmojiGraphemesTogether() {
+        assertEquals(listOf("看", "👩🏽‍💻", "🇨🇳", "好"), readerJustifyUnitsV30("看👩🏽‍💻🇨🇳好"))
+        assertEquals(listOf("好", "❤️", "啊"), readerJustifyUnitsV30("好❤️啊"))
     }
 
     @Test

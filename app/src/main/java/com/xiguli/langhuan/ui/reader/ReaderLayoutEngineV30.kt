@@ -135,6 +135,25 @@ internal fun readerPackSlotsV30(slots: List<ReaderSlotV30>, pageHeight: Float): 
     return result
 }
 
+/**
+ * Keep the first and last body-line baselines on the same rails on every full page.
+ * Packing remains greedy; only the small remainder is spread between existing lines.
+ * Chapter endings, title pages and oversized/single-line pages retain natural spacing.
+ */
+internal fun readerAlignFullPageV41(
+    page: ReaderPackedPageV30,
+    pageHeight: Float,
+    isFullBodyPage: Boolean,
+): ReaderPackedPageV30 {
+    val remainder = pageHeight - page.used
+    if (!isFullBodyPage || page.tops.size < 2 || remainder <= 0f || !remainder.isFinite()) return page
+    val interval = remainder / (page.tops.size - 1)
+    return page.copy(
+        tops = FloatArray(page.tops.size) { index -> page.tops[index] + interval * index },
+        used = pageHeight,
+    )
+}
+
 internal fun readerTypefaceV30(fontKey: String, weight: Int): Typeface {
     val base = when (fontKey) {
         "serif" -> Typeface.SERIF
@@ -182,8 +201,29 @@ internal fun readerJustifyUnitsV30(text: String): List<String> {
             units += text.substring(i, j)
             i = j
         } else {
-            units += text.substring(i, i + n)
-            i += n
+            var end = i + n
+            var regionalCount = if (cp in 0x1F1E6..0x1F1FF) 1 else 0
+            while (end < text.length) {
+                val next = text.codePointAt(end)
+                val type = Character.getType(next)
+                val combining = type == Character.NON_SPACING_MARK.toInt() ||
+                    type == Character.COMBINING_SPACING_MARK.toInt() || type == Character.ENCLOSING_MARK.toInt()
+                when {
+                    combining || next in 0xFE00..0xFE0F || next in 0xE0100..0xE01EF ||
+                        next in 0x1F3FB..0x1F3FF -> end += Character.charCount(next)
+                    next == 0x200D && end + 1 < text.length -> {
+                        end++ // Keep the joiner and its following glyph in the same draw unit.
+                        end += Character.charCount(text.codePointAt(end))
+                    }
+                    regionalCount == 1 && next in 0x1F1E6..0x1F1FF -> {
+                        end += Character.charCount(next)
+                        regionalCount++
+                    }
+                    else -> break
+                }
+            }
+            units += text.substring(i, end)
+            i = end
         }
     }
     return units
@@ -291,7 +331,13 @@ internal fun readerPaginateChapterV30(
     }
 
     val packed = readerPackSlotsV30(raws.map { it.slot }, spec.bodyHeightPx.toFloat())
-    val pages = packed.mapIndexed { pageIndex, packedPage ->
+    val pages = packed.mapIndexed { pageIndex, naturalPage ->
+        val packedPage = readerAlignFullPageV41(
+            naturalPage,
+            spec.bodyHeightPx.toFloat(),
+            isFullBodyPage = pageIndex < packed.lastIndex &&
+                (naturalPage.first..naturalPage.last).none { raws[it].title },
+        )
         val lines = (packedPage.first..packedPage.last).mapIndexed { k, rawIndex ->
             val raw = raws[rawIndex]
             val top = packedPage.tops[k]

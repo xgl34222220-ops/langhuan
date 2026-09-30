@@ -135,7 +135,7 @@ import java.util.Date
 import java.util.Locale
 
 private enum class LuoShelfScreenV1 {
-    HOME, SHELF, CREATE, PROFILE, PROFILE_EDIT, SHELF_MANAGER, NEW_SHELF, SETTINGS, EXPLORE, HISTORY, MEDALS,
+    HOME, SHELF, BOOKSTORE, CREATE, PROFILE, PROFILE_EDIT, SHELF_MANAGER, NEW_SHELF, SETTINGS, EXPLORE, HISTORY, MEDALS,
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -156,13 +156,15 @@ fun ShelfLuoShuFunctionalV1(
     onExport: (String, com.xiguli.langhuan.data.ExportFormat) -> Unit = { _, _ -> },
     onOnline: () -> Unit = {},
     onCheckUpdate: (String) -> Unit = {},
+    onlineContent: @Composable (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("qingmo_shelf_v9", 0) }
     val t = LocalLanghuanUiTokens.current
     val editViewModel: BookEditViewModelV5 = viewModel()
 
-    var screen by rememberSaveable { mutableStateOf(LuoShelfScreenV1.HOME) }
+    var screen by rememberSaveable { mutableStateOf(LuoShelfScreenV1.SHELF) }
+    var manageSources by rememberSaveable { mutableStateOf(false) }
     var addOpen by remember { mutableStateOf(false) }
     var blankOpen by remember { mutableStateOf(false) }
     var exportFor by remember { mutableStateOf<ReaderBookUi?>(null) }
@@ -202,10 +204,10 @@ fun ShelfLuoShuFunctionalV1(
         return
     }
 
-    val mainScreens = listOf(LuoShelfScreenV1.HOME, LuoShelfScreenV1.SHELF, LuoShelfScreenV1.CREATE, LuoShelfScreenV1.PROFILE)
-    BackHandler(enabled = screen != LuoShelfScreenV1.HOME) {
+    val mainScreens = listOf(LuoShelfScreenV1.SHELF, LuoShelfScreenV1.BOOKSTORE, LuoShelfScreenV1.PROFILE)
+    BackHandler(enabled = screen != LuoShelfScreenV1.SHELF) {
         screen = when (screen) {
-            in mainScreens -> LuoShelfScreenV1.HOME
+            in mainScreens -> LuoShelfScreenV1.SHELF
             LuoShelfScreenV1.NEW_SHELF -> LuoShelfScreenV1.SHELF_MANAGER
             else -> LuoShelfScreenV1.PROFILE
         }
@@ -244,14 +246,20 @@ fun ShelfLuoShuFunctionalV1(
                             },
                         )
                         LuoShelfScreenV1.CREATE -> LuoShelfCreateV1(onCreate, onImportLocal, onSkills)
-                        LuoShelfScreenV1.PROFILE -> LuoShelfProfileV1(
-                            nickname = nickname, bookCount = state.stories.size, checkedIn = checkedIn, syncEnabled = syncEnabled,
+                        LuoShelfScreenV1.BOOKSTORE -> onlineContent(manageSources)
+                        LuoShelfScreenV1.PROFILE -> ReaderProfileV41(
+                            nickname = nickname,
+                            bookCount = state.stories.size,
                             onEditProfile = { screen = LuoShelfScreenV1.PROFILE_EDIT },
-                            onCheckIn = { checkedIn = true; prefs.edit().putString("checkin_date", today).apply() },
-                            onExplore = { screen = LuoShelfScreenV1.EXPLORE }, onHistory = { screen = LuoShelfScreenV1.HISTORY },
-                            onMedals = { screen = LuoShelfScreenV1.MEDALS }, onShelfManager = { screen = LuoShelfScreenV1.SHELF_MANAGER },
-                            onSyncChanged = { syncEnabled = it; prefs.edit().putBoolean("sync_enabled", it).apply() },
-                            onSettings = { screen = LuoShelfScreenV1.SETTINGS },
+                            onHistory = { screen = LuoShelfScreenV1.HISTORY },
+                            onShelfManager = { screen = LuoShelfScreenV1.SHELF_MANAGER },
+                            onSources = { manageSources = true; screen = LuoShelfScreenV1.BOOKSTORE },
+                            onAiSetup = onAiSetup,
+                            onImport = onImportLocal,
+                            onCreate = onCreate,
+                            onBlankBook = { blankOpen = true },
+                            onRunCenter = onRunCenter,
+                            onSkills = onSkills,
                         )
                         LuoShelfScreenV1.PROFILE_EDIT -> LuoProfileEditV1(nickname, { screen = LuoShelfScreenV1.PROFILE }) {
                             nickname = it
@@ -281,21 +289,17 @@ fun ShelfLuoShuFunctionalV1(
                     }
                 }
             }
-            if (screen in mainScreens) LuoFloatingDockV1(screen) { screen = it }
+            if (screen in mainScreens) LuoFloatingDockV1(screen) { manageSources = false; screen = it }
         }
     }
 
     if (addOpen) {
         ModalBottomSheet(onDismissRequest = { addOpen = false }, containerColor = t.card, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                Text("添加作品", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 10.dp))
+                Text("添加到书架", color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 10.dp))
                 LanghuanMenuRow(Icons.Rounded.FolderOpen, "导入本地小说", { addOpen = false; onImportLocal() }, subtitle = "TXT · EPUB · Markdown")
                 LanghuanSeparator(Modifier.padding(start = 54.dp))
-                LanghuanMenuRow(Icons.Rounded.Search, "在线找书", { addOpen = false; onOnline() }, subtitle = "用你导入的书源搜索、下载、追更")
-                LanghuanSeparator(Modifier.padding(start = 54.dp))
-                LanghuanMenuRow(Icons.Rounded.AutoAwesome, "AI 创建小说", { addOpen = false; onCreate() }, subtitle = "通过对话逐步创建新作品")
-                LanghuanSeparator(Modifier.padding(start = 54.dp))
-                LanghuanMenuRow(Icons.Rounded.Edit, "空白新书", { addOpen = false; blankOpen = true }, subtitle = "不用 AI，直接自己写")
+                LanghuanMenuRow(Icons.Rounded.Search, "去书城找书", { addOpen = false; manageSources = false; screen = LuoShelfScreenV1.BOOKSTORE }, subtitle = "用你导入的书源搜索、下载、追更")
                 Spacer(Modifier.navigationBarsPadding().height(16.dp))
             }
         }
@@ -429,9 +433,9 @@ fun ShelfLuoShuFunctionalV1(
 @Composable
 private fun LuoFloatingDockV1(screen: LuoShelfScreenV1, onSelect: (LuoShelfScreenV1) -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    val targets = listOf(LuoShelfScreenV1.HOME, LuoShelfScreenV1.SHELF, LuoShelfScreenV1.CREATE, LuoShelfScreenV1.PROFILE)
-    val labels = listOf("首页", "书架", "创作", "我的")
-    val icons = listOf(Icons.Rounded.Home, Icons.Rounded.Book, Icons.Rounded.AutoAwesome, Icons.Outlined.Person)
+    val targets = listOf(LuoShelfScreenV1.SHELF, LuoShelfScreenV1.BOOKSTORE, LuoShelfScreenV1.PROFILE)
+    val labels = listOf("书架", "书城", "我的")
+    val icons = listOf(Icons.Rounded.Book, Icons.Rounded.Explore, Icons.Outlined.Person)
     val haptics = LocalHapticFeedback.current
     Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),

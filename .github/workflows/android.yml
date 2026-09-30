@@ -35,8 +35,8 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Run unit tests and build Debug APK
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Run unit tests, Android lint and build Debug APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -44,3 +44,10 @@ jobs:
           name: Langhuan-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Langhuan-verification-reports
+          path: app/build/reports
