@@ -169,6 +169,10 @@ fun ShelfLuoShuFunctionalV1(
     }
 
     editingBookId?.let { id -> state.stories.firstOrNull { it.id == id } }?.let { book ->
+        BackHandler {
+            editViewModel.clearFeedback()
+            editingBookId = null
+        }
         BookEditPageV5(book = book, editViewModel = editViewModel) {
             editViewModel.clearFeedback()
             editingBookId = null
@@ -178,7 +182,15 @@ fun ShelfLuoShuFunctionalV1(
 
     val mainScreens = listOf(LuoShelfScreenV1.HOME, LuoShelfScreenV1.SHELF, LuoShelfScreenV1.CREATE, LuoShelfScreenV1.PROFILE)
     BackHandler(enabled = screen != LuoShelfScreenV1.HOME) {
-        screen = if (screen in mainScreens) LuoShelfScreenV1.HOME else LuoShelfScreenV1.PROFILE
+        screen = when (screen) {
+            in mainScreens -> LuoShelfScreenV1.HOME
+            LuoShelfScreenV1.NEW_SHELF -> LuoShelfScreenV1.SHELF_MANAGER
+            else -> LuoShelfScreenV1.PROFILE
+        }
+    }
+    BackHandler(enabled = searchOpen && screen == LuoShelfScreenV1.SHELF) {
+        searchOpen = false
+        query = ""
     }
 
     Box(Modifier.fillMaxSize().background(t.background)) {
@@ -356,8 +368,20 @@ private fun LuoShelfHomeV1(books: List<ReaderBookUi>, openingBookId: String?, on
                     Column(Modifier.padding(start = 18.dp).weight(1f)) {
                         Text(recent.title, color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         val progress = remember(recent.id) { ReaderProgressStoreV11.load(context, recent.id, recent.currentChapter.coerceAtLeast(1)) }
-                        Text("第 ${progress.chapterNumber} 章", Modifier.padding(top = 7.dp), color = t.mutedForeground, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                        LuoProgressBarV31(progress.positionFraction, Modifier.padding(top = 12.dp).fillMaxWidth())
+                        val bookStats = remember(recent.id, recent.updatedAt) {
+                            val progressPrefs = context.getSharedPreferences("reader_progress_v2", 0)
+                            progressPrefs.getInt("total_${recent.id}", 0) to progressPrefs.getInt("index_${recent.id}", -1)
+                        }
+                        val total = bookStats.first
+                        val index = if (bookStats.second >= 0) bookStats.second else progress.chapterNumber - 1
+                        val bookFraction = if (total > 0) ((index + progress.positionFraction) / total).coerceIn(0f, 1f) else progress.positionFraction
+                        Text(
+                            if (total > 0) "第 ${progress.chapterNumber} 章 · 已读 ${(bookFraction * 100).toInt()}%" else "第 ${progress.chapterNumber} 章",
+                            Modifier.padding(top = 7.dp),
+                            color = t.mutedForeground,
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        )
+                        LuoProgressBarV31(bookFraction, Modifier.padding(top = 12.dp).fillMaxWidth())
                         Text("继续阅读 →", Modifier.padding(top = 14.dp), color = t.primary, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
                     }
                 }
@@ -489,7 +513,7 @@ private fun LuoShelfLibraryV1(
             enter = slideInVertically(LanghuanMotionV31.settle()) { it } + fadeIn(tween(160)),
             exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
         ) {
-            Surface(Modifier.navigationBarsPadding().padding(18.dp).fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = t.card, shadowElevation = 3.dp) {
+            Surface(Modifier.padding(18.dp).fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = t.card, shadowElevation = 3.dp) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Text("正在导入 ${importState.currentFileName}", Modifier.padding(start = 10.dp), color = t.foreground, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
