@@ -19,8 +19,8 @@ class ShelfBookEditingContractTest {
         assertFalse(entry.contains("ShelfQingmoFunctionalV9("))
         assertFalse(router.contains("ShelfNativeExperienceV4("))
 
-        assertTrue(shelf.contains("GridCells.Fixed(2)"))
-        assertTrue(shelf.contains("Arrangement.spacedBy(16.dp)"))
+        assertTrue(shelf.contains("GridCells.Fixed(3)"))
+        assertTrue(shelf.contains("Arrangement.spacedBy(14.dp)"))
         assertTrue(shelf.contains("RoundedCornerShape(18.dp)"))
         assertTrue(shelf.contains("Icons.Outlined.Person"))
         assertTrue(shelf.contains("combinedClickable"))
@@ -35,7 +35,9 @@ class ShelfBookEditingContractTest {
         assertTrue(shelf.contains("putString(\"checkin_date\""))
         assertTrue(shelf.contains("putString(\"nickname\""))
         assertTrue(shelf.contains("putBoolean(\"sync_enabled\""))
-        assertFalse(shelf.contains("GridCells.Fixed(3)"))
+        assertFalse(shelf.contains("GridCells.Fixed(2)"))
+        assertTrue(shelf.contains("rememberLanghuanCoverV30("))
+        assertFalse(shelf.contains("BitmapFactory.decodeFile"))
         assertFalse(shelf.contains("Color(0xFFF5F1E9)"))
 
         assertTrue(editor.contains("ActivityResultContracts.GetContent()"))
