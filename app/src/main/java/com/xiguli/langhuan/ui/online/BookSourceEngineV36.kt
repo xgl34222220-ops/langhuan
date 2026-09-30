@@ -590,14 +590,27 @@ internal fun heuristicChapterLinksV39(doc: Document, bookUrl: String = ""): List
         val links = all.filter { (anchor, _) -> anchor === container || container.getAllElements().contains(anchor) }
             .map { it.second }
             .distinctBy { it.url }
-        if (links.isEmpty()) return@mapNotNull null
+        if (links.size < 2) return@mapNotNull null
         val totalAnchors = container.select("a[href]").size.coerceAtLeast(links.size)
         val density = links.size.toDouble() / totalAnchors.toDouble()
-        val score = links.size.coerceAtMost(800) + density * 500.0
+        var depth = 0
+        var p: Element? = container
+        while (p?.parent() != null && depth < 20) {
+            depth++
+            p = p.parent()
+        }
+        val hint = (container.id() + " " + container.className() + " " + container.tagName()).lowercase()
+        val semanticBonus = when {
+            listOf("chapter", "catalog", "toc", "directory", "list", "目录", "目錄").any(hint::contains) -> 500.0
+            container.tagName() in setOf("ul", "ol") -> 180.0
+            else -> 0.0
+        }
+        val broadPenalty = if (container.tagName() in setOf("html", "body", "main")) 400.0 else 0.0
+        val score = links.size.coerceAtMost(800) + density * 500.0 + depth * 35.0 + semanticBonus - broadPenalty
         Triple(score, container, links)
     }.maxByOrNull { it.first }
 
-    val picked = best?.third?.takeIf { it.size >= 2 } ?: all.map { it.second }.distinctBy { it.url }
+    val picked = best?.third ?: all.map { it.second }.distinctBy { it.url }
     return picked.filter { it.title.isNotBlank() }.distinctBy { it.url }
 }
 
