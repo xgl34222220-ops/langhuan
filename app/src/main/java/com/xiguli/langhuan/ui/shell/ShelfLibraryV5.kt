@@ -16,6 +16,10 @@ fun ShelfLibraryV5(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
+    onCreateBlank: (String, String) -> Unit = { _, _ -> },
+    onExport: (String, com.xiguli.langhuan.data.ExportFormat) -> Unit = { _, _ -> },
+    onOnline: () -> Unit = {},
+    onCheckUpdate: (String) -> Unit = {},
 ) = ShelfLuoShuFunctionalV1(
     state = state,
     importState = importState,
@@ -28,4 +32,8 @@ fun ShelfLibraryV5(
     onAiSetup = onAiSetup,
     onRunCenter = onRunCenter,
     onSkills = onSkills,
+    onCreateBlank = onCreateBlank,
+    onExport = onExport,
+    onOnline = onOnline,
+    onCheckUpdate = onCheckUpdate,
 )
