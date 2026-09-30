@@ -528,7 +528,16 @@ class UniversalAiGateway(
         val start = cleaned.indexOf('{')
         val end = cleaned.lastIndexOf('}')
         val jsonBody = if (start >= 0 && end > start) cleaned.substring(start, end + 1) else cleaned
-        return WireJson.decodeFromString<GeneratedChapter>(jsonBody)
+        return runCatching { WireJson.decodeFromString<GeneratedChapter>(jsonBody) }.getOrElse { strictError ->
+            // Models often wrap JSON in prose, leave raw newlines in strings, or get cut off by the
+            // output limit. Repair conservatively before giving up.
+            runCatching { WireJson.decodeFromString<GeneratedChapter>(repairModelJsonV34(raw)) }.getOrElse {
+                throw AiStructuredOutputException(
+                    "AI 返回的结构化内容不完整或格式有误（常见原因：输出被长度上限截断）。",
+                    strictError,
+                )
+            }
+        }
     }
 }
 
@@ -920,3 +929,6 @@ private fun JsonElement?.asObjects(): List<JsonObject> =
     (this as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
 
 private fun urlEncode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+/** The model answered, but its structured output could not be decoded even after repair. */
+class AiStructuredOutputException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
