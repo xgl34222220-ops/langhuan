@@ -27,7 +27,9 @@ class ReaderAlpha25PolishContractTest {
         assertTrue(native.contains("LaunchedEffect(resumeRequested)"))
         assertFalse(native.contains("remember(chapterKey)"))
         assertFalse(native.contains("LaunchedEffect(resumeRequested, chapterKey)"))
-        assertTrue(native.contains("key(chapterKey)"))
+        // V30: the engine turns across chapters itself; no per-chapter remount.
+        assertFalse(native.contains("key(chapterKey)"))
+        assertTrue(native.contains("ReaderEngineV30("))
     }
 
     @Test
