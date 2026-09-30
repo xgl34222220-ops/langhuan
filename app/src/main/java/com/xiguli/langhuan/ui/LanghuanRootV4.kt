@@ -81,7 +81,11 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     }
 
     fun requestBook(id: String, target: RootRouteV4, showInfo: Boolean = false) {
-        if (pendingBookId != null || libraryState.isBusy) return
+        if (libraryState.isBusy) return
+        // A stale pending id must never lock the whole shelf. A fresh tap owns the request.
+        pendingBookFreshReload = false
+        pendingBookId = null
+        pendingBookRoute = null
         openBookOnInfo = showInfo
         pendingBookFreshReload = libraryState.openedBook?.id == id && libraryState.readingChapter != null
         pendingBookId = id
