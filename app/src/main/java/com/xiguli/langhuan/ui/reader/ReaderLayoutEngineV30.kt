@@ -62,7 +62,12 @@ internal class ReaderLineV30(
     val offset: Int,
     val units: Array<String>?,
     val xs: FloatArray?,
-)
+    /** Per-line font extents, including any fallback font used for CJK or emoji. */
+    val ascent: Float = top - baseline,
+    val descent: Float = 0f,
+) {
+    val bottom: Float get() = baseline + descent
+}
 
 internal class ReaderPageV30(
     val chapterIndex: Int,
@@ -71,7 +76,7 @@ internal class ReaderPageV30(
     val startOffset: Int,
     val endOffset: Int,
     val usedHeight: Float,
-    /** Paragraph gap swallowed at the top of this page; scroll mode restores it. */
+    /** Inter-line/paragraph gap swallowed at the page top; scroll mode restores it. */
     val leadingGap: Float = 0f,
 )
 
@@ -99,7 +104,7 @@ internal class ReaderChapterPagesV30(
     }
 }
 
-/** A measured line before page placement. Pure data so the packer is unit-testable. */
+/** Font extent and the preceding whitespace, not a box containing trailing line leading. */
 internal data class ReaderSlotV30(val height: Float, val gapBefore: Float)
 
 internal data class ReaderPackedPageV30(val first: Int, val last: Int, val tops: FloatArray, val used: Float)
@@ -108,51 +113,99 @@ internal data class ReaderPackedPageV30(val first: Int, val last: Int, val tops:
  * Packs measured lines into pages. Paragraph gaps are dropped at the top of a page so every
  * page starts flush with the body top. A slot that is taller than the page gets a page alone.
  */
-internal fun readerPackSlotsV30(slots: List<ReaderSlotV30>, pageHeight: Float): List<ReaderPackedPageV30> {
+internal fun readerPackSlotsV30(
+    slots: List<ReaderSlotV30>,
+    pageHeight: Float,
+    maxCompressionPerGapPx: Float = 0f,
+    naturalPrefixSlots: Int = 0,
+): List<ReaderPackedPageV30> {
     if (slots.isEmpty()) return emptyList()
     val result = ArrayList<ReaderPackedPageV30>()
     var first = 0
     var y = 0f
     val tops = ArrayList<Float>()
+    val compression = ArrayList<Float>()
+    var compressionBudget = 0f
     // A tiny tolerance absorbs float rounding so an exactly fitting last line is not pushed.
     val limit = pageHeight + 0.5f
+
+    fun finish(last: Int, shrink: Boolean = false) {
+        val deficit = if (shrink) (y - pageHeight).coerceAtLeast(0f) else 0f
+        val fraction = if (compressionBudget > 0f) deficit / compressionBudget else 0f
+        var removed = 0f
+        val placed = FloatArray(tops.size) { index ->
+            removed += compression[index] * fraction
+            tops[index] - removed
+        }
+        result += ReaderPackedPageV30(first, last, placed, y - deficit)
+        first = last + 1
+        y = 0f
+        tops.clear()
+        compression.clear()
+        compressionBudget = 0f
+    }
+
     slots.forEachIndexed { index, slot ->
         val gap = if (index == first) 0f else slot.gapBefore
+        val gapBudget = if (first >= naturalPrefixSlots) minOf(gap, maxCompressionPerGapPx).coerceAtLeast(0f) else 0f
         if (index > first && y + gap + slot.height > limit) {
-            result += ReaderPackedPageV30(first, index - 1, tops.toFloatArray(), y)
-            first = index
-            y = 0f
-            tops.clear()
-            tops += 0f
-            y = slot.height
-        } else {
-            val top = y + gap
-            tops += top
-            y = top + slot.height
+            val deficit = y + gap + slot.height - pageHeight
+            val budget = compressionBudget + gapBudget
+            val expansion = if (tops.size > 1) (pageHeight - y) / (tops.size - 1) else Float.POSITIVE_INFINITY
+            // Prefer the smaller spacing change: either fill this page gently, or recover
+            // the next line with a slight squeeze. Never overlap fallback font extents.
+            if (slot.height <= pageHeight && deficit <= budget && deficit / tops.size < expansion) {
+                tops += y + gap
+                compression += gapBudget
+                compressionBudget = budget
+                y += gap + slot.height
+                finish(index, shrink = true)
+                return@forEachIndexed
+            }
+            finish(index - 1)
         }
+        val placedGap = if (index == first) 0f else gap
+        tops += y + placedGap
+        compression += if (index == first) 0f else gapBudget
+        compressionBudget += compression.last()
+        y += placedGap + slot.height
     }
-    result += ReaderPackedPageV30(first, slots.lastIndex, tops.toFloatArray(), y)
+    if (tops.isNotEmpty()) finish(slots.lastIndex)
     return result
 }
 
 /**
- * Keep the first and last body-line baselines on the same rails on every full page.
- * Packing remains greedy; only the small remainder is spread between existing lines.
+ * Bring the last font extent towards the bottom rail without changing the top rail.
+ * A bounded addition to each existing gap avoids loose pages at large sizes/paragraph gaps.
  * Chapter endings, title pages and oversized/single-line pages retain natural spacing.
  */
 internal fun readerAlignFullPageV41(
     page: ReaderPackedPageV30,
     pageHeight: Float,
     isFullBodyPage: Boolean,
+    maxExtraPerGapPx: Float,
 ): ReaderPackedPageV30 {
     val remainder = pageHeight - page.used
-    if (!isFullBodyPage || page.tops.size < 2 || remainder <= 0f || !remainder.isFinite()) return page
-    val interval = remainder / (page.tops.size - 1)
+    if (!isFullBodyPage || page.tops.size < 2 || remainder <= 0f || !remainder.isFinite() ||
+        maxExtraPerGapPx <= 0f || !maxExtraPerGapPx.isFinite()) return page
+    val interval = (remainder / (page.tops.size - 1)).coerceAtMost(maxExtraPerGapPx)
     return page.copy(
         tops = FloatArray(page.tops.size) { index -> page.tops[index] + interval * index },
-        used = pageHeight,
+        used = page.used + interval * (page.tops.size - 1),
     )
 }
+
+/** At most 6% of the requested baseline advance, also limited to one tenth of an em. */
+internal fun readerAlignmentLimitV43(fontSizePx: Float, lineHeightPx: Float): Float =
+    minOf(fontSizePx * .10f, lineHeightPx * .06f).coerceAtLeast(0f)
+
+/** The requested line height is a baseline advance. A taller fallback font must still fit. */
+internal fun readerLineGapV43(
+    previousDescent: Float,
+    ascent: Float,
+    baselineAdvance: Float,
+    paragraphGap: Float,
+): Float = (baselineAdvance - (previousDescent - ascent)).coerceAtLeast(0f) + paragraphGap.coerceAtLeast(0f)
 
 internal fun readerTypefaceV30(fontKey: String, weight: Int): Typeface {
     val base = when (fontKey) {
@@ -176,6 +229,7 @@ private fun readerStaticLayoutV30(text: String, paint: TextPaint, width: Int): S
     StaticLayout.Builder.obtain(text, 0, text.length, paint, width.coerceAtLeast(1))
         .setAlignment(Layout.Alignment.ALIGN_NORMAL)
         .setIncludePad(false)
+        .setUseLineSpacingFromFallbacks(true)
         .setLineSpacing(0f, 1f)
         .setBreakStrategy(android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE)
         .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
@@ -256,12 +310,6 @@ private fun readerJustifyV30(text: String, paint: TextPaint, width: Float): Pair
     return units.toTypedArray() to xs
 }
 
-private fun baselineInBoxV30(paint: TextPaint, boxHeight: Float): Float {
-    val fm = paint.fontMetrics
-    val textHeight = fm.descent - fm.ascent
-    return (boxHeight - textHeight) / 2f - fm.ascent
-}
-
 /**
  * Paginates one chapter. Runs on a background dispatcher: it only touches its own paints.
  * [body] must already be normalized; offsets are relative to it so saved progress survives
@@ -277,14 +325,13 @@ internal fun readerPaginateChapterV30(
     val width = spec.bodyWidthPx.coerceAtLeast(1)
     val bodyPaint = readerTextPaintV30(spec.fontSizePx, spec.fontKey, spec.weight, spec.letterSpacingEm)
     val titlePaint = readerTextPaintV30(spec.titleSizePx, spec.fontKey, 700, spec.letterSpacingEm)
-    val bodyBaseline = baselineInBoxV30(bodyPaint, spec.lineHeightPx)
-    val titleBaseline = baselineInBoxV30(titlePaint, spec.titleLineHeightPx)
-
     class Raw(
         val text: String,
         val title: Boolean,
         val offset: Int,
         val justified: Pair<Array<String>, FloatArray>?,
+        val ascent: Float,
+        val descent: Float,
         val slot: ReaderSlotV30,
     )
 
@@ -293,7 +340,12 @@ internal fun readerPaginateChapterV30(
         val layout = readerStaticLayoutV30(title, titlePaint, width)
         for (li in 0 until layout.lineCount) {
             val text = title.substring(layout.getLineStart(li), layout.getLineEnd(li)).trimEnd()
-            raws += Raw(text, true, 0, null, ReaderSlotV30(spec.titleLineHeightPx, 0f))
+            val ascent = layout.getLineAscent(li).toFloat()
+            val descent = layout.getLineDescent(li).toFloat()
+            val gap = raws.lastOrNull()?.let {
+                readerLineGapV43(it.descent, ascent, spec.titleLineHeightPx, 0f)
+            } ?: 0f
+            raws += Raw(text, true, 0, null, ascent, descent, ReaderSlotV30(descent - ascent, gap))
         }
     }
 
@@ -316,13 +368,17 @@ internal fun readerPaginateChapterV30(
                 val text = display.substring(ls, le).trimEnd('\n', ' ')
                 val isLast = li == layout.lineCount - 1
                 val justified = if (isLast) null else readerJustifyV30(text, bodyPaint, width.toFloat())
+                val ascent = layout.getLineAscent(li).toFloat()
+                val descent = layout.getLineDescent(li).toFloat()
+                val previous = raws.lastOrNull()
                 val gap = when {
-                    li != 0 -> 0f
-                    firstParagraph -> if (raws.isEmpty()) 0f else spec.titleGapPx
-                    else -> spec.paragraphGapPx
+                    previous == null -> 0f
+                    previous.title -> spec.titleGapPx.coerceAtLeast(0f)
+                    else -> readerLineGapV43(previous.descent, ascent, spec.lineHeightPx,
+                        if (li == 0 && !firstParagraph) spec.paragraphGapPx else 0f)
                 }
                 val offset = start + leading + (ls - prefix.length).coerceAtLeast(0)
-                raws += Raw(text, false, offset, justified, ReaderSlotV30(spec.lineHeightPx, gap))
+                raws += Raw(text, false, offset, justified, ascent, descent, ReaderSlotV30(descent - ascent, gap))
             }
             firstParagraph = false
         }
@@ -330,13 +386,16 @@ internal fun readerPaginateChapterV30(
         start = end + 1
     }
 
-    val packed = readerPackSlotsV30(raws.map { it.slot }, spec.bodyHeightPx.toFloat())
+    val alignmentLimit = readerAlignmentLimitV43(spec.fontSizePx, spec.lineHeightPx)
+    val packed = readerPackSlotsV30(raws.map { it.slot }, spec.bodyHeightPx.toFloat(),
+        maxCompressionPerGapPx = alignmentLimit, naturalPrefixSlots = raws.takeWhile { it.title }.size)
     val pages = packed.mapIndexed { pageIndex, naturalPage ->
         val packedPage = readerAlignFullPageV41(
             naturalPage,
             spec.bodyHeightPx.toFloat(),
             isFullBodyPage = pageIndex < packed.lastIndex &&
                 (naturalPage.first..naturalPage.last).none { raws[it].title },
+            maxExtraPerGapPx = alignmentLimit,
         )
         val lines = (packedPage.first..packedPage.last).mapIndexed { k, rawIndex ->
             val raw = raws[rawIndex]
@@ -344,11 +403,13 @@ internal fun readerPaginateChapterV30(
             ReaderLineV30(
                 text = raw.text,
                 top = top,
-                baseline = top + if (raw.title) titleBaseline else bodyBaseline,
+                baseline = top - raw.ascent,
                 title = raw.title,
                 offset = raw.offset,
                 units = raw.justified?.first,
                 xs = raw.justified?.second,
+                ascent = raw.ascent,
+                descent = raw.descent,
             )
         }
         val startOffset = if (pageIndex == 0) 0 else lines.firstOrNull { !it.title }?.offset ?: 0

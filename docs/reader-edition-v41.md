@@ -8,7 +8,7 @@
 - 导入、启停、删除、搜索书源与 AI 生成集中到书源管理
 - AI 复用现有服务配置，生成过程展示实际搜索、目录、正文、发现分类/榜单与下一页验证结果；生成的分类名称和链接必须能在该网站真实HTML中找到
 - 原有创作数据和页面保留，主要入口移至“我的 → 其他工具”
-- 普通满页固定首末行基线，只在已测得行间分配不足一行的余量；章末、标题和单行页不强行拉伸
+- 正文边界采用逐行原生字体度量，行距作为基线间距，段距独立加入；普通满页只在基线距 6% / 0.1em 的较小上限内微调，章末、标题和单行页保留自然留白
 - 复合 emoji 不再被两端对齐拆成多个独立绘制单元
 
 ## 支持边界
@@ -18,6 +18,14 @@
 测试 APK 按要求保留原应用身份 `com.xiguli.langhuan` 和名称「琅嬛」。不创建并排应用，不修改系统签名校验或用户设备安全设置。
 
 历史 GitHub Actions 调试 APK 使用临时证书，不同构建的证书并不相同。不能承诺此 APK 可直接安全覆盖手机上的版本。请先保留书籍和项目备份；不要为了安装而卸载原版或清空数据。本项目当前支持逐书导出 TXT/EPUB/Markdown 与单项目备份，不提供整个书架、分组和阅读进度的一键无损迁移。
+
+## 排版取舍与参考
+
+行高不再作为上下各塞半份留白的字形盒：改变行距时首行真实字形不会跟着下移，末行之后也不占一次额外行距。CJK、拉丁文和 emoji 使用实际行字体上下界，避免 fallback 字体重叠或被裁切。
+
+当下一行只差很少空间，分页器比较“少一行后拉开”和“多一行后轻微收紧”，选择所需调整更小的方案。补偿最多为 `min(基线距×6%, 字号×0.1)`，不足以自然齐底时允许少量余白，避免为几何齐底牺牲行距节奏。标题、短末页不做齐底拉伸。
+
+独立实现参考维护项目 LegadoTeam 的 [TextLine 字形边界](https://github.com/LegadoTeam/legado/blob/master/app/src/main/java/io/legado/app/ui/book/read/page/entities/TextLine.kt)、[TextPage 齐底处理](https://github.com/LegadoTeam/legado/blob/master/app/src/main/java/io/legado/app/ui/book/read/page/entities/TextPage.kt) 和 [TextChapterLayout 分页](https://github.com/LegadoTeam/legado/blob/master/app/src/main/java/io/legado/app/ui/book/read/page/provider/TextChapterLayout.kt)；没有复制其 GPL 实现。并未声称像素级复刻阅读。
 
 ## 第二轮可靠性修复
 
@@ -31,7 +39,7 @@
 
 - `gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`
 - `gradle :app:connectedDebugAndroidTest`（本地 HTTPS 外部链路测试需显式提供 sourceFixtureBase；CI 自动绑定当前提交）
-- `ReaderEditionV41Test` 覆盖三档宽度、三档字体缩放、三档字号的真实排版边界，以及连续十页生产渲染截图
+- `ReaderEditionV41Test` 覆盖三档宽度、三档字体缩放、三档字号、fallback 字体的真实边界与无丢字/重叠验证；保存连续十页，以及九档行距×段距的标题/连续两页/章末 36 图和间距 CSV
 - 设备测试保存书架、书城、书源、“我的”、连续阅读与受控分类/榜单截图；截图夹具明确为测试原创内容
 - `ReaderProgressV42DeviceTest` 在冻结保存防抖时触发暂停/销毁；`ReaderRecreationV42DeviceTest` 覆盖长章换字号、真实 Activity 重建与横屏
 - `StartupDatabasePreservationTest` 仅使用随机隔离数据库，校验坏库/旧schema/备份失败/磁盘满模拟/取消时原始字节保留
