@@ -229,6 +229,55 @@ class StoryProjectManager(context: Context) {
             if (previousActive != null) setActiveStoryId(previousActive) else clearActiveStoryId()
         }
     }
+    /** Appends downloaded chapters (online-source updates) after the current last chapter. */
+    suspend fun appendImportedChapters(novelId: String, items: List<ImportedChapter>): PersistedStory? {
+        if (items.isEmpty()) return null
+        val loaded = loadStory(novelId) ?: return null
+        val full = effectiveOutline(loaded.snapshot).toMutableList()
+        val volume = full.lastOrNull { it.level == OutlineLevel.VOLUME } ?: error("请先创建卷纲")
+        var number = full.filter { it.level == OutlineLevel.CHAPTER }.maxOfOrNull { it.order } ?: 0
+        val now = System.currentTimeMillis()
+        val drafts = items.map { item ->
+            number += 1
+            val node = OutlineNode(
+                id = "chapter-$novelId-$number-${UUID.randomUUID()}",
+                novelId = novelId,
+                parentId = volume.id,
+                level = OutlineLevel.CHAPTER,
+                order = number,
+                title = item.title.ifBlank { "第${number}章" },
+                objective = "梳理导入正文后补充本章目标。",
+                conflict = "待从正文提取冲突。",
+                turningPoint = "待从正文提取转折。",
+                locked = false,
+            )
+            full += node
+            ChapterDraft(
+                id = "draft-$novelId-$number",
+                novelId = novelId,
+                chapterNumber = number,
+                title = node.title,
+                objective = node.objective,
+                scenePlan = listOf(defaultScene(number)),
+                content = item.content,
+                version = 1,
+            )
+        }
+        drafts.forEach { draft ->
+            chapterStateDao.upsert(draft.toEntity(now))
+            upsertChapterMemory(draft, now)
+        }
+        val current = loaded.snapshot.novel.currentChapter
+        val snapshot = loaded.snapshot.copy(
+            novel = loaded.snapshot.novel.copy(
+                currentWords = loaded.snapshot.novel.currentWords + drafts.sumOf { it.content.length },
+            ),
+            outline = full.sortedWith(compareBy({ it.level.ordinal }, { it.order })),
+            activeOutline = activeChain(full, current),
+        )
+        return saveStructure(snapshot, loaded.draft)
+    }
+
     suspend fun chapterDrafts(novelId: String): List<ChapterDraft> {
         val loaded = loadStory(novelId) ?: return emptyList()
 
@@ -312,6 +361,66 @@ class StoryProjectManager(context: Context) {
         persistCurrent(normalized, draft, now)
         rebuildStructuredMemory(normalized, now)
         return PersistedStory(normalized, draft)
+    }
+
+    /** Renames one chapter in both the outline and its draft, using CursorWindow-safe reads. */
+    suspend fun renameChapter(novelId: String, chapterNumber: Int, title: String): PersistedStory? {
+        val clean = title.trim().take(40)
+        if (clean.isBlank()) return null
+        val loaded = loadStory(novelId) ?: return null
+        val draft = loadChapterDraftCursorSafe(novelId, chapterNumber) ?: return null
+        val renamed = draft.copy(title = clean)
+        val now = System.currentTimeMillis()
+        chapterStateDao.upsert(renamed.toEntity(now))
+        upsertChapterMemory(renamed, now)
+        val outline = effectiveOutline(loaded.snapshot).map { node ->
+            if (node.level == OutlineLevel.CHAPTER && node.order == chapterNumber) node.copy(title = clean) else node
+        }
+        val current = loaded.snapshot.novel.currentChapter
+        val snapshot = loaded.snapshot.copy(outline = outline, activeOutline = activeChain(outline, current))
+        return saveStructure(snapshot, if (loaded.draft.chapterNumber == chapterNumber) renamed else loaded.draft)
+    }
+
+    /**
+     * Deletes the last chapter only. Middle deletion would renumber memory/timeline/progress keys.
+     * The draft is read through the chunked loader so even a very large final chapter is safe.
+     */
+    suspend fun deleteLastChapter(novelId: String): PersistedStory? {
+        val loaded = loadStory(novelId) ?: return null
+        val outline = effectiveOutline(loaded.snapshot)
+        val chapters = outline.filter { it.level == OutlineLevel.CHAPTER }
+        check(chapters.size > 1) { "至少要保留一章" }
+        val last = chapters.maxBy { it.order }
+        val removedDraft = loadChapterDraftCursorSafe(novelId, last.order)
+        val remaining = outline.filterNot { it.id == last.id }
+        chapterStateDao.delete(novelId, last.order)
+        db.openHelper.writableDatabase.execSQL(
+            "DELETE FROM chapter_versions WHERE novelId = ? AND chapterNumber = ?",
+            arrayOf(novelId, last.order),
+        )
+        db.openHelper.writableDatabase.execSQL(
+            "DELETE FROM memory_chunks WHERE novelId = ? AND sourceType = 'CHAPTER' AND chapterNumber = ?",
+            arrayOf(novelId, last.order),
+        )
+        val current = loaded.snapshot.novel.currentChapter.coerceAtMost(last.order - 1).coerceAtLeast(1)
+        val draft = loadChapterDraftCursorSafe(novelId, current)
+            ?: loaded.draft.takeIf { it.chapterNumber != last.order }
+            ?: error("找不到可切换的章节")
+        val snapshot = loaded.snapshot.copy(
+            novel = loaded.snapshot.novel.copy(
+                currentChapter = current,
+                currentWords = (loaded.snapshot.novel.currentWords - (removedDraft?.content?.length ?: 0)).coerceAtLeast(0),
+            ),
+            outline = remaining,
+            activeOutline = activeChain(remaining, current),
+        )
+        return saveStructure(snapshot, draft)
+    }
+
+    /** Appends an empty chapter after the last one. */
+    suspend fun appendChapter(novelId: String, title: String): PersistedStory? {
+        val loaded = loadStory(novelId) ?: return null
+        return createChapter(loaded.snapshot, title, objective = "", conflict = "", turningPoint = "")
     }
 
     suspend fun exportStory(novelId: String, format: ExportFormat): ExportArtifact {
