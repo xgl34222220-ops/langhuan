@@ -346,7 +346,7 @@ internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36):
 
         // Some sites deliberately reject non-browser TLS/network stacks (400/403) while opening
         // normally in Chrome/WebView. Fall back to a real WebView session before giving up.
-        val browser = runCatching { BookSourceBrowserV38.fetchDocument(https, source.headers) }
+        val browser = runCatching { BookSourceBrowserV38.fetchDocument(request.copy(url = https), source.headers) }
         if (browser.isSuccess) return browser.getOrThrow()
 
         val firstMessage = first.exceptionOrNull()?.message.orEmpty()
@@ -361,7 +361,7 @@ internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36):
         )
     }
 
-    val browser = runCatching { BookSourceBrowserV38.fetchDocument(request.url, source.headers) }
+    val browser = runCatching { BookSourceBrowserV38.fetchDocument(request, source.headers) }
     if (browser.isSuccess) return browser.getOrThrow()
     error(
         listOf(first.exceptionOrNull()?.message.orEmpty(), browser.exceptionOrNull()?.message.orEmpty())
