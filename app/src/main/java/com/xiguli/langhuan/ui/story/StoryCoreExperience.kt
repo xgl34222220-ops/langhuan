@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -101,6 +102,8 @@ fun StoryCoreExperience(
     val world = state.runtime?.world
 
     Scaffold(
+        // Keyboard pushes the page up instead of covering the input (the app runs edge-to-edge).
+        modifier = Modifier.imePadding(),
         containerColor = t.background,
         topBar = {
             Surface(color = t.background, contentColor = t.foreground) {
