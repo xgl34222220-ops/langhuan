@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
 object PaperReaderPaletteV44 {
     val background = Color(0xFFFAF9F6)
     val ink = Color(0xFF15263E)
-    val muted = Color(0xFF757C87)
+    val muted = Color(0xFF667080)
     val card = Color(0xFFFFFEFC)
     val line = Color(0xFFEAE7E1)
     val accent = Color(0xFF245B9E)

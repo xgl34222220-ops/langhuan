@@ -211,7 +211,7 @@ fun ShelfLuoShuFunctionalV1(
             editViewModel.clearFeedback()
             editingBookId = null
         }
-        return
+        return@PaperReaderThemeV44
     }
 
     val mainScreens = listOf(LuoShelfScreenV1.SHELF, LuoShelfScreenV1.BOOKSTORE, LuoShelfScreenV1.PROFILE)

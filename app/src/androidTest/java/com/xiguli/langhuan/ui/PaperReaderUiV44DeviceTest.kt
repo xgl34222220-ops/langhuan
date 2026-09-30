@@ -53,6 +53,9 @@ class PaperReaderUiV44DeviceTest {
                 Surface(Modifier.fillMaxSize()) { OnlineAiSheetV36(state, { _, _ -> starts.incrementAndGet() }, {}, {}, {}) }
             } }
         }
+        rule.onNodeWithText("网站链接").performTextInput("http://example.com/")
+        rule.onNodeWithText("该站能搜到的一本书名（用于测试）").performTextInput("测试航行记")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
         rule.onAllNodesWithText(error).assertCountEquals(1)
         rule.onNodeWithText(error).performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("重试").performScrollTo().assertIsDisplayed()
