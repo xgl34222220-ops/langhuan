@@ -3,6 +3,9 @@ package com.xiguli.langhuan.ui
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -112,6 +115,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -170,8 +174,15 @@ internal fun ReaderMenuV30(
             enter = slideInVertically(spring(dampingRatio = .88f, stiffness = Spring.StiffnessMediumLow)) { it } + fadeIn(tween(160)),
             exit = slideOutVertically(tween(220)) { it } + fadeOut(tween(180)),
         ) {
+            // Drag the handle strip down to dismiss; a short drag springs back.
+            val dragY = remember { Animatable(0f) }
+            val dragScope = rememberCoroutineScope()
+            val dismissPx = with(LocalDensity.current) { 96.dp.toPx() }
+            LaunchedEffect(visible) { if (visible) dragY.snapTo(0f) }
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset { IntOffset(0, dragY.value.roundToInt()) },
                 color = theme.sheet,
                 shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
                 shadowElevation = 16.dp,
@@ -179,12 +190,31 @@ internal fun ReaderMenuV30(
                 Column(Modifier.navigationBarsPadding()) {
                     Box(
                         Modifier
-                            .padding(top = 8.dp, bottom = 4.dp)
-                            .align(Alignment.CenterHorizontally)
-                            .size(width = 36.dp, height = 4.dp)
-                            .clip(CircleShape)
-                            .background(theme.sheetMuted.copy(alpha = .35f)),
-                    )
+                            .fillMaxWidth()
+                            .height(18.dp)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        dragScope.launch {
+                                            if (dragY.value > dismissPx) onDismiss()
+                                            else dragY.animateTo(0f, spring(dampingRatio = .8f, stiffness = Spring.StiffnessMedium))
+                                        }
+                                    },
+                                    onDragCancel = { dragScope.launch { dragY.animateTo(0f) } },
+                                ) { change, amount ->
+                                    change.consume()
+                                    dragScope.launch { dragY.snapTo((dragY.value + amount).coerceAtLeast(0f)) }
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(width = 36.dp, height = 4.dp)
+                                .clip(CircleShape)
+                                .background(theme.sheetMuted.copy(alpha = .35f)),
+                        )
+                    }
                     AnimatedContent(
                         targetState = panel to tab,
                         transitionSpec = {
@@ -799,15 +829,29 @@ private fun ReaderActionTileV30(action: ReaderMenuActionV30, theme: ReaderThemeV
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) .9f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "tileScale")
     val tint by animateColorAsState(if (action.selected) theme.accent else theme.sheetText, tween(180), label = "tileTint")
+    val haptics = LocalHapticFeedback.current
+    // Toggles pop when they switch on, so the state change is felt as well as seen.
+    val pop = remember { Animatable(1f) }
+    var wasSelected by remember { mutableStateOf(action.selected) }
+    LaunchedEffect(action.selected) {
+        if (action.selected && !wasSelected) {
+            pop.snapTo(.82f)
+            pop.animateTo(1f, spring(dampingRatio = .45f, stiffness = Spring.StiffnessMedium))
+        }
+        wasSelected = action.selected
+    }
     Column(
         Modifier
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource = interaction, indication = null, onClick = action.onClick)
+            .clickable(interactionSource = interaction, indication = null) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                action.onClick()
+            }
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(action.icon, action.label, Modifier.size(24.dp), tint = tint)
+        Icon(action.icon, action.label, Modifier.size(24.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }, tint = tint)
         Text(
             action.label,
             Modifier.padding(top = 6.dp),
