@@ -39,11 +39,11 @@ class ShadcnNewYorkShellTest {
 
         assertTrue(kit.contains("enum class ShadcnButtonVariant"))
         assertTrue(kit.contains("fun ShadcnInput("))
-        assertTrue(theme.contains("dynamicColor: Boolean = true"))
+        assertTrue(theme.contains("dynamicColor: Boolean = false"))
         assertTrue(theme.contains("accent = colors.primaryContainer"))
         // LuoShu / MIUIX hierarchy is the active shell contract; Shadcn stays a component library.
-        assertTrue(theme.contains("radiusMd = 18.dp"))
-        assertTrue(theme.contains("large = RoundedCornerShape(24.dp)"))
-        assertTrue(theme.contains("extraLarge = RoundedCornerShape(30.dp)"))
+        assertTrue(theme.contains("radiusMd = 14.dp"))
+        assertTrue(theme.contains("large = RoundedCornerShape(20.dp)"))
+        assertTrue(theme.contains("extraLarge = RoundedCornerShape(26.dp)"))
     }
 }
