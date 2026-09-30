@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -187,6 +188,47 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         }
     }
 
+    // Root-level safety net for system back. Nested screens register later and take precedence.
+    BackHandler(enabled = route != RootRouteV4.SHELF) {
+        when (route) {
+            RootRouteV4.SHELF -> Unit
+            RootRouteV4.BOOK -> {
+                libraryVm.closeBook()
+                editorChapter = null
+                route = RootRouteV4.SHELF
+            }
+            RootRouteV4.CREATION -> route = RootRouteV4.SHELF
+            RootRouteV4.CREATION_RESEARCH -> route = RootRouteV4.CREATION
+            RootRouteV4.TAVERN -> {
+                tavernStoryId = null
+                libraryVm.closeBook()
+                route = RootRouteV4.SHELF
+            }
+            RootRouteV4.WRITING -> openBook(writingStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id)
+            RootRouteV4.EDITOR -> {
+                val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
+                if (returnAfterEditor == RootRouteV4.WRITING) {
+                    writingStoryId = id
+                    route = RootRouteV4.WRITING
+                } else {
+                    openBook(id)
+                }
+            }
+            RootRouteV4.AGENT, RootRouteV4.INTELLIGENCE -> backToBook()
+            RootRouteV4.RUN_CENTER -> route = if (libraryState.openedBook != null) RootRouteV4.BOOK else RootRouteV4.SHELF
+            RootRouteV4.AI_SETUP -> route = when {
+                !studioState.provider.ready && returnAfterAiSetup in setOf(
+                    RootRouteV4.CREATION,
+                    RootRouteV4.CREATION_RESEARCH,
+                    RootRouteV4.TAVERN,
+                ) -> RootRouteV4.SHELF
+                else -> returnAfterAiSetup
+            }
+            RootRouteV4.COVER_STUDIO -> route = RootRouteV4.BOOK
+            RootRouteV4.SKILLS -> route = returnAfterSkills
+        }
+    }
+
     val routeStates = rememberSaveableStateHolder()
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
@@ -273,29 +315,18 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                             CircularProgressIndicator(strokeWidth = 2.dp)
                         }
                     } else {
-                        Box(Modifier.fillMaxSize()) {
-                            StoryCleanExperience(
-                                book = book,
-                                libraryState = libraryState,
-                                aiReady = studioState.provider.ready,
-                                onAiSetup = { openAiSetup(RootRouteV4.TAVERN) },
-                                onAdopted = { libraryVm.openBook(book.id) },
-                            )
-                            Surface(
-                                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = .88f),
-                                shadowElevation = 5.dp,
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        tavernStoryId = null
-                                        libraryVm.closeBook()
-                                        route = RootRouteV4.SHELF
-                                    },
-                                ) { Icon(Icons.Rounded.ArrowBack, "返回书架") }
-                            }
-                        }
+                        StoryCleanExperience(
+                            book = book,
+                            libraryState = libraryState,
+                            aiReady = studioState.provider.ready,
+                            onAiSetup = { openAiSetup(RootRouteV4.TAVERN) },
+                            onAdopted = { libraryVm.openBook(book.id) },
+                            onBack = {
+                                tavernStoryId = null
+                                libraryVm.closeBook()
+                                route = RootRouteV4.SHELF
+                            },
+                        )
                     }
                 }
 
