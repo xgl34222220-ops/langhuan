@@ -1,6 +1,28 @@
 package com.xiguli.langhuan.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.xiguli.langhuan.ui.design.LanghuanMotionStatus
+import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.LanghuanSkeletonV31
+import com.xiguli.langhuan.ui.design.enterOnceV31
+import com.xiguli.langhuan.ui.design.rememberEnterRegistryV31
+import com.xiguli.langhuan.ui.design.springClickV31
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -205,59 +227,66 @@ fun WritingWorkspaceLuoShuV11(
     ) { padding ->
         if (flow.isLoading || !flow.ready || snapshot == null || draft == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                // Skeleton in the shape of the real cards, with the loading note underneath.
                 Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                    Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    CircularProgressIndicator(color = t.accentForeground, strokeWidth = 2.dp)
-                    Text("正在准备章节工作台", style = MaterialTheme.typography.titleMedium, color = t.foreground)
-                    Text("读取章纲、人物状态、时间线与长期记忆", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    LanghuanSkeletonV31(Modifier.fillMaxWidth().height(46.dp), RoundedCornerShape(t.radiusMd))
+                    LanghuanSkeletonV31(Modifier.fillMaxWidth().height(168.dp), RoundedCornerShape(t.radiusXl))
+                    LanghuanSkeletonV31(Modifier.fillMaxWidth().height(92.dp), RoundedCornerShape(t.radiusLg))
+                    LanghuanSkeletonV31(Modifier.fillMaxWidth().height(140.dp), RoundedCornerShape(t.radiusLg))
+                    Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        LanghuanMotionStatus("正在准备章节工作台", active = true)
+                        Text("读取章纲、人物状态、时间线与长期记忆", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                    }
                 }
             }
         } else {
+            val enter = rememberEnterRegistryV31()
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item {
+                item(key = "runtime") {
                     WritingRuntimeStatusV11(
                         events = flow.runEvents,
                         providerLabel = flow.providerLabel,
                         onClick = { sheet = WritingSheetV11.RUN },
                     )
                 }
-                item { WritingMissionCardV11(snapshot, draft, flow) }
-                item {
-                    WritingSceneCardV11(
+                item(key = "mission") { Box(Modifier.animateItem().enterOnceV31(enter, "mission", 1)) { WritingMissionCardV11(snapshot, draft, flow) } }
+                item(key = "scenes") {
+                    Box(Modifier.animateItem().enterOnceV31(enter, "scenes", 2)) { WritingSceneCardV11(
                         scenes = flow.workingScenes.ifEmpty { draft.scenePlan },
                         dirty = flow.sceneDirty,
                         onClick = { sheet = WritingSheetV11.SCENES },
-                    )
+                    ) }
                 }
-                item {
-                    WritingBodyCardV11(
+                item(key = "body") {
+                    Box(Modifier.animateItem().enterOnceV31(enter, "body", 3)) { WritingBodyCardV11(
                         flow = flow,
                         hasPendingResult = hasPendingResult,
                         onEdit = { onEditChapter(draft.novelId, draft.chapterNumber) },
-                    )
+                    ) }
                 }
                 if (flow.chapterCommitted || flow.review != null) {
-                    item {
-                        WritingMemoryCardV11(
+                    item(key = "memory") {
+                        Box(Modifier.animateItem().enterOnceV31(enter, "memory", 0)) { WritingMemoryCardV11(
                             flow = flow,
                             pending = pendingCandidates,
                             onConfirm = viewModel::confirmCandidateFact,
                             onReject = viewModel::rejectCandidateFact,
-                        )
+                        ) }
                     }
                 }
-                item {
-                    WritingStoryStateCardV11(
+                item(key = "story") {
+                    Box(Modifier.animateItem().enterOnceV31(enter, "story", 4)) { WritingStoryStateCardV11(
                         snapshot = snapshot,
                         pendingCount = pendingCandidates.size,
                         onClick = { sheet = WritingSheetV11.STORY },
-                    )
+                    ) }
                 }
             }
         }
@@ -372,7 +401,7 @@ private fun WritingRuntimeStatusV11(events: List<RunEvent>, providerLabel: Strin
     }
 
     LanghuanCard(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().springClickV31(pressedScale = .98f, onClick = onClick),
         contentPadding = 13.dp,
         depth = 0,
     ) {
@@ -432,19 +461,28 @@ private fun WritingMissionCardV11(
             labels.forEachIndexed { index, label ->
                 val completed = index < activeIndex
                 val current = index == activeIndex.coerceAtMost(labels.lastIndex)
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = when {
+                val pillColor by animateColorAsState(
+                    when {
                         current -> t.accent
                         completed -> t.muted
                         else -> t.card
                     },
-                    contentColor = if (current) t.accentForeground else t.mutedForeground,
+                    tween(LanghuanMotionV31.SLOW),
+                    label = "stagePill",
+                )
+                val pillText by animateColorAsState(if (current) t.accentForeground else t.mutedForeground, tween(LanghuanMotionV31.SLOW), label = "stageText")
+                Surface(
+                    modifier = Modifier.animateContentSize(LanghuanMotionV31.settle()),
+                    shape = RoundedCornerShape(999.dp),
+                    color = pillColor,
+                    contentColor = pillText,
                 ) {
                     Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (completed) {
-                            Icon(Icons.Rounded.Check, null, Modifier.size(14.dp), tint = t.success)
-                            Spacer(Modifier.width(4.dp))
+                        AnimatedVisibility(completed, enter = scaleIn(LanghuanMotionV31.press()) + fadeIn(), exit = fadeOut()) {
+                            Row {
+                                Icon(Icons.Rounded.Check, null, Modifier.size(14.dp), tint = t.success)
+                                Spacer(Modifier.width(4.dp))
+                            }
                         }
                         Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = if (current) FontWeight.SemiBold else FontWeight.Medium)
                     }
@@ -457,7 +495,7 @@ private fun WritingMissionCardV11(
 @Composable
 private fun WritingSceneCardV11(scenes: List<ScenePlan>, dirty: Boolean, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    LanghuanCard(Modifier.fillMaxWidth().clickable(onClick = onClick), contentPadding = 15.dp) {
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 15.dp, onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(t.radiusSm), color = t.accent) {
                 Icon(Icons.Rounded.Route, null, Modifier.padding(10.dp), tint = t.accentForeground)
@@ -618,7 +656,7 @@ private fun WritingMemoryCardV11(
 @Composable
 private fun WritingStoryStateCardV11(snapshot: StorySnapshot, pendingCount: Int, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    LanghuanCard(Modifier.fillMaxWidth().clickable(onClick = onClick), contentPadding = 16.dp) {
+    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 16.dp, onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.FactCheck, null, tint = t.accentForeground)
             Text("故事状态", Modifier.padding(start = 8.dp).weight(1f), style = MaterialTheme.typography.titleMedium, color = t.foreground)
@@ -671,8 +709,12 @@ private fun WritingControllerDockV11(
         Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (latestAssistant.isNotBlank() || conversation.isBusy) {
-            LanghuanCard(Modifier.fillMaxWidth().clickable(onClick = onHistory), contentPadding = 10.dp, depth = 0) {
+        AnimatedVisibility(
+            visible = latestAssistant.isNotBlank() || conversation.isBusy,
+            enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(LanghuanMotionV31.MEDIUM)),
+            exit = shrinkVertically(tween(LanghuanMotionV31.MEDIUM)) + fadeOut(tween(LanghuanMotionV31.FAST)),
+        ) {
+            LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 10.dp, depth = 0, onClick = onHistory) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (conversation.isBusy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.8.dp, color = t.accentForeground)
                     else Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(17.dp), tint = t.accentForeground)
@@ -701,7 +743,14 @@ private fun WritingControllerDockV11(
             lastPlan?.let { LanghuanBadge(it.summary) }
         }
 
-        quickAction?.let { action ->
+        AnimatedContent(
+            targetState = quickAction,
+            transitionSpec = {
+                (fadeIn(tween(LanghuanMotionV31.MEDIUM)) + scaleIn(LanghuanMotionV31.settle(), initialScale = .94f)) togetherWith
+                    fadeOut(tween(LanghuanMotionV31.FAST)) using SizeTransform(clip = false)
+            },
+            label = "quickAction",
+        ) { shown -> shown?.let { action ->
             Button(
                 onClick = { onQuickAction(action) },
                 enabled = action == WritingQuickActionV11.STOP || !flow.busy,
@@ -715,7 +764,7 @@ private fun WritingControllerDockV11(
                 Spacer(Modifier.width(6.dp))
                 Text(action.label, fontWeight = FontWeight.SemiBold)
             }
-        }
+        } }
 
         LanghuanGlassPanel(
             modifier = Modifier.fillMaxWidth(),
@@ -744,13 +793,23 @@ private fun WritingControllerDockV11(
                     ),
                 )
                 val canSend = input.isNotBlank() && !disabled
+                val sendBg by animateColorAsState(if (canSend) t.foreground else t.muted, tween(LanghuanMotionV31.MEDIUM), label = "sendBg")
+                val sendFg by animateColorAsState(if (canSend) t.primaryForeground else t.mutedForeground, tween(LanghuanMotionV31.MEDIUM), label = "sendFg")
+                val sendScale by animateFloatAsState(if (canSend) 1f else .9f, LanghuanMotionV31.press(), label = "sendScale")
+                val haptics = LocalHapticFeedback.current
                 Surface(
-                    modifier = Modifier.size(42.dp),
+                    modifier = Modifier.size(42.dp).graphicsLayer { scaleX = sendScale; scaleY = sendScale },
                     shape = RoundedCornerShape(18.dp),
-                    color = if (canSend) t.foreground else t.muted,
-                    contentColor = if (canSend) t.primaryForeground else t.mutedForeground,
+                    color = sendBg,
+                    contentColor = sendFg,
                 ) {
-                    Box(Modifier.clickable(enabled = canSend, onClick = onSend), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.springClickV31(enabled = canSend, pressedScale = .86f) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSend()
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Icon(Icons.Rounded.ArrowUpward, "发送", Modifier.size(20.dp))
                     }
                 }
@@ -767,7 +826,7 @@ private fun WritingToolPillV11(icon: ImageVector, label: String, onClick: () -> 
         color = if (accent) t.accent else t.muted,
         contentColor = if (accent) t.accentForeground else t.foreground,
     ) {
-        Row(Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.springClickV31(pressedScale = .92f, onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(15.dp))
             Spacer(Modifier.width(5.dp))
             Text(label, style = MaterialTheme.typography.labelSmall)
