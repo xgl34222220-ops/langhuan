@@ -30,6 +30,14 @@ class ReaderEditionV41Test {
         rule.waitForIdle()
         android.os.SystemClock.sleep(400)
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        // Pixel Launcher's occasional emulator-only ANR must not obscure the app evidence.
+        // Never dismiss this app's dialogs or affect a physical device's launcher.
+        if (android.os.Build.HARDWARE in setOf("ranchu", "goldfish")) {
+            automation.executeShellCommand("am force-stop com.google.android.apps.nexuslauncher").use {
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()
+            }
+            android.os.SystemClock.sleep(300)
+        }
         val bitmap = automation.takeScreenshot()
         if (name == "v41-shelf") {
             var ink = 0
