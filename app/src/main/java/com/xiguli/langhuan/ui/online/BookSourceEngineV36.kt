@@ -125,7 +125,15 @@ internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
             BookSourceJsonV36.decodeFromJsonElement(BookSourceV36.serializer(), obj)
         }.getOrNull()
         val name = source?.name ?: obj.string("bookSourceName").ifBlank { "未命名书源" }
+        val unsupported = if (obj.containsKey("bookSourceUrl")) unsupportedLegadoCapabilitiesV41(obj) else emptyList()
+        val discoveryIssues = source?.let { sourceDiscoveryCatalogV41(it.copy(enabled = true, enabledExplore = true)).issues }.orEmpty()
+        val searchRequestIssue = source?.takeIf { it.searchUrl.isNotBlank() }?.let {
+            runCatching { buildSearchRequestV36(it, "test") }.exceptionOrNull()?.message
+        }
         when {
+            unsupported.isNotEmpty() -> skipped += "$name（暂不支持：${unsupported.joinToString("、")}）"
+            searchRequestIssue != null -> skipped += "$name（searchUrl：$searchRequestIssue）"
+            discoveryIssues.isNotEmpty() -> skipped += "$name（发现规则无效：${discoveryIssues.joinToString("；")}）"
             source == null -> skipped += "$name（格式无法识别）"
             source.id.isBlank() || runCatching { publicSourceUrlV36(source.baseUrl) }.isFailure -> skipped += "$name（网站地址无效）"
             (source.searchUrl.isBlank() || source.searchList.isBlank()) &&
@@ -144,6 +152,16 @@ private fun JsonObject.obj(key: String): JsonObject? = when (val v = this[key]) 
     is JsonObject -> v
     is JsonPrimitive -> v.contentOrNull?.let { runCatching { BookSourceJsonV36.parseToJsonElement(it).jsonObject }.getOrNull() }
     else -> null
+}
+
+/** These fields change execution; accepting them while dropping them would corrupt an imported source. */
+private fun unsupportedLegadoCapabilitiesV41(obj: JsonObject): List<String> {
+    val dynamic = listOf("jsLib", "mainJs", "loginCheckJs", "coverDecodeJs", "exploreScreen")
+    return dynamic.filter { key ->
+        val value = obj[key]
+        value != null && value.toString() !in setOf("null", "\"\"", "{}", "[]") &&
+            ((value as? JsonPrimitive)?.contentOrNull?.isNotBlank() ?: true)
+    }
 }
 
 private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
@@ -382,13 +400,25 @@ internal data class SourceRequestV36(val url: String, val method: String = "GET"
 /** Builds a request from a Legado-style url: `path?q={{key}}` optionally followed by `,{json options}`. */
 internal fun buildSearchRequestV36(source: BookSourceV36, key: String, page: Int = 1): SourceRequestV36 {
     val raw = source.searchUrl.trim()
-    val optionIndex = raw.indexOf(",{")
+    val optionIndex = Regex(",\\s*(?=\\{)").find(raw)?.range?.first ?: -1
     val urlPart = if (optionIndex > 0) raw.substring(0, optionIndex) else raw
-    val options = if (optionIndex > 0) runCatching { BookSourceJsonV36.parseToJsonElement(raw.substring(optionIndex + 1)).jsonObject }.getOrNull() else null
+    val options = if (optionIndex > 0) {
+        BookSourceJsonV36.parseToJsonElement(raw.substring(optionIndex + 1)) as? JsonObject
+            ?: error("请求选项必须是 JSON 对象")
+    } else null
+    require(options == null || options.keys.all { it in setOf("method", "body", "charset") }) {
+        "请求包含不支持的选项：${options?.keys.orEmpty() - setOf("method", "body", "charset") }"
+    }
+    require(options == null || options.values.all { it is JsonPrimitive && it.isString }) { "method/body/charset 请求选项必须是字符串" }
+    require(!urlPart.contains('<') && !urlPart.contains('>')) { "暂不支持 <首页,后续页> 地址表达式，请使用 {{page}} 或静态下一页链接" }
     val charset = options?.get("charset")?.jsonPrimitive?.contentOrNull
     val encoded = URLEncoder.encode(key, charset ?: "UTF-8")
-    fun fill(template: String) = template.replace("{{key}}", encoded).replace("{{page}}", page.toString())
-        .replace("searchKey", encoded).replace("searchPage", page.toString())
+    fun fill(template: String): String {
+        val filled = template.replace("{{key}}", encoded).replace("{{page}}", page.toString())
+            .replace("searchKey", encoded).replace("searchPage", page.toString())
+        require(!filled.contains("{{") && !filled.contains("}}")) { "仅支持 {{key}}/{{page}}，不支持 JavaScript 模板表达式" }
+        return filled
+    }
     val url = resolveUrlV36(source.baseUrl, fill(urlPart))
     val method = options?.get("method")?.jsonPrimitive?.contentOrNull?.uppercase() ?: "GET"
     val body = options?.get("body")?.jsonPrimitive?.contentOrNull?.let(::fill)
@@ -597,8 +627,13 @@ private fun sniffCharsetV36(bytes: ByteArray): String {
 
 // ---- Operations ----------------------------------------------------------------------------
 
-internal fun searchSourceV36(source: BookSourceV36, key: String): List<OnlineBookV36> {
-    val doc = fetchDocumentV36(source, buildSearchRequestV36(source, key))
+internal fun searchSourceV36(
+    source: BookSourceV36,
+    key: String,
+    page: Int = 1,
+    fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
+): List<OnlineBookV36> {
+    val doc = fetchDocument(source, buildSearchRequestV36(source, key, page))
     return ruleElementsV36(doc, source.searchList).mapNotNull { item ->
         val name = ruleStringV36(item, source.searchName)
         val url = ruleStringV36(item, source.searchBookUrl).ifBlank { item.selectFirst("a[href]")?.absUrl("href").orEmpty() }
@@ -617,8 +652,12 @@ internal fun searchSourceV36(source: BookSourceV36, key: String): List<OnlineBoo
 }
 
 /** Fills intro/cover from the book page and returns the table of contents. */
-internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<OnlineBookV36, List<OnlineChapterV36>> {
-    val page = fetchDocumentV36(source, SourceRequestV36(book.bookUrl))
+internal fun loadBookV36(
+    source: BookSourceV36,
+    book: OnlineBookV36,
+    fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
+): Pair<OnlineBookV36, List<OnlineChapterV36>> {
+    val page = fetchDocument(source, SourceRequestV36(book.bookUrl))
     val detailed = book.copy(
         name = ruleStringV36(page, source.infoName).ifBlank { book.name },
         author = ruleStringV36(page, source.infoAuthor).ifBlank { book.author },
@@ -626,34 +665,37 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
         intro = ruleStringV36(page, source.infoIntro).ifBlank { book.intro },
     )
 
-    // Prefer the source rule, but never let one bad AI rule prevent the generic directory detector
-    // from trying the actual book page.
+    fun declaredChapters(doc: Document): List<OnlineChapterV36> =
+        ruleElementsV36(doc, source.tocList).mapNotNull { item ->
+            val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }.trim()
+            val url = ruleStringV36(item, source.tocUrl).ifBlank { item.selectFirst("a[href]")?.absUrl("href").orEmpty() }
+            if (title.isNotBlank() && url.isNotBlank()) OnlineChapterV36(title, resolveUrlV36(doc.location(), url)) else null
+        }
+
+    // A working on-page source rule is stronger evidence than a guessed directory link.
+    // In particular, never skip page one because its "next page" URL looks like a directory.
+    val onPageChapters = declaredChapters(page)
     val declaredToc = ruleStringV36(page, source.infoTocUrl)
         .takeIf { it.isNotBlank() }
         ?.let { resolveUrlV36(page.location(), it) }
     val heuristicToc = heuristicTocUrlV39(page)
-    val firstToc = listOfNotNull(declaredToc, heuristicToc)
-        .firstOrNull { it != page.location() }
-    var doc = firstToc?.let { sourceAttemptV36 { fetchDocumentV36(source, SourceRequestV36(it)) }.getOrNull() } ?: page
+    val firstToc = declaredToc?.takeIf { it != page.location() }
+        ?: heuristicToc?.takeIf { onPageChapters.isEmpty() && it != page.location() }
+    var doc = firstToc?.let { sourceAttemptV36 { fetchDocument(source, SourceRequestV36(it)) }.getOrNull() } ?: page
 
     val chapters = ArrayList<OnlineChapterV36>()
     val visited = LinkedHashSet<String>()
     var triedHeuristicFromBookPage = false
 
-    repeat(40) {
+    repeat(40) { pageIndex ->
         if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
         if (!visited.add(publicSourceUrlV36(doc.location()).toString())) return detailed to chapters.distinctBy { it.url }
 
-        val ruleFound = ruleElementsV36(doc, source.tocList).mapNotNull { item ->
-            val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }.trim()
-            val url = ruleStringV36(item, source.tocUrl).ifBlank { item.selectFirst("a[href]")?.absUrl("href").orEmpty() }
-            if (title.isNotBlank() && url.isNotBlank()) OnlineChapterV36(title, resolveUrlV36(doc.location(), url)) else null
-        }
-        chapters += ruleFound
+        val ruleFound = if (doc === page) onPageChapters else declaredChapters(doc)
 
         // Generic fallback for pages whose structure changed or whose AI/Legado rule missed the list.
         // 101 看书, for example, uses /txt/<bookId>/<chapterId>.html chapter links.
-        chapters += heuristicChapterLinksV39(doc, book.bookUrl)
+        chapters += ruleFound.ifEmpty { heuristicChapterLinksV39(doc, book.bookUrl) }
         check(chapters.size <= 50_000) { "目录超过 50000 章限制" }
 
         val distinct = chapters.distinctBy { it.url }
@@ -661,7 +703,7 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
             triedHeuristicFromBookPage = true
             val alternate = heuristicTocUrlV39(page)
             if (alternate != null && alternate !in visited) {
-                val fetched = sourceAttemptV36 { fetchDocumentV36(source, SourceRequestV36(alternate)) }.getOrNull()
+                val fetched = sourceAttemptV36 { fetchDocument(source, SourceRequestV36(alternate)) }.getOrNull()
                 if (fetched != null) {
                     doc = fetched
                     return@repeat
@@ -676,11 +718,11 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
         if (next == null || next in visited || isLikelyChapterUrlV39(next)) {
             return detailed to distinct
         }
-        val fetched = sourceAttemptV36 { fetchDocumentV36(source, SourceRequestV36(next)) }.getOrNull()
-            ?: return detailed to distinct
-        doc = fetched
+        check(pageIndex < 39) { "目录超过 40 页限制，未返回不完整目录" }
+        doc = sourceAttemptV36 { fetchDocument(source, SourceRequestV36(next)) }
+            .getOrElse { throw IllegalStateException("目录分页读取失败，未返回不完整目录：${it.message.orEmpty()}", it) }
     }
-    return detailed to chapters.distinctBy { it.url }
+    error("目录超过 40 页限制，未返回不完整目录")
 }
 
 /**
@@ -696,7 +738,8 @@ internal fun heuristicTocUrlV39(doc: Document): String? {
         if (href.isBlank() || href == doc.location() || isLikelyChapterUrlV39(href)) return@mapNotNull null
         val labelScore = labels.indexOfFirst { text.equals(it, true) }.let { if (it >= 0) 100 - it else 0 }
         val containsScore = if (labels.any { text.contains(it, true) }) 45 else 0
-        val urlScore = if (Regex("(?i)(catalog|chapter|list|dir|menu|book)").containsMatchIn(href)) 18 else 0
+        val path = runCatching { URL(href).path }.getOrDefault("")
+        val urlScore = if (Regex("(?i)(catalog|chapter|list|dir|menu)").containsMatchIn(path)) 18 else 0
         val score = maxOf(labelScore, containsScore) + urlScore
         if (score <= 0) null else score to href
     }
@@ -783,17 +826,26 @@ private fun isLikelyChapterLinkV39(title: String, url: String, bookUrl: String):
 }
 
 /** Chapter body; follows "next page" links that stay inside the same chapter. */
-internal fun loadChapterTextV36(source: BookSourceV36, chapter: OnlineChapterV36, tocUrls: Set<String>): String {
+internal fun loadChapterTextV36(
+    source: BookSourceV36,
+    chapter: OnlineChapterV36,
+    tocUrls: Set<String>,
+    fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
+): String {
     val parts = ArrayList<String>()
     var url = chapter.url
     val visited = HashSet<String>()
     repeat(12) {
         if (!visited.add(publicSourceUrlV36(url).toString())) return parts.joinToString("\n").trim()
-        val doc = fetchDocumentV36(source, SourceRequestV36(url))
+        val doc = fetchDocument(source, SourceRequestV36(url))
         val finalUrl = publicSourceUrlV36(doc.location()).toString()
         if (finalUrl != publicSourceUrlV36(url).toString() && !visited.add(finalUrl)) return parts.joinToString("\n").trim()
         val rule = source.contentText.ifBlank { "@css:#content@html" }
-        val text = ruleStringV36(doc, if (rule.substringAfterLast('@') in VALUE_ATTRS) rule else "$rule@html")
+        val cleanupAt = rule.indexOf("##").takeIf { it >= 0 } ?: rule.length
+        val valueRule = rule.substring(0, cleanupAt)
+        val textRule = if (valueRule.substringAfterLast('@') in VALUE_ATTRS) rule
+            else "$valueRule@html${rule.substring(cleanupAt)}"
+        val text = ruleStringV36(doc, textRule)
         parts += cleanContentV36(text, source.contentReplace)
         check(parts.sumOf { it.length } <= MAX_SOURCE_BYTES_V36) { "单章正文超过大小限制" }
         val next = ruleStringV36(doc, source.contentNext).takeIf { it.isNotBlank() }?.let { resolveUrlV36(doc.location(), it) }

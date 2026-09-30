@@ -74,4 +74,17 @@ class BookSourceAiBuilderV37Test {
         assertEquals("@css:a@text", rules["searchName"])
         assertEquals("https://a.example", normalizeSiteV37(" a.example "))
     }
+
+    @Test fun unsupportedAiFieldsAndNestedRulesAreExplicitErrors() {
+        assertTrue(runCatching { parseRulesV37("""{"jsLib":"function x(){}"}""") }.exceptionOrNull()?.message.orEmpty().contains("jsLib"))
+        assertTrue(runCatching { parseRulesV37("""{"exploreList":{"bookList":"li"}}""") }.exceptionOrNull()?.message.orEmpty().contains("exploreList"))
+        assertTrue(runCatching { parseRulesV37("not json") }.isFailure)
+    }
+
+    @Test fun discoveryEvidenceRetainsPagingButDoesNotSendSecretQueryLinksToTheModel() {
+        val doc = Jsoup.parse("""<nav><a href='/rank?page=1'>月榜</a><a href='/rank?token=private'>秘密榜单</a></nav>""", "https://books.example/")
+        val links = aiDiscoveryLinkEvidenceV37(doc)
+        assertEquals(listOf("月榜"), links.map { it.label })
+        assertEquals("https://books.example/rank?page=1", links.single().url)
+    }
 }

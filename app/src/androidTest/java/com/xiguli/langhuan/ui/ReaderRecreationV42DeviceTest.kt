@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import com.xiguli.langhuan.MainActivity
@@ -40,14 +41,18 @@ class ReaderRecreationV42DeviceTest {
             rule.waitUntil(20000) { vm.state.value.stories.any { it.id == id } }
             rule.onNodeWithText(title).performClick()
             rule.waitUntil(20000) { vm.state.value.readingChapter != null }
-            rule.waitUntil(20000) { ReaderProgressStoreV11.load(context, id, 1).updatedAt > 0 }
+            rule.waitUntil(20000) {
+                rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
+                    it.config[SemanticsProperties.StateDescription].startsWith("第")
+                }
+            }
             repeat(8) {
-                rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
+                rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
                 rule.mainClock.advanceTimeBy(400)
             }
             val beforeFont = ReaderProgressStoreV11.load(context, id, 1)
             assertTrue(beforeFont.textOffset > 1000)
-            rule.onRoot().performTouchInput { click(center) }
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.onNodeWithText("字号").performClick()
             rule.onNodeWithText("A+").performClick()
             rule.mainClock.advanceTimeBy(1000)
@@ -64,7 +69,7 @@ class ReaderRecreationV42DeviceTest {
             rule.waitForIdle()
             // The shelf has a semantic book title, while the reader title is drawn in Canvas.
             rule.onAllNodesWithText("书城").assertCountEquals(0)
-            rule.onRoot().performTouchInput { click(center) }
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             rule.mainClock.advanceTimeBy(1000)
             val afterRecreate = ReaderProgressStoreV11.load(context, id, 1)
@@ -81,7 +86,7 @@ class ReaderRecreationV42DeviceTest {
             rule.mainClock.advanceTimeBy(1000)
             rule.waitForIdle()
             rule.onAllNodesWithText("书城").assertCountEquals(0)
-            rule.onRoot().performTouchInput { click(center) }
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             val rotated = ReaderProgressStoreV11.load(context, id, 1)
             assertTrue("Rotation lost the sentence anchor", rotated.textOffset > 0)

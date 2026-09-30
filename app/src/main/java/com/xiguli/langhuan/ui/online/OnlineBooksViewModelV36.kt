@@ -75,6 +75,12 @@ internal data class OnlineBooksStateV36(
     val sourceEditError: String? = null,
     val query: String = "",
     val discoveryLabel: String? = null,
+    val discoverySection: SourceDiscoveryV41? = null,
+    val discoveryPage: Int = 0,
+    val discoveryNextUrl: String? = null,
+    val discoveryHasMore: Boolean = false,
+    val discoveryVisitedUrls: Set<String> = emptySet(),
+    val discoveryPageError: String? = null,
     val searching: Boolean = false,
     val searchedSources: Int = 0,
     val failedSources: Int = 0,
@@ -132,14 +138,14 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 return@launch
             }
             currentCoroutineContext().ensureActive()
-            val builder = BookSourceAiBuilderV37(com.xiguli.langhuan.engine.UniversalAiGateway(config)) { steps ->
+            val builder = BookSourceAiBuilderV37(com.xiguli.langhuan.engine.UniversalAiGateway(config), onSteps = { steps ->
                 _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = steps) else it }
-            }
+            })
             sourceAttemptV36 { builder.build(siteUrl, keyword) }
-                .onSuccess { report -> _state.update { it.copy(aiRunning = false, aiReport = report) } }
+                .onSuccess { report -> _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiReport = report) else it } }
                 .onFailure { e ->
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    _state.update { it.copy(aiRunning = false, aiError = e.message ?: "生成失败") }
+                    _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiError = e.message ?: "生成失败") else it }
                 }
         }
     }
@@ -200,6 +206,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     private fun merge(result: BookSourceImportResultV36) {
         val previous = _state.value.sources
         val merged = mergeSourceImportsV36(previous, result)
+        invalidateSourceResults()
         BookSourceStoreV36.save(context, merged.sources)
         val skipped = if (merged.skipped.isEmpty()) "" else "；${merged.skipped.size} 个跳过：${merged.skipped.take(3).joinToString("、")}${if (merged.skipped.size > 3) " 等" else ""}"
         val added = merged.sources.size - previous.size
@@ -212,8 +219,16 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     private fun updateSources(transform: (List<BookSourceV36>) -> List<BookSourceV36>) {
         val next = transform(_state.value.sources)
+        invalidateSourceResults()
         BookSourceStoreV36.save(context, next)
         _state.update { it.copy(sources = next) }
+    }
+
+    private fun invalidateSourceResults() {
+        searchGeneration.incrementAndGet()
+        searchJob?.cancel()
+        _state.update { it.copy(searching = false, discoveryLabel = null, discoverySection = null,
+            discoveryPage = 0, discoveryNextUrl = null, discoveryHasMore = false, discoveryVisitedUrls = emptySet(), discoveryPageError = null, results = emptyList()) }
     }
 
     // ---- Search -------------------------------------------------------------------------------
@@ -228,7 +243,8 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         }
         searchJob?.cancel()
         val generation = searchGeneration.incrementAndGet()
-        _state.update { it.copy(query = key, discoveryLabel = null, searching = true, searchedSources = 0, failedSources = 0, results = emptyList(), error = null) }
+        _state.update { it.copy(query = key, discoveryLabel = null, discoverySection = null, discoveryPage = 0,
+            discoveryNextUrl = null, discoveryHasMore = false, discoveryVisitedUrls = emptySet(), discoveryPageError = null, searching = true, searchedSources = 0, failedSources = 0, results = emptyList(), error = null) }
         searchJob = viewModelScope.launch {
             val gate = Semaphore(6)
             coroutineScope {
@@ -249,6 +265,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 }.awaitAll()
             }
             _state.update {
+                if (generation != searchGeneration.get()) return@update it
                 it.copy(searching = false,
                     message = when {
                         it.failedSources > 0 -> "${it.failedSources}/${sources.size} 个书源请求失败，已保留成功结果；可重试或在书源页更换书源"
@@ -262,21 +279,44 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     fun discover(section: SourceDiscoveryV41) {
         val source = _state.value.sources.firstOrNull { it.id == section.sourceId && it.enabled } ?: return
         searchJob?.cancel()
+        searchGeneration.incrementAndGet()
+        _state.update { it.copy(query = "", discoveryLabel = "${source.name} · ${section.label}",
+            discoverySection = section, discoveryPage = 0, discoveryNextUrl = null, discoveryHasMore = false, discoveryVisitedUrls = emptySet(), discoveryPageError = null,
+            searching = false, searchedSources = 0, failedSources = 0, results = emptyList(), error = null, message = null) }
+        loadMoreDiscovery()
+    }
+
+    fun loadMoreDiscovery() {
+        val previous = _state.value
+        if (previous.searching) return
+        val section = previous.discoverySection ?: return
+        val source = previous.sources.firstOrNull { it.id == section.sourceId && it.enabled } ?: return
+        if (previous.discoveryPage > 0 && !previous.discoveryHasMore) return
+        val page = previous.discoveryPage + 1
+        val nextUrl = previous.discoveryNextUrl
+        searchJob?.cancel()
         val generation = searchGeneration.incrementAndGet()
-        _state.update { it.copy(query = "", discoveryLabel = "${source.name} · ${section.label}", searching = true,
-            searchedSources = 0, failedSources = 0, results = emptyList(), error = null, message = null) }
+        _state.update { it.copy(searching = true, discoveryPageError = null, error = null) }
         searchJob = viewModelScope.launch {
-            sourceAttemptV36 { runInterruptible(Dispatchers.IO) { discoverBooksV41(source, section) } }
-                .onSuccess { books ->
+            sourceAttemptV36 { runInterruptible(Dispatchers.IO) { discoverPageV41(source, section, page, nextUrl) } }
+                .onSuccess { loaded ->
+                    currentCoroutineContext().ensureActive()
                     _state.update { state ->
-                        if (generation != searchGeneration.get()) state else state.copy(searching = false,
-                            searchedSources = 1, results = books, message = if (books.isEmpty()) "此分类暂时没有可读书籍，试试其他分类或搜索" else null)
+                        if (generation != searchGeneration.get()) return@update state
+                        val merged = (state.results + loaded.books).distinctBy { it.sourceId to it.bookUrl }
+                        val hasNew = merged.size > state.results.size
+                        val visited = state.discoveryVisitedUrls + (nextUrl ?: section.url)
+                        val pagingIssue = discoveryPagingIssueV41(loaded, hasNew, visited)
+                        if (pagingIssue != null) state.copy(searching = false, results = merged, discoveryPageError = pagingIssue)
+                        else state.copy(searching = false, searchedSources = 1, results = merged,
+                            discoveryPage = page, discoveryNextUrl = loaded.nextUrl, discoveryVisitedUrls = visited,
+                            discoveryHasMore = loaded.hasMore, discoveryPageError = null, message = null)
                     }
                 }
                 .onFailure { error ->
                     _state.update { state ->
                         if (generation != searchGeneration.get()) state else state.copy(searching = false,
-                            searchedSources = 1, failedSources = 1, error = "读取发现分类失败：${error.message.orEmpty()}")
+                            failedSources = 1, discoveryPageError = "第 $page 页读取失败：${error.message.orEmpty()}")
                     }
                 }
         }
@@ -285,7 +325,8 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     fun stopSearch() {
         searchGeneration.incrementAndGet()
         searchJob?.cancel()
-        _state.update { it.copy(searching = false) }
+        _state.update { it.copy(searching = false,
+            discoveryPageError = if (it.discoverySection != null && it.searching) "已停止加载，可以重试本页" else it.discoveryPageError) }
     }
 
     // ---- Detail & download --------------------------------------------------------------------

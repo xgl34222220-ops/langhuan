@@ -182,7 +182,7 @@ class StartupDatabasePreservationTest {
         assertTrue(first.ready)
         assertTrue(repeated.ready)
         assertFalse(first.recovered)
-        openRoom().use { room ->
+        openRoom().useRoom { room ->
             val book = room.storyStateDao().get(bookId)!!
             assertEquals(bookJson, book.snapshotJson)
             assertEquals(draftJson, book.draftJson)
@@ -222,7 +222,7 @@ class StartupDatabasePreservationTest {
 
         assertTrue(status.error, status.ready)
         assertTrue(context.getDatabasePath(databaseName).isFile)
-        openRoom().use { room -> assertEquals(0, room.aiProviderDao().count()) }
+        openRoom().useRoom { room -> assertEquals(0, room.aiProviderDao().count()) }
     }
 
     @Test
@@ -234,7 +234,7 @@ class StartupDatabasePreservationTest {
         var rejected = false
 
         try {
-            openRoom().use { it.openHelper.writableDatabase.query("SELECT 1").close() }
+            openRoom().useRoom { it.openHelper.writableDatabase.query("SELECT 1").close() }
         } catch (_: Exception) {
             rejected = true
         }
@@ -249,7 +249,7 @@ class StartupDatabasePreservationTest {
     ).openHelperFactory(PreservingSQLiteOpenHelperFactory).build()
 
     private suspend fun createValidBook() {
-        openRoom().use { room ->
+        openRoom().useRoom { room ->
             room.storyStateDao().upsert(StoryStateEntity(bookId, bookJson, draftJson, 12345L))
         }
     }
@@ -303,3 +303,7 @@ class StartupDatabasePreservationTest {
     private fun preflightFiles(): List<File> =
         File(context.cacheDir, "database_preflight").listFiles()?.toList().orEmpty()
 }
+
+// RoomDatabase exposes close(), but does not implement java.io.Closeable on this Room version.
+private inline fun <T> LanghuanDatabase.useRoom(block: (LanghuanDatabase) -> T): T =
+    try { block(this) } finally { close() }

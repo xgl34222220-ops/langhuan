@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -138,7 +139,7 @@ internal fun OnlineBooksPageV36(
             modifier = Modifier.weight(1f),
         ) { current ->
             if (current == 0) {
-                OnlineSearchTabV36(state, query, onQuery = { query = it }, onSearch = { viewModel.search(query) }, onStop = viewModel::stopSearch, onOpen = viewModel::openDetail, onGoSources = { tab = 1 }, onDiscover = viewModel::discover)
+                OnlineSearchTabV36(state, query, onQuery = { query = it }, onSearch = { viewModel.search(query) }, onStop = viewModel::stopSearch, onOpen = viewModel::openDetail, onGoSources = { tab = 1 }, onDiscover = viewModel::discover, onLoadMore = viewModel::loadMoreDiscovery)
             } else {
                 OnlineSourcesTabV36(
                     state = state,
@@ -204,14 +205,17 @@ internal fun OnlineBooksPageV36(
 }
 
 @Composable
-private fun OnlineTabV36(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun OnlineTabV36(label: String, selected: Boolean, multiline: Boolean = false, onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
     val bg by animateColorAsState(if (selected) t.accent else Color.Transparent, tween(LanghuanMotionV31.MEDIUM), label = "onlineTabBg")
     Text(
         label,
-        Modifier.clip(RoundedCornerShape(999.dp)).background(bg).springClickV31(pressedScale = .94f, onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
+        Modifier.then(if (multiline) Modifier.widthIn(max = 280.dp).heightIn(min = 48.dp) else Modifier)
+            .clip(RoundedCornerShape(999.dp)).background(bg).springClickV31(pressedScale = .94f, onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
         color = if (selected) t.accentForeground else t.mutedForeground,
         style = MaterialTheme.typography.labelLarge,
+        maxLines = if (multiline) 2 else 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -225,6 +229,7 @@ private fun OnlineSearchTabV36(
     onOpen: (OnlineBookV36) -> Unit,
     onGoSources: () -> Unit,
     onDiscover: (SourceDiscoveryV41) -> Unit,
+    onLoadMore: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     val enter = rememberEnterRegistryV31()
@@ -258,11 +263,14 @@ private fun OnlineSearchTabV36(
             TextButton(onClick = onGoSources) { Text("管理") }
         }
         val discoveries = remember(state.sources) { state.sources.flatMap(::sourceDiscoveriesV41) }
+        val discoveryIssues = remember(state.sources) { state.sources.flatMap { src -> sourceDiscoveryCatalogV41(src).issues.map { "${src.name}：$it" } } }
+        discoveryIssues.firstOrNull()?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall) }
         if (discoveries.isNotEmpty()) {
+            Text("发现 · 分类与榜单", Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = t.foreground, style = MaterialTheme.typography.labelLarge)
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(discoveries, key = { it.sourceId + it.url }) { section ->
+                items(discoveries, key = { it.sourceId + "::" + it.template }) { section ->
                     val sourceName = state.sources.firstOrNull { it.id == section.sourceId }?.name.orEmpty()
-                    OnlineTabV36("$sourceName · ${section.label}", state.discoveryLabel == "$sourceName · ${section.label}") { onDiscover(section) }
+                    OnlineTabV36("$sourceName · ${section.label}", state.discoverySection == section, multiline = true) { onDiscover(section) }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -277,10 +285,11 @@ private fun OnlineSearchTabV36(
         when {
             state.sources.isEmpty() -> OnlineEmptyV36("为书城添加第一盏灯", "导入你有权使用的书源，或让 AI 为你生成。\n书城会从这些网站搜索真实书籍。", "添加书源 / AI 生成", onGoSources)
             enabled == 0 && discoveries.isEmpty() -> OnlineEmptyV36("书源还没有启用", "到书源管理打开至少一个书源，再来寻找喜欢的故事。", "启用书源", onGoSources)
+            state.results.isEmpty() && !state.searching && state.discoveryPageError != null -> OnlineEmptyV36("分类暂时打不开", state.discoveryPageError, "重试本页", onLoadMore)
             state.results.isEmpty() && !state.searching && state.discoveryLabel != null -> OnlineEmptyV36("此分类暂时没有书籍", "试试其他分类、搜索书名，或检查这条书源的发现规则。", "检查书源", onGoSources)
             state.results.isEmpty() && !state.searching && state.query.isNotBlank() -> OnlineEmptyV36("没有找到相关书籍", "试试更短的书名、作者名，或换一个可用书源。", "检查书源", onGoSources)
             state.results.isEmpty() && !state.searching -> OnlineEmptyV36("故事，从一个名字开始", "输入书名或作者，会同时搜索你启用的 $enabled 个书源。", null, null)
-            else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 itemsIndexed(state.results, key = { _, it -> it.sourceId + it.bookUrl }) { index, book ->
                     Surface(
                         Modifier.fillMaxWidth().animateItem().enterOnceV31(enter, book.sourceId + book.bookUrl, index).springClickV31(pressedScale = .98f) { onOpen(book) },
@@ -295,6 +304,18 @@ private fun OnlineSearchTabV36(
                                 Text(book.author.ifBlank { "佚名" }, Modifier.padding(top = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                                 if (book.latest.isNotBlank()) Text("最新：${book.latest}", Modifier.padding(top = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(book.sourceName, Modifier.padding(top = 6.dp).clip(RoundedCornerShape(99.dp)).background(t.muted).padding(horizontal = 8.dp, vertical = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+                if (state.discoverySection != null && !state.searching) {
+                    item(key = "discovery-footer") {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            state.discoveryPageError?.let { Text(it, color = t.destructive, style = MaterialTheme.typography.bodySmall) }
+                            if (state.discoveryPageError != null || state.discoveryHasMore) {
+                                TextButton(onClick = onLoadMore) { Text(if (state.discoveryPageError != null) "重试本页" else "加载更多") }
+                            } else {
+                                Text("已加载 ${state.results.size} 本 · 没有更多书籍", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -566,7 +587,7 @@ private fun OnlineAiSheetV36(
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 20.dp)) {
         Text("AI 生成书源", color = t.foreground, style = MaterialTheme.typography.titleLarge)
         Text(
-            "AI 会依次分析搜索页、目录页和正文页，每一步都用真实网页验证；失败时会带着结果让 AI 再改一次。需要网站不依赖 JS 加载内容。",
+            "AI 会验证搜索、详情、目录、正文，并识别网站已有的分类与排行榜，检查发现分页。只添加网页中真实存在且通过验证的入口；动态 JS 书源会明确提示暂不支持。",
             Modifier.padding(top = 4.dp, bottom = 12.dp),
             color = t.mutedForeground,
             style = MaterialTheme.typography.bodySmall,
@@ -584,7 +605,7 @@ private fun OnlineAiSheetV36(
                             when (step.ok) {
                                 true -> Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = t.success)
                                 false -> Icon(Icons.Rounded.Close, null, Modifier.size(18.dp), tint = t.destructive)
-                                null -> com.xiguli.langhuan.ui.design.LanghuanTypingDotsV31(t.primary, dot = 4.dp)
+                                null -> if (step.completed) Text("—", color = t.mutedForeground) else com.xiguli.langhuan.ui.design.LanghuanTypingDotsV31(t.primary, dot = 4.dp)
                             }
                         }
                         Column(Modifier.padding(start = 10.dp).weight(1f)) {
@@ -603,13 +624,19 @@ private fun OnlineAiSheetV36(
         state.aiReport?.let { report ->
             Surface(Modifier.fillMaxWidth().padding(top = 14.dp), shape = RoundedCornerShape(14.dp), color = t.muted) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("「${report.source.name}」测试通过", color = t.foreground, style = MaterialTheme.typography.titleSmall)
+                    Text("「${report.source.name}」搜索与阅读测试通过", color = t.foreground, style = MaterialTheme.typography.titleSmall)
                     Text(
                         "搜到 ${report.searchCount} 本 · 《${report.bookName}》目录 ${report.chapterCount} 章",
                         Modifier.padding(top = 4.dp),
                         color = t.mutedForeground,
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text(if (report.discoveryLabels.isEmpty()) "未添加发现入口：网站没有可验证的静态分类，或验证未通过" else "已验证发现：${report.discoveryLabels.joinToString("、")}", Modifier.padding(top = 6.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                    report.discoveryEvidence.forEach { proof ->
+                        Text("${proof.label} · ${proof.bookCount} 本 · 目录/正文已验证" + if (proof.nextPageUrl != null) " · 下一页${proof.nextPageBookCount?.let { " $it 本" } ?: "未通过"}" else "", Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                        Text(proof.url, color = t.mutedForeground, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    report.discoveryWarnings.forEach { Text(it, Modifier.padding(top = 4.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall) }
                     Text(report.sample, Modifier.padding(top = 8.dp), color = t.foreground, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
             }

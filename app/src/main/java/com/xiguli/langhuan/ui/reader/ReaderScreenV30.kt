@@ -87,6 +87,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
@@ -731,6 +734,11 @@ internal fun ReaderSessionV30(
             .fillMaxSize()
             .background(theme.page)
             .onSizeChanged { viewport = it }
+            .semantics {
+                contentDescription = "阅读正文"
+                stateDescription = if (currentLayout == null || pendingAnchor != null) "正在排版"
+                    else "第${chapterIndex + 1}章，第${shownPageIndex + 1}/${currentLayout.pages.size}页"
+            }
             .focusRequester(focusRequester)
             .focusable()
             .onPreviewKeyEvent { event ->

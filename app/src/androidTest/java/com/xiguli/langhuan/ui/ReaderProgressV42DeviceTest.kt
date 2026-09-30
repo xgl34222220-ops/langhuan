@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -47,9 +48,13 @@ class ReaderProgressV42DeviceTest {
                     false, true, {}, {}, {}, {}, {})
             }
         }
-        rule.waitUntil(20000) { saved().updatedAt > 0 }
+        rule.waitUntil(20000) {
+            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
+                it.config[SemanticsProperties.StateDescription].startsWith("第")
+            }
+        }
         repeat(5) {
-            rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
             rule.mainClock.advanceTimeBy(400)
         }
         rule.waitForIdle()
@@ -59,7 +64,7 @@ class ReaderProgressV42DeviceTest {
         // Freeze virtual time so the 260ms debounce cannot conceal a broken lifecycle save.
         rule.mainClock.autoAdvance = false
         try {
-            rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
             rule.mainClock.advanceTimeByFrame()
             rule.waitForIdle()
             rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.STARTED }
@@ -68,7 +73,7 @@ class ReaderProgressV42DeviceTest {
             assertEquals(before.pageIndex + 1, paused.pageIndex)
     
             rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
-            rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
+            rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
             rule.mainClock.advanceTimeByFrame()
             rule.waitForIdle()
             rule.runOnUiThread { visible.value = false }

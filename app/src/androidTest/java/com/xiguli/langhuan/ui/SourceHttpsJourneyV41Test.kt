@@ -32,4 +32,34 @@ class SourceHttpsJourneyV41Test {
         assertTrue(content.contains("船慢慢靠岸"))
         assertFalse(content.contains("<p>"))
     }
+
+    @Test fun publicHttpsCategoryAndRankFollowObservedNextPagesThenOpenTheirBooks() {
+        val base = InstrumentationRegistry.getArguments().getString("sourceFixtureBase")
+        assumeNotNull(base)
+        val source = BookSourceV36(
+            id = "https-discovery", name = "发现分页回归专用", baseUrl = base!!,
+            infoName = "h1@text", infoTocUrl = ".catalogue@href",
+            tocList = "#chapters a", tocName = "@text", tocUrl = "@href", contentText = ".content@html",
+            exploreUrl = "测试分类::category-1.html&&测试月榜::rank-1.html",
+            exploreList = ".book", exploreName = "h2@text", exploreBookUrl = "a@href",
+        )
+        val sections = sourceDiscoveriesV41(source)
+        assertEquals(listOf("测试分类", "测试月榜"), sections.map { it.label })
+        for (section in sections) {
+            val first = discoverPageV41(source, section)
+            assertEquals("测试航行记", first.books.single().name)
+            assertTrue(first.hasMore)
+            assertNotNull(first.nextUrl)
+            val second = discoverPageV41(source, section, 2, first.nextUrl)
+            assertEquals("测试归港记", second.books.single().name)
+            assertFalse(second.hasMore)
+            assertNotEquals(first.books.single().bookUrl, second.books.single().bookUrl)
+            val (book, chapters) = loadBookV36(source, second.books.single())
+            assertEquals("测试归港记", book.name)
+            assertEquals(1, chapters.size)
+            val text = loadChapterTextV36(source, chapters.single(), chapters.map { it.url }.toSet())
+            assertTrue(text.contains("归航的船停在港口"))
+            assertTrue(text.contains("沿着岸边的小路走向家门"))
+        }
+    }
 }
