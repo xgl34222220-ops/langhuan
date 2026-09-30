@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.foundation.layout.imePadding
 import android.app.Application
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -155,7 +156,7 @@ fun BookEditPageV5(
     }
 
     Surface(Modifier.fillMaxSize(), color = t.background) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
