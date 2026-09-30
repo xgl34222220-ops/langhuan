@@ -461,7 +461,12 @@ private fun ReaderSessionV30(
         }
     }
 
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+
     fun showEdge(delta: Int) {
+        if (chapters.getOrNull(chapterIndex + delta) == null) {
+            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        }
         val nextExists = chapters.getOrNull(chapterIndex + delta) != null
         edgeHint = when {
             nextExists -> "正在排版下一章…"
@@ -733,7 +738,17 @@ private fun ReaderSessionV30(
             exit = fadeOut(tween(220)),
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(40.dp))
+                Text(
+                    currentChapter?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) } ?: book.title,
+                    Modifier.padding(horizontal = 40.dp),
+                    color = theme.text,
+                    fontSize = 20.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Text(book.title, Modifier.padding(top = 6.dp), color = theme.secondary, fontSize = 12.sp, maxLines = 1)
+                Spacer(Modifier.height(22.dp))
                 LinearProgressIndicator(
                     modifier = Modifier.width(96.dp).height(2.dp),
                     color = theme.accent,
@@ -780,6 +795,7 @@ private fun ReaderSessionV30(
             onToggleBookmark = {
                 val number = currentChapter?.chapterNumber?.toString()
                 if (number != null) {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
                     val next = bookmarks.toMutableSet()
                     if (!next.add(number)) next.remove(number)
                     prefs.edit().putStringSet("bookmarks", next).apply()
