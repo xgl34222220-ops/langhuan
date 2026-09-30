@@ -51,12 +51,15 @@ fun AiProviderSetupPage(
     val taskRoutingVm: TaskModelRoutingViewModel = viewModel()
     var quickProviderId by remember { mutableStateOf<String?>(null) }
     var showRouting by remember { mutableStateOf(false) }
+    var pendingDeleteId by remember { mutableStateOf<String?>(null) }
     var showConnectionEditor by remember(p.savedProviders.size, p.editingProviderId) {
         mutableStateOf(p.savedProviders.isEmpty() || p.editingProviderId != null)
     }
     val activeProvider = p.savedProviders.firstOrNull { it.id == p.activeProviderId }
 
     Scaffold(
+        // Keyboard pushes the page up instead of covering the input (the app runs edge-to-edge).
+        modifier = Modifier.imePadding(),
         containerColor = t.background,
         topBar = {
             Row(
@@ -172,7 +175,7 @@ fun AiProviderSetupPage(
                                     icon = Icons.Rounded.DeleteOutline,
                                     label = "删除",
                                     destructive = true,
-                                    onClick = { vm.deleteProvider(provider.id) },
+                                    onClick = { pendingDeleteId = provider.id },
                                 )
                             }
                             Spacer(Modifier.height(3.dp))
@@ -377,6 +380,22 @@ fun AiProviderSetupPage(
             preferredProviderId = providerId,
             onProviderActivated = vm::activateProvider,
             onDismiss = { quickProviderId = null },
+        )
+    }
+    // Deleting a service also drops its key; confirm instead of acting on a small icon tap.
+    p.savedProviders.firstOrNull { it.id == pendingDeleteId }?.let { provider ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteId = null },
+            title = { Text("删除「${provider.name}」？") },
+            text = { Text("这个服务的地址、密钥和模型设置会一起删除。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteId = null
+                    vm.deleteProvider(provider.id)
+                }) { Text("删除", color = t.destructive) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDeleteId = null }) { Text("取消") } },
+            containerColor = t.card,
         )
     }
 }
