@@ -58,24 +58,27 @@ class ReaderProgressV42DeviceTest {
 
         // Freeze virtual time so the 260ms debounce cannot conceal a broken lifecycle save.
         rule.mainClock.autoAdvance = false
-        rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
-        rule.mainClock.advanceTimeByFrame()
-        rule.waitForIdle()
-        rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.STARTED }
-        val paused = saved()
-        assertTrue("ON_PAUSE saved a stale page", paused.textOffset > before.textOffset)
-        assertEquals(before.pageIndex + 1, paused.pageIndex)
-
-        rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
-        rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
-        rule.mainClock.advanceTimeByFrame()
-        rule.waitForIdle()
-        rule.runOnUiThread { visible.value = false }
-        rule.mainClock.advanceTimeByFrame()
-        rule.waitForIdle()
-        val disposed = saved()
-        assertTrue("Leaving the session saved a stale page", disposed.textOffset > paused.textOffset)
-        assertEquals(paused.pageIndex + 1, disposed.pageIndex)
-        rule.mainClock.autoAdvance = true
+        try {
+            rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
+            rule.mainClock.advanceTimeByFrame()
+            rule.waitForIdle()
+            rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.STARTED }
+            val paused = saved()
+            assertTrue("ON_PAUSE saved a stale page", paused.textOffset > before.textOffset)
+            assertEquals(before.pageIndex + 1, paused.pageIndex)
+    
+            rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
+            rule.onRoot().performTouchInput { click(Offset(width * .9f, height * .5f)) }
+            rule.mainClock.advanceTimeByFrame()
+            rule.waitForIdle()
+            rule.runOnUiThread { visible.value = false }
+            rule.mainClock.advanceTimeByFrame()
+            rule.waitForIdle()
+            val disposed = saved()
+            assertTrue("Leaving the session saved a stale page", disposed.textOffset > paused.textOffset)
+            assertEquals(paused.pageIndex + 1, disposed.pageIndex)
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
     }
 }

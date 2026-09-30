@@ -374,18 +374,24 @@ internal fun ReaderSessionV30(
 
     fun persist() {
         val chapter = chapters.getOrNull(chapterIndex) ?: return
-        val layout = layoutFor(chapterIndex) ?: return
-        if (pendingAnchor != null) return
-        val page = layout.pages.getOrNull(pageIndex) ?: return
+        val layout = layoutFor(chapterIndex)
+        val previousLayout = stale[chapter.id]
+        val page = if (pendingAnchor == null) layout?.pages?.getOrNull(pageIndex) else null
+        // Reflow can still be running when Android pauses or destroys the Activity. Preserve
+        // the sentence anchor then, rather than dropping the last page turn from the save.
+        val textLength = layout?.textLength ?: previousLayout?.textLength
+            ?: readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content)).length
+        val offset = (page?.startOffset ?: pendingAnchor ?: anchorHolder[0]).coerceIn(0, textLength)
+        val savedPage = page?.index ?: (layout ?: previousLayout)?.pageForOffset(offset) ?: 0
         ReaderProgressStoreV11.save(
             context,
             book.id,
             ReaderProgressV11(
                 chapterNumber = chapter.chapterNumber,
-                pageIndex = pageIndex,
+                pageIndex = savedPage,
                 scrollY = 0,
-                positionFraction = if (layout.textLength <= 0) 0f else page.startOffset.toFloat() / layout.textLength,
-                textOffset = page.startOffset,
+                positionFraction = if (textLength <= 0) 0f else offset.toFloat() / textLength,
+                textOffset = offset,
                 modeKey = mode.key,
             ),
         )
@@ -673,14 +679,17 @@ internal fun ReaderSessionV30(
             ttsHolder[0] = null
         }
     }
+    // An observer outlives a composition's local layout/spec values. Always read the latest
+    // saving function; the initial composition has a zero-sized viewport and no layout.
+    val latestPersist = rememberUpdatedState(newValue = { persist() })
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) persist()
+            if (event == Lifecycle.Event.ON_PAUSE) latestPersist.value()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            persist()
+            latestPersist.value()
         }
     }
     LaunchedEffect(Unit) {

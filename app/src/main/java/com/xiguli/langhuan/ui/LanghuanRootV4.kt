@@ -18,6 +18,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -59,7 +61,19 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     val appContext = LocalContext.current.applicationContext
     val projectConversationStore = remember(appContext) { ProjectConversationStore(appContext) }
 
-    var route by remember { mutableStateOf(RootRouteV4.SHELF) }
+    // Configuration recreation must keep an open reader on screen. Other tools retain their
+    // existing shelf fallback; their transient editors are not reconstructed from only a route.
+    var route by rememberSaveable(stateSaver = Saver<RootRouteV4, String>(
+        save = { if (it == RootRouteV4.BOOK) "book" else "shelf" },
+        restore = { if (it == "book") RootRouteV4.BOOK else RootRouteV4.SHELF },
+    )) { mutableStateOf(RootRouteV4.SHELF) }
+    LaunchedEffect(route, libraryState.libraryLoaded, libraryState.openedBook) {
+        // After process death the ViewModel may no longer hold the book. Return to a usable
+        // shelf; tapping the book reloads its durable sentence anchor from ReaderProgressStore.
+        if (route == RootRouteV4.BOOK && libraryState.libraryLoaded && libraryState.openedBook == null) {
+            route = RootRouteV4.SHELF
+        }
+    }
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterSkills by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterEditor by remember { mutableStateOf(RootRouteV4.BOOK) }
