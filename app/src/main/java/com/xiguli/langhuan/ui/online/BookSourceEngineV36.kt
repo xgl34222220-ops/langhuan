@@ -343,11 +343,33 @@ internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36):
     if (https != null) {
         val retry = runCatching { fetchDocumentFollowingRedirectsV36(source, request.copy(url = https)) }
         if (retry.isSuccess) return retry.getOrThrow()
+
+        // Some sites deliberately reject non-browser TLS/network stacks (400/403) while opening
+        // normally in Chrome/WebView. Fall back to a real WebView session before giving up.
+        val browser = runCatching { BookSourceBrowserV38.fetchDocument(https, source.headers) }
+        if (browser.isSuccess) return browser.getOrThrow()
+
         val firstMessage = first.exceptionOrNull()?.message.orEmpty()
         val secondMessage = retry.exceptionOrNull()?.message.orEmpty()
-        error(listOf(firstMessage, secondMessage).filter { it.isNotBlank() }.distinct().joinToString("；").ifBlank { "网页请求失败" })
+        val browserMessage = browser.exceptionOrNull()?.message.orEmpty()
+        error(
+            listOf(firstMessage, secondMessage, browserMessage)
+                .filter { it.isNotBlank() }
+                .distinct()
+                .joinToString("；")
+                .ifBlank { "网页请求失败" },
+        )
     }
-    throw first.exceptionOrNull() ?: IllegalStateException("网页请求失败")
+
+    val browser = runCatching { BookSourceBrowserV38.fetchDocument(request.url, source.headers) }
+    if (browser.isSuccess) return browser.getOrThrow()
+    error(
+        listOf(first.exceptionOrNull()?.message.orEmpty(), browser.exceptionOrNull()?.message.orEmpty())
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString("；")
+            .ifBlank { "网页请求失败" },
+    )
 }
 
 private fun fetchDocumentFollowingRedirectsV36(source: BookSourceV36, initial: SourceRequestV36): Document {
