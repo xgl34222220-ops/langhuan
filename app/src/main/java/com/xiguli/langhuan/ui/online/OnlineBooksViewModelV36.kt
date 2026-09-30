@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -37,7 +40,7 @@ internal data class OnlineLinkV36(
 internal object BookSourceStoreV36 {
     private const val PREFS = "book_sources_v36"
 
-    fun load(context: Context): List<BookSourceV36> = runCatching {
+    fun load(context: Context): List<BookSourceV36> = sourceAttemptV36 {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("sources", null) ?: return emptyList()
         BookSourceJsonV36.decodeFromString(ListSerializer(BookSourceV36.serializer()), raw)
     }.getOrDefault(emptyList())
@@ -48,7 +51,7 @@ internal object BookSourceStoreV36 {
             .apply()
     }
 
-    fun link(context: Context, novelId: String): OnlineLinkV36? = runCatching {
+    fun link(context: Context, novelId: String): OnlineLinkV36? = sourceAttemptV36 {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("link_$novelId", null) ?: return null
         BookSourceJsonV36.decodeFromString(OnlineLinkV36.serializer(), raw)
     }.getOrNull()
@@ -67,8 +70,10 @@ internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed:
 internal data class OnlineBooksStateV36(
     val sources: List<BookSourceV36> = emptyList(),
     val query: String = "",
+    val discoveryLabel: String? = null,
     val searching: Boolean = false,
     val searchedSources: Int = 0,
+    val failedSources: Int = 0,
     val results: List<OnlineBookV36> = emptyList(),
     val detailLoading: Boolean = false,
     val detail: OnlineDetailV36? = null,
@@ -89,7 +94,10 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     private val _state = MutableStateFlow(OnlineBooksStateV36(sources = BookSourceStoreV36.load(application)))
     val state: StateFlow<OnlineBooksStateV36> = _state.asStateFlow()
     private var searchJob: Job? = null
+    private val searchGeneration = java.util.concurrent.atomic.AtomicLong()
+    private val aiGeneration = java.util.concurrent.atomic.AtomicLong()
     private var downloadJob: Job? = null
+    private var detailJob: Job? = null
     private var aiJob: Job? = null
     private val repository = com.xiguli.langhuan.data.PersistentStoryRepository(application)
     private var activeProviderId: String? = null
@@ -110,6 +118,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
             _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名") }
             return
         }
+        val generation = aiGeneration.incrementAndGet()
         _state.update { it.copy(aiSteps = emptyList(), aiRunning = true, aiReport = null, aiError = null) }
         aiJob = viewModelScope.launch {
             val config = activeProviderId?.let { repository.providerConfig(it) }
@@ -117,10 +126,11 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 _state.update { it.copy(aiRunning = false, aiError = "请先在设置里添加并启用一个 AI 服务") }
                 return@launch
             }
+            currentCoroutineContext().ensureActive()
             val builder = BookSourceAiBuilderV37(com.xiguli.langhuan.engine.UniversalAiGateway(config)) { steps ->
-                _state.update { it.copy(aiSteps = steps) }
+                _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = steps) else it }
             }
-            runCatching { builder.build(siteUrl, keyword) }
+            sourceAttemptV36 { builder.build(siteUrl, keyword) }
                 .onSuccess { report -> _state.update { it.copy(aiRunning = false, aiReport = report) } }
                 .onFailure { e ->
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -131,11 +141,16 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     fun saveAiSource() {
         val report = _state.value.aiReport ?: return
+        if (!bookSourceSupportedV36(report.source)) {
+            _state.update { it.copy(aiError = "生成的规则包含不支持的语法，无法保存") }
+            return
+        }
         merge(BookSourceImportResultV36(listOf(report.source), emptyList()))
-        _state.update { it.copy(aiReport = null, aiSteps = emptyList(), message = "已保存书源「${report.source.name}」") }
+        _state.update { it.copy(aiReport = null, aiSteps = emptyList()) }
     }
 
     fun cancelAi() {
+        aiGeneration.incrementAndGet()
         aiJob?.cancel()
         _state.update { it.copy(aiRunning = false, aiSteps = emptyList(), aiReport = null, aiError = null) }
     }
@@ -144,7 +159,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     fun importSources(raw: String) {
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.Default) { parseBookSourcesV36(raw) } }
+            sourceAttemptV36 { withContext(Dispatchers.Default) { parseBookSourcesV36(raw) } }
                 .onSuccess { result -> merge(result) }
                 .onFailure { e -> _state.update { it.copy(error = "书源格式无法识别：${e.message.orEmpty().take(120)}") } }
         }
@@ -152,12 +167,9 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     fun importFromUrl(url: String) {
         viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val connection = java.net.URL(url.trim()).openConnection() as java.net.HttpURLConnection
-                    connection.connectTimeout = 15_000
-                    connection.readTimeout = 20_000
-                    try { connection.inputStream.use { String(it.readBytes(), Charsets.UTF_8) } } finally { connection.disconnect() }
+            sourceAttemptV36 {
+                runInterruptible(Dispatchers.IO) {
+                    String(fetchSourceBytesV36(url.trim()), Charsets.UTF_8)
                 }
             }.onSuccess { importSources(it) }
                 .onFailure { e -> _state.update { it.copy(error = "下载书源失败：${e.message.orEmpty()}") } }
@@ -166,9 +178,9 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     fun importFromFile(uri: Uri) {
         viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { String(it.readBytes(), Charsets.UTF_8) } ?: error("无法读取文件")
+            sourceAttemptV36 {
+                runInterruptible(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { String(readSourceBytesV36(it, MAX_SOURCE_BYTES_V36), Charsets.UTF_8) } ?: error("无法读取文件")
                 }
             }.onSuccess { importSources(it) }
                 .onFailure { e -> _state.update { it.copy(error = "读取书源文件失败：${e.message.orEmpty()}") } }
@@ -176,12 +188,12 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     }
 
     private fun merge(result: BookSourceImportResultV36) {
-        val existing = _state.value.sources.associateBy { it.id }.toMutableMap()
-        result.sources.forEach { existing[it.id] = it }
-        val merged = existing.values.sortedBy { it.name }
-        BookSourceStoreV36.save(context, merged)
-        val skipped = if (result.skipped.isEmpty()) "" else "；${result.skipped.size} 个跳过：${result.skipped.take(3).joinToString("、")}${if (result.skipped.size > 3) " 等" else ""}"
-        _state.update { it.copy(sources = merged, message = "导入 ${result.sources.size} 个书源$skipped") }
+        val previous = _state.value.sources
+        val merged = mergeSourceImportsV36(previous, result)
+        BookSourceStoreV36.save(context, merged.sources)
+        val skipped = if (merged.skipped.isEmpty()) "" else "；${merged.skipped.size} 个跳过：${merged.skipped.take(3).joinToString("、")}${if (merged.skipped.size > 3) " 等" else ""}"
+        val added = merged.sources.size - previous.size
+        _state.update { it.copy(sources = merged.sources, message = "导入 $added 个书源$skipped") }
     }
 
     fun toggleSource(id: String) = updateSources { list -> list.map { if (it.id == id) it.copy(enabled = !it.enabled) else it } }
@@ -199,34 +211,69 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     fun search(query: String) {
         val key = query.trim()
         if (key.isEmpty()) return
-        val sources = _state.value.sources.filter { it.enabled }
+        val sources = _state.value.sources.filter { it.enabled && it.searchUrl.isNotBlank() && it.searchList.isNotBlank() }
         if (sources.isEmpty()) {
             _state.update { it.copy(error = "还没有启用的书源。先到「书源」页导入。") }
             return
         }
         searchJob?.cancel()
-        _state.update { it.copy(query = key, searching = true, searchedSources = 0, results = emptyList(), error = null) }
+        val generation = searchGeneration.incrementAndGet()
+        _state.update { it.copy(query = key, discoveryLabel = null, searching = true, searchedSources = 0, failedSources = 0, results = emptyList(), error = null) }
         searchJob = viewModelScope.launch {
             val gate = Semaphore(6)
             coroutineScope {
                 sources.map { source ->
                     async(Dispatchers.IO) {
-                        val found = gate.withPermit { runCatching { searchSourceV36(source, key) }.getOrDefault(emptyList()) }
+                        val attempt = gate.withPermit { sourceAttemptV36 { runInterruptible { searchSourceV36(source, key) } } }
+                        val found = attempt.getOrDefault(emptyList())
+                        currentCoroutineContext().ensureActive()
                         // Results stream in per source; exact title matches float to the top.
                         _state.update { state ->
+                            if (generation != searchGeneration.get()) return@update state
                             val merged = (state.results + found)
                                 .distinctBy { it.sourceId + it.bookUrl }
                                 .sortedWith(compareByDescending<OnlineBookV36> { it.name == key }.thenByDescending { it.name.contains(key) })
-                            state.copy(results = merged, searchedSources = state.searchedSources + 1)
+                            state.copy(results = merged, searchedSources = state.searchedSources + 1, failedSources = state.failedSources + if (attempt.isFailure) 1 else 0)
                         }
                     }
                 }.awaitAll()
             }
-            _state.update { it.copy(searching = false, message = if (it.results.isEmpty()) "没有找到「$key」，换个关键词或书源试试" else null) }
+            _state.update {
+                it.copy(searching = false,
+                    message = when {
+                        it.failedSources > 0 -> "${it.failedSources}/${sources.size} 个书源请求失败，已保留成功结果；可重试或在书源页更换书源"
+                        it.results.isEmpty() -> "没有找到「$key」，换个关键词或书源试试"
+                        else -> null
+                    })
+            }
+        }
+    }
+
+    fun discover(section: SourceDiscoveryV41) {
+        val source = _state.value.sources.firstOrNull { it.id == section.sourceId && it.enabled } ?: return
+        searchJob?.cancel()
+        val generation = searchGeneration.incrementAndGet()
+        _state.update { it.copy(query = "", discoveryLabel = "${source.name} · ${section.label}", searching = true,
+            searchedSources = 0, failedSources = 0, results = emptyList(), error = null, message = null) }
+        searchJob = viewModelScope.launch {
+            sourceAttemptV36 { runInterruptible(Dispatchers.IO) { discoverBooksV41(source, section) } }
+                .onSuccess { books ->
+                    _state.update { state ->
+                        if (generation != searchGeneration.get()) state else state.copy(searching = false,
+                            searchedSources = 1, results = books, message = if (books.isEmpty()) "此分类暂时没有可读书籍，试试其他分类或搜索" else null)
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { state ->
+                        if (generation != searchGeneration.get()) state else state.copy(searching = false,
+                            searchedSources = 1, failedSources = 1, error = "读取发现分类失败：${error.message.orEmpty()}")
+                    }
+                }
         }
     }
 
     fun stopSearch() {
+        searchGeneration.incrementAndGet()
         searchJob?.cancel()
         _state.update { it.copy(searching = false) }
     }
@@ -235,9 +282,10 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     fun openDetail(book: OnlineBookV36) {
         val source = _state.value.sources.firstOrNull { it.id == book.sourceId } ?: return
+        detailJob?.cancel()
         _state.update { it.copy(detailLoading = true, detail = OnlineDetailV36(book, emptyList()), error = null) }
-        viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { loadBookV36(source, book) } }
+        detailJob = viewModelScope.launch {
+            sourceAttemptV36 { runInterruptible(Dispatchers.IO) { loadBookV36(source, book) } }
                 .onSuccess { (detailed, chapters) -> _state.update { it.copy(detailLoading = false, detail = OnlineDetailV36(detailed, chapters)) } }
                 .onFailure { e -> _state.update { it.copy(detailLoading = false, error = "读取目录失败：${e.message.orEmpty()}") } }
         }
@@ -245,6 +293,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     fun closeDetail() {
         if (_state.value.download != null) return
+        detailJob?.cancel()
         _state.update { it.copy(detail = null, detailLoading = false) }
     }
 
@@ -255,7 +304,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         if (detail.chapters.isEmpty() || downloadJob?.isActive == true) return
         downloadJob = viewModelScope.launch {
             val texts = downloadChapters(source, detail.chapters) ?: return@launch
-            runCatching {
+            sourceAttemptV36 {
                 val manuscript = ImportedManuscript(
                     title = detail.book.name,
                     chapters = detail.chapters.mapIndexed { i, chapter -> ImportedChapter(chapter.title, texts[i]) },
@@ -282,13 +331,14 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     fun checkUpdate(novelId: String, onDone: (String) -> Unit) {
         val link = BookSourceStoreV36.link(context, novelId) ?: return onDone("这本书不是从书源添加的")
         val source = _state.value.sources.firstOrNull { it.id == link.sourceId } ?: return onDone("原书源已被删除")
-        viewModelScope.launch {
-            val result = runCatching {
+        if (downloadJob?.isActive == true) return onDone("已有下载正在进行")
+        downloadJob = viewModelScope.launch {
+            val result = sourceAttemptV36 {
                 val book = OnlineBookV36(source.id, source.name, "", "", "", "", "", link.bookUrl)
-                val (_, chapters) = withContext(Dispatchers.IO) { loadBookV36(source, book) }
+                val (_, chapters) = runInterruptible(Dispatchers.IO) { loadBookV36(source, book) }
                 val fresh = chapters.drop(link.chapterCount)
-                if (fresh.isEmpty()) return@runCatching "已是最新，共 ${chapters.size} 章"
-                val texts = downloadChapters(source, fresh) ?: return@runCatching "已取消"
+                if (fresh.isEmpty()) return@sourceAttemptV36 "已是最新，共 ${chapters.size} 章"
+                val texts = downloadChapters(source, fresh) ?: return@sourceAttemptV36 "下载未完成，本次未更新"
                 projects.appendImportedChapters(novelId, fresh.mapIndexed { i, c -> ImportedChapter(c.title, texts[i]) })
                 BookSourceStoreV36.saveLink(context, link.copy(chapterCount = chapters.size))
                 "新增 ${fresh.size} 章"
@@ -301,33 +351,61 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     private suspend fun downloadChapters(source: BookSourceV36, chapters: List<OnlineChapterV36>): List<String>? {
         val tocUrls = chapters.map { it.url }.toSet()
         val texts = arrayOfNulls<String>(chapters.size)
+        val nextIndex = java.util.concurrent.atomic.AtomicInteger()
         var done = 0
         var failed = 0
+        var totalChars = 0L
         _state.update { it.copy(download = OnlineDownloadV36(0, chapters.size, 0)) }
-        val gate = Semaphore(4)
-        return runCatching {
+        return sourceAttemptV36 {
             coroutineScope {
-                chapters.mapIndexed { index, chapter ->
+                // A fixed worker pool avoids creating one suspended coroutine per chapter.
+                List(minOf(4, chapters.size)) {
                     async(Dispatchers.IO) {
-                        gate.withPermit {
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val index = nextIndex.getAndIncrement()
+                            if (index >= chapters.size) break
                             var text: String? = null
-                            // Two retries per chapter; one bad page must not sink the book.
                             for (attempt in 0 until 3) {
-                                text = runCatching { loadChapterTextV36(source, chapter, tocUrls) }.getOrNull()?.takeIf { it.isNotBlank() }
+                                text = sourceAttemptV36 { runInterruptible { loadChapterTextV36(source, chapters[index], tocUrls) } }
+                                    .getOrNull()?.takeIf { it.isNotBlank() }
                                 if (text != null) break
-                                delay(600L * (attempt + 1))
+                                if (attempt < 2) delay(600L * (attempt + 1))
                             }
-                            texts[index] = text ?: "（本章下载失败，可稍后在书架长按本书「检查更新」或重新添加）"
+                            currentCoroutineContext().ensureActive()
+                            texts[index] = text
                             synchronized(this@OnlineBooksViewModelV36) {
                                 done++
                                 if (text == null) failed++
+                                totalChars += text?.length ?: 0
+                                check(totalChars <= 32L * 1024 * 1024) { "全书超过离线缓存大小限制" }
+                                _state.update { it.copy(download = OnlineDownloadV36(done, chapters.size, failed)) }
                             }
-                            _state.update { it.copy(download = OnlineDownloadV36(done, chapters.size, failed)) }
                         }
                     }
                 }.awaitAll()
             }
+            check(failed == 0) { "$failed 章下载失败，本次未写入书架；请重试或更换书源" }
             texts.map { it.orEmpty() }
-        }.getOrNull()
+        }.getOrElse { error ->
+            _state.update { it.copy(download = null, error = error.message ?: "下载失败") }
+            null
+        }
+    }
+
+    /** Exports the supported stored format; credentials in source headers stay user-visible. */
+    fun exportSources(): String = BookSourceJsonV36.encodeToString(ListSerializer(BookSourceV36.serializer()), _state.value.sources)
+
+    fun editSource(id: String, raw: String) {
+        viewModelScope.launch {
+            sourceAttemptV36 {
+                val result = withContext(Dispatchers.Default) { parseBookSourcesV36(raw) }
+                require(result.sources.size == 1 && result.skipped.isEmpty()) { "请提供一个有效的静态 HTML 书源" }
+                val edited = result.sources.single().copy(id = id)
+                require(_state.value.sources.any { it.id == id }) { "原书源已被删除" }
+                updateSources { list -> list.map { if (it.id == id) edited else it } }
+                _state.update { it.copy(message = "已更新书源「${edited.name}」") }
+            }.onFailure { error -> _state.update { it.copy(error = error.message ?: "书源编辑失败") } }
+        }
     }
 }

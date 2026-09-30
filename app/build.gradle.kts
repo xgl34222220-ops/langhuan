@@ -72,6 +72,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jsoup)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.re2j:re2j:1.8")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.material.kolor)
     implementation(libs.haze)

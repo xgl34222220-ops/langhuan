@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +46,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Link
@@ -66,6 +69,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -129,7 +134,7 @@ internal fun OnlineBooksPageV36(
             modifier = Modifier.weight(1f),
         ) { current ->
             if (current == 0) {
-                OnlineSearchTabV36(state, query, onQuery = { query = it }, onSearch = { viewModel.search(query) }, onStop = viewModel::stopSearch, onOpen = viewModel::openDetail, onGoSources = { tab = 1 })
+                OnlineSearchTabV36(state, query, onQuery = { query = it }, onSearch = { viewModel.search(query) }, onStop = viewModel::stopSearch, onOpen = viewModel::openDetail, onGoSources = { tab = 1 }, onDiscover = viewModel::discover)
             } else {
                 OnlineSourcesTabV36(
                     state = state,
@@ -138,6 +143,8 @@ internal fun OnlineBooksPageV36(
                     onFile = { fileLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                     onToggle = viewModel::toggleSource,
                     onDelete = viewModel::deleteSource,
+                    onEdit = viewModel::editSource,
+                    onExport = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(viewModel.exportSources())) },
                     onAi = { aiSheet = true },
                 )
             }
@@ -210,6 +217,7 @@ private fun OnlineSearchTabV36(
     onStop: () -> Unit,
     onOpen: (OnlineBookV36) -> Unit,
     onGoSources: () -> Unit,
+    onDiscover: (SourceDiscoveryV41) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     val enter = rememberEnterRegistryV31()
@@ -236,21 +244,33 @@ private fun OnlineSearchTabV36(
                 unfocusedIndicatorColor = Color.Transparent,
             ),
         )
-        val enabled = state.sources.count { it.enabled }
+        val enabled = state.sources.count { it.enabled && it.searchUrl.isNotBlank() && it.searchList.isNotBlank() }
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("全源搜索", color = t.foreground, style = MaterialTheme.typography.labelLarge)
             Text("  ·  $enabled 个书源已启用", Modifier.weight(1f), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onGoSources) { Text("管理") }
         }
+        val discoveries = remember(state.sources) { state.sources.flatMap(::sourceDiscoveriesV41) }
+        if (discoveries.isNotEmpty()) {
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(discoveries, key = { it.sourceId + it.url }) { section ->
+                    val sourceName = state.sources.firstOrNull { it.id == section.sourceId }?.name.orEmpty()
+                    OnlineTabV36("$sourceName · ${section.label}", state.discoveryLabel == "$sourceName · ${section.label}") { onDiscover(section) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        state.discoveryLabel?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = t.foreground, style = MaterialTheme.typography.titleSmall) }
         AnimatedVisibility(state.searching) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                LanghuanMotionStatus("正在搜索 ${state.searchedSources}/$enabled 个书源", Modifier.weight(1f))
+                LanghuanMotionStatus(if (state.discoveryLabel != null) "正在读取发现分类…" else "正在搜索 ${state.searchedSources}/$enabled 个书源", Modifier.weight(1f))
                 TextButton(onClick = onStop) { Text("停止") }
             }
         }
         when {
             state.sources.isEmpty() -> OnlineEmptyV36("为书城添加第一盏灯", "导入你有权使用的书源，或让 AI 为你生成。\n书城会从这些网站搜索真实书籍。", "添加书源 / AI 生成", onGoSources)
-            enabled == 0 -> OnlineEmptyV36("书源还没有启用", "到书源管理打开至少一个书源，再来寻找喜欢的故事。", "启用书源", onGoSources)
+            enabled == 0 && discoveries.isEmpty() -> OnlineEmptyV36("书源还没有启用", "到书源管理打开至少一个书源，再来寻找喜欢的故事。", "启用书源", onGoSources)
+            state.results.isEmpty() && !state.searching && state.discoveryLabel != null -> OnlineEmptyV36("此分类暂时没有书籍", "试试其他分类、搜索书名，或检查这条书源的发现规则。", "检查书源", onGoSources)
             state.results.isEmpty() && !state.searching && state.query.isNotBlank() -> OnlineEmptyV36("没有找到相关书籍", "试试更短的书名、作者名，或换一个可用书源。", "检查书源", onGoSources)
             state.results.isEmpty() && !state.searching -> OnlineEmptyV36("故事，从一个名字开始", "输入书名或作者，会同时搜索你启用的 $enabled 个书源。", null, null)
             else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -285,14 +305,22 @@ private fun OnlineSourcesTabV36(
     onFile: () -> Unit,
     onToggle: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onEdit: (String, String) -> Unit,
+    onExport: () -> Unit,
     onAi: () -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
     var pendingDelete by remember { mutableStateOf<BookSourceV36?>(null) }
     var sourceQuery by rememberSaveable { mutableStateOf("") }
+    var pendingEdit by remember { mutableStateOf<BookSourceV36?>(null) }
+    var exportConfirm by remember { mutableStateOf(false) }
+    val editScope = rememberCoroutineScope()
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            Text("${state.sources.count { it.enabled }} 个已启用 · 共 ${state.sources.size} 个书源", color = t.foreground, style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${state.sources.count { it.enabled }} 个已启用 · 共 ${state.sources.size} 个书源", Modifier.weight(1f), color = t.foreground, style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = { exportConfirm = true }, enabled = state.sources.isNotEmpty()) { Text("导出") }
+            }
             Text(
                 "书源由你自己导入和负责。请只使用你有权访问的网站内容。支持阅读（Legado）格式中基于网页规则的书源；需要 JS 或 JSON 接口的书源会被跳过。",
                 Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
@@ -332,10 +360,51 @@ private fun OnlineSourcesTabV36(
                         Text(listOfNotNull(source.group.takeIf { it.isNotBlank() }, if (source.enabled) "已启用" else "已停用", "网页规则").joinToString(" · "), Modifier.padding(top = 5.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
                     }
                     Switch(checked = source.enabled, onCheckedChange = { onToggle(source.id) })
+                    LanghuanIconButton(Icons.Rounded.Edit, "编辑书源「${source.name}」", { pendingEdit = source })
                     LanghuanIconButton(Icons.Rounded.DeleteOutline, "删除书源", { pendingDelete = source })
                 }
             }
         }
+    }
+    if (exportConfirm) AlertDialog(
+        onDismissRequest = { exportConfirm = false }, title = { Text("复制书源 JSON") },
+        text = { Text("将全部书源复制到剪贴板。自定义请求头也会包含在内，请勿把带登录凭据的书源分享给他人。") },
+        confirmButton = { TextButton(onClick = { onExport(); exportConfirm = false }) { Text("复制") } },
+        dismissButton = { TextButton(onClick = { exportConfirm = false }) { Text("取消") } }, containerColor = t.card,
+    )
+    pendingEdit?.let { source ->
+        var raw by remember(source.id) { mutableStateOf(BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)) }
+        var validation by remember(source.id) { mutableStateOf<String?>(null) }
+        var saving by remember(source.id) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { pendingEdit = null }, title = { Text("编辑「${source.name}」") },
+            text = {
+                Column {
+                    Text("保存只校验格式，网站可用性请返回书城实际搜索确认。", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(raw, { raw = it; validation = null }, Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 340.dp), label = { Text("书源 JSON") })
+                    validation?.let { Text(it, color = t.destructive, style = MaterialTheme.typography.bodySmall) }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !saving, onClick = {
+                    if (raw.length > 262144) validation = "单个书源规则不能超过 256 KiB"
+                    else {
+                        saving = true
+                        editScope.launch {
+                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                runCatching { parseBookSourcesV36(raw) }
+                            }
+                            val parsed = result.getOrNull()
+                            if (parsed == null || parsed.sources.size != 1 || parsed.skipped.isNotEmpty()) {
+                                validation = result.exceptionOrNull()?.message ?: "请提供一个有效的静态网页书源"
+                            } else { onEdit(source.id, raw); pendingEdit = null }
+                            saving = false
+                        }
+                    }
+                }) { Text(if (saving) "校验中…" else "保存规则") }
+            },
+            dismissButton = { TextButton(onClick = { pendingEdit = null }) { Text("取消") } }, containerColor = t.card,
+        )
     }
     pendingDelete?.let { source ->
         AlertDialog(
@@ -471,20 +540,17 @@ private fun rememberOnlineCoverV36(url: String): androidx.compose.ui.graphics.Im
     var bitmap by remember(url) { mutableStateOf(onlineCoverCacheV36.get(url)) }
     LaunchedEffect(url) {
         if (bitmap != null || !url.startsWith("http")) return@LaunchedEffect
-        bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        bitmap = kotlinx.coroutines.runInterruptible(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
-                val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                connection.connectTimeout = 10_000
-                connection.readTimeout = 15_000
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Mobile")
-                val bytes = try { connection.inputStream.use { it.readBytes() } } finally { connection.disconnect() }
+                val bytes = fetchSourceBytesV36(url, maxBytes = 2 * 1024 * 1024)
                 val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 40_000_000L) { "封面尺寸无效或过大" }
                 var sample = 1
-                while (bounds.outWidth / (sample * 2) >= 240) sample *= 2
+                while (bounds.outWidth / sample > 480 || bounds.outHeight / sample > 720) sample *= 2
                 android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
                     ?.asImageBitmap()
-            }.getOrNull()
+            }.onFailure { if (it is java.io.InterruptedIOException || it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
         }?.also { onlineCoverCacheV36.put(url, it) }
     }
     return bitmap

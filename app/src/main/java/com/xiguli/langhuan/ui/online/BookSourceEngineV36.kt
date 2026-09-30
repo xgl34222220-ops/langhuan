@@ -1,6 +1,24 @@
 package com.xiguli.langhuan.ui
 
-import java.net.HttpURLConnection
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.IOException
+import java.net.InetAddress
+import java.net.Proxy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.CancellationException
+import okhttp3.Call
+import okhttp3.Cookie
+import okhttp3.Callback
+import okhttp3.Dns
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaType
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.Charset
@@ -59,6 +77,15 @@ internal data class BookSourceV36(
     val contentText: String = "",
     val contentNext: String = "",
     val contentReplace: String = "",
+    val enabledExplore: Boolean = true,
+    val exploreUrl: String = "",
+    val exploreList: String = "",
+    val exploreName: String = "",
+    val exploreAuthor: String = "",
+    val exploreCover: String = "",
+    val exploreIntro: String = "",
+    val exploreLatest: String = "",
+    val exploreBookUrl: String = "",
 )
 
 internal data class OnlineBookV36(
@@ -82,12 +109,14 @@ internal data class BookSourceImportResultV36(val sources: List<BookSourceV36>, 
 
 /** Parses a Langhuan or Legado source list (array or single object). */
 internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
+    require(raw.length <= MAX_SOURCE_BYTES_V36) { "书源文件超过 4 MiB 限制" }
     val root = BookSourceJsonV36.parseToJsonElement(raw.trim())
     val items = when (root) {
         is JsonArray -> root.toList()
         is JsonObject -> listOf(root)
         else -> emptyList()
     }
+    require(items.size <= 500) { "单次最多导入 500 个书源" }
     val sources = ArrayList<BookSourceV36>()
     val skipped = ArrayList<String>()
     items.forEach { element ->
@@ -98,7 +127,9 @@ internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
         val name = source?.name ?: obj.string("bookSourceName").ifBlank { "未命名书源" }
         when {
             source == null -> skipped += "$name（格式无法识别）"
-            source.searchUrl.isBlank() || source.searchList.isBlank() -> skipped += "$name（没有搜索规则）"
+            source.id.isBlank() || runCatching { publicSourceUrlV36(source.baseUrl) }.isFailure -> skipped += "$name（网站地址无效）"
+            (source.searchUrl.isBlank() || source.searchList.isBlank()) &&
+                (source.exploreList.isBlank() || sourceDiscoveriesV41(source.copy(enabled = true, enabledExplore = true)).isEmpty()) -> skipped += "$name（没有可用的搜索或发现规则）"
             !bookSourceSupportedV36(source) -> skipped += "$name（使用了 JS 或 JSON 接口，暂不支持）"
             else -> sources += source
         }
@@ -116,6 +147,7 @@ private fun JsonObject.obj(key: String): JsonObject? = when (val v = this[key]) 
 }
 
 private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
+    val explore = obj.obj("ruleExplore")
     val search = obj.obj("ruleSearch")
     val info = obj.obj("ruleBookInfo")
     val toc = obj.obj("ruleToc")
@@ -129,6 +161,15 @@ private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
         group = obj.string("bookSourceGroup"),
         enabled = (obj["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
         searchUrl = obj.string("searchUrl"),
+        enabledExplore = (obj["enabledExplore"] as? JsonPrimitive)?.booleanOrNull ?: true,
+        exploreUrl = obj.string("exploreUrl"),
+        exploreList = explore?.string("bookList").orEmpty(),
+        exploreName = explore?.string("name").orEmpty(),
+        exploreAuthor = explore?.string("author").orEmpty(),
+        exploreCover = explore?.string("coverUrl").orEmpty(),
+        exploreIntro = explore?.string("intro").orEmpty(),
+        exploreLatest = explore?.string("lastChapter").orEmpty(),
+        exploreBookUrl = explore?.string("bookUrl").orEmpty(),
         headers = headers,
         searchList = search?.string("bookList").orEmpty(),
         searchName = search?.string("name").orEmpty(),
@@ -155,9 +196,15 @@ private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
 internal fun bookSourceSupportedV36(source: BookSourceV36): Boolean {
     val rules = listOf(
         source.searchUrl, source.searchList, source.searchName, source.searchBookUrl,
-        source.tocList, source.tocName, source.tocUrl, source.contentText,
+        source.searchAuthor, source.searchCover, source.searchIntro, source.searchLatest,
+        source.infoName, source.infoAuthor, source.infoCover, source.infoIntro, source.infoTocUrl,
+        source.tocList, source.tocName, source.tocUrl, source.tocNext, source.contentText,
+        source.contentNext, source.contentReplace,
+        source.exploreUrl, source.exploreList, source.exploreName, source.exploreAuthor,
+        source.exploreCover, source.exploreIntro, source.exploreLatest, source.exploreBookUrl,
     )
     return rules.none { rule ->
+        rule.length > 8192 ||
         rule.contains("<js>", true) || rule.contains("@js:", true) || rule.startsWith("@json:", true) ||
             rule.trimStart().startsWith("$.") || rule.trimStart().startsWith("{{") || rule.contains("java.", false)
     }
@@ -201,8 +248,26 @@ private fun splitReplaceV36(rule: String): Triple<String, String?, String> {
     return Triple(rule.substring(0, index), rest.getOrNull(0), rest.getOrNull(1).orEmpty())
 }
 
+/** Linear-time remote cleanup rules. Lookaround and pattern backreferences are unsupported. */
+internal fun sourceRegexReplaceV36(text: String, regex: String, replacement: String): String {
+    require(regex.length <= 1024 && replacement.length <= 1024) { "书源正则或替换文本超过 1024 字符限制" }
+    val matcher = try { com.google.re2j.Pattern.compile(regex).matcher(text) }
+        catch (e: com.google.re2j.PatternSyntaxException) {
+            throw IllegalArgumentException("书源正则不受支持（不支持环视或模式反向引用）", e)
+        }
+    val out = StringBuffer()
+    while (matcher.find()) {
+        if (Thread.currentThread().isInterrupted) throw CancellationException("书源规则已取消")
+        matcher.appendReplacement(out, replacement)
+        require(out.length <= MAX_SOURCE_BYTES_V36) { "书源替换结果超过大小限制" }
+    }
+    matcher.appendTail(out)
+    require(out.length <= MAX_SOURCE_BYTES_V36) { "书源替换结果超过大小限制" }
+    return out.toString()
+}
+
 private fun applyReplaceV36(text: String, regex: String?, replacement: String): String =
-    if (regex.isNullOrEmpty()) text else runCatching { text.replace(Regex(regex), replacement) }.getOrDefault(text)
+    if (regex.isNullOrEmpty()) text else sourceRegexReplaceV36(text, regex, replacement)
 
 private fun evaluateValueV36(context: Element, rule: String): String {
     if (rule.isEmpty()) return ""
@@ -227,6 +292,10 @@ internal fun attrValueV36(element: Element, attr: String): String? = when (attr)
  * Supports @css: and Legado's default class./id./tag./text./children segments.
  */
 private fun selectChainV36(context: Element, rule: String, valueRule: Boolean): Pair<List<Element>, String?> {
+    require(rule.length <= 8192) { "书源选择器过长" }
+    require(!rule.contains(":matches", true) && !rule.contains("~=") && !rule.contains('\\')) {
+        "不支持书源中的正则 CSS 选择器或转义选择器；请使用普通 class/id 选择器和 ## 文本清理"
+    }
     if (rule.startsWith("@css:", ignoreCase = true)) {
         val body = rule.substring(5)
         val at = body.lastIndexOf('@')
@@ -323,128 +392,196 @@ internal fun buildSearchRequestV36(source: BookSourceV36, key: String, page: Int
     val url = resolveUrlV36(source.baseUrl, fill(urlPart))
     val method = options?.get("method")?.jsonPrimitive?.contentOrNull?.uppercase() ?: "GET"
     val body = options?.get("body")?.jsonPrimitive?.contentOrNull?.let(::fill)
+    require(method in setOf("GET", "POST", "HEAD")) { "书源仅支持 GET、POST、HEAD 请求" }
+    publicSourceUrlV36(url)
     return SourceRequestV36(url, method, body, charset)
 }
 
 internal fun resolveUrlV36(base: String, target: String): String {
     val clean = target.trim()
     if (clean.startsWith("http://") || clean.startsWith("https://")) return clean
-    return runCatching { URL(URL(if (base.endsWith("/")) base else "$base/"), clean).toString() }.getOrDefault(clean)
+    return runCatching { URL(URL(base), clean).toString() }.getOrDefault(clean)
 }
 
-internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36): Document {
-    val first = runCatching { fetchDocumentFollowingRedirectsV36(source, request) }
-    if (first.isSuccess) return first.getOrThrow()
+/** A single boundary for sources, covers and imported source files. No WebView or page JavaScript. */
+internal const val MAX_SOURCE_BYTES_V36 = 4 * 1024 * 1024
 
-    // Browsers frequently upgrade an explicitly typed http:// URL to HTTPS through HSTS or an
-    // internal redirect before the request ever reaches the page. HttpURLConnection does not have
-    // the browser's HSTS state, so retry the same URL over HTTPS once before reporting a failure.
-    val https = httpsFallbackUrlV36(request.url)
-    if (https != null) {
-        val retry = runCatching { fetchDocumentFollowingRedirectsV36(source, request.copy(url = https)) }
-        if (retry.isSuccess) return retry.getOrThrow()
-
-        // Some sites deliberately reject non-browser TLS/network stacks (400/403) while opening
-        // normally in Chrome/WebView. Fall back to a real WebView session before giving up.
-        val browser = runCatching { BookSourceBrowserV38.fetchDocument(request.copy(url = https), source.headers) }
-        if (browser.isSuccess) return browser.getOrThrow()
-
-        val firstMessage = first.exceptionOrNull()?.message.orEmpty()
-        val secondMessage = retry.exceptionOrNull()?.message.orEmpty()
-        val browserMessage = browser.exceptionOrNull()?.message.orEmpty()
-        error(
-            listOf(firstMessage, secondMessage, browserMessage)
-                .filter { it.isNotBlank() }
-                .distinct()
-                .joinToString("；")
-                .ifBlank { "网页请求失败" },
-        )
+internal fun publicSourceUrlV36(raw: String): HttpUrl {
+    require(raw.length <= 8192) { "网址过长" }
+    val url = raw.trim().toHttpUrl()
+    require(url.username.isEmpty() && url.password.isEmpty()) { "网址不能包含登录凭据" }
+    val host = url.host.lowercase().trimEnd('.')
+    require(host != "localhost" && !host.endsWith(".localhost") &&
+        !host.endsWith(".local") && !host.endsWith(".internal") &&
+        !host.endsWith(".lan") && !host.endsWith(".home")) { "不允许访问本机或内网书源" }
+    // Numeric literals are rejected here as well as in DNS, so imports fail early.
+    if (host.contains(':') || host.all { it.isDigit() || it == '.' }) {
+        require(publicSourceAddressV36(InetAddress.getByName(host))) { "不允许访问本机或内网书源" }
     }
-
-    val browser = runCatching { BookSourceBrowserV38.fetchDocument(request, source.headers) }
-    if (browser.isSuccess) return browser.getOrThrow()
-    error(
-        listOf(first.exceptionOrNull()?.message.orEmpty(), browser.exceptionOrNull()?.message.orEmpty())
-            .filter { it.isNotBlank() }
-            .distinct()
-            .joinToString("；")
-            .ifBlank { "网页请求失败" },
-    )
+    return url.newBuilder().fragment(null).build()
 }
 
-private fun fetchDocumentFollowingRedirectsV36(source: BookSourceV36, initial: SourceRequestV36): Document {
-    var url = initial.url
+internal fun publicSourceAddressV36(address: InetAddress): Boolean {
+    if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress ||
+        address.isSiteLocalAddress || address.isMulticastAddress) return false
+    val b = address.address.map { it.toInt() and 255 }
+    if (b.size == 4) {
+        return !(b[0] == 0 || b[0] == 10 || b[0] == 127 || b[0] >= 224 ||
+            (b[0] == 100 && b[1] in 64..127) || (b[0] == 169 && b[1] == 254) ||
+            (b[0] == 172 && b[1] in 16..31) || (b[0] == 192 && b[1] == 168) ||
+            (b[0] == 192 && b[1] == 0) || (b[0] == 192 && b[1] == 88 && b[2] == 99) ||
+            (b[0] == 198 && b[1] in 18..19) || (b[0] == 198 && b[1] == 51 && b[2] == 100) ||
+            (b[0] == 203 && b[1] == 0 && b[2] == 113))
+    }
+    // Only global unicast IPv6; exclude transition tunnels and documentation addresses.
+    return b.size == 16 && (b[0] and 0xe0) == 0x20 &&
+        !(b[0] == 0x20 && b[1] == 0x02) &&
+        !(b[0] == 0x20 && b[1] == 0x01 && b[2] == 0 && b[3] == 0) &&
+        !(b[0] == 0x20 && b[1] == 0x01 && b[2] == 0x0d && b[3] == 0xb8)
+}
+
+internal fun sameSourceOriginV36(a: HttpUrl, b: HttpUrl): Boolean =
+    a.scheme == b.scheme && a.host == b.host && a.port == b.port
+
+/** Never forward a configured API key/cookie (including custom header names) across origins. */
+internal fun sourceHeadersForUrlV36(source: BookSourceV36?, url: HttpUrl): Map<String, String> {
+    if (source == null || !sameSourceOriginV36(publicSourceUrlV36(source.baseUrl), url)) return emptyMap()
+    return source.headers.filter { (name, value) ->
+        require(!name.contains('\r') && !name.contains('\n') && !value.contains('\r') && !value.contains('\n')) { "书源请求头无效" }
+        name.lowercase() !in setOf("host", "content-length", "connection", "transfer-encoding", "proxy-authorization")
+    }
+}
+
+internal fun sourceRedirectV36(from: HttpUrl, location: String, code: Int, method: String): HttpUrl {
+    val next = publicSourceUrlV36(resolveUrlV36(from.toString(), location))
+    require(!(from.isHttps && !next.isHttps)) { "已阻止 HTTPS 降级跳转" }
+    require(method != "POST" || code !in setOf(307, 308) || sameSourceOriginV36(from, next)) { "已阻止跨站转发搜索表单" }
+    return next
+}
+
+private val sourceClientV36 by lazy {
+    OkHttpClient.Builder()
+        .proxy(Proxy.NO_PROXY)
+        .dns(object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                val addresses = Dns.SYSTEM.lookup(hostname)
+                if (addresses.isEmpty() || addresses.any { !publicSourceAddressV36(it) }) {
+                    throw java.net.UnknownHostException("书源域名解析到本机或内网地址，已阻止")
+                }
+                // OkHttp connects to these exact checked addresses, with TLS hostname checks intact.
+                return addresses
+            }
+        })
+        .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
+        .connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(45, TimeUnit.SECONDS).build()
+}
+
+internal fun readSourceBytesV36(input: InputStream, maxBytes: Int): ByteArray {
+    require(maxBytes in 1..MAX_SOURCE_BYTES_V36)
+    val out = ByteArrayOutputStream(minOf(maxBytes, 8192))
+    val buffer = ByteArray(8192)
+    while (true) {
+        if (Thread.currentThread().isInterrupted) throw CancellationException("书源请求已取消")
+        val count = input.read(buffer)
+        if (count < 0) break
+        require(count <= maxBytes - out.size()) { "书源响应超过大小限制" }
+        out.write(buffer, 0, count)
+    }
+    return out.toByteArray()
+}
+
+private data class SourceResponseV36(val code: Int, val url: String, val location: String?, val type: String?, val bytes: ByteArray, val cookies: List<Cookie>)
+
+// Waiting is interruptible. runInterruptible in callers cancels the actual socket, not just UI state.
+private fun awaitSourceResponseV36(request: Request, maxBytes: Int, remainingMs: Long): SourceResponseV36 {
+    val call = sourceClientV36.newCall(request)
+    call.timeout().timeout(remainingMs, TimeUnit.MILLISECONDS)
+    val latch = CountDownLatch(1)
+    var result: SourceResponseV36? = null
+    var failure: Throwable? = null
+    call.enqueue(object : Callback {
+        override fun onFailure(call: Call, e: IOException) { failure = e; latch.countDown() }
+        override fun onResponse(call: Call, response: Response) {
+            try {
+                response.use {
+                    val body = it.body
+                    val bytes = if (it.code in 200..299 && body != null) {
+                        require(body.contentLength() <= maxBytes) { "书源响应超过大小限制" }
+                        body.byteStream().use { stream -> readSourceBytesV36(stream, maxBytes) }
+                    } else ByteArray(0)
+                    result = SourceResponseV36(it.code, it.request.url.toString(), it.header("Location"), it.header("Content-Type"), bytes, Cookie.parseAll(it.request.url, it.headers))
+                }
+            } catch (e: Exception) { failure = e } finally { latch.countDown() }
+        }
+    })
+    try {
+        if (!latch.await(remainingMs, TimeUnit.MILLISECONDS)) throw java.net.SocketTimeoutException("书源请求超时")
+        failure?.let { throw it }
+        return result ?: error("书源未返回响应")
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        throw CancellationException("书源请求已取消").apply { initCause(e) }
+    } finally { call.cancel() }
+}
+
+private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceRequestV36, maxBytes: Int): SourceResponseV36 {
+    require(maxBytes in 1..MAX_SOURCE_BYTES_V36)
+    var url = publicSourceUrlV36(initial.url)
     var method = initial.method.uppercase()
     var body = initial.body
-    var referer: String? = source.baseUrl.takeIf { it.startsWith("http") }
-    val cookies = LinkedHashMap<String, String>()
-
+    require(method in setOf("GET", "HEAD", "POST")) { "不支持的书源请求方法" }
+    require(body == null || body!!.length <= 64 * 1024) { "搜索请求过大" }
+    val visited = HashSet<String>()
+    val cookies = ArrayList<Cookie>()
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45)
     repeat(8) {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 20_000
-        connection.instanceFollowRedirects = false
-        connection.requestMethod = method
-        connection.setRequestProperty(
-            "User-Agent",
-            source.headers["User-Agent"]
-                ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-        )
-        connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.6")
-        connection.setRequestProperty("Cache-Control", "no-cache")
-        connection.setRequestProperty("Pragma", "no-cache")
-        connection.setRequestProperty("Upgrade-Insecure-Requests", "1")
-        referer?.takeIf { it.startsWith("http") }?.let { connection.setRequestProperty("Referer", it) }
-        val configuredCookie = source.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value.orEmpty()
-        val learnedCookie = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
-        listOf(configuredCookie, learnedCookie).filter { it.isNotBlank() }.joinToString("; ").takeIf { it.isNotBlank() }
-            ?.let { connection.setRequestProperty("Cookie", it) }
-        source.headers.forEach { (k, v) ->
-            if (!k.equals("User-Agent", true) && !k.equals("Cookie", true)) connection.setRequestProperty(k, v)
+        if (Thread.currentThread().isInterrupted) throw CancellationException("书源请求已取消")
+        check(visited.add(url.toString())) { "书源跳转形成循环" }
+        val remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+        if (remaining <= 0) throw java.net.SocketTimeoutException("书源请求超时")
+        val request = Request.Builder().url(url)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36")
+            .header("Accept", "text/html,application/xhtml+xml,application/json,image/*;q=0.8,*/*;q=0.5")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.6")
+        // All configured headers (not merely known credential names) stay on the configured origin.
+        // No global CookieManager or automatic cookie jar is used by source requests.
+        val configuredHeaders = sourceHeadersForUrlV36(source, url)
+        configuredHeaders.forEach { (name, value) -> request.header(name, value) }
+        val configuredCookie = configuredHeaders.entries.firstOrNull { it.key.equals("Cookie", true) }?.value
+        val learnedCookies = cookies.filter { it.matches(url) && it.expiresAt > System.currentTimeMillis() }.joinToString("; ") { "${it.name}=${it.value}" }
+        listOfNotNull(configuredCookie, learnedCookies.takeIf { it.isNotEmpty() }).joinToString("; ")
+            .takeIf { it.isNotEmpty() }?.let { request.header("Cookie", it) }
+        val requestBody = if (method == "POST") body.orEmpty().toByteArray(Charset.forName(initial.charset ?: "UTF-8"))
+            .toRequestBody("application/x-www-form-urlencoded".toMediaType()) else null
+        val response = awaitSourceResponseV36(request.method(method, requestBody).build(), maxBytes, remaining)
+        response.cookies.forEach { cookie ->
+            cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
+            if (cookie.expiresAt > System.currentTimeMillis()) cookies.add(cookie)
         }
-        if (body != null && method !in setOf("GET", "HEAD")) {
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            connection.outputStream.use { it.write(body!!.toByteArray(Charset.forName(initial.charset ?: "UTF-8"))) }
-        }
-        try {
-            val code = connection.responseCode
-            connection.headerFields["Set-Cookie"].orEmpty().forEach { raw ->
-                val pair = raw.substringBefore(';')
-                val eq = pair.indexOf('=')
-                if (eq > 0) cookies[pair.substring(0, eq).trim()] = pair.substring(eq + 1).trim()
-            }
-            if (code in setOf(301, 302, 303, 307, 308)) {
-                val location = connection.getHeaderField("Location")?.takeIf { it.isNotBlank() }
-                    ?: error("书源返回 $code，但没有跳转地址")
-                val next = resolveUrlV36(url, location)
-                val previousHost = runCatching { URL(url).host }.getOrNull()
-                val nextHost = runCatching { URL(next).host }.getOrNull()
-                if (previousHost != null && nextHost != null && !previousHost.equals(nextHost, true)) {
-                    // Never leak cookies learned from one host to a different redirect target.
-                    cookies.clear()
-                }
-                referer = url
-                url = next
-                if (code in setOf(301, 302, 303) && method !in setOf("GET", "HEAD")) {
-                    method = "GET"
-                    body = null
-                }
-                return@repeat
-            }
-            check(code in 200..299) { "书源返回 $code" }
-            val bytes = connection.inputStream.use { it.readBytes() }
-            val charset = initial.charset
-                ?: connection.contentType?.substringAfter("charset=", "")?.substringBefore(';')?.trim()?.ifBlank { null }
-                ?: sniffCharsetV36(bytes)
-            val html = String(bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
-            return Jsoup.parse(html, url)
-        } finally {
-            connection.disconnect()
+        check(cookies.size <= 100) { "书源返回了过多 Cookie" }
+        if (response.code in setOf(301, 302, 303, 307, 308)) {
+            val next = sourceRedirectV36(url, response.location ?: error("跳转没有目标地址"), response.code, method)
+            if (response.code in setOf(301, 302, 303) && method == "POST") { method = "GET"; body = null }
+            url = next
+        } else {
+            check(response.code in 200..299) { "书源返回 ${response.code}；可能需要登录、验证码或动态网页，当前仅支持静态 HTML 书源" }
+            return response
         }
     }
     error("网页跳转次数过多")
+}
+
+internal fun fetchSourceBytesV36(url: String, maxBytes: Int = MAX_SOURCE_BYTES_V36): ByteArray =
+    fetchSourceResponseV36(null, SourceRequestV36(url), maxBytes).bytes
+
+internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36): Document {
+    val response = fetchSourceResponseV36(source, request, MAX_SOURCE_BYTES_V36)
+    val charset = request.charset ?: response.type?.let { Regex("charset=[\"']?([\\w-]+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1) }
+        ?: sniffCharsetV36(response.bytes)
+    val html = String(response.bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
+    check(!browserChallengePendingV38(html)) { "网站要求浏览器验证，当前不支持自动执行网页脚本" }
+    return Jsoup.parse(html, response.url)
 }
 
 internal fun httpsFallbackUrlV36(raw: String): String? {
@@ -497,14 +634,15 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
     val heuristicToc = heuristicTocUrlV39(page)
     val firstToc = listOfNotNull(declaredToc, heuristicToc)
         .firstOrNull { it != page.location() }
-    var doc = firstToc?.let { runCatching { fetchDocumentV36(source, SourceRequestV36(it)) }.getOrNull() } ?: page
+    var doc = firstToc?.let { sourceAttemptV36 { fetchDocumentV36(source, SourceRequestV36(it)) }.getOrNull() } ?: page
 
     val chapters = ArrayList<OnlineChapterV36>()
     val visited = LinkedHashSet<String>()
     var triedHeuristicFromBookPage = false
 
     repeat(40) {
-        visited += doc.location()
+        if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
+        if (!visited.add(publicSourceUrlV36(doc.location()).toString())) return detailed to chapters.distinctBy { it.url }
 
         val ruleFound = ruleElementsV36(doc, source.tocList).mapNotNull { item ->
             val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }.trim()
@@ -516,13 +654,14 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
         // Generic fallback for pages whose structure changed or whose AI/Legado rule missed the list.
         // 101 看书, for example, uses /txt/<bookId>/<chapterId>.html chapter links.
         chapters += heuristicChapterLinksV39(doc, book.bookUrl)
+        check(chapters.size <= 50_000) { "目录超过 50000 章限制" }
 
         val distinct = chapters.distinctBy { it.url }
         if (distinct.isEmpty() && !triedHeuristicFromBookPage) {
             triedHeuristicFromBookPage = true
             val alternate = heuristicTocUrlV39(page)
             if (alternate != null && alternate !in visited) {
-                val fetched = runCatching { fetchDocumentV36(source, SourceRequestV36(alternate)) }.getOrNull()
+                val fetched = sourceAttemptV36 { fetchDocumentV36(source, SourceRequestV36(alternate)) }.getOrNull()
                 if (fetched != null) {
                     doc = fetched
                     return@repeat
@@ -537,7 +676,7 @@ internal fun loadBookV36(source: BookSourceV36, book: OnlineBookV36): Pair<Onlin
         if (next == null || next in visited || isLikelyChapterUrlV39(next)) {
             return detailed to distinct
         }
-        val fetched = runCatching { fetchDocumentV36(source, SourceRequestV36(next)) }.getOrNull()
+        val fetched = sourceAttemptV36 { fetchDocumentV36(source, SourceRequestV36(next)) }.getOrNull()
             ?: return detailed to distinct
         doc = fetched
     }
@@ -576,20 +715,20 @@ internal fun heuristicChapterLinksV39(doc: Document, bookUrl: String = ""): List
     }
     if (all.isEmpty()) return emptyList()
 
-    val candidates = LinkedHashSet<Element>()
-    all.forEach { (anchor, _) ->
-        var p: Element? = anchor.parent()
+    // Group links by their nearest five ancestors once. The previous implementation rebuilt
+    // each ancestor's full descendant list for every link, becoming quadratic/cubic on large TOCs.
+    val candidates = LinkedHashMap<Element, MutableList<OnlineChapterV36>>()
+    all.forEach { (anchor, chapter) ->
+        var parent: Element? = anchor.parent()
         repeat(5) {
-            if (p == null) return@repeat
-            candidates += p!!
-            p = p!!.parent()
+            val node = parent ?: return@repeat
+            candidates.getOrPut(node) { ArrayList() }.add(chapter)
+            parent = node.parent()
         }
     }
 
-    val best = candidates.mapNotNull { container ->
-        val links = all.filter { (anchor, _) -> anchor === container || container.getAllElements().contains(anchor) }
-            .map { it.second }
-            .distinctBy { it.url }
+    val best = candidates.mapNotNull { (container, matches) ->
+        val links = matches.distinctBy { it.url }
         if (links.size < 2) return@mapNotNull null
         val totalAnchors = container.select("a[href]").size.coerceAtLeast(links.size)
         val density = links.size.toDouble() / totalAnchors.toDouble()
@@ -649,13 +788,16 @@ internal fun loadChapterTextV36(source: BookSourceV36, chapter: OnlineChapterV36
     var url = chapter.url
     val visited = HashSet<String>()
     repeat(12) {
-        visited += url
+        if (!visited.add(publicSourceUrlV36(url).toString())) return parts.joinToString("\n").trim()
         val doc = fetchDocumentV36(source, SourceRequestV36(url))
+        val finalUrl = publicSourceUrlV36(doc.location()).toString()
+        if (finalUrl != publicSourceUrlV36(url).toString() && !visited.add(finalUrl)) return parts.joinToString("\n").trim()
         val rule = source.contentText.ifBlank { "@css:#content@html" }
         val text = ruleStringV36(doc, if (rule.substringAfterLast('@') in VALUE_ATTRS) rule else "$rule@html")
         parts += cleanContentV36(text, source.contentReplace)
+        check(parts.sumOf { it.length } <= MAX_SOURCE_BYTES_V36) { "单章正文超过大小限制" }
         val next = ruleStringV36(doc, source.contentNext).takeIf { it.isNotBlank() }?.let { resolveUrlV36(doc.location(), it) }
-        if (next == null || next in visited || next in tocUrls) return parts.joinToString("\n").trim()
+        if (next == null || publicSourceUrlV36(next).toString() in visited || next in tocUrls) return parts.joinToString("\n").trim()
         url = next
     }
     return parts.joinToString("\n").trim()
@@ -668,4 +810,23 @@ internal fun cleanContentV36(text: String, replace: String): String {
     val parts = body.split("##")
     return applyReplaceV36(text, parts.getOrNull(0), parts.getOrNull(1).orEmpty())
         .lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+}
+
+/** Unlike runCatching, never turn cancellation into a successful empty result. */
+internal inline fun <T> sourceAttemptV36(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (e: CancellationException) { throw e } catch (e: InterruptedException) {
+    Thread.currentThread().interrupt()
+    throw CancellationException("书源操作已取消").apply { initCause(e) }
+} catch (e: Exception) { Result.failure(e) }
+
+/** Import never silently replaces an existing source or a prior duplicate in the same batch. */
+internal fun mergeSourceImportsV36(existing: List<BookSourceV36>, incoming: BookSourceImportResultV36): BookSourceImportResultV36 {
+    val merged = existing.associateBy { it.id }.toMutableMap()
+    val skipped = incoming.skipped.toMutableList()
+    incoming.sources.forEach { source ->
+        if (merged.containsKey(source.id)) skipped += "${source.name}（ID 已存在，保留原书源；如需修改请使用编辑）"
+        else merged[source.id] = source
+    }
+    return BookSourceImportResultV36(merged.values.sortedBy { it.name }, skipped)
 }

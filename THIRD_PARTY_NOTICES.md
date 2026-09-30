@@ -72,3 +72,11 @@ reading-source rules. Format/architecture references include
 [LegadoTeam/legado](https://github.com/LegadoTeam/legado), a GPL-3.0 project.
 This change does not copy its code, icons, assets, or bundled sources and does not claim
 complete Legado compatibility. No online book source is bundled.
+
+
+## RE2/J 1.8
+
+Source-rule cleanup uses the linear-time [RE2/J](https://github.com/google/re2j) engine,
+derived from Russ Cox's RE2 in Go. Copyright (c) 2009 The Go Authors.
+The full BSD license is included at `assets/licenses/re2j-LICENSE.txt`.
+Library source code is not modified.
