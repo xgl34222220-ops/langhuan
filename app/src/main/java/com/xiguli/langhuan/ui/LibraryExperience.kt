@@ -312,7 +312,7 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
     fun clearMessage() = _state.update { it.copy(message = null, error = null) }
 
     private suspend fun refreshOpenedBook(id: String) {
-        val row = storyDao.get(id) ?: return
+        val row = storyDao.getHeader(id) ?: return
         val snapshot = runCatching { LibraryJson.decodeFromString(StorySnapshot.serializer(), row.snapshotJson) }.getOrNull() ?: return
         val book = ReaderBookUi(
             id = snapshot.novel.id,
@@ -330,10 +330,14 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private suspend fun updateNovel(id: String, transform: (StorySnapshot) -> StorySnapshot) {
-        val row = storyDao.get(id) ?: error("找不到小说")
+        val row = storyDao.getHeader(id) ?: error("找不到小说")
         val snapshot = LibraryJson.decodeFromString(StorySnapshot.serializer(), row.snapshotJson)
         val updated = transform(snapshot)
-        storyDao.upsert(row.copy(snapshotJson = LibraryJson.encodeToString(StorySnapshot.serializer(), updated), updatedAt = System.currentTimeMillis()))
+        storyDao.updateSnapshot(
+            novelId = id,
+            snapshotJson = LibraryJson.encodeToString(StorySnapshot.serializer(), updated),
+            updatedAt = System.currentTimeMillis(),
+        )
     }
 
     private suspend fun activeGateway(): AiGateway? {
