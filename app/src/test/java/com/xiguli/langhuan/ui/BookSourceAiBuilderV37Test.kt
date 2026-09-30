@@ -53,6 +53,14 @@ class BookSourceAiBuilderV37Test {
     }
 
     @Test
+    fun httpInputHasHttpsFallbackAndCanonicalOriginUsesRedirectTarget() {
+        assertEquals("https://101kanshu.com/", httpsFallbackUrlV36("http://101kanshu.com/"))
+        assertNull(httpsFallbackUrlV36("https://101kanshu.com/"))
+        assertEquals("https://101kks.com", canonicalOriginV37("https://101kks.com/path?q=1"))
+        assertEquals("https://example.com:8443", canonicalOriginV37("https://example.com:8443/a"))
+    }
+
+    @Test
     fun rulesParseFromMessyModelOutput() {
         val rules = parseRulesV37("好的：\n```json\n{\"searchList\":\"@css:li.book\",\"searchName\":\"@css:a@text\",}\n```")
         assertEquals("@css:li.book", rules["searchList"])
