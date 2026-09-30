@@ -595,9 +595,10 @@ internal fun heuristicChapterLinksV39(doc: Document, bookUrl: String = ""): List
         val density = links.size.toDouble() / totalAnchors.toDouble()
         var depth = 0
         var p: Element? = container
-        while (p?.parent() != null && depth < 20) {
+        while (depth < 20) {
+            val parent = p?.parent() ?: break
             depth++
-            p = p.parent()
+            p = parent
         }
         val hint = (container.id() + " " + container.className() + " " + container.tagName()).lowercase()
         val semanticBonus = when {
