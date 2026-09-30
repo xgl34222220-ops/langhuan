@@ -38,11 +38,26 @@ jobs:
       - name: Run unit tests, Android lint and build Debug APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
+      - name: Record test identity and signing evidence
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          EVIDENCE=app/build/outputs/apk/debug/verification
+          mkdir -p "$EVIDENCE"
+          TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$TOOLS/aapt" dump badging "$APK" > "$EVIDENCE/apk-badging.txt"
+          "$TOOLS/aapt" dump xmltree "$APK" AndroidManifest.xml > "$EVIDENCE/apk-manifest.txt"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK" > "$EVIDENCE/apk-signing.txt"
+          sha256sum "$APK" > "$EVIDENCE/SHA256SUMS.txt"
+          grep "package: name='com.xiguli.langhuan'" "$EVIDENCE/apk-badging.txt"
+          grep "application-label:'琅嬛'" "$EVIDENCE/apk-badging.txt"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Langhuan-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Langhuan-reader-test-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/verification
           if-no-files-found: error
 
       - name: Upload verification reports

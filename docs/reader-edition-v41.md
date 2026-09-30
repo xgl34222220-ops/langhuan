@@ -15,12 +15,14 @@
 
 书城支持跨源搜索与源提供的真实静态发现分类；发现入口支持字面量“标题::URL”列表及 title/url JSON 数组，尊重 enabledExplore。不提供虚构推荐、评分或热榜。仅支持明确声明的网页规则子集，不声称完整兼容 Legado 的 JavaScript、JSONPath、XPath 或脚本生成发现规则。
 
-无需删除旧数据或重装清空。测试 APK 与原应用同包名，安装前仍建议保留现有数据备份。
+测试 APK 按要求保留原应用身份 `com.xiguli.langhuan` 和名称「琅嬛」。不创建并排应用，不修改系统签名校验或用户设备安全设置。
+
+历史 GitHub Actions 调试 APK 使用临时证书，不同构建的证书并不相同。不能承诺此 APK 可直接安全覆盖手机上的版本。请先保留书籍和项目备份；不要为了安装而卸载原版或清空数据。本项目当前支持逐书导出 TXT/EPUB/Markdown 与单项目备份，不提供整个书架、分组和阅读进度的一键无损迁移。
 
 ## 验证入口
 
 - `gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`
-- `gradle :app:connectedDebugAndroidTest`
+- `gradle :app:connectedDebugAndroidTest`（本地 HTTPS 外部链路测试需显式提供 sourceFixtureBase；CI 自动绑定当前提交）
 - `ReaderEditionV41Test` 覆盖三档宽度、三档字体缩放、三档字号的真实排版边界，以及连续十页生产渲染截图
 - 设备测试同时保存书架、书城、书源、AI 生成表单和“我的”截图
 
