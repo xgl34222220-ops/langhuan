@@ -89,6 +89,7 @@ fun WritingWorkspaceLuoShuV11(
     viewModel: WritingFlowViewModel,
     onClose: () -> Unit,
     onEditChapter: (novelId: String, chapterNumber: Int) -> Unit,
+    statusAccessory: (@Composable () -> Unit)? = null,
 ) {
     val flow by viewModel.state.collectAsStateWithLifecycle()
     val conversationVm: ProjectConversationViewModel = viewModel()
@@ -250,11 +251,17 @@ fun WritingWorkspaceLuoShuV11(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item(key = "runtime") {
-                    WritingRuntimeStatusV11(
-                        events = flow.runEvents,
-                        providerLabel = flow.providerLabel,
-                        onClick = { sheet = WritingSheetV11.RUN },
-                    )
+                    // The health pill sits beside the runtime strip instead of floating over the cards.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            WritingRuntimeStatusV11(
+                                events = flow.runEvents,
+                                providerLabel = flow.providerLabel,
+                                onClick = { sheet = WritingSheetV11.RUN },
+                            )
+                        }
+                        statusAccessory?.invoke()
+                    }
                 }
                 item(key = "mission") { Box(Modifier.animateItem().enterOnceV31(enter, "mission", 1)) { WritingMissionCardV11(snapshot, draft, flow) } }
                 item(key = "scenes") {
