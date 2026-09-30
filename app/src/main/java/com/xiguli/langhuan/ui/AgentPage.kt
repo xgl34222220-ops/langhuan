@@ -44,7 +44,7 @@ internal fun AgentPage(
     val review = state.agentReview
 
     LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
+        Modifier.fillMaxSize().statusBarsPadding().imePadding().navigationBarsPadding(),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 42.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
