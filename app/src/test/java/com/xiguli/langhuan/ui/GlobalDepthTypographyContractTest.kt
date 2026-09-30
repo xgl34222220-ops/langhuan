@@ -19,7 +19,7 @@ class GlobalDepthTypographyContractTest {
         assertTrue(theme.contains("lineHeight = 24.sp"))
         assertTrue(theme.contains("fontSize = 14.5.sp"))
         assertTrue(theme.contains("lineHeight = 18.sp"))
-        assertTrue(theme.contains("extraLarge = RoundedCornerShape(30.dp)"))
+        assertTrue(theme.contains("extraLarge = RoundedCornerShape(26.dp)"))
     }
 
     @Test
