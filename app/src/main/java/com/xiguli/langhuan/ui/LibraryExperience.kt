@@ -47,6 +47,8 @@ import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import java.io.File
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -142,7 +144,8 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
             _state.update { it.copy(isBusy = true, error = null, identitySuggestion = null) }
             runCatching {
                 val book = _state.value.stories.firstOrNull { it.id == id } ?: error("找不到这本小说")
-                val chapters = projects.chapterDrafts(id)
+                val chapters = withContext(Dispatchers.IO) { projects.chapterDrafts(id) }
+                require(chapters.isNotEmpty()) { "这本小说没有可读取的章节" }
                 book to chapters
             }.onSuccess { (book, chapters) ->
                 _state.update { it.copy(openedBook = book, chapters = chapters, readingChapter = null, isBusy = false, workspaceStoryId = id) }
