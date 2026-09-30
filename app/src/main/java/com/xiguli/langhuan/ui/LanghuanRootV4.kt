@@ -546,7 +546,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     libraryState.error?.let { error ->
         AlertDialog(
             onDismissRequest = libraryVm::clearMessage,
-            title = { Text("操作失败") },
+            title = { Text("打开失败") },
             text = { Text(error) },
             confirmButton = { TextButton(onClick = libraryVm::clearMessage) { Text("知道了") } },
         )
