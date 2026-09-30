@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 107
-        versionName = "0.29.0-alpha28-reader-v30"
+        versionCode = 108
+        versionName = "0.29.1-alpha29-motion"
     }
 
     buildFeatures { compose = true }
