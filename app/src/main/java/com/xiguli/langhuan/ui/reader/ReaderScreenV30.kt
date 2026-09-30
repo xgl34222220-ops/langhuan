@@ -70,7 +70,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -925,7 +925,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIntoReaderChrom
 ) {
     // Shift the full-page chrome drawing so that the strip shows the right slice of it.
     val shift = if (header) 0f else -(geometry.height - size.height)
-    translate(top = shift) {
+    withTransform({ translate(0f, shift) }) {
         drawReaderPageV30(
             page = null,
             geometry = geometry,
