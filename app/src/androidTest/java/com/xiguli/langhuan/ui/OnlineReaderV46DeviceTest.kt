@@ -55,8 +55,15 @@ class OnlineReaderV46DeviceTest {
             rule.runOnUiThread { vm.openReader(1) }
             rule.waitUntil(10000) { vm.state.value.readingChapter?.content?.contains("远处亮起一盏灯") == true }
             assertNull(vm.state.value.readerLoadError)
+            rule.waitForIdle()
+            deviceWindowEvidenceV46("v46-reader-before-back")
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-            rule.waitUntil(20000) { vm.state.value.openedBook == null }
+            try {
+                rule.waitUntil(20000) { vm.state.value.openedBook == null }
+            } catch (failure: Throwable) {
+                deviceWindowEvidenceV46("v46-reader-after-back-failure")
+                throw failure
+            }
         } finally {
             BookSourceStoreV36.save(context, previous)
             val sql = LanghuanDatabase.get(context).openHelper.writableDatabase

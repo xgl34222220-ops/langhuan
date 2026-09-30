@@ -111,6 +111,7 @@ class SourceDiscoveryV43DeviceTest {
         rule.waitForIdle()
         val bitmap = if (name.startsWith("v46-")) {
             val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            if (automation.rootInActiveWindow?.packageName?.toString() != rule.activity.packageName) deviceWindowEvidenceV46("v46-collection-foreground-failure")
             assertEquals(rule.activity.packageName, automation.rootInActiveWindow?.packageName?.toString())
             requireNotNull(automation.takeScreenshot())
         } else rule.onRoot().captureToImage().asAndroidBitmap()

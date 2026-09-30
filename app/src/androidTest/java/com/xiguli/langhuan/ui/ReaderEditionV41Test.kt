@@ -38,6 +38,7 @@ class ReaderEditionV41Test {
         val bitmap = if (name == "v44-ai-source") {
             rule.onNodeWithText("网站链接").assertIsDisplayed()
             val packageName = automation.rootInActiveWindow?.packageName?.toString()
+            if (packageName != rule.activity.packageName) deviceWindowEvidenceV46("v46-ai-foreground-failure")
             assertEquals("AI dialog must be the app's active window", rule.activity.packageName, packageName)
             automation.takeScreenshot() ?: error("Unable to capture the active AI window")
         } else rule.onAllNodes(isRoot(), useUnmergedTree = true).onLast().captureToImage().asAndroidBitmap()
