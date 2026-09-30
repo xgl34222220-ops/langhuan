@@ -210,6 +210,8 @@ fun ResearchNewBookConversationPage(
     }
 
     Scaffold(
+        // Keyboard pushes the page up instead of covering the input (the app runs edge-to-edge).
+        modifier = Modifier.imePadding(),
         containerColor = t.background,
         topBar = {
             Row(
