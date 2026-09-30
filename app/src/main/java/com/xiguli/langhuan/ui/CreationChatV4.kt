@@ -93,7 +93,7 @@ fun CreationChatV4(
     }
 
     Surface(Modifier.fillMaxSize(), color = t.background) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().imePadding()) {
             CreationHeaderV4(
                 stageLabel = stageLabel,
                 menuOpen = menuOpen,
@@ -199,6 +199,7 @@ private fun CreationHeaderV4(
     busy: Boolean,
 ) {
     val t = LocalLanghuanUiTokens.current
+    var confirmReset by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
@@ -208,8 +209,8 @@ private fun CreationHeaderV4(
     ) {
         LanghuanIconButton(Icons.Rounded.ArrowBack, "返回", onBack)
         Column(Modifier.padding(horizontal = 10.dp).weight(1f)) {
-            Text("创作", style = MaterialTheme.typography.headlineSmall, color = t.foreground)
-            Text("像聊天一样把一本书聊清楚", style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground)
+            Text("创作", style = MaterialTheme.typography.headlineSmall, color = t.foreground, maxLines = 1)
+            Text("像聊天一样把一本书聊清楚", style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         LanghuanBadge(stageLabel, accent = stageLabel == "蓝图完整")
         Spacer(Modifier.width(4.dp))
@@ -235,10 +236,21 @@ private fun CreationHeaderV4(
                     text = { Text("重新开始") },
                     leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
                     enabled = !busy,
-                    onClick = { onDismissMenu(); onReset() },
+                    onClick = { onDismissMenu(); confirmReset = true },
                 )
             }
         }
+    }
+    // "Restart" wipes the whole conversation; one mis-tap in a menu should not do that.
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("重新开始创作？") },
+            text = { Text("当前对话、设定草稿和附件会被清空，这一步无法撤销。") },
+            confirmButton = { TextButton(onClick = { confirmReset = false; onReset() }) { Text("清空并重来", color = t.destructive) } },
+            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("取消") } },
+            containerColor = t.card,
+        )
     }
 }
 
