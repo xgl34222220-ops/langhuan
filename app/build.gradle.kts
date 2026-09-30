@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 114
-        versionName = "0.30.0-alpha35-shelves-round5"
+        versionCode = 115
+        versionName = "0.30.1-alpha36-select-round6"
     }
 
     buildFeatures { compose = true }
