@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material3.*
@@ -45,6 +46,7 @@ private enum class RootRouteV4 {
     AI_SETUP,
     COVER_STUDIO,
     SKILLS,
+    ONLINE,
 }
 
 @Composable
@@ -77,6 +79,47 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) studioVm.exportProjectBackup(uri)
     }
+    var pendingExport by remember { mutableStateOf<Pair<String, com.xiguli.langhuan.data.ExportFormat>?>(null) }
+    val exportLaunchers = com.xiguli.langhuan.data.ExportFormat.entries.associateWith { format ->
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(format.mimeType)) { uri ->
+            val job = pendingExport
+            pendingExport = null
+            if (uri != null && job != null) libraryVm.exportBook(job.first, job.second, uri)
+        }
+    }
+    fun exportBook(id: String, format: com.xiguli.langhuan.data.ExportFormat) {
+        val title = libraryState.stories.firstOrNull { it.id == id }?.title ?: "琅嬛作品"
+        pendingExport = id to format
+        exportLaunchers[format]?.launch("$title.${format.extension}")
+    }
+
+    val onlineVm: OnlineBooksViewModelV36 = viewModel()
+    var pendingOnlineOpen by remember { mutableStateOf<String?>(null) }
+    var toast by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+    // Library success messages that are not owned by a page appear as a lightweight app toast.
+    LaunchedEffect(libraryState.message) {
+        val text = libraryState.message ?: return@LaunchedEffect
+        toast = text to false
+        libraryVm.clearMessage()
+    }
+    LaunchedEffect(toast) {
+        if (toast != null) {
+            kotlinx.coroutines.delay(2600)
+            toast = null
+        }
+    }
+
+    // A blank hand-written book enters chapter 1 immediately.
+    LaunchedEffect(libraryState.createdBlankStoryId) {
+        val id = libraryState.createdBlankStoryId ?: return@LaunchedEffect
+        libraryVm.consumeCreatedBlankStory()
+        studioVm.selectStory(id)
+        editorStoryId = id
+        editorChapter = 1
+        returnAfterEditor = RootRouteV4.SHELF
+        route = RootRouteV4.EDITOR
+    }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) studioVm.importDocument(uri)
     }
@@ -99,6 +142,14 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     }
 
     fun openBook(id: String) = requestBook(id, RootRouteV4.BOOK, showInfo = false)
+
+    LaunchedEffect(pendingOnlineOpen, libraryState.stories) {
+        val id = pendingOnlineOpen ?: return@LaunchedEffect
+        if (libraryState.stories.any { it.id == id }) {
+            pendingOnlineOpen = null
+            openBook(id)
+        }
+    }
 
     fun openTavern(id: String) {
         tavernStoryId = id
@@ -226,6 +277,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
             }
             RootRouteV4.COVER_STUDIO -> route = RootRouteV4.BOOK
             RootRouteV4.SKILLS -> route = returnAfterSkills
+            RootRouteV4.ONLINE -> route = RootRouteV4.SHELF
         }
     }
 
@@ -256,6 +308,14 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                         onAiSetup = { openAiSetup(RootRouteV4.SHELF) },
                         onRunCenter = { route = RootRouteV4.RUN_CENTER },
                         onSkills = { openSkills(RootRouteV4.SHELF) },
+                        onCreateBlank = { title, genre -> libraryVm.createBlankStory(title, genre) },
+                        onExport = ::exportBook,
+                        onOnline = { route = RootRouteV4.ONLINE },
+                        onCheckUpdate = { id ->
+                            onlineVm.checkUpdate(id) { result ->
+                                toast = result to result.contains("失败")
+                            }
+                        },
                     )
                 }
 
@@ -426,6 +486,17 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
                     }
                 }
 
+                RootRouteV4.ONLINE -> {
+                    OnlineBooksPageV36(
+                        viewModel = onlineVm,
+                        onBack = { route = RootRouteV4.SHELF },
+                        onOpenCreated = { id ->
+                            route = RootRouteV4.SHELF
+                            pendingOnlineOpen = id
+                        },
+                    )
+                }
+
                 RootRouteV4.SKILLS -> {
                     val skillVm: WritingSkillViewModel = viewModel()
                     SkillsPageV3(
@@ -439,10 +510,29 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
         }
     }
 
+    toast?.let { (text, isError) ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            Surface(
+                modifier = Modifier.navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 96.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.inverseSurface,
+                shadowElevation = 6.dp,
+            ) {
+                Text(
+                    text,
+                    Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
+                    color = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.inverseOnSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                )
+            }
+        }
+    }
+
     libraryState.error?.let { error ->
         AlertDialog(
             onDismissRequest = libraryVm::clearMessage,
-            title = { Text("打开失败") },
+            title = { Text("操作失败") },
             text = { Text(error) },
             confirmButton = { TextButton(onClick = libraryVm::clearMessage) { Text("知道了") } },
         )
