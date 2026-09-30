@@ -446,14 +446,23 @@ private fun LuoShelfLibraryV1(
                     ) {
                         gridItemsIndexed(books, key = { _, book -> book.id }) { index, book ->
                             val chapter = remember(book.id, book.updatedAt) { progressPrefs.getInt("chapter_${book.id}", 0) }
+                            val interaction = remember { MutableInteractionSource() }
+                            val pressed by interaction.collectIsPressedAsState()
+                            val scale by animateFloatAsState(
+                                if (pressed) .94f else 1f,
+                                spring(stiffness = Spring.StiffnessMedium),
+                                label = "bookOpenPress",
+                            )
                             Column(
                                 Modifier
                                     .animateItem()
                                     .enterOnceV31(enter, book.id, index)
                                     .fillMaxWidth()
-                                    .springClickV31(
+                                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                                    .combinedClickable(
+                                        interactionSource = interaction,
+                                        indication = null,
                                         enabled = openingBookId == null,
-                                        pressedScale = .94f,
                                         onLongClick = { onLongPress(book) },
                                         onClick = { onOpenBook(book.id) },
                                     ),
