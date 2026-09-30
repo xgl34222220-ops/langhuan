@@ -7,6 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -31,15 +32,9 @@ class ReaderEditionV41Test {
         rule.waitForIdle()
         android.os.SystemClock.sleep(400)
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        // Pixel Launcher's occasional emulator-only ANR must not obscure the app evidence.
-        // Never dismiss this app's dialogs or affect a physical device's launcher.
-        if (android.os.Build.HARDWARE in setOf("ranchu", "goldfish")) {
-            automation.executeShellCommand("am force-stop com.google.android.apps.nexuslauncher").use {
-                android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()
-            }
-            android.os.SystemClock.sleep(300)
-        }
-        val bitmap = automation.takeScreenshot()
+        // Capture the actual Compose root's surface, not another emulator window or launcher.
+        // The last root is the modal's own surface when a bottom sheet is open.
+        val bitmap = rule.onAllNodes(isRoot(), useUnmergedTree = true).onLast().captureToImage().asAndroidBitmap()
         var shelfInk: Int? = null
         if (name == "v41-shelf") {
             var ink = 0
