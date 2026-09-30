@@ -192,7 +192,7 @@ internal fun ReaderEngineV30(
 }
 
 @Composable
-private fun ReaderSessionV30(
+internal fun ReaderSessionV30(
     book: ReaderBookUi,
     chapters: List<ChapterDraft>,
     externalChapterId: String,
