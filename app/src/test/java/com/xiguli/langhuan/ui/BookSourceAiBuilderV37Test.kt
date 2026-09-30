@@ -61,6 +61,13 @@ class BookSourceAiBuilderV37Test {
     }
 
     @Test
+    fun browserChallengeDetectionCoversCommonInterstitals() {
+        assertTrue(browserChallengePendingV38("<title>Just a moment...</title><div id='cf-chl-widget'></div>"))
+        assertTrue(browserChallengePendingV38("<p>正在检查您的浏览器，请稍候</p>"))
+        assertFalse(browserChallengePendingV38("<html><body><h1>正常小说首页</h1></body></html>"))
+    }
+
+    @Test
     fun rulesParseFromMessyModelOutput() {
         val rules = parseRulesV37("好的：\n```json\n{\"searchList\":\"@css:li.book\",\"searchName\":\"@css:a@text\",}\n```")
         assertEquals("@css:li.book", rules["searchList"])
