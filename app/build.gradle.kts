@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 108
-        versionName = "0.29.1-alpha29-motion"
+        versionCode = 109
+        versionName = "0.29.2-alpha30-import-guard"
     }
 
     buildFeatures { compose = true }
