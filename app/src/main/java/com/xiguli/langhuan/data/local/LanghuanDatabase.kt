@@ -22,6 +22,12 @@ data class StoryStateEntity(
     val updatedAt: Long,
 )
 
+data class StoryStateHeader(
+    val novelId: String,
+    val snapshotJson: String,
+    val updatedAt: Long,
+)
+
 @Entity(
     tableName = "chapter_versions",
     indices = [Index(value = ["novelId", "chapterNumber", "version"], unique = true)],
@@ -82,8 +88,20 @@ interface StoryStateDao {
     @Query("SELECT * FROM story_state WHERE novelId = :novelId LIMIT 1")
     suspend fun get(novelId: String): StoryStateEntity?
 
-    @Query("SELECT * FROM story_state ORDER BY updatedAt DESC")
-    fun observeAll(): Flow<List<StoryStateEntity>>
+    @Query("SELECT novelId, snapshotJson, updatedAt FROM story_state WHERE novelId = :novelId LIMIT 1")
+    suspend fun getHeader(novelId: String): StoryStateHeader?
+
+    @Query("SELECT novelId, snapshotJson, updatedAt FROM story_state ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<StoryStateHeader>>
+
+    @Query("SELECT length(draftJson) FROM story_state WHERE novelId = :novelId LIMIT 1")
+    suspend fun draftJsonLength(novelId: String): Int?
+
+    @Query("SELECT substr(draftJson, :start, :length) FROM story_state WHERE novelId = :novelId LIMIT 1")
+    suspend fun draftJsonChunk(novelId: String, start: Int, length: Int): String?
+
+    @Query("UPDATE story_state SET snapshotJson = :snapshotJson, updatedAt = :updatedAt WHERE novelId = :novelId")
+    suspend fun updateSnapshot(novelId: String, snapshotJson: String, updatedAt: Long)
 
     @Upsert
     suspend fun upsert(entity: StoryStateEntity)
