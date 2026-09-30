@@ -9,6 +9,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.xiguli.langhuan.ui.design.LanghuanSkeletonV31
+import com.xiguli.langhuan.ui.design.shimmerV31
+import com.xiguli.langhuan.ui.design.rememberLanghuanCoverV30
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -302,10 +305,21 @@ private fun CurrentCoverCard(
                         color = if (File(path).isFile) t.mutedForeground else t.destructive,
                     )
                 }
-                LanghuanBadge(if (File(path).isFile) "CURRENT" else "ERROR", accent = File(path).isFile)
+                LanghuanBadge(if (File(path).isFile) "使用中" else "文件缺失", accent = File(path).isFile)
             }
             Spacer(Modifier.height(12.dp))
-            CoverPreviewV3(path, title, Modifier.width(220.dp).height(314.dp))
+            Box(Modifier.width(220.dp).height(314.dp)) {
+                CoverPreviewV3(path, title, Modifier.matchParentSize())
+                // While a new scheme is generated, the current cover shimmers instead of sitting still.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = busy,
+                    modifier = Modifier.matchParentSize(),
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                ) {
+                    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(t.radiusSm)).shimmerV31(t.card.copy(alpha = .35f), t.card.copy(alpha = .8f)))
+                }
+            }
             Spacer(Modifier.height(14.dp))
             Button(
                 onClick = onGenerate,
@@ -372,11 +386,9 @@ private fun CoverHistoryRow(
 @Composable
 fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier) {
     val t = LocalLanghuanUiTokens.current
-    val stamp = runCatching { File(path).lastModified() }.getOrDefault(0L)
-    val bitmap = remember(path, stamp) {
-        path.takeIf { it.isNotBlank() }
-            ?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() }
-    }
+    // Decoded off the main thread and downsampled through the shared cover cache; decoding a
+    // full-resolution cover per history row in composition caused visible stalls while scrolling.
+    val bitmap = rememberLanghuanCoverV30(path, 720)
     if (bitmap != null) {
         Image(
             bitmap = bitmap,
@@ -384,6 +396,8 @@ fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier) {
             modifier = modifier.clip(RoundedCornerShape(t.radiusSm)),
             contentScale = ContentScale.Crop,
         )
+    } else if (path.isNotBlank() && File(path).exists()) {
+        LanghuanSkeletonV31(modifier, RoundedCornerShape(t.radiusSm))
     } else {
         Box(
             modifier = modifier
