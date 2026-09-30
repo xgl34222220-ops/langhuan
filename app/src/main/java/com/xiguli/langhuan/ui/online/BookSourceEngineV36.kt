@@ -374,7 +374,10 @@ private fun fetchDocumentFollowingRedirectsV36(source: BookSourceV36, initial: S
         connection.setRequestProperty("Pragma", "no-cache")
         connection.setRequestProperty("Upgrade-Insecure-Requests", "1")
         referer?.takeIf { it.startsWith("http") }?.let { connection.setRequestProperty("Referer", it) }
-        if (cookies.isNotEmpty()) connection.setRequestProperty("Cookie", cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+        val configuredCookie = source.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value.orEmpty()
+        val learnedCookie = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        listOf(configuredCookie, learnedCookie).filter { it.isNotBlank() }.joinToString("; ").takeIf { it.isNotBlank() }
+            ?.let { connection.setRequestProperty("Cookie", it) }
         source.headers.forEach { (k, v) ->
             if (!k.equals("User-Agent", true) && !k.equals("Cookie", true)) connection.setRequestProperty(k, v)
         }
@@ -394,6 +397,12 @@ private fun fetchDocumentFollowingRedirectsV36(source: BookSourceV36, initial: S
                 val location = connection.getHeaderField("Location")?.takeIf { it.isNotBlank() }
                     ?: error("书源返回 $code，但没有跳转地址")
                 val next = resolveUrlV36(url, location)
+                val previousHost = runCatching { URL(url).host }.getOrNull()
+                val nextHost = runCatching { URL(next).host }.getOrNull()
+                if (previousHost != null && nextHost != null && !previousHost.equals(nextHost, true)) {
+                    // Never leak cookies learned from one host to a different redirect target.
+                    cookies.clear()
+                }
                 referer = url
                 url = next
                 if (code in setOf(301, 302, 303) && method !in setOf("GET", "HEAD")) {
