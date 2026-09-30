@@ -104,6 +104,36 @@ internal class ProgressiveFoundationEngine(
                 cast = cast,
                 locks = locks,
             )
+            if (!coreUsable(working, locks)) {
+                // One targeted repair pass instead of failing the book on a thin first answer.
+                onStage("1/3 · 核心蓝图不完整，正在定向补齐……")
+                val repair = requestOptional(
+                    stage = "1/3 核心补齐",
+                    prompt = PromptBundle(
+                        system = CAST_SYSTEM,
+                        user = buildString {
+                            appendHardLocks(locks)
+                            appendLine("【当前核心蓝图】")
+                            appendLine(compactFoundation(working))
+                            appendLine()
+                            appendLine("【必须补齐的缺口】")
+                            appendLine(coreGaps(working, locks))
+                            appendLine("只输出缺失或不足的部分；已存在的世界规则、人物和分卷保持原样。")
+                        },
+                    ),
+                )
+                if (repair != null) {
+                    val before = working
+                    val merged = mergeCore(base = before, proposal = proposal, world = null, cast = repair, locks = locks)
+                    // A repair pass only adds: never let a partial answer replace what already exists.
+                    working = merged.copy(
+                        characters = if (locks.coreCharacterNames.isNotEmpty()) merged.characters
+                        else (before.characters + merged.characters).distinctBy { it.name }.take(32),
+                        volumes = if (locks.lockedVolumes.isNotEmpty()) merged.volumes
+                        else (merged.volumes + before.volumes).distinctBy { it.order }.sortedBy { it.order }.take(10),
+                    )
+                }
+            }
             validateCore(working, locks)
             onCheckpoint(1, working)
         } else {
@@ -167,14 +197,36 @@ internal class ProgressiveFoundationEngine(
      * 每个已完成阶段都会保存检查点，用户也可以主动停止并从断点继续。
      */
     private suspend fun requestOptional(stage: String, prompt: PromptBundle): GeneratedChapter? = try {
-        gateway.generate(prompt)
+        // Core stages get three tries: one transient timeout / 429 / truncated JSON used to sink the
+        // whole book. Detail stages get two and stay optional.
+        requestReliable(prompt, attempts = if (stage.startsWith("1/3")) 3 else 2)
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (error: Throwable) {
         if (stage.startsWith("1/3")) {
-            throw IllegalStateException("$stage 请求失败：${error.message.orEmpty()}", error)
+            throw IllegalStateException("$stage 请求失败（已自动重试）：${error.message.orEmpty()}", error)
         }
         null
+    }
+
+    private suspend fun requestReliable(prompt: PromptBundle, attempts: Int): GeneratedChapter {
+        var current = prompt
+        var attempt = 0
+        while (true) {
+            try {
+                return gateway.generate(current)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                attempt++
+                if (attempt >= attempts || !foundationRetryableV34(error)) throw error
+                if (error is com.xiguli.langhuan.engine.AiStructuredOutputException) {
+                    // Most unreadable replies were cut off by the length limit: ask for a tighter one.
+                    current = prompt.copy(user = prompt.user + FOUNDATION_COMPACT_HINT)
+                }
+                kotlinx.coroutines.delay(1_500L * attempt)
+            }
+        }
     }
 
     private fun chapterPrompt(
@@ -391,6 +443,16 @@ internal class ProgressiveFoundationEngine(
                 "上传原设明确为 $expected 卷，但蓝图得到 ${foundation.volumes.size} 卷。已阻止错误蓝图继续生成。"
             }
         } ?: require(foundation.volumes.isNotEmpty()) { "没有解析到有效分卷。" }
+    }
+
+    private fun coreGaps(foundation: StoryFoundation, locks: BlueprintLocks): String = buildString {
+        if (foundation.bible.size < 3) appendLine("- 世界规则/设定只有 ${foundation.bible.size} 条，至少需要 3 条。")
+        if (foundation.characters.size < 2) appendLine("- 核心人物只有 ${foundation.characters.size} 个，至少需要 2 个有名字的人物。")
+        val missing = locks.coreCharacterNames.filterNot { expected -> foundation.characters.any { it.name == expected } }
+        if (missing.isNotEmpty()) appendLine("- 缺少附件明确人物：${missing.joinToString("、")}（名字必须完全一致）。")
+        val expected = locks.expectedVolumeCount
+        if (expected != null && foundation.volumes.size != expected) appendLine("- 分卷必须恰好 $expected 卷，当前 ${foundation.volumes.size} 卷。")
+        if (expected == null && foundation.volumes.isEmpty()) appendLine("- 还没有分卷，至少给出 1 卷的标题与卷目标。")
     }
 
     private fun coreUsable(foundation: StoryFoundation, locks: BlueprintLocks): Boolean {
@@ -827,4 +889,29 @@ internal class ProgressiveFoundationEngine(
             stateChanges 只包含 3-8 条 FORESHADOW：field=伏笔名；before=首次可观察细节；after=回收方式；evidence=预计开始章-结束章。
         """.trimIndent()
     }
+}
+
+private const val FOUNDATION_COMPACT_HINT =
+    "\n\n【格式提醒】上一次输出无法完整解析，可能超出了长度上限。请只输出一个完整、合法的 JSON 对象，" +
+        "内容更精简：每个字段不超过 150 字，条目够用即可，不要输出 JSON 以外的任何文字。"
+
+/** Errors worth retrying automatically; configuration and auth errors are not. */
+internal fun foundationRetryableV34(error: Throwable): Boolean {
+    var cursor: Throwable? = error
+    var depth = 0
+    while (cursor != null && depth < 8) {
+        if (cursor is com.xiguli.langhuan.engine.AiStructuredOutputException) return true
+        if (cursor is java.net.SocketTimeoutException || cursor is java.io.InterruptedIOException) return true
+        if (cursor is java.net.ConnectException || cursor is java.net.UnknownHostException) return false
+        val text = cursor.message.orEmpty()
+        if (Regex("返回 (400|401|403|404|422)").containsMatchIn(text) || text.contains("请先配置") || text.contains("请先选择")) return false
+        if (Regex("返回 (408|409|425|429|5\\d\\d)").containsMatchIn(text)) return true
+        if (listOf("timeout", "timed out", "超时", "connection reset", "unexpected end", "broken pipe", "没有找到可读文本", "空响应")
+                .any { text.contains(it, ignoreCase = true) }
+        ) return true
+        if (cursor is java.io.IOException) return true
+        cursor = cursor.cause
+        depth++
+    }
+    return false
 }
