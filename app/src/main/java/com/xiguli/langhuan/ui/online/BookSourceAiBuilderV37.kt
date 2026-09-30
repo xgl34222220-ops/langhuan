@@ -53,17 +53,26 @@ internal class BookSourceAiBuilderV37(
 
     suspend fun build(siteUrl: String, keyword: String): AiSourceReportV37 = withContext(Dispatchers.IO) {
         val home = normalizeSiteV37(siteUrl)
-        val origin = URL(home).let { "${it.protocol}://${it.host}${if (it.port > 0) ":${it.port}" else ""}" }
-        var source = BookSourceV36(id = origin, name = URL(home).host, baseUrl = origin)
+        val enteredOrigin = canonicalOriginV37(home)
+        var source = BookSourceV36(id = enteredOrigin, name = URL(home).host, baseUrl = enteredOrigin)
 
         // 1. Home page and search entry
         step("读取网站首页")
-        val homeDoc = runCatching { fetchDocumentV36(source, SourceRequestV36(home)) }.getOrElse { fail("打不开这个网址：${it.message.orEmpty().take(80)}") }
-        source = source.copy(name = siteNameV37(homeDoc, URL(home).host))
-        finish(true, source.name)
+        val homeDoc = runCatching { fetchDocumentV36(source, SourceRequestV36(home)) }
+            .getOrElse { fail("打不开这个网址：${it.message.orEmpty().take(120)}") }
+
+        // The typed domain may be only a legacy doorway. Use the final URL after redirects as the
+        // canonical base for every generated rule (e.g. http://old.example -> https://new.example).
+        val finalOrigin = canonicalOriginV37(homeDoc.location())
+        source = source.copy(
+            id = finalOrigin,
+            baseUrl = finalOrigin,
+            name = siteNameV37(homeDoc, runCatching { URL(homeDoc.location()).host }.getOrDefault(URL(home).host)),
+        )
+        finish(true, if (finalOrigin != enteredOrigin) "${source.name} · 已跳转到 $finalOrigin" else source.name)
 
         step("识别搜索入口")
-        val searchUrl = detectSearchUrlV37(homeDoc) ?: askSearchUrl(homeDoc, origin)
+        val searchUrl = detectSearchUrlV37(homeDoc) ?: askSearchUrl(homeDoc, finalOrigin)
             ?: fail("首页没有找到搜索框。可以换成网站的搜索页链接再试")
         source = source.copy(searchUrl = searchUrl)
         finish(true, searchUrl.take(80))
@@ -224,6 +233,12 @@ contentReplace（要从正文删掉的广告/提示文字，写成 "##正则"，
 }
 
 // ---- Helpers (pure, unit-tested) ----------------------------------------------------------------
+
+internal fun canonicalOriginV37(raw: String): String {
+    val url = URL(raw)
+    val defaultPort = (url.protocol == "https" && url.port == 443) || (url.protocol == "http" && url.port == 80)
+    return "${url.protocol}://${url.host}${if (url.port > 0 && !defaultPort) ":${url.port}" else ""}"
+}
 
 internal fun normalizeSiteV37(raw: String): String {
     val trimmed = raw.trim()
