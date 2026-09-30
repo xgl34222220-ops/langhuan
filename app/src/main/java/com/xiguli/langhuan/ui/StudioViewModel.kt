@@ -183,16 +183,45 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             repository.seedIfNeeded(demo)
-            val preferredId = projects.activeStoryId() ?: demo.snapshot.novel.id
-            val loaded = projects.loadStory(preferredId)
-                ?: repository.loadStory(
-                    demo.snapshot.novel.id,
-                    PersistedStory(demo.snapshot, demo.currentDraft),
-                )
-            projects.setActiveStoryId(loaded.snapshot.novel.id)
-            _state.update { it.copy(snapshot = loaded.snapshot, draft = loaded.draft) }
-            restoreOrAttachRun(loaded.snapshot, loaded.draft)
-            refreshWorkspace()
+            val storedPreferredId = projects.activeStoryId()
+            val localImportPrefs = getApplication<Application>().getSharedPreferences("local_book_meta_v1", Application.MODE_PRIVATE)
+            // Older builds incorrectly made reader-only imports the persisted Studio project.
+            // Ignore that stale pointer on startup so one imported book cannot boot-loop the app.
+            val preferredId = storedPreferredId
+                ?.takeUnless { localImportPrefs.contains("imported_$it") }
+                ?: demo.snapshot.novel.id
+            if (storedPreferredId != null && preferredId != storedPreferredId) projects.clearActiveStoryId()
+
+            val loaded = runCatching { projects.loadStory(preferredId) }.getOrNull()
+                ?: runCatching {
+                    repository.loadStory(
+                        demo.snapshot.novel.id,
+                        PersistedStory(demo.snapshot, demo.currentDraft),
+                    )
+                }.getOrNull()
+                ?: PersistedStory(demo.snapshot, demo.currentDraft)
+
+            val restored = runCatching {
+                _state.update { it.copy(snapshot = loaded.snapshot, draft = loaded.draft) }
+                restoreOrAttachRun(loaded.snapshot, loaded.draft)
+                refreshWorkspace()
+            }
+            if (restored.isSuccess) {
+                projects.setActiveStoryId(loaded.snapshot.novel.id)
+            } else {
+                projects.clearActiveStoryId()
+                _state.update {
+                    it.copy(
+                        snapshot = demo.snapshot,
+                        draft = demo.currentDraft,
+                        versions = emptyList(),
+                        chapters = emptyList(),
+                        streamPreview = "",
+                        runEvents = emptyList(),
+                        error = "上次项目恢复失败，已安全回到书架。导入的小说仍保留。",
+                    )
+                }
+            }
         }
         viewModelScope.launch {
             projects.observeStories().collect { stories ->
@@ -217,26 +246,31 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         val current = _state.value
         if (current.snapshot.novel.id == id || busy(current)) return
         viewModelScope.launch {
-            val loaded = projects.loadStory(id) ?: return@launch
-            projects.setActiveStoryId(id)
-            _state.update {
-                it.copy(
-                    snapshot = loaded.snapshot,
-                    draft = loaded.draft,
-                    versions = emptyList(),
-                    chapters = emptyList(),
-                    streamPreview = "",
-                    runEvents = emptyList(),
-                    isDraftDirty = false,
-                    pendingPlan = null,
-                    rewriteSuggestion = null,
-                    agentReview = null,
-                    result = null,
-                    error = null,
-                )
+            runCatching {
+                val loaded = projects.loadStory(id) ?: error("找不到这个项目")
+                _state.update {
+                    it.copy(
+                        snapshot = loaded.snapshot,
+                        draft = loaded.draft,
+                        versions = emptyList(),
+                        chapters = emptyList(),
+                        streamPreview = "",
+                        runEvents = emptyList(),
+                        isDraftDirty = false,
+                        pendingPlan = null,
+                        rewriteSuggestion = null,
+                        agentReview = null,
+                        result = null,
+                        error = null,
+                    )
+                }
+                restoreOrAttachRun(loaded.snapshot, loaded.draft)
+                refreshWorkspace()
+                // Persist only after the whole Studio restore path succeeds.
+                projects.setActiveStoryId(id)
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "项目恢复失败，已保留当前页面") }
             }
-            restoreOrAttachRun(loaded.snapshot, loaded.draft)
-            refreshWorkspace()
         }
     }
 
