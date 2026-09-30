@@ -1,4 +1,5 @@
 [versions]
+jsoup = "1.18.3"
 agp = "9.3.0"
 kotlin = "2.4.10"
 ksp = "2.3.10"
@@ -16,6 +17,7 @@ miuix = "0.9.3"
 junit4 = "4.13.2"
 
 [libraries]
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
