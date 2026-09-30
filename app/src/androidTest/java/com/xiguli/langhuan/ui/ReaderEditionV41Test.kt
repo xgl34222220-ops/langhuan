@@ -292,7 +292,10 @@ class ReaderEditionV41Test {
             .performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("网站链接").assertIsDisplayed()
         saveFrame("v44-ai-source")
-        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        // Dispatch through the focused Android Window. Calling the Activity dispatcher
+        // skips Dialog's back handling and can navigate the background shelf instead.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        rule.waitUntil(5000) { rule.onAllNodesWithText("网站链接").fetchSemanticsNodes().isEmpty() }
         rule.onNodeWithText("返回书城").assertIsDisplayed()
         rule.onAllNodesWithText("网站链接").assertCountEquals(0)
         rule.onAllNodesWithText("我的").onLast().performClick()
