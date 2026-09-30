@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -14,14 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 
 /**
- * Stable reader entry. The active chapter owns a fresh pager subtree, but chapter switches no
- * longer unmount the whole reader or wait through the resume guard. The guard only follows the
- * Activity lifecycle, preventing recents/system-gesture false turns without adding a blank frame
- * between adjacent chapters.
+ * Stable reader entry. The resume guard only follows the Activity lifecycle, preventing
+ * recents/system-gesture false turns; the reading surface itself stays mounted for the whole
+ * session, across chapters.
  */
 @Composable
 fun ReaderNativeExperienceV4(
@@ -33,8 +30,6 @@ fun ReaderNativeExperienceV4(
     onOpenAiSetup: () -> Unit,
     startOnInfo: Boolean = false,
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val chapterKey = state.readingChapter?.id ?: "reader-loading"
     val lifecycleOwner = LocalLifecycleOwner.current
     var resumeRequested by remember {
         mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
@@ -70,23 +65,19 @@ fun ReaderNativeExperienceV4(
         }
     }
 
-    // Keep the last rendered page in the task snapshot and preserve its pager state.
-    // Lifecycle transitions disable input instead of replacing the book with a blank surface.
-
-    // Pager state still resets per chapter so saved page/offset restoration remains deterministic,
-    // while the outer reader surface stays mounted and visually continuous.
+    // The V30 engine owns chapter navigation itself: it keeps the neighbouring chapters laid
+    // out and turns across chapter boundaries without remounting, so there is deliberately no
+    // per-chapter key here any more (that remount was what blanked the page between chapters).
     ReaderWindowSessionV27(resumeRequested)
-    key(chapterKey) {
-        ReaderQingmoHeroV13(
-            viewModel = viewModel,
-            studioState = studioState,
-            onBackToShelf = onBackToShelf,
-            onEnterWriting = onEnterWriting,
-            onOpenEditor = onOpenEditor,
-            onOpenAiSetup = onOpenAiSetup,
-            startOnInfo = startOnInfo,
-            interactionEnabled = readerMounted,
-        )
-    }
+    ReaderEngineV30(
+        viewModel = viewModel,
+        studioState = studioState,
+        onBackToShelf = onBackToShelf,
+        onEnterWriting = onEnterWriting,
+        onOpenEditor = onOpenEditor,
+        onOpenAiSetup = onOpenAiSetup,
+        startOnInfo = startOnInfo,
+        interactionEnabled = readerMounted,
+    )
 }
 
