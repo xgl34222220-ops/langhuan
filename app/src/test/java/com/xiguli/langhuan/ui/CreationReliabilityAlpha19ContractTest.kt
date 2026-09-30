@@ -24,7 +24,7 @@ class CreationReliabilityAlpha19ContractTest {
         val vm = File(root, "src/main/java/com/xiguli/langhuan/ui/NewBookConversation.kt").readText()
         val ui = File(root, "src/main/java/com/xiguli/langhuan/ui/CreationChatV4.kt").readText()
 
-        assertTrue(vm.contains("enum class CreationRetryTarget { CHAT, PROPOSAL, BLUEPRINT }"))
+        assertTrue(vm.contains("enum class CreationRetryTarget { CHAT, PROPOSAL, BLUEPRINT, CREATE }"))
         assertTrue(vm.contains("fun retryFailedOperation()"))
         assertTrue(vm.contains("CreationRetryTarget.BLUEPRINT -> generateFoundation"))
         assertTrue(vm.contains("fun cancelCurrentAiOperation()"))
