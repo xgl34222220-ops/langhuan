@@ -256,7 +256,7 @@ private fun ReaderSessionV30(
     val layouts = remember { mutableStateMapOf<String, ReaderChapterPagesV30>() }
     val stale = remember { mutableStateMapOf<String, ReaderChapterPagesV30>() }
     fun keyFor(chapter: ChapterDraft): String =
-        "${spec.key}#${chapter.id}#${chapter.content.length}#${chapter.title.hashCode()}"
+        "${spec.key}#${chapter.id}#${chapter.content.length}#${chapter.content.hashCode()}#${chapter.title.hashCode()}"
     fun layoutFor(index: Int): ReaderChapterPagesV30? = chapters.getOrNull(index)?.let { layouts[keyFor(it)] }
 
     // When typography changes, remember where the reader was so the same sentence stays on screen.
@@ -602,6 +602,7 @@ private fun ReaderSessionV30(
                 infoFor = ::infoFor,
                 listState = listState,
                 jumpToken = scrollJump,
+                layoutToken = spec.key,
                 interactionEnabled = interactionEnabled,
                 onVisible = { index, page ->
                     if (pendingAnchor == null) {
@@ -821,6 +822,7 @@ private fun ReaderScrollModeV30(
     infoFor: (ReaderPageV30?, Int) -> ReaderChromeInfoV30,
     listState: androidx.compose.foundation.lazy.LazyListState,
     jumpToken: Int,
+    layoutToken: String,
     interactionEnabled: Boolean,
     onVisible: (Int, Int) -> Unit,
     onTap: () -> Unit,
@@ -834,7 +836,7 @@ private fun ReaderScrollModeV30(
     val visibleCallback = rememberUpdatedState(onVisible)
     var positioned by remember { mutableStateOf(false) }
 
-    LaunchedEffect(jumpToken) {
+    LaunchedEffect(jumpToken, layoutToken) {
         positioned = false
         val target = snapshotFlow {
             val (chapter, page) = targetState.value
