@@ -14,7 +14,8 @@ class QingmoReplicaReaderContractTest {
         val kit = File(root, "src/main/java/com/xiguli/langhuan/ui/design/LanghuanComponentKitV4.kt").readText()
         val window = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderWindowSessionV27.kt").readText()
 
-        assertTrue(entry.contains("ReaderQingmoHeroV13("))
+        // The active entry now hosts the V30 engine; HeroV13 remains as the legacy component.
+        assertTrue(entry.contains("ReaderEngineV30("))
         assertTrue(reader.contains("HeroReaderTabV13.DETAILS"))
         assertTrue(reader.contains("HeroReaderTabV13.DIRECTORY"))
         assertTrue(reader.contains("HeroReaderTabV13.MORE"))
@@ -81,8 +82,7 @@ class QingmoReplicaReaderContractTest {
         val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderNativeExperienceV4.kt").readText()
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderQingmoHeroV13.kt").readText()
 
-        assertTrue(entry.contains("val chapterKey = state.readingChapter?.id"))
-        assertTrue(entry.contains("key(chapterKey)"))
+        assertFalse(entry.contains("key(chapterKey)"))
         assertTrue(reader.contains("val pagerPageCount = pages.size.coerceAtLeast(1)"))
         assertTrue(reader.contains("nestedScroll(edgeSwipe)"))
         assertFalse(reader.contains("val leadingBoundary"))
