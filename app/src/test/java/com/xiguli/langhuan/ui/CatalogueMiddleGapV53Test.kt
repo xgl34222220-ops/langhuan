@@ -55,4 +55,14 @@ class CatalogueMiddleGapV53Test {
         assertNull(CataloguePageInspectorV50(doc).declaredTotal((1..36).map { OnlineChapterV36("第${it}章", "$base/txt/7/$it.html") }))
     }
 
+    @Test fun ordinaryChapterTitleMentioningAVolumeDoesNotHideAMissingMiddle() {
+        val titles = (1..15).map { if (it == 2) "第2章 发现第一部功法" else "第${it}章 测试" } + (985..1004).map { "第${it}章 测试" }
+        val html = "<h3>第2章 发现第一部功法</h3>" + titles.mapIndexed { index,title -> "<a class='chapter' href='/txt/7/${index+1}.html'>$title</a>" }.joinToString("")
+        assertTrue(runCatching { loadBookCatalogueV50(source,book) { _,request -> Jsoup.parse(html,request.url) } }.isFailure)
+    }
+    @Test fun twoPartsWithTheSameOrdinalDoNotHideAMissingMiddle() {
+        val html = links(1..15) + "<a class='chapter' href='/txt/7/15-part2.html'>第15章 下半</a>" + links(985..1004)
+        assertTrue(runCatching { loadBookCatalogueV50(source,book) { _,request -> Jsoup.parse(html,request.url) } }.isFailure)
+    }
+
 }

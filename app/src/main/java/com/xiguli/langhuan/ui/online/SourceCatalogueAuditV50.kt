@@ -57,12 +57,16 @@ internal fun chapterOrdinalV50(title: String): Int? {
         ?.groupValues?.get(1)?.let(::catalogueNumberV50)
 }
 
+internal fun catalogueVolumeTitlesV53(titles: List<String>): Boolean =
+    titles.any { Regex("^第\\s*$numberPatternV50\\s*[卷部篇]").containsMatchIn(it.trim()) }
+
 /** Strong head-plus-tail evidence, not a demand that notices or volume-local numbers be consecutive. */
 internal fun catalogueMiddleGapV53(titles: List<String>, hasVolumes: Boolean = false): Pair<Int, Int>? {
-    if (hasVolumes || titles.any { Regex("第.{1,12}[卷部篇]").containsMatchIn(it) }) return null
-    val numbers = titles.mapNotNull(::chapterOrdinalV50)
-    if (numbers.size < 8 || numbers.distinct().size != numbers.size) return null
-    if (numbers.zipWithNext().any { (a, b) -> b < a }) return null
+    if (hasVolumes || catalogueVolumeTitlesV53(titles)) return null
+    // Split chapters can repeat an ordinal, and a latest widget may run backwards.
+    // Neither makes a large missing range between the beginning and latest chapters safe.
+    val numbers = titles.mapNotNull(::chapterOrdinalV50).distinct().sorted()
+    if (numbers.size < 8) return null
     val first = numbers.first()
     if (first !in 0..3 || numbers.last() < numbers.size * 2) return null
     return numbers.zipWithNext().firstOrNull { (a, b) -> b - a > maxOf(10, numbers.size / 2) }
@@ -256,9 +260,7 @@ internal class CataloguePageInspectorV50(private val doc: Document) {
         return (fromSections + fromMetadata).maxOrNull()
     }
 
-    fun hasVolumes(): Boolean = doc.select("h2,h3,h4,h5,h6,dt,legend").any {
-        Regex("第\\s*$numberPatternV50\\s*[卷部篇]").containsMatchIn(it.text())
-    }
+    fun hasVolumes(): Boolean = catalogueVolumeTitlesV53(doc.select("h2,h3,h4,h5,h6,dt,legend").map { it.text() })
 }
 
 internal data class CatalogueNavigationV50(val next: String? = null, val unresolved: Boolean = false, val paginated: Boolean = false)

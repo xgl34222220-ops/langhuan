@@ -809,7 +809,7 @@ internal fun loadBookCatalogueV50(
         val ordinals = distinct.mapNotNull { chapterOrdinalV50(it.title) }
         val maxOrdinal = ordinals.maxOrNull()
         // Volume-local numbering can restart. A chapter ordinal is not a chapter count.
-        hasVolumeNumbers = hasVolumeNumbers || distinct.any { Regex("第.{1,12}[卷部篇]").containsMatchIn(it.title) } || ordinals.distinct().size < ordinals.size
+        hasVolumeNumbers = hasVolumeNumbers || catalogueVolumeTitlesV53(distinct.map { it.title })
         val middleGap = catalogueMiddleGapV53(distinct.map { it.title }, hasVolumeNumbers)
         check(middleGap == null) {
             "目录存在大段缺章：第 ${middleGap!!.first} 章后跳到第 ${middleGap.second} 章；未把开头与最新章节拼接列表当作完整目录，请检查完整目录入口"

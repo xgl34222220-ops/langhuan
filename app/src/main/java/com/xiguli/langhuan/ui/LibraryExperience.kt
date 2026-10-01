@@ -196,7 +196,9 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
                 val (added, chapters) = withContext(Dispatchers.IO) {
                     val added = projects.appendOnlineCatalogue(book.id, source.id, book.sourceBookUrl,
                         catalogue.chapters.map { com.xiguli.langhuan.data.ImportedChapter(it.title, "", it.url) })
-                    added to projects.chapterDrafts(book.id)
+                    val chapters = projects.chapterDrafts(book.id)
+                    check(chapters.isNotEmpty()) { "目录已保存，请返回书架重新打开" }
+                    added to chapters
                 }
                 _state.update { current ->
                     if (request != catalogueGeneration || current.openedBook?.id != book.id) current else current.copy(chapters = chapters,
@@ -206,7 +208,7 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _state.update { if (request == catalogueGeneration && it.openedBook?.id == book.id) it.copy(catalogueMessage = "目录未修改：${failure.message.orEmpty()}") else it }
+                _state.update { if (request == catalogueGeneration && it.openedBook?.id == book.id) it.copy(catalogueMessage = "目录刷新未完成：${failure.message.orEmpty()}") else it }
             } finally {
                 _state.update { if (request == catalogueGeneration && it.openedBook?.id == book.id) it.copy(isRefreshingCatalogue = false) else it }
             }
