@@ -27,9 +27,31 @@ class EpubOriginalReaderDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
+    private fun withReader(id: String, block: (ActivityScenario<EpubReaderActivity>) -> Unit) {
+        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+            try { block(scenario) }
+            catch (error: Throwable) {
+                val name = "${id.replace(Regex("[^a-zA-Z0-9_-]"), "_")}-failure"
+                runCatching { deviceWindowEvidenceV46(name) }
+                runCatching {
+                    val state = evaluate(scenario, """JSON.stringify({url:location.href,ready:document.readyState,
+                        readium:!!window.readium,fonts:document.fonts.status,
+                        images:Array.from(document.images).map(i=>({src:i.src,complete:i.complete,width:i.naturalWidth,height:i.naturalHeight})),
+                        html:document.documentElement.outerHTML.slice(0,12000)})""")
+                    val file = File(context.getExternalFilesDir(null), "reader-qa/$name-dom.json").apply { parentFile!!.mkdirs() }
+                    file.writeText(state)
+                    instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use {
+                        android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()
+                    }
+                }
+                throw error
+            }
+        }
+    }
+
     @Test fun reflowActuallyDrawsPngSvgCssFontAndBlocksBookCode() {
         val id = seed("original-reflow.epub", "epub-device-reflow")
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+        withReader(id) { scenario ->
             waitForArt(scenario)
             scenario.onActivity { activity ->
                 webViews(activity.window.decorView).forEach { view ->
@@ -65,7 +87,7 @@ class EpubOriginalReaderDeviceTest {
     @Test fun navigationAndLocatorSurviveRecreationAndColdActivityOpen() {
         val id = seed("original-reflow.epub", "epub-device-locator")
         var before: Locator? = null
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+        withReader(id) { scenario ->
             waitForArt(scenario)
             // Follow the actual EPUB navigation anchor instead of indexing extracted text chapters.
             evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
@@ -81,7 +103,7 @@ class EpubOriginalReaderDeviceTest {
         }
         // Fresh Activity + reopened publication proves disk-backed Locator reconstruction.
         // Actual OS process-death coverage is the separate two-invocation CI recipe.
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { reopened ->
+        withReader(id) { reopened ->
             waitUntil { current(reopened)?.href == before?.href }
             assertEquals(before!!.locations.progression ?: 0.0, current(reopened)!!.locations.progression ?: 0.0, 0.08)
         }
@@ -89,7 +111,7 @@ class EpubOriginalReaderDeviceTest {
 
     @Test fun fixedLayoutDrawsOriginalIllustrations() {
         val id = seed("original-fixed.epub", "epub-device-fixed")
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+        withReader(id) { scenario ->
             waitForArt(scenario)
             val screenshot = instrumentation.uiAutomation.takeScreenshot()
             try {
@@ -113,7 +135,7 @@ class EpubOriginalReaderDeviceTest {
             try { publication.tableOfContents } finally { publication.close() }
         }
         assertEquals(2, contents.size)
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+        withReader(id) { scenario ->
             waitForArt(scenario)
             scenario.onActivity { activity ->
                 val navigator = nav(activity)
@@ -125,7 +147,7 @@ class EpubOriginalReaderDeviceTest {
 
     @Test fun backgroundResumeAndRecreationPreserveLocatorAndArtwork() {
         val id = seed("original-reflow.epub", "epub-device-background")
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+        withReader(id) { scenario ->
             waitForArt(scenario)
             evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
             waitUntil { current(scenario)?.href?.toString()?.endsWith("two.xhtml") == true }
@@ -179,7 +201,7 @@ class EpubOriginalReaderDeviceTest {
     private fun seedProcessDeath() {
         val id = seed("original-reflow.epub", "epub-device-process-death")
         var expected: Locator? = null
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+        withReader(id) { scenario ->
             waitForArt(scenario)
             evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
             waitUntil { current(scenario)?.href?.toString()?.endsWith("two.xhtml") == true }
@@ -207,7 +229,7 @@ class EpubOriginalReaderDeviceTest {
         val persisted = Locator.fromJSON(JSONObject(requireNotNull(store.loadLocator(id, requireNotNull(store.digest(id))))))!!
         assertEquals("Seed locator was not persisted", before.href, persisted.href)
         assertEquals(before.locations.progression ?: 0.0, persisted.locations.progression ?: 0.0, 0.08)
-        ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(context, id)).use { scenario ->
+        withReader(id) { scenario ->
             waitUntil { current(scenario)?.href == before.href && (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
             assertEquals(before.locations.progression ?: 0.0, current(scenario)!!.locations.progression ?: 0.0, 0.08)
         }

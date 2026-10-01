@@ -1,5 +1,5 @@
 [versions]
-jsoup = "1.18.3"
+jsoup = "1.23.2"
 agp = "9.3.0"
 kotlin = "2.4.10"
 ksp = "2.3.10"

@@ -15,6 +15,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class EpubOriginalSafetyTest {
+    @Test fun externalDtdIsRemovedBeforeThePlatformParserAndCdataIsPreserved() {
+        val document = EpubArchivePolicy.safeXml("""<?xml version="1.0"?><!DOCTYPE root SYSTEM "https://example.invalid/book.dtd"><root>ordinary&nbsp;text<![CDATA[<!DOCTYPE is quoted text>]]></root>""".toByteArray())
+        assertNull(document.doctype)
+        assertEquals("ordinary\u00a0text<!DOCTYPE is quoted text>", document.documentElement.textContent)
+    }
     @Test fun markupDepthIsBoundedBeforeRecursiveXmlSerialization() {
         val levels = EpubArchivePolicy.MAX_MARKUP_DEPTH + 1
         for (tag in listOf("node", "p")) {
@@ -196,7 +201,7 @@ class EpubOriginalSafetyTest {
     }
 
     @Test fun dangerousMarkupIsRemovedWhileLocalArtSurvives() {
-        val result = EpubContentSanitizer.markup("""<html><head><base href="https://bad/"/><link rel="stylesheet" href="author.css"/><meta http-equiv="refresh" content="0;url=https://bad"/></head><body onload="attack()"><svg><foreignObject><iframe srcdoc="bad"/></foreignObject><a xlink:href="javascript:alert(1)">bad</a><set attributeName="href" to="javascript:x"/><image xlink:href="art.svg"/></svg><img src="content://bad"/><p style="background:url(https://bad/x)">good</p><a href="two.xhtml#second">local</a></body></html>""".toByteArray()).toString(Charsets.UTF_8)
+        val result = EpubContentSanitizer.markup("""<html><head><base href="https://bad/"/><link rel="stylesheet" href="author.css"/><meta http-equiv="refresh" content="0;url=https://bad"/></head><body onload="attack()"><svg><foreignObject><iframe srcdoc="bad"/></foreignObject><a xlink:href="javascript:alert(1)">bad</a><set attributeName="href" to="javascript:x"/><image xlink:href="art.svg"/></svg><img src="content://bad"/><p style="background:url(https://bad/x)">good</p><a href="two.xhtml#second">local</a></body></html>""".toByteArray(), xhtml = true).toString(Charsets.UTF_8)
         val doc = Jsoup.parse(result)
         assertTrue(doc.select("script,iframe,foreignObject,set,base").isEmpty())
         assertFalse(result.contains("onload=")); assertFalse(result.contains("javascript:")); assertFalse(result.contains("content://")); assertFalse(result.contains("https://bad"))

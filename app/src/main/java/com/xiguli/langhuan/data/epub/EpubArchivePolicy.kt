@@ -204,12 +204,14 @@ object EpubArchivePolicy {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
             isExpandEntityReferences = false
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            // Android's parser may lack this Xerces feature; an empty resolver is mandatory too.
+            // Android's built-in parser does not implement all Java/Xerces switches. The
+            // mandatory boundary below removes external DOCTYPEs before parsing and rejects
+            // entity declarations; the empty resolver also applies on every supported parser.
+            runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+            runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
             runCatching { setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
         }
-        val normalized = decodeMarkup(bytes).removePrefix("\uFEFF")
+        val normalized = removeExternalDoctype(decodeMarkup(bytes).removePrefix("\uFEFF"))
             .replace(Regex("encoding\\s*=\\s*['\"][^'\"]+['\"]", RegexOption.IGNORE_CASE), "encoding=\"UTF-8\"")
             .replace(Regex("&([A-Za-z][A-Za-z0-9]+);")) { match ->
                 if (match.groupValues[1] in setOf("amp", "lt", "gt", "quot", "apos")) match.value
@@ -219,6 +221,41 @@ object EpubArchivePolicy {
         return factory.newDocumentBuilder().apply {
             setEntityResolver { _, _ -> InputSource(java.io.StringReader("")) }
         }.parse(ByteArrayInputStream(normalized.toByteArray(Charsets.UTF_8)))
+    }
+
+    /** Preserve ordinary EPUB2 declarations semantically, without passing a DTD to any parser. */
+    private fun removeExternalDoctype(text: String): String {
+        val result = StringBuilder(text.length)
+        var position = 0
+        while (position < text.length) {
+            val start = text.indexOf('<', position)
+            if (start < 0) { result.append(text, position, text.length); break }
+            result.append(text, position, start)
+            val terminator = when {
+                text.startsWith("<!--", start) -> "-->"
+                text.startsWith("<![CDATA[", start) -> "]]>"
+                else -> null
+            }
+            if (terminator != null) {
+                val end = text.indexOf(terminator, start + 3)
+                require(end >= 0) { "EPUB XML 标记未结束" }
+                position = end + terminator.length
+                result.append(text, start, position)
+            } else if (text.regionMatches(start, "<!DOCTYPE", 0, 9, ignoreCase = true)) {
+                var cursor = start + 9
+                var quote: Char? = null
+                while (cursor < text.length) {
+                    val char = text[cursor]
+                    if (quote != null) { if (char == quote) quote = null }
+                    else if (char == '\'' || char == '"') quote = char
+                    else if (char == '>') break
+                    cursor++
+                }
+                require(cursor < text.length) { "EPUB DOCTYPE 未结束" }
+                position = cursor + 1
+            } else { result.append('<'); position = start + 1 }
+        }
+        return result.toString()
     }
 
     private fun decodeMarkup(bytes: ByteArray): String {

@@ -97,7 +97,7 @@ class EpubOriginalStore(private val root: File) {
                             var bytes = zip.getInputStream(entry).use { EpubArchivePolicy.readBounded(it, EpubArchivePolicy.MAX_ENTRY, checkCancelled) }
                             val type = archive.mediaTypes[name].orEmpty()
                             bytes = when {
-                                type in setOf("application/xhtml+xml", "text/html") || name.endsWith(".xhtml", true) || name.endsWith(".html", true) -> EpubContentSanitizer.markup(bytes)
+                                type in setOf("application/xhtml+xml", "text/html") || name.endsWith(".xhtml", true) || name.endsWith(".html", true) -> EpubContentSanitizer.markup(bytes, xhtml = type == "application/xhtml+xml" || name.endsWith(".xhtml", true))
                                 type == "image/svg+xml" || name.endsWith(".svg", true) -> EpubContentSanitizer.markup(bytes, svg = true)
                                 type == "text/css" || name.endsWith(".css", true) -> EpubContentSanitizer.css(bytes.toString(Charsets.UTF_8)).toByteArray()
                                 type.contains("xml") || name.endsWith(".xml", true) || name.endsWith(".opf", true) || name.endsWith(".ncx", true) -> {

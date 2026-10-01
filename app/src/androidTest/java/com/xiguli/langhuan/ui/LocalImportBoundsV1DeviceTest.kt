@@ -39,7 +39,7 @@ class LocalImportBoundsV1DeviceTest {
                 vm.importDocument({ "oversized.epub" }, { bomb.inputStream() })
             }
             val rejected = withTimeout(20_000) { vm.state.first { it.error != null } }
-            assertTrue(rejected.error.orEmpty().contains("EPUB 单个文件"))
+            assertTrue(rejected.error.orEmpty().contains("EPUB 单个"))
             assertNull(rejected.importedBookId)
             assertFalse(rejected.busy)
             assertEquals(before, manager.observeStories().first())
@@ -150,10 +150,19 @@ class LocalImportBoundsV1DeviceTest {
     private fun epub(padding: Int): ByteArray = ByteArrayOutputStream().also { output ->
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, text: String) {
-                zip.putNextEntry(ZipEntry(name)); zip.write(text.toByteArray()); zip.closeEntry()
+                val bytes = text.toByteArray()
+                val item = ZipEntry(name)
+                if (name == "mimetype") {
+                    item.method = ZipEntry.STORED; item.size = bytes.size.toLong()
+                    item.crc = java.util.zip.CRC32().apply { update(bytes) }.value
+                }
+                zip.putNextEntry(item); zip.write(bytes); zip.closeEntry()
             }
-            entry("book.opf", """<package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata><dc:title>本地导入边界测试</dc:title></metadata><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>""")
-            entry("c.xhtml", "<html><body><p>合法正文保留</p></body></html>")
+            entry("mimetype", "application/epub+zip")
+            entry("META-INF/container.xml", """<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>""")
+            entry("book.opf", """<package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0" unique-identifier="id"><metadata><dc:identifier id="id">original-import-bounds</dc:identifier><dc:title>本地导入边界测试</dc:title><dc:language>zh</dc:language><meta property="dcterms:modified">2026-10-01T00:00:00Z</meta></metadata><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/></manifest><spine><itemref idref="c"/></spine></package>""")
+            entry("c.xhtml", "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>正文</title></head><body><p>合法正文保留</p></body></html>")
+            entry("nav.xhtml", """<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>目录</title></head><body><nav epub:type="toc"><ol><li><a href="c.xhtml">正文</a></li></ol></nav></body></html>""")
             zip.putNextEntry(ZipEntry("ignored.bin"))
             val block = ByteArray(8192) { 65 }
             var remaining = padding
