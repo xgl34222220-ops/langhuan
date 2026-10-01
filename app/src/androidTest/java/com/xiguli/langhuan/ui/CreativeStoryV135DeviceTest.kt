@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.data.*
 import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.engine.*
@@ -225,7 +226,9 @@ class CreativeStoryV135DeviceTest {
         rule.onNodeWithContentDescription("发送").performClick()
     }
     private fun sendStoryAction(text: String) {
-        rule.onNode(hasSetTextAction()).assertIsEnabled().performTextReplacement(text).assertTextContains(text)
+        val editor = rule.onNode(hasSetTextAction()).assertIsEnabled()
+        editor.performTextReplacement(text)
+        editor.assertTextContains(text)
         rule.onNodeWithContentDescription("发送故事动作").assertIsEnabled().assertIsDisplayed().performClick()
     }
 
