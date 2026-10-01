@@ -15,6 +15,7 @@ import com.xiguli.langhuan.ui.design.PaperReaderThemeV44
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -97,11 +98,36 @@ class AiReadingEvidenceV50DeviceTest {
     private fun saveFrame(name: String) {
         rule.waitForIdle()
         rule.mainClock.advanceTimeBy(800)
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        rule.waitForIdle()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.waitForIdleSync()
+        val automation = instrumentation.uiAutomation
+        // Compose semantics can be ready before the Dialog's native window and surface.
+        // Wait for the actual accessibility window, not a guessed delay or the Activity alone.
+        try {
+            rule.waitUntil(10_000) {
+                val root = automation.rootInActiveWindow
+                root?.packageName?.toString() == rule.activity.packageName &&
+                    root.findAccessibilityNodeInfosByText("书源草稿").any { it.isVisibleToUser }
+            }
+        } catch (error: AssertionError) {
+            deviceWindowEvidenceV46("v51-ai-native-window-not-ready")
+            throw error
+        }
+        instrumentation.waitForIdleSync()
         val foreground = automation.rootInActiveWindow?.packageName?.toString()
         if (foreground != rule.activity.packageName) deviceWindowEvidenceV46("v50-ai-foreground-failure")
         assertEquals(rule.activity.packageName, foreground)
         val bitmap = automation.takeScreenshot() ?: error("No compositor screenshot")
+        var bodyInk = 0
+        for (y in bitmap.height / 3 until bitmap.height * 5 / 6 step 3) {
+            for (x in bitmap.width / 20 until bitmap.width * 19 / 20 step 3) {
+                val pixel = bitmap.getPixel(x, y)
+                if (android.graphics.Color.red(pixel) < 190 && android.graphics.Color.green(pixel) < 190 && android.graphics.Color.blue(pixel) < 190) bodyInk++
+            }
+        }
+        if (bodyInk <= 80) deviceWindowEvidenceV46("v51-ai-visible-surface-missing")
+        assertTrue("Native screenshot must contain the rendered form/result, not the empty Activity", bodyInk > 80)
         val file = File(rule.activity.getExternalFilesDir(null), "reader-qa/$name.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
