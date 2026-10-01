@@ -3,6 +3,7 @@ package com.xiguli.langhuan.ui
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.util.Log
+import android.os.SystemClock
 import java.io.File
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.MainActivity
+import com.xiguli.langhuan.LanghuanApplication
 import com.xiguli.langhuan.data.*
 import com.xiguli.langhuan.data.local.LanghuanDatabase
 import com.xiguli.langhuan.engine.*
@@ -40,6 +42,20 @@ class CreativeWritingV135DeviceTest {
         // The workspace is lazy: an off-screen card may not yet have a semantics node.
         rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))
         return rule.onNodeWithText(text).assertIsDisplayed()
+    }
+    private fun stableButton(text: String): SemanticsNodeInteraction {
+        val node = rule.onNodeWithText(text)
+        var previous = ""
+        var stableSince = SystemClock.uptimeMillis()
+        rule.waitUntil(10_000) {
+            val bounds = node.fetchSemanticsNode().boundsInWindow.toString()
+            if (bounds != previous || !node.isDisplayed()) {
+                previous = bounds
+                stableSince = SystemClock.uptimeMillis()
+                false
+            } else SystemClock.uptimeMillis() - stableSince >= 300
+        }
+        return node.assertIsDisplayed().assertIsEnabled()
     }
     private fun send(text: String) {
         input().performTextReplacement(text)
@@ -156,15 +172,26 @@ class CreativeWritingV135DeviceTest {
             markPhase("plan scenes")
             rule.onNodeWithText("场景").performClick()
             rule.onNode(hasSetTextAction() and hasText("告诉 AI 怎么调整：例如第三场提前到傍晚、不要闪回、让配角更早入场")).performTextReplacement("安排两个上午连续发生的书店场景。")
-            rule.onNodeWithText("AI 调整").performClick()
+            stableButton("AI 调整").performClick()
             rule.waitUntil(20_000) { flow.state.value.sceneDirty && !flow.state.value.isPlanningScenes }
             assertEquals("gpt-4o-scenes-v135", server.requests.last().getString("model"))
             assertEquals(2, flow.state.value.workingScenes.size)
             assertEquals(1, projects.chapterDraft(copiedId!!, 1)!!.scenePlan.size)
             markPhase("confirm scene preview")
-            rule.onNodeWithText("确认场景").performClick()
+            // Read the returned preview after the IME closes; do not click through its moving window.
+            if (keyboardVisible()) {
+                back()
+                rule.waitUntil(10_000) { !keyboardVisible() }
+            }
+            val confirmScenes = stableButton("确认场景")
+            val runtime = (rule.activity.application as LanghuanApplication).chapterRunRuntime.state.value
+            Log.i("CreativeWritingV135", "before confirm: dirty=${flow.state.value.sceneDirty}; busy=${flow.state.value.busy}; runtimeActive=${runtime.active}; roomScenes=${projects.chapterDraft(copiedId!!, 1)!!.scenePlan.size}")
+            deviceWindowEvidenceV46("v135-writing-scene-preview-before-confirm")
+            confirmScenes.performClick()
+            markPhase("scene confirmation clicked")
             rule.waitUntil(20_000) { !flow.state.value.sceneDirty && !flow.state.value.isSaving }
             assertEquals(2, projects.chapterDraft(copiedId!!, 1)!!.scenePlan.size)
+            deviceWindowEvidenceV46("v135-writing-scenes-saved")
             // Android Back first dismisses a visible IME, then closes the actual scene sheet.
             if (keyboardVisible()) {
                 back()
@@ -190,7 +217,7 @@ class CreativeWritingV135DeviceTest {
             deviceWindowEvidenceV46("v135-writing-generated-preview-controlled-model")
             assertEquals(sourceBody, projects.chapterDraft(copiedId!!, 1)!!.content)
             markPhase("save generated prose")
-            rule.onNodeWithText("保存本章").performClick()
+            stableButton("保存本章").performClick()
             rule.waitUntil(60_000) { !flow.state.value.isSaving && flow.state.value.draft?.content == generatedProse }
             assertEquals(generatedProse, projects.chapterDraft(copiedId!!, 1)!!.content)
             assertTrue(server.requests.any { it.optString("model") == "gpt-4o-prose-v135" && it.optBoolean("stream") })
@@ -227,14 +254,16 @@ class CreativeWritingV135DeviceTest {
             rule.onNodeWithContentDescription("阅读正文").assertExists()
         } catch (failure: Throwable) {
             val libraryState = runCatching { library.state.value.let { "book=${it.openedBook?.id}, chapter=${it.readingChapter?.chapterNumber}, chars=${it.readingChapter?.content?.length}, loading=${it.loadingChapterNumber}, error=${it.readerLoadError}" } }.getOrDefault("unavailable")
-            val writingState = runCatching { flow.state.value.let { "ready=${it.ready}, loading=${it.isLoading}, generating=${it.isGenerating}, saving=${it.isSaving}, error=${it.error}" } }.getOrDefault("unavailable")
+            val writingState = runCatching { flow.state.value.let { "ready=${it.ready}, loading=${it.isLoading}, generating=${it.isGenerating}, saving=${it.isSaving}, busy=${it.busy}, sceneDirty=${it.sceneDirty}, workingScenes=${it.workingScenes.size}, draftScenes=${it.draft?.scenePlan?.size}, message=${it.message}, error=${it.error}" } }.getOrDefault("unavailable")
+            val durableScenes = runCatching { copiedId?.let { projects.chapterDraft(it, 1)?.scenePlan?.size } }.getOrNull()
+            val runtimeState = (rule.activity.application as LanghuanApplication).chapterRunRuntime.state.value
             val chatState = runCatching { chat.state.value.let { "loaded=${it.isLoaded}, busy=${it.isBusy}, messages=${it.messages.size}, error=${it.error}" } }.getOrDefault("unavailable")
-            val diagnostic = "phase=$currentPhase; modelRequests=${server.requests.size}; models=${server.requests.map { it.optString("model") }}; serverFailures=${server.failures.map { it.toString() }}; library=$libraryState; writing=$writingState; chat=$chatState"
+            val diagnostic = "phase=$currentPhase; modelRequests=${server.requests.size}; models=${server.requests.map { it.optString("model") }}; serverFailures=${server.failures.map { it.toString() }}; library=$libraryState; writing=$writingState; durableScenes=$durableScenes; runtimeActive=${runtimeState.active}; chat=$chatState"
             Log.e("CreativeWritingV135", diagnostic, failure)
             runCatching {
                 val file = File(context.getExternalFilesDir(null), "reader-qa/v135-writing-failure-state.txt").apply { parentFile!!.mkdirs() }
                 file.writeText(diagnostic)
-                file.appendText("\n" + runCatching { rule.onRoot(useUnmergedTree = true).printToString() }.getOrDefault("Semantics unavailable"))
+                file.appendText("\n" + runCatching { rule.onAllNodes(isRoot(), useUnmergedTree = true).printToString() }.getOrDefault("Semantics unavailable"))
             }
             runCatching { deviceWindowEvidenceV46("v135-writing-failure") }
             throw AssertionError(diagnostic, failure)
