@@ -28,4 +28,11 @@ class ReaderHeadingSafetyV48Test {
         assertEquals(5, readerRestoreBodyOffsetV48("夜雨", "灯光还在亮着。", 5, 0))
         assertEquals(500, readerRestoreBodyOffsetV48("夜雨", "", 500, 0))
     }
+    @Test fun oldAnchorAlsoHandlesNewlyRemovedHeadingWithDifferentWhitespace() {
+        val text = "第一章\t夜雨\n正文第一句。后面的文字足够长。"
+        assertEquals(3, readerRestoreBodyOffsetV48("第一章 夜雨", text, 10, 0))
+        assertEquals(0, readerRestoreBodyOffsetV48("第一章 夜雨", text, 2, 0))
+        assertEquals(10, readerRestoreBodyOffsetV48("第一章 夜雨", text, 10, 48))
+    }
+
 }

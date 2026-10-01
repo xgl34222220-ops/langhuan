@@ -104,10 +104,46 @@ class LocalImportBoundsV1DeviceTest {
             assertTrue(rejected.exceptionOrNull()?.message.orEmpty().contains("24 MB"))
             assertEquals(before, directory.list().orEmpty().toSet())
             oversized.writeText("not a font")
+            val invalid = ReaderFontStoreV10.import(app, Uri.fromFile(oversized))
+            assertTrue(invalid.isFailure)
+            assertTrue(invalid.exceptionOrNull()?.message.orEmpty().contains("字体格式无效"))
+            assertEquals(before, directory.list().orEmpty().toSet())
+            // A plausible sfnt signature must not turn a truncated table directory into a font.
+            oversized.writeBytes(java.nio.ByteBuffer.allocate(28).apply {
+                putInt(0x00010000); putShort(1); putShort(16); putShort(0); putShort(0)
+                put("head".toByteArray()); putInt(0); putInt(28); putInt(54)
+            }.array())
             assertTrue(ReaderFontStoreV10.import(app, Uri.fromFile(oversized)).isFailure)
             assertEquals(before, directory.list().orEmpty().toSet())
         } finally {
             oversized.delete()
+        }
+    }
+
+    @Test
+    fun realSystemFontImportsAfterValidationAndKeepsItsBytes() {
+        val source = File("/system/fonts").listFiles().orEmpty().sortedBy { it.name }.firstOrNull {
+            it.isFile && it.canRead() && it.extension.lowercase() in setOf("ttf", "otf") &&
+                it.length() in 1..LocalImportLimitsV1.FONT_BYTES.toLong() &&
+                runCatching { android.graphics.Typeface.Builder(it).build() != null }.getOrDefault(false)
+        }
+        assertNotNull("The Android image must provide a readable native-parseable TTF or OTF for this test", source)
+        val fixture = File.createTempFile("valid-reader-font-", ".ttf", app.cacheDir)
+        var imported: ReaderFontAssetV10? = null
+        val directory = File(app.filesDir, "reader_fonts_v1")
+        val before = directory.list().orEmpty().toSet()
+        try {
+            requireNotNull(source).inputStream().use { input -> fixture.outputStream().use { input.copyTo(it) } }
+            val result = ReaderFontStoreV10.import(app, Uri.fromFile(fixture))
+            assertTrue("Real font must remain importable: ${result.exceptionOrNull()}", result.isSuccess)
+            imported = result.getOrThrow()
+            assertEquals(fixture.length(), File(imported.path).length())
+            assertArrayEquals(fixture.readBytes(), File(imported.path).readBytes())
+            assertNotNull(android.graphics.Typeface.Builder(File(imported.path)).build())
+            assertEquals(before + File(imported.path).name, directory.list().orEmpty().toSet())
+        } finally {
+            imported?.let { ReaderFontStoreV10.delete(it) }
+            fixture.delete()
         }
     }
 

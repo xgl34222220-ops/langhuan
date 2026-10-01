@@ -60,7 +60,9 @@ internal object ReaderFontStoreV10 {
                 }
             } ?: error("无法读取字体文件")
             require(size > 0) { "字体文件是空的" }
-            Typeface.createFromFile(pending)
+            // createFromFile silently returns DEFAULT for an existing but invalid font.
+            // Builder without setFallback returns null when native parsing fails (API 26+).
+            validateReaderFontFileV1(pending) { Typeface.Builder(it).build() != null }
             checkImportThreadV1()
             check(pending.renameTo(file)) { "无法保存字体文件" }
         } finally {
