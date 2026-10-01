@@ -209,6 +209,7 @@ class ReaderProgressV42DeviceTest {
             it.config[SemanticsProperties.StateDescription].startsWith("第")
         } }
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
+        assertEquals(1, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).chapterNumber)
         assertEquals(if (storedChapter == 1) 1202 else 0, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).textOffset)
         assertEquals(48, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).bodyVersion)
         rule.runOnIdle { visible.value = false }

@@ -421,7 +421,7 @@ internal fun ReaderSessionV30(
         val page = if (pendingAnchor == null) layout?.pages?.getOrNull(pageIndex) else null
         // Reflow can still be running when Android pauses or destroys the Activity. Preserve
         // the sentence anchor then, rather than dropping the last page turn from the save.
-        val textLength = layout?.textLength ?: previousLayout?.textLength
+        val textLength = layout?.textLength
             ?: readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content)).length
         val position = chapter.id to pageIndex
         val offset = (pendingAnchor ?: when {
@@ -631,7 +631,7 @@ internal fun ReaderSessionV30(
     }
 
     // ---- Effects: persistence, lifecycle, settings ------------------------------------------------
-    LaunchedEffect(chapterIndex, pageIndex, pendingAnchor) {
+    LaunchedEffect(chapterIndex, pageIndex, pendingAnchor, waitingForOnlineBody, currentLayout) {
         delay(260)
         persist()
     }
