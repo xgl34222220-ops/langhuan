@@ -113,7 +113,7 @@ internal class ReaderTtsV35(
         items.forEachIndexed { index, chunk ->
             tts.speak(chunk.text, TextToSpeech.QUEUE_ADD, null, "$generation:$index")
         }
-        if (items.isEmpty()) main.post { onQueueDone() }
+        if (items.isEmpty()) main.post(readerSpeechCompletionV47(generation, { generation }, onQueueDone))
         return true
     }
 

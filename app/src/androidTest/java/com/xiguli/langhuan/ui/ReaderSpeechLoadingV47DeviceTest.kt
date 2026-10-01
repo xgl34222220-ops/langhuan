@@ -20,13 +20,14 @@ class ReaderSpeechLoadingV47DeviceTest {
         override var rate = 1f
         val spoken = mutableListOf<String>()
         var emptyQueues = 0
+        var stops = 0
         var released = false
         override fun speak(items: List<ReaderTtsChunkV35>): Boolean {
             spoken += items.joinToString("\n") { it.text }
             if (items.isEmpty()) { emptyQueues++; Handler(Looper.getMainLooper()).post { done() } }
             return true
         }
-        override fun stop() = Unit
+        override fun stop() { stops++ }
         override fun release() { released = true }
     }
     private class Fixture(online: Boolean) {
@@ -43,7 +44,7 @@ class ReaderSpeechLoadingV47DeviceTest {
         lateinit var speech: Speech
         fun request(number: Int) { loading.value = number; error.value = null }
     }
-    private fun start(online: Boolean = true): Fixture {
+    private fun start(online: Boolean = true, advance: Boolean = true): Fixture {
         val f = Fixture(online)
         lateinit var settings: ReaderSettingsV30
         rule.runOnUiThread {
@@ -67,7 +68,7 @@ class ReaderSpeechLoadingV47DeviceTest {
         rule.onNodeWithText("听书").performClick()
         rule.runOnIdle { f.speech.ready(true) }
         rule.waitUntil(10000) { f.speech.spoken.size == 1 }
-        rule.runOnIdle { f.speech.done() }
+        if (advance) rule.runOnIdle { f.speech.done() }
         rule.mainClock.advanceTimeBy(800)
         rule.waitForIdle()
         return f
@@ -94,8 +95,14 @@ class ReaderSpeechLoadingV47DeviceTest {
         assertFalse(rule.activity.getSharedPreferences("reader_stats_v35", 0).getBoolean("done_${f.book.id}_2", false))
     }
 
-    @Test fun stoppingWhileLoadingDoesNotResumeOnLateBodyOrCompletion() {
-        val f = start()
+    @Test fun manualChapterChangeWaitsAndStoppingDoesNotResumeOnLateBody() {
+        val f = start(advance = false)
+        rule.runOnIdle { f.selected.intValue = 2; f.request(2) }
+        rule.mainClock.advanceTimeBy(800)
+        rule.waitForIdle()
+        assertTrue("Switching chapter must stop the previous utterance", f.speech.stops > 0)
+        assertEquals(1, f.speech.spoken.size)
+        assertEquals(0, f.speech.emptyQueues)
         rule.onNodeWithContentDescription("停止朗读").performClick()
         rule.runOnIdle {
             f.chapters.value = f.chapters.value.map { if (it.chapterNumber == 2) it.copy(content = "晚到正文。".repeat(12)) else it }
@@ -123,5 +130,24 @@ class ReaderSpeechLoadingV47DeviceTest {
         val f = start(online = false)
         rule.waitUntil(10000) { f.selected.intValue == 3 && f.speech.spoken.lastOrNull()?.contains("第三章正文") == true }
         assertEquals(1, f.speech.emptyQueues)
+    }
+
+    @Test fun speechInitializationFailureStopsRatherThanLeavingAutoResumeArmed() {
+        val f = start()
+        rule.runOnIdle {
+            f.speech.ready(false)
+            f.chapters.value = f.chapters.value.map { if (it.chapterNumber == 2) it.copy(content = "后来取得的正文。".repeat(12)) else it }
+            f.loading.value = null
+        }
+        rule.waitForIdle()
+        rule.runOnIdle { f.speech.ready(true) }
+        rule.mainClock.advanceTimeBy(800)
+        rule.waitForIdle()
+        assertEquals(1, f.speech.spoken.size)
+        rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .5f, height * .5f)) }
+        rule.onNodeWithText("听书").performClick()
+        rule.mainClock.advanceTimeBy(800)
+        rule.waitForIdle()
+        assertEquals("Manual restart must enqueue once, without a stale pending resume", 2, f.speech.spoken.size)
     }
 }

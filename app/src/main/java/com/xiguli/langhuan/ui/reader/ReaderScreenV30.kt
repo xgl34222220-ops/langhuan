@@ -636,6 +636,7 @@ internal fun ReaderSessionV30(
     var ttsFollowPage by remember { mutableIntStateOf(-1) }
     var ttsAdvancing by remember { mutableStateOf(false) }
     val ttsHolder = remember { arrayOfNulls<ReaderSpeechV47>(1) }
+    var ttsChapterId by remember { mutableStateOf<String?>(null) }
 
     fun ttsStartFromPage() {
         val tts = ttsHolder[0] ?: return
@@ -648,6 +649,7 @@ internal fun ReaderSessionV30(
         val body = readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
         val from = layoutFor(chapterIndex)?.pages?.getOrNull(pageIndex)?.startOffset ?: 0
         ttsFollowPage = pageIndex
+        ttsChapterId = chapter.id
         if (!tts.speak(readerTtsChunksV35(body, from))) {
             listening = false
             edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
@@ -665,6 +667,7 @@ internal fun ReaderSessionV30(
     val speechReady = rememberUpdatedState<(Boolean) -> Unit> { ok ->
         if (!ok) {
             listening = false
+            ttsAdvancing = false
             edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
         } else if (listening) {
             ttsHolder[0]?.rate = ttsRate
@@ -719,9 +722,13 @@ internal fun ReaderSessionV30(
             else -> Unit
         }
     }
-    // A manual page turn while listening restarts the voice from the new page.
+    // A manual chapter change can keep pageIndex == 0. Track chapter identity as well,
+    // stop the old utterance, and wait if the selected chapter still needs its online body.
     LaunchedEffect(chapterIndex, pageIndex) {
-        if (listening && !ttsAdvancing && pageIndex != ttsFollowPage) ttsStartFromPage()
+        if (listening && !ttsAdvancing && (currentChapter?.id != ttsChapterId || pageIndex != ttsFollowPage)) {
+            ttsHolder[0]?.stop()
+            ttsStartFromPage()
+        }
     }
     DisposableEffect(Unit) {
         onDispose {
