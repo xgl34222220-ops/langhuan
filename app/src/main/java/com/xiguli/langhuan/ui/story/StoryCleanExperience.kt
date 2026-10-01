@@ -16,6 +16,7 @@ fun StoryCleanExperience(
     onAiSetup: () -> Unit,
     onAdopted: () -> Unit,
     onBack: (() -> Unit)? = null,
+    onLoadCurrentChapter: (() -> Unit)? = null,
 ) {
     @Suppress("UNUSED_VARIABLE")
     val keepSignatureStable = onAdopted
@@ -25,5 +26,6 @@ fun StoryCleanExperience(
         aiReady = aiReady,
         onAiSetup = onAiSetup,
         onBack = onBack,
+        onLoadCurrentChapter = onLoadCurrentChapter,
     )
 }

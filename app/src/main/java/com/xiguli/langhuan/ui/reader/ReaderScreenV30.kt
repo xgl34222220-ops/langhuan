@@ -156,6 +156,27 @@ internal fun ReaderEngineV30(
         return
     }
 
+    var showWritingCopy by rememberSaveable(book.id) { mutableStateOf(false) }
+    if (showWritingCopy) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.cancelWritingCopy(); showWritingCopy = false },
+            title = { Text("从本章开始 AI 创作") },
+            text = { Column {
+                Text("把《${startChapter.title}》已读取的正文复制到独立创作项目。原书、目录和阅读进度保留，可在副本中规划、改写或续写。")
+                if (startChapter.content.isBlank()) Text(if (book.sourceId.isNotBlank()) "当前章尚未缓存，请先加载正文。" else "这一章没有可复制的文字正文，可返回书架创建新作品。", Modifier.padding(top = 12.dp))
+                state.readerLoadError?.let { Text(it, Modifier.padding(top = 8.dp)) }
+                state.writingCopyError?.let { Text(it, Modifier.padding(top = 8.dp)) }
+            } },
+            confirmButton = {
+                androidx.compose.material3.TextButton(enabled = !state.preparingWritingCopy && state.loadingChapterNumber != startChapter.chapterNumber && (startChapter.content.isNotBlank() || book.sourceId.isNotBlank()),
+                    onClick = {
+                        if (startChapter.content.isBlank()) viewModel.ensureOnlineChapter(startChapter.chapterNumber)
+                        else viewModel.prepareWritingCopy { id -> showWritingCopy = false; onEnterWriting(id) }
+                    }) { Text(if (state.preparingWritingCopy) "正在创建…" else if (startChapter.content.isBlank()) if (book.sourceId.isNotBlank()) "加载当前章" else "本章暂无文字" else "创建副本并进入") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { viewModel.cancelWritingCopy(); showWritingCopy = false }) { Text("取消") } },
+        )
+    }
     var storyMode by rememberSaveable(book.id) { mutableStateOf(false) }
     if (storyMode) {
         BackHandler { storyMode = false }
@@ -166,6 +187,7 @@ internal fun ReaderEngineV30(
             onAiSetup = onOpenAiSetup,
             onAdopted = { viewModel.openBook(book.id) },
             onBack = { storyMode = false },
+            onLoadCurrentChapter = { viewModel.ensureOnlineChapter(startChapter.chapterNumber) },
         )
         return
     }
@@ -174,18 +196,25 @@ internal fun ReaderEngineV30(
     key(book.id) {
     ReaderSessionV30(
         book = book,
-        chapters = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } },
+        chapters = remember(state.chapters) { state.chapters.sortedBy { it.readingOrder } },
         externalChapterId = startChapter.id,
         settings = settings,
         startOnInfo = startOnInfo,
         interactionEnabled = interactionEnabled,
         onChapterChanged = { number -> viewModel.openReader(number) },
         onLoadChapter = viewModel::ensureOnlineChapter,
+        onRefreshCatalogue = viewModel::refreshOnlineCatalogue,
+        refreshingCatalogue = state.isRefreshingCatalogue,
+        catalogueMessage = state.catalogueMessage,
         loadingChapterNumber = state.loadingChapterNumber,
         chapterLoadError = state.readerLoadError,
         onBack = onBackToShelf,
         onEdit = { number -> onOpenEditor(book.id, number) },
-        onWriting = { onEnterWriting(book.id) },
+        onWriting = {
+            val imported = book.sourceId.isNotBlank() || book.genre == "导入作品" ||
+                context.getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE).contains("imported_${book.id}")
+            if (imported) showWritingCopy = true else onEnterWriting(book.id)
+        },
         onStory = { storyMode = true },
         chapterOps = remember(book.id) {
             ReaderChapterOpsV35(
@@ -216,6 +245,9 @@ internal fun ReaderSessionV30(
     loadingChapterNumber: Int? = null,
     chapterLoadError: String? = null,
     speechFactory: ReaderSpeechFactoryV47 = systemReaderSpeechFactoryV47,
+    onRefreshCatalogue: () -> Unit = {},
+    refreshingCatalogue: Boolean = false,
+    catalogueMessage: String? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -236,12 +268,22 @@ internal fun ReaderSessionV30(
     }
     var deferredHeadingAnchor by remember { mutableStateOf(initialProgress.bodyVersion < 48 && initialProgress.textOffset > 0 && initialProgress.chapterNumber == chapters.getOrNull(initialIndex)?.chapterNumber && chapters.getOrNull(initialIndex)?.content?.isBlank() == true) }
     var chapterIndex by remember { mutableIntStateOf(initialIndex) }
+    var previousChapterIds by remember { mutableStateOf(chapters.map { it.id }) }
+    val chapterIds = chapters.map { it.id }
+    if (previousChapterIds != chapterIds) {
+        // A repaired catalogue can insert hundreds of rows before this chapter. Preserve
+        // the actual chapter identity before any layout or progress effect sees the new list.
+        val heldId = previousChapterIds.getOrNull(chapterIndex)
+        chapterIndex = chapterIds.indexOf(heldId).takeIf { it >= 0 }
+            ?: chapterIndex.coerceAtMost(chapters.lastIndex.coerceAtLeast(0))
+        previousChapterIds = chapterIds
+    }
     var pageIndex by remember { mutableIntStateOf(0) }
     var pendingAnchor by remember { mutableStateOf<Int?>(initialAnchor) }
     val anchorHolder = remember { intArrayOf(initialAnchor) }
     LaunchedEffect(chapters, chapterIndex) {
         if (deferredHeadingAnchor) {
-            if (chapterIndex != initialIndex) deferredHeadingAnchor = false
+            if (chapters.getOrNull(chapterIndex)?.chapterNumber != initialProgress.chapterNumber) deferredHeadingAnchor = false
             else chapters.getOrNull(chapterIndex)?.takeIf { it.content.isNotBlank() }?.let { chapter ->
                 val restored = readerRestoreBodyOffsetV48(chapter.title, chapter.content, initialProgress.textOffset, initialProgress.bodyVersion)
                 pendingAnchor = restored
@@ -306,7 +348,7 @@ internal fun ReaderSessionV30(
     val layouts = remember { mutableStateMapOf<String, ReaderChapterPagesV30>() }
     val stale = remember { mutableStateMapOf<String, ReaderChapterPagesV30>() }
     fun keyFor(chapter: ChapterDraft): String =
-        "${spec.key}#${chapter.id}#${chapter.content.length}#${chapter.content.hashCode()}#${chapter.title.hashCode()}"
+        "${spec.key}#${chapter.id}#${chapter.readingOrder}#${chapter.content.length}#${chapter.content.hashCode()}#${chapter.title.hashCode()}"
     fun layoutFor(index: Int): ReaderChapterPagesV30? = chapters.getOrNull(index)?.let { layouts[keyFor(it)] }
 
     // When typography changes, remember where the reader was so the same sentence stays on screen.
@@ -1217,6 +1259,9 @@ internal fun ReaderSessionV30(
             onRenameChapter = chapterOps.rename,
             onAppendChapter = chapterOps.append,
             onDeleteLastChapter = chapterOps.deleteLast,
+            onRefreshCatalogue = onRefreshCatalogue,
+            refreshingCatalogue = refreshingCatalogue,
+            catalogueMessage = catalogueMessage,
         )
     }
 }

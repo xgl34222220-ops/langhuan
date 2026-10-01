@@ -124,7 +124,7 @@ fun ChapterEditorExperience(
         }
 
         val draft = state.draft ?: return@Scaffold
-        val chapters = state.chapters.sortedBy { it.chapterNumber }
+        val chapters = state.chapters.sortedBy { it.readingOrder }
         val index = chapters.indexOfFirst { it.chapterNumber == draft.chapterNumber }.coerceAtLeast(0)
         val previous = chapters.getOrNull(index - 1)
         val next = chapters.getOrNull(index + 1)

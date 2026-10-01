@@ -175,6 +175,9 @@ internal fun ReaderMenuV30(
     legacyBookmarkedChapters: Set<Int> = emptySet(),
     legacyBookmarkError: String? = null,
     onRestoreLegacyBookmark: (Int) -> Unit = {},
+    onRefreshCatalogue: () -> Unit = {},
+    refreshingCatalogue: Boolean = false,
+    catalogueMessage: String? = null,
 ) {
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible = visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(200))) {
@@ -261,6 +264,7 @@ internal fun ReaderMenuV30(
                                     book, chapters, chapterIndex, theme, bookmarked, settings, onBack, onToggleBookmark, onJumpChapter,
                                     bookmarkedChapters, onRenameChapter, onAppendChapter, onDeleteLastChapter,
                                     bookmarkError, legacyBookmarkedChapters, legacyBookmarkError, onRestoreLegacyBookmark,
+                                    onRefreshCatalogue, refreshingCatalogue, catalogueMessage,
                                 )
                                 ReaderMenuTabV30.MORE -> ReaderMoreTabV30(settings, theme, onPanel, onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) }, listening = listening, onListen = onListen)
                             }
@@ -361,6 +365,9 @@ private fun ReaderDirectoryTabV30(
     legacyBookmarkedChapters: Set<Int> = emptySet(),
     legacyBookmarkError: String? = null,
     onRestoreLegacyBookmark: (Int) -> Unit = {},
+    onRefreshCatalogue: () -> Unit = {},
+    refreshingCatalogue: Boolean = false,
+    catalogueMessage: String? = null,
 ) {
     val height = (LocalConfiguration.current.screenHeightDp * .46f).dp
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (chapterIndex - 3).coerceAtLeast(0))
@@ -387,6 +394,16 @@ private fun ReaderDirectoryTabV30(
                     fontWeight = FontWeight.Medium,
                 )
             }
+        }
+        if (book.sourceId.isNotBlank() && !showBookmarks) {
+            val gap = remember(chapters) { catalogueMiddleGapV53(chapters.map { it.title }) }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(gap?.let { "发现缺章：第 ${it.first} 章后跳到第 ${it.second} 章" } ?: "在线目录，可重新核对章节", Modifier.weight(1f), color = theme.sheetMuted, fontSize = 12.sp)
+                TextButton(onClick = onRefreshCatalogue, enabled = !refreshingCatalogue) {
+                    Text(if (refreshingCatalogue) "正在核对…" else "刷新目录", color = theme.accent, fontSize = 12.sp)
+                }
+            }
+            catalogueMessage?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = theme.sheetMuted, fontSize = 12.sp) }
         }
         if (showBookmarks) {
             bookmarkError?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = theme.accent, fontSize = 12.sp) }
@@ -514,10 +531,10 @@ private fun ReaderDirectoryTabV30(
     }
     editing?.let { chapter ->
         var title by remember(chapter.id) { mutableStateOf(chapter.title) }
-        val isLast = chapter.chapterNumber == chapters.maxOfOrNull { it.chapterNumber } && chapters.size > 1
+        val isLast = chapter.id == chapters.lastOrNull()?.id && chapters.size > 1
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text("第 ${chapter.chapterNumber} 章") },
+            title = { Text(readerDisplayChapterTitleV13(chapter.title, chapter.readingOrder)) },
             text = {
                 Column {
                     OutlinedTextField(title, { title = it.take(40) }, label = { Text("章节标题") }, singleLine = true)
@@ -568,6 +585,7 @@ private fun ReaderDetailsTabV30(
     onStory: () -> Unit,
 ) {
     val chapter = chapters.getOrNull(chapterIndex)
+    val incomplete = remember(book.sourceId, chapters) { book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }) != null }
     val bookProgress = if (chapters.isEmpty()) 0f else
         ((chapterIndex + if (pageCount > 0) (pageIndex + 1f) / pageCount else 0f) / chapters.size).coerceIn(0f, 1f)
     val cover = rememberLanghuanCoverV30(book.coverPath, 220)
@@ -595,13 +613,14 @@ private fun ReaderDetailsTabV30(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "第 ${chapterIndex + 1} / ${chapters.size} 章 · 本章 ${pageIndex + 1}/${pageCount.coerceAtLeast(1)} 页",
+                    if (incomplete) "当前第 ${chapterIndex + 1} 条 · 仅存 ${chapters.size} 条目录"
+                    else "第 ${chapterIndex + 1} / ${chapters.size} 章 · 本章 ${pageIndex + 1}/${pageCount.coerceAtLeast(1)} 页",
                     Modifier.padding(top = 4.dp),
                     color = theme.sheetMuted,
                     fontSize = 12.sp,
                 )
                 Text(
-                    String.format(Locale.US, "全书已读 %.1f%%", bookProgress * 100f),
+                    if (incomplete) "目录待补全，暂不能计算全书进度" else String.format(Locale.US, "全书已读 %.1f%%", bookProgress * 100f),
                     Modifier.padding(top = 2.dp),
                     color = theme.accent,
                     fontSize = 12.sp,

@@ -215,7 +215,7 @@ private fun HeroReaderPageV12(
     val prefs = remember(book.id) { context.getSharedPreferences("reader_qingmo_v9", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
-    val chapters = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } }
+    val chapters = remember(state.chapters) { state.chapters.sortedBy { it.readingOrder } }
     val chapterIndex = chapters.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0)
     val previous = chapters.getOrNull(chapterIndex - 1)
     val next = chapters.getOrNull(chapterIndex + 1)

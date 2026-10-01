@@ -57,6 +57,17 @@ internal fun chapterOrdinalV50(title: String): Int? {
         ?.groupValues?.get(1)?.let(::catalogueNumberV50)
 }
 
+/** Strong head-plus-tail evidence, not a demand that notices or volume-local numbers be consecutive. */
+internal fun catalogueMiddleGapV53(titles: List<String>, hasVolumes: Boolean = false): Pair<Int, Int>? {
+    if (hasVolumes || titles.any { Regex("第.{1,12}[卷部篇]").containsMatchIn(it) }) return null
+    val numbers = titles.mapNotNull(::chapterOrdinalV50)
+    if (numbers.size < 8 || numbers.distinct().size != numbers.size) return null
+    if (numbers.zipWithNext().any { (a, b) -> b < a }) return null
+    val first = numbers.first()
+    if (first !in 0..3 || numbers.last() < numbers.size * 2) return null
+    return numbers.zipWithNext().firstOrNull { (a, b) -> b - a > maxOf(10, numbers.size / 2) }
+}
+
 internal fun catalogueCanonicalUrlV50(url: String): String = publicSourceUrlV36(url).newBuilder().fragment(null).build().toString()
 
 internal fun sameCatalogueOriginV50(base: String, candidate: String): Boolean = runCatching {
@@ -218,7 +229,21 @@ internal class CataloguePageInspectorV50(private val doc: Document) {
             if (!wholeBookCount) null
             else pattern.find(text)?.groupValues?.drop(1)?.firstOrNull { it.isNotBlank() }?.let(::catalogueNumberV50)
         }
-        return (metadata + visible).filter { it > 0 }.maxOrNull()
+        // Some detail pages present compact book statistics as "1045章節數".
+        // Only short, link-free statistics near the book's main heading are evidence;
+        // recommendation cards and chapter titles must not contribute a count.
+        val heading = doc.selectFirst("h1")
+        val stats = heading?.parent()?.let { parent ->
+            generateSequence<Element>(parent) { it.parent() }.take(3)
+                .takeWhile { it.tagName() !in setOf("html", "body", "#root", "main") }
+                .map { scope -> scope.getAllElements().filter {
+                    it.selectFirst("a[href]") == null && it.text().length in 1..40
+                }.mapNotNull { node ->
+                    Regex("^\\s*($numberPatternV50)\\s*(?:章節數|章节数|章節總數|章节总数)\\s*$").find(node.text())
+                        ?.groupValues?.get(1)?.let(::catalogueNumberV50)
+                }.distinct() }.firstOrNull { it.isNotEmpty() }?.singleOrNull()?.let(::listOf)
+        }.orEmpty()
+        return (metadata + visible + stats).filter { it > 0 }.maxOrNull()
     }
 
     fun latestOrdinal(bookUrl: String): Int? {

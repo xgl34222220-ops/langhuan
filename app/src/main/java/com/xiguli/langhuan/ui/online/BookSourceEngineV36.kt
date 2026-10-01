@@ -774,7 +774,14 @@ internal fun loadBookCatalogueV50(
     val explicitToc = heuristicTocUrlV39(page, explicitOnly = true)
     val heuristicToc = heuristicTocUrlV39(page)
     fun otherPage(url: String?): String? = url?.takeIf { catalogueCanonicalUrlV50(it) != catalogueCanonicalUrlV50(page.location()) }
-    val firstToc = otherPage(declaredToc) ?: otherPage(explicitToc) ?: otherPage(heuristicToc).takeIf { onPageChapters.isEmpty() }
+    // A visible "完整目录" entry is stronger than a generated selector that picked a
+    // latest-chapters widget. Never synthesize an unobserved URL.
+    val fullToc = page.select("a[href]").firstNotNullOfOrNull { anchor ->
+        if (!Regex("完整|全部|所有|全[书書]|all|full", RegexOption.IGNORE_CASE).containsMatchIn(anchor.text()) ||
+            !catalogueFullLabelV50(anchor.text())) null
+        else catalogueObservedUrlV50(page, anchor)?.takeUnless(::isLikelyChapterUrlV39)?.let(::otherPage)
+    }
+    val firstToc = fullToc ?: otherPage(declaredToc) ?: otherPage(explicitToc) ?: otherPage(heuristicToc).takeIf { onPageChapters.isEmpty() }
     fun read(url: String, message: String): Document {
         check(sameCatalogueOriginV50(page.location(), url)) { "目录入口不在当前网站，未继续读取" }
         if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
@@ -803,6 +810,10 @@ internal fun loadBookCatalogueV50(
         val maxOrdinal = ordinals.maxOrNull()
         // Volume-local numbering can restart. A chapter ordinal is not a chapter count.
         hasVolumeNumbers = hasVolumeNumbers || distinct.any { Regex("第.{1,12}[卷部篇]").containsMatchIn(it.title) } || ordinals.distinct().size < ordinals.size
+        val middleGap = catalogueMiddleGapV53(distinct.map { it.title }, hasVolumeNumbers)
+        check(middleGap == null) {
+            "目录存在大段缺章：第 ${middleGap!!.first} 章后跳到第 ${middleGap.second} 章；未把开头与最新章节拼接列表当作完整目录，请检查完整目录入口"
+        }
         check(hasVolumeNumbers || latestOrdinal == null || maxOrdinal == null || maxOrdinal >= latestOrdinal!!) {
             "目录不完整：页面最新章节序号为 $latestOrdinal，所取目录仅到 $maxOrdinal；请检查完整目录入口"
         }

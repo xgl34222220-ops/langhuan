@@ -231,7 +231,7 @@ private fun ReaderCorePage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember(book.id) { context.getSharedPreferences("reader_core_settings_v1", Context.MODE_PRIVATE) }
-    val ordered = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } }
+    val ordered = remember(state.chapters) { state.chapters.sortedBy { it.readingOrder } }
     val chapterIndex = ordered.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0)
     val previous = ordered.getOrNull(chapterIndex - 1)
     val next = ordered.getOrNull(chapterIndex + 1)

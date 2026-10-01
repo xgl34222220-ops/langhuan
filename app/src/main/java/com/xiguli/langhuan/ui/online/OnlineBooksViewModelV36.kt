@@ -401,14 +401,12 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 val source = _state.value.sources.firstOrNull { it.id == novel.sourceId } ?: error("原书源已被删除")
                 val book = OnlineBookV36(source.id, source.name, novel.title, "", "", "", "", novel.sourceBookUrl)
                 val (_, chapters) = runInterruptible(Dispatchers.IO) { loadBookV36(source, book) }
-                val existing = withContext(Dispatchers.IO) { projects.chapterDrafts(novelId) }
-                val fresh = onlineCatalogueAppendV46(existing, chapters)
-                if (fresh.isEmpty()) return@sourceAttemptV36 "本次目录未发现新增，已解析 ${chapters.size} 章"
                 currentCoroutineContext().ensureActive()
                 val added = withContext(Dispatchers.IO) {
                     projects.appendOnlineCatalogue(novelId, source.id, novel.sourceBookUrl, chapters.map { ImportedChapter(it.title, "", it.url) })
                 }
-                "目录新增 $added 章，正文将在阅读时加载"
+                if (added == 0) "本次目录未发现新增，已解析 ${chapters.size} 章"
+                else "已补齐目录中缺少的 $added 章，原正文、书签与阅读位置保留；正文将在阅读时加载"
             }.getOrElse { e -> "检查更新失败：${e.message.orEmpty()}" }
             onDone(result)
         }

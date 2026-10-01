@@ -62,7 +62,7 @@ object StoryExchange {
     fun export(snapshot: StorySnapshot, drafts: List<ChapterDraft>, format: ExportFormat): ExportArtifact {
         val pending = drafts.count { it.sourceUrl.isNotBlank() && it.content.isBlank() }
         require(pending == 0) { "还有 $pending 章正文未缓存，不能导出完整小说；请先单独离线下载。项目备份可保留当前目录与缓存" }
-        val ordered = drafts.sortedBy { it.chapterNumber }
+        val ordered = drafts.sortedBy { it.readingOrder }
         val safeName = safeName(snapshot.novel.title)
         val bytes = when (format) {
             ExportFormat.TXT -> exportText(snapshot, ordered).toByteArray(Charsets.UTF_8)
@@ -73,7 +73,7 @@ object StoryExchange {
     }
 
     fun exportProject(snapshot: StorySnapshot, drafts: List<ChapterDraft>): ExportArtifact {
-        val ordered = drafts.sortedBy { it.chapterNumber }
+        val ordered = drafts.sortedBy { it.readingOrder }
         val bytes = ExchangeJson.encodeToString(
             StoryProjectBackup.serializer(),
             StoryProjectBackup(snapshot = snapshot, chapters = ordered),
@@ -99,7 +99,7 @@ object StoryExchange {
         appendLine(snapshot.novel.title)
         appendLine()
         drafts.forEach { chapter ->
-            appendLine("第${chapter.chapterNumber}章 ${chapter.title}")
+            appendLine(chapter.title.ifBlank { "第${chapter.readingOrder}章" })
             appendLine()
             appendLine(chapter.content.trim())
             appendLine()
@@ -112,7 +112,7 @@ object StoryExchange {
         appendLine("> ${snapshot.novel.premise}")
         appendLine()
         drafts.forEach { chapter ->
-            appendLine("## 第${chapter.chapterNumber}章 ${chapter.title}")
+            appendLine("## ${chapter.title.ifBlank { "第${chapter.readingOrder}章" }}")
             appendLine()
             appendLine(chapter.content.trim())
             appendLine()
@@ -156,7 +156,7 @@ $spine
   </spine>
 </package>""")
 
-            val navItems = drafts.joinToString("\n") { "      <li><a href=\"c${it.chapterNumber}.xhtml\">第${it.chapterNumber}章 ${xml(it.title)}</a></li>" }
+            val navItems = drafts.joinToString("\n") { "      <li><a href=\"c${it.chapterNumber}.xhtml\">${xml(it.title.ifBlank { "第${it.readingOrder}章" })}</a></li>" }
             zip.writeEntry("OEBPS/nav.xhtml", """<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>目录</title></head><body>
 <nav epub:type="toc" xmlns:epub="http://www.idpf.org/2007/ops"><h1>目录</h1><ol>
@@ -169,7 +169,7 @@ $navItems
                     .joinToString("\n") { "<p>${xml(it.trim()).replace("\n", "<br/>")}</p>" }
                 zip.writeEntry("OEBPS/c${chapter.chapterNumber}.xhtml", """<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>${xml(chapter.title)}</title></head><body>
-<h1>第${chapter.chapterNumber}章 ${xml(chapter.title)}</h1>
+<h1>${xml(chapter.title.ifBlank { "第${chapter.readingOrder}章" })}</h1>
 $paragraphs
 </body></html>""")
             }

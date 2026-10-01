@@ -739,9 +739,9 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
         val found = any { it.id == draft.id || it.chapterNumber == draft.chapterNumber }
         return if (found) {
             map { chapter -> if (chapter.id == draft.id || chapter.chapterNumber == draft.chapterNumber) draft else chapter }
-                .sortedBy { it.chapterNumber }
+                .sortedBy { it.readingOrder }
         } else {
-            (this + draft).sortedBy { it.chapterNumber }
+            (this + draft).sortedBy { it.readingOrder }
         }
     }
 }

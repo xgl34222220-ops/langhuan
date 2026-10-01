@@ -211,7 +211,7 @@ private fun ReaderQingmoPageV8(
     val activity = context as? Activity
     val prefs = remember(book.id) { context.getSharedPreferences("reader_qingmo_v8", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
-    val chapters = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } }
+    val chapters = remember(state.chapters) { state.chapters.sortedBy { it.readingOrder } }
     val chapterIndex = chapters.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0)
     val previous = chapters.getOrNull(chapterIndex - 1)
     val next = chapters.getOrNull(chapterIndex + 1)

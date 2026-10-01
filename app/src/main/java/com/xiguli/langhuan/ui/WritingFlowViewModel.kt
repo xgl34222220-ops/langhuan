@@ -32,6 +32,7 @@ import com.xiguli.langhuan.engine.TaskModelRouter
 import com.xiguli.langhuan.engine.WorkspaceAiEngine
 import com.xiguli.langhuan.engine.WritingFlowEngine
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -85,22 +86,29 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
     private val _state = MutableStateFlow(WritingFlowUiState())
     val state: StateFlow<WritingFlowUiState> = _state.asStateFlow()
 
+    private val requests = StoryRequestScope()
+
     init { viewModelScope.launch { runtime.state.collect(::syncRuntimeState) } }
 
     fun load(novelId: String) {
         if (novelId.isBlank()) return
         val current = _state.value
-        if (current.novelId == novelId && current.ready) { syncRuntimeState(runtime.state.value); return }
-        viewModelScope.launch {
-            _state.value = WritingFlowUiState(novelId = novelId, isLoading = true)
+        if (current.novelId == novelId && (current.ready || current.isLoading)) { syncRuntimeState(runtime.state.value); return }
+        requests.open(novelId)
+        val request = requests.begin("load")
+        _state.value = WritingFlowUiState(novelId = novelId, isLoading = true)
+        requests.launch(viewModelScope, request) {
             runCatching {
                 val loaded = projects.loadStory(novelId) ?: error("找不到这本小说")
+                requests.ensureCurrent(request)
                 val providers = repository.observeProviders().first()
+                requests.ensureCurrent(request)
                 val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
                 Triple(loaded, provider?.name.orEmpty(), provider?.id)
             }.onSuccess { (loaded, label, _) ->
+                requests.ensureCurrent(request)
                 val binding = referenceDna.summary(novelId)
-                _state.update {
+                updateRequest(request) {
                     it.copy(
                         snapshot = loaded.snapshot, draft = loaded.draft,
                         providerLabel = buildString { append(label.ifBlank { "未配置 AI 服务" }); if (binding.count > 0) append(" · DNA ${binding.count}本") },
@@ -113,41 +121,58 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 val live = runtime.state.value
                 val hasRuntimeState = live.matches(loaded.snapshot.novel.id, loaded.draft.chapterNumber) && (live.active || live.result != null || live.review != null || live.message != null || live.error != null)
                 if (hasRuntimeState) syncRuntimeState(live) else restoreDurableRun(loaded.snapshot, loaded.draft)
-            }.onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message ?: "加载小说失败") } }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                updateRequest(request) { it.copy(isLoading = false, error = error.message ?: "加载小说失败") }
+            }
         }
     }
 
     fun planScenes(instruction: String = "") {
         val current = _state.value; val snapshot = current.snapshot ?: return; val draft = current.draft ?: return
         if (current.busy || runtime.state.value.active) return
-        viewModelScope.launch {
-            val gateway = runCatching { activeGateway() }.getOrElse { error -> _state.update { it.copy(error = error.message ?: "请先配置 AI 服务") }; return@launch }
+        val request = requests.begin("action")
+        updateRequest(request) { it.copy(isPlanningScenes = true, error = null) }
+        requests.launch(viewModelScope, request) {
             val clean = instruction.trim()
             val conversation = if (clean.isBlank()) current.sceneConversation else current.sceneConversation + WritingFlowMessage(role = "user", text = clean)
             val usage = referenceDna.usage(snapshot.novel.id, listOf(draft.title, draft.objective, clean, current.workingScenes.joinToString(" ") { it.purpose + " " + it.conflict }).joinToString(" "), com.xiguli.langhuan.engine.ReferenceDnaPurpose.SCENE)
-            _state.update { it.copy(isPlanningScenes = true, error = null, sceneConversation = conversation, message = usage.label.takeIf(String::isNotBlank)) }
+            updateRequest(request) { it.copy(isPlanningScenes = true, error = null, sceneConversation = conversation, message = usage.label.takeIf(String::isNotBlank)) }
             runCatching {
+                val gateway = activeGateway(request)
+                requests.ensureCurrent(request)
                 WritingFlowEngine(gateway).planCurrentChapter(snapshot, draft, current.workingScenes.ifEmpty { draft.scenePlan }, conversation.map { it.role to it.text }, clean)
             }.onSuccess { suggestion ->
-                _state.update {
+                requests.ensureCurrent(request)
+                updateRequest(request) {
                     it.copy(
                         isPlanningScenes = false, workingScenes = suggestion.scenes, sceneNote = suggestion.note,
                         sceneConversation = it.sceneConversation + WritingFlowMessage(role = "assistant", text = "场景计划已更新：${suggestion.note}"),
                         message = if (usage.reportCount > 0) "AI 已重新编排本章场景 · ${usage.label}" else "AI 已重新编排本章场景，确认后可直接生成正文",
                     )
                 }
-            }.onFailure { error -> _state.update { it.copy(isPlanningScenes = false, error = error.message ?: "AI 场景规划失败") } }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                updateRequest(request) { it.copy(isPlanningScenes = false, error = error.message ?: "AI 场景规划失败") }
+            }
         }
     }
 
     fun applyScenePlan() {
         val current = _state.value; val snapshot = current.snapshot ?: return; val draft = current.draft ?: return
         if (current.busy || runtime.state.value.active || current.workingScenes.isEmpty()) return
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, error = null) }
+        val request = requests.begin("action")
+        updateRequest(request) { it.copy(isSaving = true, error = null) }
+        requests.launch(viewModelScope, request) {
             runCatching { projects.saveStructure(snapshot, draft.copy(scenePlan = current.workingScenes)) }
-                .onSuccess { persisted -> _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, workingScenes = persisted.draft.scenePlan, isSaving = false, message = "场景计划已写入当前章节") } }
-                .onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "保存场景计划失败") } }
+                .onSuccess { persisted ->
+                    requests.ensureCurrent(request)
+                    updateRequest(request) { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, workingScenes = persisted.draft.scenePlan, isSaving = false, message = "场景计划已写入当前章节") }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    updateRequest(request) { it.copy(isSaving = false, error = error.message ?: "保存场景计划失败") }
+                }
         }
     }
 
@@ -189,40 +214,58 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
     fun confirmCandidateFact(candidateId: String) {
         val current = _state.value; val snapshot = current.snapshot ?: return; val draft = current.draft ?: return
         if (current.busy || runtime.state.value.active) return
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, error = null) }
+        val request = requests.begin("action")
+        updateRequest(request) { it.copy(isSaving = true, error = null) }
+        requests.launch(viewModelScope, request) {
             runCatching { chapterRuns.confirmCandidate(snapshot, draft, candidateId) }
-                .onSuccess { persisted -> _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, message = "候选事实已确认并进入 Canon") } }
-                .onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "确认 Candidate 失败") } }
+                .onSuccess { persisted ->
+                    requests.ensureCurrent(request)
+                    updateRequest(request) { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, message = "候选事实已确认并进入 Canon") }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    updateRequest(request) { it.copy(isSaving = false, error = error.message ?: "确认 Candidate 失败") }
+                }
         }
     }
 
     fun rejectCandidateFact(candidateId: String) {
         val current = _state.value; val snapshot = current.snapshot ?: return; val draft = current.draft ?: return
         if (current.busy || runtime.state.value.active) return
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, error = null) }
+        val request = requests.begin("action")
+        updateRequest(request) { it.copy(isSaving = true, error = null) }
+        requests.launch(viewModelScope, request) {
             runCatching { chapterRuns.rejectCandidate(snapshot, draft, candidateId) }
-                .onSuccess { persisted -> _state.update { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, message = "候选事实已拒绝，不会进入 Canon") } }
-                .onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "拒绝 Candidate 失败") } }
+                .onSuccess { persisted ->
+                    requests.ensureCurrent(request)
+                    updateRequest(request) { it.copy(snapshot = persisted.snapshot, draft = persisted.draft, isSaving = false, message = "候选事实已拒绝，不会进入 Canon") }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    updateRequest(request) { it.copy(isSaving = false, error = error.message ?: "拒绝 Candidate 失败") }
+                }
         }
     }
 
     fun advanceToNext(optionIndex: Int?) {
         val current = _state.value; val snapshot = current.snapshot ?: return; val draft = current.draft ?: return
         if (current.busy || runtime.state.value.active || draft.content.isBlank()) return
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, error = null) }
+        val request = requests.begin("action")
+        updateRequest(request) { it.copy(isSaving = true, error = null) }
+        requests.launch(viewModelScope, request) {
             runCatching {
                 val review = current.review
                 val pendingForChapter = snapshot.candidateFacts.any { it.sourceChapter == draft.chapterNumber && it.status == com.xiguli.langhuan.domain.CandidateFactStatus.PENDING }
                 require(!pendingForChapter) { "当前章节还有待确认 Candidate。请先确认或拒绝这些事实，再进入下一章，避免下一章缺少关键连续性状态。" }
+                requests.ensureCurrent(request)
                 val base = projects.saveStructure(snapshot, draft)
+                requests.ensureCurrent(request)
                 val option = optionIndex?.let { review?.nextOptions?.getOrNull(it) }
                 val nextNumber = draft.chapterNumber + 1
                 val existingNext = base.snapshot.outline.firstOrNull { it.level == OutlineLevel.CHAPTER && it.order == nextNumber }
                 if (existingNext != null) {
                     val selected = projects.selectChapter(base.snapshot.novel.id, nextNumber) ?: error("无法载入已经规划好的第${nextNumber}章")
+                    requests.ensureCurrent(request)
                     if (option != null) {
                         val updatedNode = existingNext.copy(title = option.title.ifBlank { existingNext.title }, objective = option.objective.ifBlank { existingNext.objective }, conflict = option.conflict.ifBlank { existingNext.conflict }, turningPoint = option.turningPoint.ifBlank { existingNext.turningPoint })
                         val updatedOutline = selected.snapshot.outline.map { if (it.id == existingNext.id) updatedNode else it }
@@ -231,13 +274,18 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 } else if (option != null) {
                     projects.createChapter(base.snapshot, option.title, option.objective, option.conflict, option.turningPoint)
                 } else {
-                    val gateway = activeGateway(); val plan = WorkspaceAiEngine(gateway).planNextChapter(base.snapshot, base.draft)
+                    val gateway = activeGateway(request); val plan = WorkspaceAiEngine(gateway).planNextChapter(base.snapshot, base.draft)
+                    requests.ensureCurrent(request)
                     projects.createChapter(base.snapshot, plan.title, plan.objective, plan.conflict, plan.turningPoint, plan.scenes)
                 }
             }.onSuccess { next ->
+                requests.ensureCurrent(request)
                 projects.setActiveStoryId(next.snapshot.novel.id); runtime.clearTerminalState(snapshot.novel.id, draft.chapterNumber)
-                _state.update { it.copy(snapshot = next.snapshot, draft = next.draft, workingScenes = next.draft.scenePlan, sceneNote = "", sceneConversation = emptyList(), streamPreview = "", runEvents = emptyList(), runtimePlan = null, runtimeAudit = null, result = null, review = null, isSaving = false, chapterCommitted = next.draft.content.isNotBlank(), memoryApplied = false, message = "已进入第${next.draft.chapterNumber}章。先确认场景计划，再开始正文生成。") }
-            }.onFailure { error -> _state.update { it.copy(isSaving = false, error = error.message ?: "进入下一章失败") } }
+                updateRequest(request) { it.copy(snapshot = next.snapshot, draft = next.draft, workingScenes = next.draft.scenePlan, sceneNote = "", sceneConversation = emptyList(), streamPreview = "", runEvents = emptyList(), runtimePlan = null, runtimeAudit = null, result = null, review = null, isSaving = false, chapterCommitted = next.draft.content.isNotBlank(), memoryApplied = false, message = "已进入第${next.draft.chapterNumber}章。先确认场景计划，再开始正文生成。") }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                updateRequest(request) { it.copy(isSaving = false, error = error.message ?: "进入下一章失败") }
+            }
         }
     }
 
@@ -247,6 +295,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
     fun invalidateAfterExternalEdit(novelId: String) {
         val current = _state.value
         if (current.novelId == novelId && !current.busy && !runtime.state.value.active) {
+            requests.open("")
             _state.value = WritingFlowUiState()
         }
     }
@@ -256,6 +305,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         if (!run.matches(current.novelId, draft.chapterNumber)) return
         val runtimeDraft = run.draft
         _state.update { state ->
+            if (!run.matches(state.novelId, state.draft?.chapterNumber ?: return@update state)) return@update state
             state.copy(
                 snapshot = run.snapshot ?: state.snapshot, draft = runtimeDraft ?: state.draft, providerLabel = run.providerLabel.ifBlank { state.providerLabel },
                 workingScenes = if (runtimeDraft != null && run.taskKind != ChapterRuntimeTaskKind.GENERATE) runtimeDraft.scenePlan else state.workingScenes,
@@ -285,6 +335,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         }
         val audit = ProjectRuntimeSkillPlanner.audit(plan, recovery.events, phases, finalize = false)
         _state.update {
+            if (it.novelId != snapshot.novel.id || it.draft?.id != draft.id) return@update it
             it.copy(
                 streamPreview = recovery.preview,
                 result = recovery.result,
@@ -296,11 +347,18 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private suspend fun activeGateway(): AiGateway {
+    private inline fun updateRequest(request: StoryRequestScope.Ticket, transform: (WritingFlowUiState) -> WritingFlowUiState) {
+        _state.update { state ->
+            if (requests.isCurrent(request) && state.novelId == request.novelId) transform(state) else state
+        }
+    }
+
+    private suspend fun activeGateway(request: StoryRequestScope.Ticket): AiGateway {
         val routed = TaskDispatchingAiGateway(TaskModelRouter(getApplication<Application>()).snapshot())
-        val novelId = _state.value.novelId
+        requests.ensureCurrent(request)
+        val novelId = request.novelId
         val binding = referenceDna.summary(novelId)
-        _state.update { it.copy(providerLabel = routed.summary + if (binding.count > 0) " · DNA ${binding.count}本" else "") }
+        updateRequest(request) { it.copy(providerLabel = routed.summary + if (binding.count > 0) " · DNA ${binding.count}本" else "") }
         return ReferenceDnaAwareAiGateway(getApplication<Application>(), novelId, routed)
     }
 }

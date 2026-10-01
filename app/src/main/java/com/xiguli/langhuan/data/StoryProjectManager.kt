@@ -330,16 +330,41 @@ class StoryProjectManager(context: Context) {
 
     suspend fun chapterDraft(novelId: String, number: Int): ChapterDraft? = loadChapterDraftCursorSafe(novelId, number)
 
-    suspend fun appendOnlineCatalogue(novelId: String, sourceId: String, bookUrl: String, items: List<ImportedChapter>): Int = db.withTransaction {
+    /** Reading imports are reference material; AI writing receives a separate local project. */
+    suspend fun createWritingCopy(novelId: String, number: Int, expectedChapterId: String): PersistedStory = db.withTransaction {
+        val original = loadStory(novelId) ?: error("原书已移除")
+        val chapter = loadChapterDraftCursorSafe(novelId, number) ?: error("当前章节已移除")
+        check(chapter.id == expectedChapterId) { "当前章节已变化，请重新进入创作" }
+        require(chapter.content.isNotBlank()) { "请先读取当前章节正文，再创建创作副本" }
+        val copy = createImportedStoryInTransaction(ImportedManuscript(
+            title = original.snapshot.novel.title + " · 创作副本",
+            chapters = listOf(ImportedChapter(chapter.title, chapter.content)),
+            intro = "以《${original.snapshot.novel.title}》的《${chapter.title}》为起点，建立独立创作。" + chapter.summary.take(1200),
+        ))
+        saveStructure(copy.snapshot.copy(novel = copy.snapshot.novel.copy(genre = "创作副本")), copy.draft)
+    }
+
+    suspend fun appendOnlineCatalogue(novelId: String, sourceId: String, bookUrl: String, items: List<ImportedChapter>,
+        beforeCommit: suspend () -> Unit = {}): Int = db.withTransaction {
         val novel = loadStory(novelId)?.snapshot?.novel ?: error("书籍已移除")
         check(novel.sourceId == sourceId && novel.sourceBookUrl == bookUrl) { "书籍来源已变化，未更新目录" }
-        require(items.all { it.sourceUrl.isNotBlank() } && items.map { it.sourceUrl }.distinct().size == items.size) { "新目录包含空地址或重复章节，未更新原目录" }
         val existing = chapterDrafts(novelId)
-        check(existing.all { it.sourceUrl.isNotBlank() } && items.size >= existing.size &&
-            existing.indices.all { existing[it].sourceUrl == items[it].sourceUrl }) { "目录顺序已变化，已保留原目录与正文" }
-        val added = items.drop(existing.size)
-        if (added.isNotEmpty()) appendImportedChaptersInTransaction(novelId, added)
-        added.size
+        val plan = planOnlineCatalogueV53(existing, items)
+        if (plan.added.isEmpty()) return@withTransaction 0
+        // Allocate only new stable chapter keys. Existing chapter IDs, bodies, versions,
+        // annotations and progress continue to refer to exactly the same chapters.
+        appendImportedChaptersInTransaction(novelId, plan.added)
+        val allocated = chapterDrafts(novelId).associateBy { it.sourceUrl }
+        val ordered = plan.items.mapIndexed { index, item ->
+            allocated.getValue(item.sourceUrl).copy(readingOrder = index + 1)
+        }
+        val now = System.currentTimeMillis()
+        ordered.forEach { chapterStateDao.upsert(it.toEntity(now)) }
+        val updated = loadStory(novelId) ?: error("书籍已移除")
+        val current = ordered.single { it.chapterNumber == updated.draft.chapterNumber }
+        persistCurrent(updated.snapshot, current, now)
+        beforeCommit()
+        plan.added.size
     }
 
     suspend fun chapterDrafts(novelId: String): List<ChapterDraft> {
@@ -364,7 +389,7 @@ class StoryProjectManager(context: Context) {
             chapterStateDao.upsert(loaded.draft.toEntity(now))
             existing[loaded.draft.chapterNumber] = loaded.draft
         }
-        return existing.values.sortedBy { it.chapterNumber }
+        return existing.values.sortedBy { it.readingOrder }
     }
 
     suspend fun selectChapter(novelId: String, chapterNumber: Int): PersistedStory? {
@@ -449,13 +474,13 @@ class StoryProjectManager(context: Context) {
      * Deletes the last chapter only. Middle deletion would renumber memory/timeline/progress keys.
      * The draft is read through the chunked loader so even a very large final chapter is safe.
      */
-    suspend fun deleteLastChapter(novelId: String): PersistedStory? {
-        val loaded = loadStory(novelId) ?: return null
+    suspend fun deleteLastChapter(novelId: String): PersistedStory? = db.withTransaction {
+        val loaded = loadStory(novelId) ?: return@withTransaction null
         val outline = effectiveOutline(loaded.snapshot)
-        val chapters = outline.filter { it.level == OutlineLevel.CHAPTER }
+        val chapters = chapterDrafts(novelId)
         check(chapters.size > 1) { "至少要保留一章" }
-        val last = chapters.maxBy { it.order }
-        val removedDraft = loadChapterDraftCursorSafe(novelId, last.order)
+        val removedDraft = chapters.last()
+        val last = outline.single { it.level == OutlineLevel.CHAPTER && it.order == removedDraft.chapterNumber }
         val remaining = outline.filterNot { it.id == last.id }
         chapterStateDao.delete(novelId, last.order)
         db.openHelper.writableDatabase.execSQL(
@@ -466,19 +491,20 @@ class StoryProjectManager(context: Context) {
             "DELETE FROM memory_chunks WHERE novelId = ? AND sourceType = 'CHAPTER' AND chapterNumber = ?",
             arrayOf<Any?>(novelId, last.order),
         )
-        val current = loaded.snapshot.novel.currentChapter.coerceAtMost(last.order - 1).coerceAtLeast(1)
+        val current = if (loaded.snapshot.novel.currentChapter == last.order) chapters[chapters.lastIndex - 1].chapterNumber
+            else loaded.snapshot.novel.currentChapter
         val draft = loadChapterDraftCursorSafe(novelId, current)
             ?: loaded.draft.takeIf { it.chapterNumber != last.order }
             ?: error("找不到可切换的章节")
         val snapshot = loaded.snapshot.copy(
             novel = loaded.snapshot.novel.copy(
                 currentChapter = current,
-                currentWords = (loaded.snapshot.novel.currentWords - (removedDraft?.content?.length ?: 0)).coerceAtLeast(0),
+                currentWords = (loaded.snapshot.novel.currentWords - removedDraft.content.length).coerceAtLeast(0),
             ),
             outline = remaining,
             activeOutline = activeChain(remaining, current),
         )
-        return saveStructure(snapshot, draft)
+        saveStructure(snapshot, draft)
     }
 
     /** Appends an empty chapter after the last one. */

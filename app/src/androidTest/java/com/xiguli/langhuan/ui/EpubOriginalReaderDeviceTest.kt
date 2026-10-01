@@ -69,6 +69,11 @@ class EpubOriginalReaderDeviceTest {
             val result = JSONObject(evaluate(scenario, """JSON.stringify({
                 color:getComputedStyle(document.body).color,
                 css:getComputedStyle(document.querySelector('.author-box')).borderLeftWidth,
+                borderStyle:getComputedStyle(document.querySelector('.author-box')).borderLeftStyle,
+                borderReference:(() => { const probe=document.createElement('div');
+                    probe.style.cssText='position:absolute;visibility:hidden;border-left:6px solid transparent';
+                    document.body.appendChild(probe);const value=getComputedStyle(probe).borderLeftWidth;probe.remove();return value; })(),
+                dpr:window.devicePixelRatio,
                 font:Array.from(document.fonts).some(f => f.family.replaceAll('"','') === 'LanghuanFixture' && f.status === 'loaded') && document.fonts.check('24px LanghuanFixture'),
                 scripts:!!(window.bookScriptExecuted||window.bookEventExecuted||window.svgScriptExecuted),
                 protectedDocument:document.documentElement.getAttribute('data-langhuan-secure-readium') === '3',
@@ -78,7 +83,17 @@ class EpubOriginalReaderDeviceTest {
                 forbidden:document.querySelectorAll('iframe,script:not([integrity]),[onerror]').length
             })"""))
             assertEquals("rgb(51, 68, 85)", result.getString("color"))
-            assertEquals("6px", result.getString("css"))
+            // Blink snaps borders to device pixels. At this emulator's 2.625 DPR,
+            // a declared 6 CSS px can resolve to 15 physical px / 2.625 = 5.71429 CSS px.
+            // Compare against an independent, same-WebView 6px control rather than
+            // accepting arbitrary widths or changing publisher CSS to fit the test.
+            assertEquals("solid", result.getString("borderStyle"))
+            assertEquals(result.getString("borderReference"), result.getString("css"))
+            val measured = result.getString("css").removeSuffix("px").toDouble()
+            val dpr = result.getDouble("dpr")
+            assertTrue("Invalid WebView pixel ratio", dpr > 0.0)
+            assertTrue("Author border differs by more than one device pixel", kotlin.math.abs(6.0 - measured) * dpr <= 1.01)
+            assertTrue("Author border disappeared", measured > 0.0)
             assertTrue(result.getBoolean("font"))
             assertFalse(result.getBoolean("scripts"))
             assertTrue(result.getBoolean("protectedDocument"))
@@ -297,6 +312,15 @@ class EpubOriginalReaderDeviceTest {
     private fun waitForArt(scenario: ActivityScenario<EpubReaderActivity>) {
         waitForPage(scenario, "one.xhtml")
         waitUntil { evaluate(scenario, "!!(document.getElementById('png-art')?.complete && document.getElementById('png-art')?.naturalWidth===240 && document.getElementById('svg-art')?.complete && document.getElementById('svg-art')?.naturalWidth===240 && document.fonts.status==='loaded' && window.readium)") == "true" }
+        // Decoded images and JS can precede the first painted WebView frame. Require
+        // the real window to show all four original artwork colours before proceeding.
+        waitUntil {
+            val frame = instrumentation.uiAutomation.takeScreenshot() ?: return@waitUntil false
+            try {
+                listOf(Color.rgb(8,145,178), Color.rgb(234,88,12), Color.rgb(192,38,211), Color.rgb(101,163,13))
+                    .all { countPixels(frame,it) > 100 }
+            } finally { frame.recycle() }
+        }
     }
     private fun waitUntil(test: () -> Boolean) {
         val deadline = android.os.SystemClock.uptimeMillis() + 25_000

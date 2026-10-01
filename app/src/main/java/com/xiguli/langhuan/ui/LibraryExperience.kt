@@ -93,6 +93,10 @@ data class LibraryExperienceState(
     val readingChapter: ChapterDraft? = null,
     val loadingChapterNumber: Int? = null,
     val readerLoadError: String? = null,
+    val isRefreshingCatalogue: Boolean = false,
+    val catalogueMessage: String? = null,
+    val preparingWritingCopy: Boolean = false,
+    val writingCopyError: String? = null,
     val identitySuggestion: BookIdentitySuggestion? = null,
     val isBusy: Boolean = false,
     val workspaceStoryId: String? = null,
@@ -114,6 +118,10 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
     val state: StateFlow<LibraryExperienceState> = _state.asStateFlow()
     private var activeProviderId: String? = null
     private var onlineReadJob: Job? = null
+    private var catalogueJob: Job? = null
+    private var writingCopyJob: Job? = null
+    private var catalogueGeneration = 0L
+    private var writingCopyGeneration = 0L
 
     init {
         viewModelScope.launch {
@@ -153,6 +161,9 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
     fun openBook(id: String) {
         if (_state.value.isBusy) return
         onlineReadJob?.cancel()
+        catalogueGeneration++
+        catalogueJob?.cancel()
+        cancelWritingCopy()
         viewModelScope.launch {
             _state.update { it.copy(isBusy = true, error = null, identitySuggestion = null) }
             runCatching {
@@ -161,16 +172,80 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
                 require(chapters.isNotEmpty()) { "这本小说没有可读取的章节" }
                 book to chapters
             }.onSuccess { (book, chapters) ->
-                _state.update { it.copy(openedBook = book, chapters = chapters, readingChapter = null, loadingChapterNumber = null, readerLoadError = null, isBusy = false, workspaceStoryId = id) }
+                _state.update { it.copy(openedBook = book, chapters = chapters, readingChapter = null, loadingChapterNumber = null, readerLoadError = null, isRefreshingCatalogue = false, catalogueMessage = null, isBusy = false, workspaceStoryId = id) }
             }.onFailure { e ->
                 _state.update { it.copy(isBusy = false, error = e.message ?: "打开作品失败") }
             }
         }
     }
 
+    /** Explicit catalogue repair does not download bodies or change the current chapter key. */
+    fun refreshOnlineCatalogue() {
+        val book = _state.value.openedBook ?: return
+        if (catalogueJob?.isActive == true) return
+        val request = ++catalogueGeneration
+        catalogueJob = viewModelScope.launch {
+            _state.update { it.copy(isRefreshingCatalogue = true, catalogueMessage = null) }
+            try {
+                check(book.sourceId.isNotBlank()) { "旧版目录缺少逐章来源，已保留原目录与正文；请先核对书源关联" }
+                val source = withContext(Dispatchers.IO) { BookSourceStoreV36.load(getApplication()).firstOrNull { it.id == book.sourceId } }
+                    ?: error("原书源已移除，请先恢复对应书源")
+                val remote = OnlineBookV36(source.id, source.name, book.title, "", "", "", "", book.sourceBookUrl)
+                val catalogue = kotlinx.coroutines.runInterruptible(Dispatchers.IO) { loadBookCatalogueV50(source, remote) }
+                currentCoroutineContext().ensureActive()
+                val (added, chapters) = withContext(Dispatchers.IO) {
+                    val added = projects.appendOnlineCatalogue(book.id, source.id, book.sourceBookUrl,
+                        catalogue.chapters.map { com.xiguli.langhuan.data.ImportedChapter(it.title, "", it.url) })
+                    added to projects.chapterDrafts(book.id)
+                }
+                _state.update { current ->
+                    if (request != catalogueGeneration || current.openedBook?.id != book.id) current else current.copy(chapters = chapters,
+                        readingChapter = chapters.firstOrNull { it.id == current.readingChapter?.id } ?: current.readingChapter,
+                        catalogueMessage = if (added > 0) "目录已补入 $added 章，原正文、书签与阅读位置已保留" else "已重新读取目录，未发现新增章节")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _state.update { if (request == catalogueGeneration && it.openedBook?.id == book.id) it.copy(catalogueMessage = "目录未修改：${failure.message.orEmpty()}") else it }
+            } finally {
+                _state.update { if (request == catalogueGeneration && it.openedBook?.id == book.id) it.copy(isRefreshingCatalogue = false) else it }
+            }
+        }
+    }
+
+    fun prepareWritingCopy(onReady: (String) -> Unit) {
+        val book = _state.value.openedBook ?: return
+        val chapter = _state.value.readingChapter ?: return
+        if (writingCopyJob?.isActive == true) return
+        _state.update { it.copy(preparingWritingCopy = true, writingCopyError = null) }
+        val request = ++writingCopyGeneration
+        writingCopyJob = viewModelScope.launch {
+            try {
+                val created = withContext(Dispatchers.IO) { projects.createWritingCopy(book.id, chapter.chapterNumber, chapter.id) }
+                currentCoroutineContext().ensureActive()
+                if (request == writingCopyGeneration && _state.value.openedBook?.id == book.id) onReady(created.snapshot.novel.id)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _state.update { if (request == writingCopyGeneration && it.openedBook?.id == book.id) it.copy(writingCopyError = failure.message ?: "创建副本失败，原书未改动") else it }
+            } finally {
+                _state.update { if (request == writingCopyGeneration && it.openedBook?.id == book.id) it.copy(preparingWritingCopy = false) else it }
+            }
+        }
+    }
+
+    fun cancelWritingCopy() {
+        writingCopyGeneration++
+        writingCopyJob?.cancel()
+        _state.update { it.copy(preparingWritingCopy = false, writingCopyError = null) }
+    }
+
     fun closeBook() {
         onlineReadJob?.cancel()
-        _state.update { it.copy(openedBook = null, chapters = emptyList(), readingChapter = null, loadingChapterNumber = null, readerLoadError = null, identitySuggestion = null) }
+        catalogueGeneration++
+        catalogueJob?.cancel()
+        cancelWritingCopy()
+        _state.update { it.copy(openedBook = null, chapters = emptyList(), readingChapter = null, loadingChapterNumber = null, readerLoadError = null, isRefreshingCatalogue = false, catalogueMessage = null, identitySuggestion = null) }
     }
 
     fun openReader(chapterNumber: Int) {
@@ -212,14 +287,14 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
 
     fun readPrevious() {
         val current = _state.value.readingChapter ?: return
-        _state.value.chapters.firstOrNull { it.chapterNumber == current.chapterNumber - 1 }?.let { chapter ->
+        _state.value.chapters.let { it.getOrNull(it.indexOfFirst { chapter -> chapter.id == current.id } - 1) }?.let { chapter ->
             _state.update { it.copy(readingChapter = chapter) }
         }
     }
 
     fun readNext() {
         val current = _state.value.readingChapter ?: return
-        _state.value.chapters.firstOrNull { it.chapterNumber == current.chapterNumber + 1 }?.let { chapter ->
+        _state.value.chapters.let { it.getOrNull(it.indexOfFirst { chapter -> chapter.id == current.id } + 1) }?.let { chapter ->
             _state.update { it.copy(readingChapter = chapter) }
         }
     }
@@ -454,6 +529,8 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
             targetWords = snapshot.novel.targetWords,
             currentChapter = snapshot.novel.currentChapter,
             updatedAt = row.updatedAt,
+            sourceId = snapshot.novel.sourceId,
+            sourceBookUrl = snapshot.novel.sourceBookUrl,
         )
         _state.update { it.copy(openedBook = book) }
     }
@@ -841,8 +918,8 @@ private fun BookDetail(
 private fun NovelReader(state: LibraryExperienceState, onBack: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit) {
     val chapter = state.readingChapter ?: return
     var fontSize by remember { mutableFloatStateOf(19f) }
-    val hasPrevious = state.chapters.any { it.chapterNumber == chapter.chapterNumber - 1 }
-    val hasNext = state.chapters.any { it.chapterNumber == chapter.chapterNumber + 1 }
+    val hasPrevious = state.chapters.indexOfFirst { it.id == chapter.id } > 0
+    val hasNext = state.chapters.indexOfFirst { it.id == chapter.id } in 0 until state.chapters.lastIndex
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -59,12 +59,12 @@ import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -149,8 +149,13 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
     private val _state = MutableStateFlow(NovelCharacterDistillUiStateV3())
     val state: StateFlow<NovelCharacterDistillUiStateV3> = _state.asStateFlow()
 
+    private val requests = StoryRequestScope()
+    private var previewOwner: StoryRequestScope.Ticket? = null
+
     fun open(novelId: String) {
         if (novelId.isBlank() || _state.value.novelId == novelId) return
+        requests.open(novelId)
+        previewOwner = null
         val archive = loadArchive(novelId)
         _state.value = NovelCharacterDistillUiStateV3(
             novelId = novelId,
@@ -165,35 +170,39 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
         mode: NovelCharacterDistillModeV3,
         aiReady: Boolean,
     ) {
-        if (_state.value.distilling) return
+        if (_state.value.novelId != book.id || _state.value.distilling) return
         if (!aiReady) {
             _state.update { it.copy(error = "小说人物蒸馏需要先配置 AI") }
             return
         }
-        val usable = chapters.filter { it.content.isNotBlank() }.sortedBy { it.chapterNumber }
+        val usable = chapters.filter { it.novelId == book.id && it.content.isNotBlank() }.sortedBy { it.readingOrder }
         if (usable.isEmpty()) {
             _state.update { it.copy(error = "这本书还没有可蒸馏的章节正文") }
             return
         }
 
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    distilling = true,
-                    preview = emptyList(),
-                    progressText = if (mode == NovelCharacterDistillModeV3.DEEP) "正在准备深度蒸馏…" else "正在准备快速蒸馏…",
-                    notice = null,
-                    error = null,
-                )
-            }
+        val request = requests.begin("distill")
+        previewOwner = null
+        updateRequest(request) {
+            it.copy(
+                distilling = true,
+                preview = emptyList(),
+                progressText = if (mode == NovelCharacterDistillModeV3.DEEP) "正在准备深度蒸馏…" else "正在准备快速蒸馏…",
+                notice = null,
+                error = null,
+            )
+        }
+        requests.launch(viewModelScope, request) {
             runCatching {
                 val gateway = activeGateway()
+                requests.ensureCurrent(request)
                 val batches = buildNovelCharacterBatchesV3(usable, mode)
                 var merged = emptyList<NovelCharacterProfileV3>()
                 batches.forEachIndexed { index, batch ->
+                    requests.ensureCurrent(request)
                     val first = batch.chapterNumbers.firstOrNull() ?: 0
                     val last = batch.chapterNumbers.lastOrNull() ?: first
-                    _state.update {
+                    updateRequest(request) {
                         it.copy(progressText = "正在分析 ${index + 1}/${batches.size} · 第 $first-$last 章")
                     }
                     val result = gateway.generate(
@@ -209,6 +218,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                             """.trimIndent(),
                         )
                     )
+                    requests.ensureCurrent(request)
                     merged = mergeNovelCharacterProfilesV3(
                         merged,
                         parseNovelCharacterBlocksV3(
@@ -228,7 +238,9 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                     )
                     .take(MAX_NOVEL_CHARACTERS_V3)
             }.onSuccess { profiles ->
-                _state.update {
+                requests.ensureCurrent(request)
+                previewOwner = request
+                updateRequest(request) {
                     it.copy(
                         distilling = false,
                         progressText = "",
@@ -237,7 +249,8 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                     )
                 }
             }.onFailure { error ->
-                _state.update {
+                if (error is CancellationException) throw error
+                updateRequest(request) {
                     it.copy(
                         distilling = false,
                         progressText = "",
@@ -250,19 +263,28 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
 
     fun savePreview(ids: Set<String>) {
         val current = _state.value
+        val owner = previewOwner ?: return
+        if (!requests.isCurrent(owner) || current.novelId != owner.novelId) return
         val selected = current.preview.filter { it.id in ids }
         if (selected.isEmpty()) return
         val merged = mergeNovelCharacterProfilesV3(current.profiles, selected)
-        saveArchive(NovelCharacterArchiveV3(current.novelId, merged, current.chats))
-        _state.update {
+        saveArchive(NovelCharacterArchiveV3(owner.novelId, merged, current.chats))
+        previewOwner = null
+        updateRequest(owner) {
             it.copy(profiles = merged, preview = emptyList(), notice = "已保存 ${selected.size} 个人物", error = null)
         }
     }
 
-    fun discardPreview() = _state.update { it.copy(preview = emptyList()) }
+    fun discardPreview() {
+        previewOwner = null
+        requests.cancel("distill")
+        _state.update { it.copy(preview = emptyList(), distilling = false, progressText = "") }
+    }
 
     fun deleteProfile(id: String) {
         val current = _state.value
+        if (current.novelId.isBlank() || current.profiles.none { it.id == id }) return
+        cancelChatFor(id)
         val profiles = current.profiles.filterNot { it.id == id }
         val chats = current.chats - id
         saveArchive(NovelCharacterArchiveV3(current.novelId, profiles, chats))
@@ -275,14 +297,16 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
         val profile = current.profiles.firstOrNull { it.id == profileId } ?: return
         if (clean.isBlank() || current.chatting) return
 
+        val request = requests.begin("chat", profileId)
         val userMessage = NovelCharacterChatMessageV3(role = "user", text = clean)
         val optimistic = current.chats[profileId].orEmpty() + userMessage
-        _state.update { it.copy(chats = it.chats + (profileId to optimistic), chatting = true, error = null) }
-        persistCurrent()
+        updateRequest(request) { it.copy(chats = it.chats + (profileId to optimistic), chatting = true, error = null) }
+        persistCurrent(request)
 
-        viewModelScope.launch {
+        requests.launch(viewModelScope, request) {
             runCatching {
                 val gateway = activeGateway()
+                requests.ensureCurrent(request)
                 val recent = optimistic.takeLast(20).joinToString("\n") { message ->
                     if (message.role == "user") "用户：${message.text}" else "${profile.name}：${message.text}"
                 }
@@ -304,21 +328,33 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                     )
                 ).content.trim().ifBlank { error("AI 没有返回角色回复") }
             }.onSuccess { reply ->
+                requests.ensureCurrent(request)
                 val assistant = NovelCharacterChatMessageV3(role = "assistant", text = reply)
-                _state.update { state ->
+                updateRequest(request) { state ->
                     val messages = state.chats[profileId].orEmpty() + assistant
                     state.copy(chats = state.chats + (profileId to messages), chatting = false)
                 }
-                persistCurrent()
+                persistCurrent(request)
             }.onFailure { error ->
-                _state.update { it.copy(chatting = false, error = error.message ?: "角色回复失败") }
+                if (error is CancellationException) throw error
+                updateRequest(request) { it.copy(chatting = false, error = error.message ?: "角色回复失败") }
             }
         }
     }
 
     fun clearChat(profileId: String) {
+        val current = _state.value
+        if (current.novelId.isBlank() || current.profiles.none { it.id == profileId }) return
+        cancelChatFor(profileId)
         _state.update { it.copy(chats = it.chats + (profileId to emptyList()), notice = "聊天记录已清空") }
-        persistCurrent()
+        persistCurrent(current.novelId)
+    }
+
+    private fun cancelChatFor(profileId: String) {
+        if (requests.current("chat")?.profileId == profileId) {
+            requests.cancel("chat")
+            _state.update { it.copy(chatting = false) }
+        }
     }
 
     fun clearFeedback() = _state.update { it.copy(notice = null, error = null) }
@@ -338,7 +374,10 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
     private fun loadArchive(novelId: String): NovelCharacterArchiveV3 {
         val file = archiveFile(novelId)
         if (!file.isFile) return NovelCharacterArchiveV3(novelId)
-        return runCatching { json.decodeFromString(NovelCharacterArchiveV3.serializer(), file.readText()) }
+        return runCatching {
+            json.decodeFromString(NovelCharacterArchiveV3.serializer(), file.readText())
+                .takeIf { it.novelId == novelId } ?: NovelCharacterArchiveV3(novelId)
+        }
             .getOrElse { NovelCharacterArchiveV3(novelId) }
     }
 
@@ -346,10 +385,24 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
         runCatching { archiveFile(archive.novelId).writeText(json.encodeToString(NovelCharacterArchiveV3.serializer(), archive)) }
     }
 
-    private fun persistCurrent() {
+    private inline fun updateRequest(request: StoryRequestScope.Ticket, transform: (NovelCharacterDistillUiStateV3) -> NovelCharacterDistillUiStateV3) {
+        _state.update { state ->
+            if (requests.isCurrent(request) && state.novelId == request.novelId &&
+                (request.profileId == null || state.profiles.any { it.id == request.profileId })
+            ) transform(state) else state
+        }
+    }
+
+    private fun persistCurrent(request: StoryRequestScope.Ticket) {
+        if (!requests.isCurrent(request)) return
+        if (request.profileId != null && _state.value.profiles.none { it.id == request.profileId }) return
+        persistCurrent(request.novelId)
+    }
+
+    private fun persistCurrent(novelId: String) {
         val current = _state.value
-        if (current.novelId.isBlank()) return
-        saveArchive(NovelCharacterArchiveV3(current.novelId, current.profiles, current.chats))
+        if (novelId.isBlank() || current.novelId != novelId) return
+        saveArchive(NovelCharacterArchiveV3(novelId, current.profiles, current.chats))
     }
 }
 
@@ -388,7 +441,7 @@ internal fun buildNovelCharacterBatchesV3(
     chapters: List<ChapterDraft>,
     mode: NovelCharacterDistillModeV3,
 ): List<NovelCharacterBatchV3> {
-    val ordered = chapters.filter { it.content.isNotBlank() }.sortedBy { it.chapterNumber }
+    val ordered = chapters.filter { it.content.isNotBlank() }.sortedBy { it.readingOrder }
     if (ordered.isEmpty()) return emptyList()
 
     val selected = if (mode == NovelCharacterDistillModeV3.DEEP || ordered.size <= QUICK_CHAPTER_COUNT_V3) {
@@ -591,9 +644,11 @@ fun TavernNovelCharacterExperienceV3(
     aiReady: Boolean,
     onAiSetup: () -> Unit,
     onBack: (() -> Unit)? = null,
+    onLoadCurrentChapter: (() -> Unit)? = null,
 ) {
     val vm: TavernNovelCharacterViewModelV3 = viewModel()
-    val state by vm.state.collectAsStateWithLifecycle()
+    val observedState by vm.state.collectAsStateWithLifecycle()
+    val state = observedState.takeIf { it.novelId == book.id } ?: NovelCharacterDistillUiStateV3(novelId = book.id)
     val snackbar = remember { SnackbarHostState() }
     var screen by rememberSaveable(book.id) { mutableStateOf(NovelCharacterScreenV3.LIBRARY) }
     var selectedId by rememberSaveable(book.id) { mutableStateOf<String?>(null) }
@@ -608,6 +663,12 @@ fun TavernNovelCharacterExperienceV3(
     }
 
     val selected = state.profiles.firstOrNull { it.id == selectedId }
+    val currentChapter = libraryState.readingChapter?.takeIf { it.novelId == book.id }
+    val sourceChapters = libraryState.chapters.filter { it.novelId == book.id }.let { chapters ->
+        if (currentChapter?.content?.isNotBlank() == true) {
+            chapters.filterNot { it.id == currentChapter.id } + currentChapter
+        } else chapters
+    }
     // One back path for the whole area: sub-pages step back inside, the library leaves.
     BackHandler(enabled = screen != NovelCharacterScreenV3.LIBRARY || onBack != null) {
         when (screen) {
@@ -627,14 +688,18 @@ fun TavernNovelCharacterExperienceV3(
         when (screen) {
             NovelCharacterScreenV3.LIBRARY -> NovelCharacterLibraryV3(
                 book = book,
-                chapterCount = libraryState.chapters.count { it.content.isNotBlank() },
+                chapterCount = sourceChapters.count { it.content.isNotBlank() },
                 state = state,
-                onQuick = { if (aiReady) vm.distill(book, libraryState.chapters, NovelCharacterDistillModeV3.QUICK, true) else onAiSetup() },
-                onDeep = { if (aiReady) vm.distill(book, libraryState.chapters, NovelCharacterDistillModeV3.DEEP, true) else onAiSetup() },
+                onQuick = { if (aiReady) vm.distill(book, sourceChapters, NovelCharacterDistillModeV3.QUICK, true) else onAiSetup() },
+                onDeep = { if (aiReady) vm.distill(book, sourceChapters, NovelCharacterDistillModeV3.DEEP, true) else onAiSetup() },
                 onOpen = { profile -> selectedId = profile.id; screen = NovelCharacterScreenV3.DETAIL },
                 onChatImport = { screen = NovelCharacterScreenV3.CHAT_IMPORT },
                 onStory = { screen = NovelCharacterScreenV3.STORY },
                 onBack = onBack,
+                onLoadCurrentChapter = onLoadCurrentChapter,
+                currentChapterNeedsLoading = currentChapter?.content.isNullOrBlank(),
+                loadingChapterNumber = libraryState.loadingChapterNumber,
+                readerLoadError = libraryState.readerLoadError,
             )
             NovelCharacterScreenV3.DETAIL -> if (selected != null) {
                 NovelCharacterDetailV3(
@@ -697,6 +762,10 @@ private fun NovelCharacterLibraryV3(
     onChatImport: () -> Unit,
     onStory: () -> Unit,
     onBack: (() -> Unit)? = null,
+    onLoadCurrentChapter: (() -> Unit)? = null,
+    currentChapterNeedsLoading: Boolean = false,
+    loadingChapterNumber: Int? = null,
+    readerLoadError: String? = null,
 ) {
     val profileEnter = rememberEnterRegistryV31()
     LazyColumn(
@@ -723,6 +792,27 @@ private fun NovelCharacterLibraryV3(
                         }
                     }
                     Spacer(Modifier.height(16.dp))
+                    if (chapterCount == 0 && (book.sourceId.isNotBlank() || book.sourceBookUrl.isNotBlank())) {
+                        Text(
+                            "尚无可分析正文，先加载当前章；更多章节可在书架离线缓存",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LocalLanghuanUiTokens.current.mutedForeground,
+                        )
+                        if (!readerLoadError.isNullOrBlank()) {
+                            Text(readerLoadError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                        }
+                        OutlinedButton(
+                            onClick = { onLoadCurrentChapter?.invoke() },
+                            enabled = onLoadCurrentChapter != null && currentChapterNeedsLoading && loadingChapterNumber == null,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                        ) {
+                            Text(when {
+                                loadingChapterNumber != null -> "正在加载第 $loadingChapterNumber 章…"
+                                !readerLoadError.isNullOrBlank() -> "重试加载当前章"
+                                else -> "加载当前章正文"
+                            })
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(onClick = onQuick, enabled = !state.distilling && chapterCount > 0, modifier = Modifier.weight(1f).height(54.dp), shape = RoundedCornerShape(18.dp)) {
                             Icon(Icons.Rounded.Speed, null); Spacer(Modifier.width(6.dp)); Text("快速蒸馏")
@@ -762,7 +852,7 @@ private fun NovelCharacterLibraryV3(
                     Column(Modifier.fillMaxWidth().padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Rounded.Groups, null, Modifier.size(38.dp), tint = LocalLanghuanUiTokens.current.primary)
                         Text("从小说正文建立人物库", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-                        Text("快速蒸馏先看主要人物；深度蒸馏逐段覆盖全部正文。", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 5.dp))
+                        Text("快速蒸馏先看主要人物；深度蒸馏逐段覆盖已加载的正文。", style = MaterialTheme.typography.bodySmall, color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 5.dp))
                     }
                 }
             }

@@ -239,6 +239,8 @@ data class ChapterDraft(
     val lastCommittedRunId: String = "",
     /** Stable online identity; a blank body means it has not been cached yet. */
     val sourceUrl: String = "",
+    /** Reading position in the catalogue. chapterNumber remains the stable storage/bookmark key. */
+    val readingOrder: Int = chapterNumber,
 )
 
 @Serializable

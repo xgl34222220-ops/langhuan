@@ -250,7 +250,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
             if (libraryState.readingChapter != null) return@LaunchedEffect
         }
         val book = libraryState.openedBook?.takeIf { it.id == id } ?: return@LaunchedEffect
-        val chapters = libraryState.chapters.sortedBy { it.chapterNumber }
+        val chapters = libraryState.chapters.sortedBy { it.readingOrder }
         if (chapters.isNotEmpty()) {
             val saved = ReaderProgressStoreV11.load(appContext, id, book.currentChapter.coerceAtLeast(1))
             val requestedEditorChapter = editorChapter?.takeIf { targetRoute == RootRouteV4.BOOK }
@@ -448,6 +448,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                             aiReady = studioState.provider.ready,
                             onAiSetup = { openAiSetup(RootRouteV4.TAVERN) },
                             onAdopted = { libraryVm.openBook(book.id) },
+                            onLoadCurrentChapter = {
+                                (libraryState.readingChapter ?: libraryState.chapters.minByOrNull { it.readingOrder })
+                                    ?.let { libraryVm.openReader(it.chapterNumber) }
+                            },
                             onBack = {
                                 tavernStoryId = null
                                 libraryVm.closeBook()

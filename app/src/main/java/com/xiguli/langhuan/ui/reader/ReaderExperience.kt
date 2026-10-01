@@ -193,7 +193,7 @@ private fun ReaderExperiencePage(
             migrateReaderTypographyV14(it, book.id)
         }
     }
-    val ordered = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } }
+    val ordered = remember(state.chapters) { state.chapters.sortedBy { it.readingOrder } }
     val chapterIndex = ordered.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0)
     val previous = ordered.getOrNull(chapterIndex - 1)
     val next = ordered.getOrNull(chapterIndex + 1)
@@ -1099,7 +1099,7 @@ private fun ReaderDirectorySheet(bookId: String, state: LibraryExperienceState, 
     var descending by remember { mutableStateOf(false) }
     val original = remember(bookId) { EpubOriginalTocV1.load(context, bookId) }
     val originalEntries = remember(original, query, descending) { flattenReaderToc(original).filter { query.isBlank() || it.title.contains(query, true) }.let { if (descending) it.asReversed() else it } }
-    val chapters = remember(state.chapters, query, descending) { state.chapters.sortedBy { it.chapterNumber }.filter { query.isBlank() || it.title.contains(query, true) }.let { if (descending) it.asReversed() else it } }
+    val chapters = remember(state.chapters, query, descending) { state.chapters.sortedBy { it.readingOrder }.filter { query.isBlank() || it.title.contains(query, true) }.let { if (descending) it.asReversed() else it } }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = t.background) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

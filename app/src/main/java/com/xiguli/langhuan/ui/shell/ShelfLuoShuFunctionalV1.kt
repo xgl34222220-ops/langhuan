@@ -525,7 +525,7 @@ private fun LuoShelfHomeV1(books: List<ReaderBookUi>, openingBookId: String?, on
                         val index = if (bookStats.second >= 0) bookStats.second else progress.chapterNumber - 1
                         val bookFraction = if (total > 0) ((index + progress.positionFraction) / total).coerceIn(0f, 1f) else progress.positionFraction
                         Text(
-                            if (total > 0) "第 ${progress.chapterNumber} 章 · 已读 ${(bookFraction * 100).toInt()}%" else "第 ${progress.chapterNumber} 章",
+                            if (total > 0) "第 ${index + 1} 章 · 已读 ${(bookFraction * 100).toInt()}%" else "第 ${progress.chapterNumber} 章",
                             Modifier.padding(top = 7.dp),
                             color = t.mutedForeground,
                             style = androidx.compose.material3.MaterialTheme.typography.bodySmall,

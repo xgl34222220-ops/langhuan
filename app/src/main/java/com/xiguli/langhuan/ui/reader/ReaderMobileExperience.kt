@@ -221,7 +221,7 @@ private fun MobileReaderPageV3(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val prefs = remember(book.id) { context.getSharedPreferences("reader_mobile_settings_v3", Context.MODE_PRIVATE) }
-    val ordered = remember(state.chapters) { state.chapters.sortedBy { it.chapterNumber } }
+    val ordered = remember(state.chapters) { state.chapters.sortedBy { it.readingOrder } }
     val chapterIndex = ordered.indexOfFirst { it.id == chapter.id }.coerceAtLeast(0)
     val previous = ordered.getOrNull(chapterIndex - 1)
     val next = ordered.getOrNull(chapterIndex + 1)
