@@ -227,6 +227,132 @@ class EpubOriginalSafetyTest {
         assertFalse(store.hasOriginal("new-book"))
     }
 
+    private fun bytesUnder(directory: File): Map<String, List<Byte>> = directory.walkTopDown()
+        .filter { it.isFile }.associate { it.relativeTo(directory).path to it.readBytes().toList() }
+
+    @Test fun cancellationAfterOriginalCopyRemovesOnlyItsUnpublishedStaging() {
+        val directory = root()
+        try {
+            val store = EpubOriginalStore(directory)
+            var reachedCopiedOriginal = false
+            assertThrows(InterruptedException::class.java) {
+                store.stage(fixture().inputStream()) {
+                    if (directory.walkTopDown().any { it.isFile && it.name.endsWith(".epub") && !it.name.contains(".safe-") }) {
+                        reachedCopiedOriginal = true
+                        throw InterruptedException("cancel during rendering")
+                    }
+                }
+            }
+            assertTrue(reachedCopiedOriginal)
+            assertTrue(directory.listFiles()!!.isEmpty())
+            assertFalse(store.hasOriginal("new"))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun dismissingPreparedImportPreservesAllExistingBytesAndLocations() {
+        val directory = root()
+        try {
+            val store = EpubOriginalStore(directory)
+            val old = store.prepare(fixture().inputStream())
+            store.associate("old", old); store.saveLocator("old", old.sha256, "kept locator")
+            val before = bytesUnder(directory)
+            val staged = store.stage(fixture("original-fixed.epub").inputStream())
+            assertTrue(staged.prepared.original.isFile)
+            assertFalse(store.hasOriginal("new"))
+            staged.close(); staged.close()
+            assertEquals(before, bytesUnder(directory))
+            assertFalse(staged.prepared.original.exists())
+            assertEquals("kept locator", store.loadLocator("old", old.sha256))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun confirmedImportUsesCanonicalFilesAfterStagingIsClosed() {
+        val directory = root()
+        try {
+            val store = EpubOriginalStore(directory)
+            val bytes = fixture()
+            val staged = store.stage(bytes.inputStream())
+            val published = store.associate("new", staged.prepared)
+            assertEquals(directory.canonicalFile, published.original.parentFile.canonicalFile)
+            assertNotEquals(staged.prepared.original, published.original)
+            staged.close()
+            assertArrayEquals(bytes, store.original("new")!!.readBytes())
+            assertTrue(store.open("new").rendering.isFile)
+            assertTrue(directory.listFiles()!!.none { it.isDirectory || it.name.endsWith(".pending") })
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun concurrentEqualImportsDoNotOwnEachOthersStagingOrPublishedOriginal() {
+        val directory = root()
+        try {
+            val store = EpubOriginalStore(directory)
+            val first = store.stage(fixture().inputStream())
+            val second = store.stage(fixture().inputStream())
+            store.associate("first", first.prepared)
+            first.close()
+            assertTrue(second.prepared.original.isFile)
+            store.associate("second", second.prepared)
+            second.close()
+            assertEquals(store.digest("first"), store.digest("second"))
+            assertArrayEquals(fixture(), store.open("first").original.readBytes())
+            assertArrayEquals(fixture(), store.open("second").original.readBytes())
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun cancelledPublicationKeepsPreviousAssociationAndRemovesOwnedCopy() {
+        val directory = root()
+        try {
+            val store = EpubOriginalStore(directory)
+            val old = store.prepare(fixture().inputStream())
+            store.associate("book", old); store.saveLocator("book", old.sha256, "position")
+            val before = bytesUnder(directory)
+            store.stage(fixture("original-fixed.epub").inputStream()).use { staged ->
+                assertThrows(InterruptedException::class.java) {
+                    store.associate("book", staged.prepared) {
+                        if (directory.listFiles()!!.any { it.name.startsWith("adopt-") }) throw InterruptedException("copy cancelled")
+                    }
+                }
+                assertEquals(old.sha256, store.digest("book"))
+            }
+            assertEquals(before, bytesUnder(directory))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun changedStagedOriginalCannotReplacePreviousBook() {
+        val directory = root()
+        try {
+            val store = EpubOriginalStore(directory)
+            val old = store.prepare(fixture().inputStream())
+            store.associate("book", old)
+            val before = bytesUnder(directory)
+            store.stage(fixture("original-fixed.epub").inputStream()).use { staged ->
+                staged.prepared.original.appendText("synthetic changed bytes")
+                assertThrows(IllegalArgumentException::class.java) { store.associate("book", staged.prepared) }
+            }
+            assertEquals(before, bytesUnder(directory))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun stagingCleanupDoesNotFollowAnExternalSymlink() {
+        val directory = root(); val elsewhere = root()
+        try {
+            val sentinel = File(elsewhere, "keep.txt").apply { writeText("other book") }
+            val staged = EpubOriginalStore(directory).stage(fixture().inputStream())
+            Files.createSymbolicLink(File(staged.prepared.original.parentFile, "external").toPath(), elsewhere.toPath())
+            staged.close()
+            assertEquals("other book", sentinel.readText())
+            assertTrue(directory.listFiles()!!.isEmpty())
+        } finally { directory.deleteRecursively(); elsewhere.deleteRecursively() }
+    }
+
+    @Test fun invalidStagedArchiveLeavesNoImportedOriginalOrTemporaryDirectory() {
+        val directory = root()
+        try {
+            assertThrows(Exception::class.java) { EpubOriginalStore(directory).stage("invalid EPUB".byteInputStream()) }
+            assertTrue(directory.listFiles()!!.isEmpty())
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun finalSdkInjectionUsesSameOriginResourcesAndHashPinnedScripts() {
         val content = """<html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" href="https://readium_assets/readium/readium-css/ReadiumCSS-before.css"/><link rel="stylesheet" href="author.css"/><style>@font-face{font-family:x;src:url('https://readium_assets/readium/fonts/OpenDyslexic-Regular.otf')}</style><script src="https://readium_assets/readium/scripts/readium-reflowable.js"></script><script src="book.js"></script><script>window.bad=true</script></head><body><img src="art.png"/></body></html>"""
         val result = EpubWebContentPolicy.secureFinalHtml(content.toByteArray(), xhtml = true).toString(Charsets.UTF_8)

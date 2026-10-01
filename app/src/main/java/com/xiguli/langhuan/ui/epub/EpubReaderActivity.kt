@@ -67,7 +67,12 @@ class EpubReaderActivity : FragmentActivity() {
     private var savedLocator: String? = null
     private var savedDigest: String? = null
     private var loaded = false
-    private var associationCandidate: Publication? = null
+    private class AssociationCandidate(val staged: EpubOriginalStore.Staged, val opened: Publication) : java.io.Closeable {
+        override fun close() {
+            try { opened.close() } finally { staged.close() }
+        }
+    }
+    private var associationCandidate: AssociationCandidate? = null
     private var associationDialog: AlertDialog? = null
     private val locatorLock = Any()
     private var locatorSequence = 0L
@@ -180,54 +185,91 @@ class EpubReaderActivity : FragmentActivity() {
     }
 
     private fun prepareAssociation(uri: Uri) {
-        if (openJob?.isActive == true) return
+        if (openJob?.isActive == true || associationCandidate != null) return
         openJob = lifecycleScope.launch {
             originalButton.isEnabled = false
+            var staged: EpubOriginalStore.Staged? = null
+            var pending: AssociationCandidate? = null
+            try {
+                val candidate = withContext(Dispatchers.IO) {
+                    val scope = currentCoroutineContext()
+                    val owned = contentResolver.openInputStream(uri)?.use { input ->
+                        store.stage(input) { scope.ensureActive() }
+                    } ?: error("无法读取所选文件")
+                    staged = owned
+                    val opened = EpubPublicationSession.open(applicationContext, owned.prepared)
+                    AssociationCandidate(owned, opened).also { pending = it }
+                }
+                lifecycle.withResumed {
+                    associationCandidate = candidate
+                    associationDialog = AlertDialog.Builder(this@EpubReaderActivity)
+                        .setTitle("关联《${candidate.staged.prepared.archive.title.ifBlank { "未命名 EPUB" }}》？")
+                        .setMessage("请确认这是当前书籍的原文件。插画原版使用独立进度；已有文字、书签和文字版进度会保留。不同原文件的原版进度也分别保存。")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("关联并阅读") { _, _ ->
+                            // Transfer ownership before the dialog dismiss callback can clean it.
+                            associationCandidate = null
+                            adoptAssociation(candidate)
+                        }
+                        .setOnDismissListener {
+                            closeAssociationCandidate()
+                            associationDialog = null
+                            if (openJob?.isActive != true) originalButton.isEnabled = true
+                        }.show()
+                    pending = null
+                    staged = null
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Toast.makeText(this@EpubReaderActivity, error.message ?: "无法关联 EPUB", Toast.LENGTH_LONG).show()
+            } finally {
+                if (pending != null) runCatching { pending?.close() } else runCatching { staged?.close() }
+                originalButton.isEnabled = associationCandidate == null
+            }
+        }
+    }
+
+    private fun adoptAssociation(candidate: AssociationCandidate) {
+        originalButton.isEnabled = false
+        openJob = lifecycleScope.launch {
+            var published = false
+            var pendingPublication: Publication? = null
             try {
                 val pair = withContext(Dispatchers.IO) {
                     val scope = currentCoroutineContext()
-                    val book = contentResolver.openInputStream(uri)?.use { input ->
-                        store.prepare(input) { scope.ensureActive() }
-                    } ?: error("无法读取所选文件")
-                    val opened = EpubPublicationSession.open(applicationContext, book)
-                    associationCandidate = opened
-                    book to opened
+                    val canonical = store.associate(bookId, candidate.staged.prepared) { scope.ensureActive() }
+                    published = true
+                    // The reader must use canonical files, never files owned by the closed dialog.
+                    val opened = EpubPublicationSession.open(applicationContext, canonical)
+                    pendingPublication = opened
+                    canonical to opened
                 }
-                associationDialog = AlertDialog.Builder(this@EpubReaderActivity)
-                    .setTitle("关联《${pair.first.archive.title.ifBlank { "未命名 EPUB" }}》？")
-                    .setMessage("请确认这是当前书籍的原文件。插画原版使用独立进度；已有文字、书签和文字版进度会保留。不同原文件的原版进度也分别保存。")
-                    .setNegativeButton("取消") { _, _ -> associationCandidate?.close(); associationCandidate = null }
-                    .setOnCancelListener { associationCandidate?.close(); associationCandidate = null }
-                    .setPositiveButton("关联并阅读") { _, _ ->
-                        originalButton.isEnabled = false
-                        lifecycleScope.launch {
-                            var published = false
-                            try {
-                                withContext(Dispatchers.IO) {
-                                    store.associate(bookId, pair.first)
-                                    published = true
-                                }
-                                lifecycle.withResumed {
-                                    savedLocator = null; savedDigest = null
-                                    attach(pair.first, pair.second)
-                                    associationCandidate = null
-                                }
-                            } catch (error: Exception) {
-                                pair.second.close()
-                                associationCandidate = null
-                                if (error is CancellationException) throw error
-                                Toast.makeText(this@EpubReaderActivity,
-                                    if (published) "原文件已关联，重新打开书籍即可继续阅读" else "关联失败，原书未更改",
-                                    Toast.LENGTH_LONG).show()
-                            } finally { originalButton.isEnabled = true }
-                        }
-                    }.show()
+                lifecycle.withResumed {
+                    savedLocator = null; savedDigest = null
+                    attach(pair.first, pair.second)
+                    pendingPublication = null
+                }
             } catch (error: Exception) {
-                associationCandidate?.close(); associationCandidate = null
                 if (error is CancellationException) throw error
-                Toast.makeText(this@EpubReaderActivity, error.message ?: "无法关联 EPUB", Toast.LENGTH_LONG).show()
-            } finally { originalButton.isEnabled = true }
+                Toast.makeText(this@EpubReaderActivity,
+                    if (published) "原文件已关联，重新打开书籍即可继续阅读" else "关联失败，原书未更改",
+                    Toast.LENGTH_LONG).show()
+            } finally {
+                pendingPublication?.close()
+                runCatching { candidate.close() }.onFailure { warnStagingCleanup() }
+                originalButton.isEnabled = true
+            }
         }
+    }
+
+    private fun closeAssociationCandidate() {
+        val owned = associationCandidate ?: return
+        associationCandidate = null
+        runCatching { owned.close() }.onFailure { warnStagingCleanup() }
+    }
+
+    private fun warnStagingCleanup() {
+        Toast.makeText(this, "暂存文件清理未完成，请检查存储空间", Toast.LENGTH_LONG).show()
     }
 
     private fun attach(book: EpubOriginalStore.Prepared, opened: Publication) {
@@ -309,7 +351,7 @@ class EpubReaderActivity : FragmentActivity() {
     override fun onDestroy() {
         locatorJob?.cancel()
         associationDialog?.dismiss(); associationDialog = null
-        associationCandidate?.close(); associationCandidate = null
+        closeAssociationCandidate()
         super.onDestroy()
         publication?.close(); publication = null
     }

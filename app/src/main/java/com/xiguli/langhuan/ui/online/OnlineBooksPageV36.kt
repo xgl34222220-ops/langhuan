@@ -746,17 +746,9 @@ internal fun OnlineAiSheetV36(
                         }
                         Column(Modifier.padding(start = 10.dp).weight(1f)) {
                             Text("${index + 1}. ${step.label}", color = t.foreground, style = MaterialTheme.typography.bodyMedium)
-                            if (step.detail.isNotBlank()) Text(
-                                step.detail,
-                                color = if (step.ok == false) t.destructive else t.mutedForeground,
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            if (step.detail.isNotBlank()) AiStepDetailV55(step.detail, step.ok == false)
                             val reportDetails = state.aiReport?.discoveryWarnings.orEmpty().map { it.trim() }.toSet()
-                            val details = step.details.filterNot { it.trim() in reportDetails }.ifEmpty {
-                                if (step.details.isEmpty() && step.detail.length > 140) listOf(step.detail) else emptyList()
-                            }
+                            val details = step.details.filterNot { it.trim() in reportDetails }
                             AiDiagnosticsV51("第${index + 1}步详情", details)
                         }
                     }
@@ -815,6 +807,22 @@ internal fun OnlineAiSheetV36(
             Text("将保存搜索与阅读规则；发现入口尚未通过", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
         }
         Spacer(Modifier.navigationBarsPadding().height(18.dp))
+    }
+}
+
+/** Use actual line overflow: a short message can still exceed three lines at a large font scale. */
+@Composable
+private fun AiStepDetailV55(text: String, error: Boolean) {
+    val t = LocalLanghuanUiTokens.current
+    var expanded by remember(text) { mutableStateOf(false) }
+    var overflowed by remember(text) { mutableStateOf(false) }
+    Text(text, color = if (error) t.destructive else t.mutedForeground,
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = if (expanded) Int.MAX_VALUE else 3,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { if (!expanded) overflowed = it.hasVisualOverflow })
+    if (overflowed || expanded) TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(vertical = 4.dp)) {
+        Text(if (expanded) "收起提示" else "展开完整提示", color = t.primary, style = MaterialTheme.typography.labelLarge)
     }
 }
 

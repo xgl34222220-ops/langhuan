@@ -66,12 +66,14 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
         openInput: () -> InputStream?,
         mimeType: () -> String? = { null },
         externalRequestUri: String? = null,
+        afterPreparation: suspend () -> Unit = {},
     ): Boolean {
         if (_state.value.busy) return false
         // Acquire synchronously: a second confirmation in the same frame cannot start a job.
         _state.value = LocalBookImportUiStateV1(busy = true, canCancel = true, externalRequestUri = externalRequestUri)
         importJob = viewModelScope.launch {
             val app = getApplication<Application>()
+            var staged: EpubOriginalStore.Staged? = null
             try {
                 val parsed = withContext(Dispatchers.IO) {
                     val importContext = currentCoroutineContext()
@@ -89,6 +91,7 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                     val payload = prepareLocalBookPayloadV1(fileName, mimeType(), bytes, checkCancelled)
                     val preparedEpub = if (payload.format == LocalBookFormatV1.EPUB) {
                         EpubImportBridge.prepare(app, payload.fileName, payload.bytes, checkCancelled)
+                            .also { staged = it.staged }
                     } else null
                     val epub = preparedEpub?.text
                     val manuscript = epub?.manuscript ?: StoryExchange.`import`(payload.fileName, payload.bytes, checkCancelled)
@@ -96,6 +99,7 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                     checkCancelled()
                     ParsedLocalBookV1(fileName, bytes.size, payload.format, manuscript, epub, preparedEpub?.original)
                 }
+                afterPreparation()
                 currentCoroutineContext().ensureActive()
                 // Parsing and all size/content checks finish before the only shelf transaction.
                 // Once this short commit starts, disable Cancel and finish recording its result.
@@ -150,6 +154,13 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                     else -> error.message ?: "导入本地书籍失败"
                 }
                 _state.update { it.copy(busy = false, canCancel = false, currentFileName = "", error = message) }
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    runCatching { staged?.close() }.onFailure {
+                        _state.update { state -> state.copy(message = listOfNotNull(state.message,
+                            "暂存文件清理未完成，请检查存储空间").joinToString("；")) }
+                    }
+                }
             }
         }
         return true

@@ -74,8 +74,8 @@ internal class BookSourceAiBuilderV37(
         onSteps(steps.toList())
     }
 
-    private suspend fun fail(detail: String): Nothing {
-        finish(false, detail)
+    private suspend fun fail(detail: String, details: List<String> = emptyList()): Nothing {
+        finish(false, detail, details)
         error(detail)
     }
 
@@ -109,7 +109,19 @@ internal class BookSourceAiBuilderV37(
         // 1. Home page and search entry
         step("读取网站首页")
         val homeDoc = sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(home)) }
-            .getOrElse { fail("首页读取失败：${it.message.orEmpty().take(220)}") }
+            .getOrElse { error ->
+                val dns = sourceDnsFailureV55(error)
+                if (dns != null) {
+                    val route = dns.routeHosts
+                    val trace = when {
+                        route.size > 1 -> listOf("已观察到的域名跳转：${route.joinToString(" → ")}")
+                        route.size == 1 -> listOf("受阻域名：${route.single()}；尚未取得首页，未观察到后续跳转")
+                        else -> emptyList()
+                    }
+                    fail("首页读取失败：${dns.message.orEmpty()}", trace)
+                }
+                fail("首页读取失败：${error.message.orEmpty().take(220)}")
+            }
 
         // The typed domain may be only a legacy doorway. Use the final URL after redirects as the
         // canonical base for every generated rule (e.g. http://old.example -> https://new.example).

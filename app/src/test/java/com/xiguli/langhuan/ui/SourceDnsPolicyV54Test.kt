@@ -102,4 +102,51 @@ class SourceDnsPolicyV54Test {
         assertEquals(steps.single().detail,result.exceptionOrNull()!!.message)
     }
 
+    @Test fun diagnosticsNameTheBlockedHostAndOnlyTheObservedRedirects() {
+        val failure=error(resolver("198.18.0.2"))
+        assertEquals("books.example",failure.blockedHost)
+        assertTrue(failure.message!!.contains("books.example"))
+        assertEquals(listOf("books.example"),failure.routeHosts)
+        val redirected=sourceDnsWithRouteV55(failure,listOf("old.example","books.example")) as SourceDnsBlockedV54
+        assertEquals(listOf("old.example","books.example"),redirected.routeHosts)
+        assertSame(failure,redirected.cause)
+        assertEquals(SourceDnsFailureV54.BENCHMARK_RANGE,redirected.reason)
+    }
+
+    @Test fun diagnosticRoutesCannotEchoCredentialsPathsOrQueries() {
+        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE,
+            "https://name:secret@books.example/path?token=private",
+            listOf("old.example","Cookie=secret","https://books.example/?token=private","books.example"))
+        assertNull(failure.blockedHost)
+        assertEquals(listOf("old.example","books.example"),failure.routeHosts)
+        assertFalse(failure.message!!.contains("secret"))
+        assertFalse(failure.message!!.contains("private"))
+    }
+
+    @Test fun redirectDecorationNeverConvertsCancellationOrOtherFailures() {
+        val dns=SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE,"books.example")
+        val cancel=CancellationException("cancel").apply { initCause(dns) }
+        assertSame(cancel,sourceDnsWithRouteV55(cancel,listOf("old.example","books.example")))
+        val ordinary=java.io.IOException("ordinary")
+        assertSame(ordinary,sourceDnsWithRouteV55(ordinary,listOf("old.example")))
+    }
+
+    @Test fun failedRedirectShowsBothHostsWithoutPretendingTheHomepageLoaded() = runBlocking {
+        var steps=emptyList<AiSourceStepV37>()
+        val gateway=object : AiGateway {
+            override suspend fun generate(prompt: PromptBundle): GeneratedChapter = error("No AI before homepage")
+            override suspend fun generateText(prompt: PromptBundle): String = error("No AI before homepage")
+        }
+        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE,"new.example",listOf("old.example","new.example"))
+        val result=runCatching {
+            BookSourceAiBuilderV37(gateway,{steps=it}) { _, _ -> throw failure }.build("https://old.example/","原创小说")
+        }
+        assertTrue(result.isFailure)
+        assertEquals(1,steps.size)
+        assertTrue(steps.single().completed)
+        assertEquals(false,steps.single().ok)
+        assertEquals(listOf("已观察到的域名跳转：old.example → new.example"),steps.single().details)
+        assertTrue(steps.single().detail.contains("new.example"))
+    }
+
 }

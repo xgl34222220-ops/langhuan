@@ -95,6 +95,43 @@ class AiReadingEvidenceV50DeviceTest {
         saveFrame("v51-ai-partial-discovery-summary-test-data", "保存搜索书源")
     }
 
+    @Test fun shortDnsErrorStillExpandsWhenLargeTextOverflowsThreeLines() {
+        val detail = "首页读取失败：" + SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE).message.orEmpty()
+        assertTrue("Regression fixture must stay below the old 140-character threshold", detail.length < 140)
+        val state = OnlineBooksStateV36(aiError = detail, aiSteps = listOf(
+            AiSourceStepV37("读取网站首页", false, detail, true,
+                listOf("已观察到的域名跳转：old.example → new.example"))))
+        rule.setContent {
+            val native = androidx.compose.ui.platform.LocalDensity.current
+            CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides
+                androidx.compose.ui.unit.Density(native.density, fontScale = 1.5f)) {
+                LanghuanStableTheme { PaperReaderThemeV44 {
+                    Surface(Modifier.fillMaxSize()) { OnlineAiSheetV36(state, { _, _ -> }, {}, {}, {}) }
+                } }
+            }
+        }
+        rule.onNodeWithText("展开完整提示").performScrollTo().assertIsDisplayed()
+        rule.onAllNodesWithText(detail).assertCountEquals(1)
+        fun overflows(): Boolean {
+            var overflow = false
+            rule.onNodeWithText(detail).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { action ->
+                val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                assertTrue(action(results))
+                overflow = results.single().hasVisualOverflow
+            }
+            return overflow
+        }
+        assertTrue("The actual rendered message must overflow before expansion", overflows())
+        rule.onNodeWithText("展开完整提示").performClick()
+        rule.onNodeWithText("收起提示").performScrollTo().assertIsDisplayed()
+        assertTrue("Expanded text must include its complete final sentence", !overflows())
+        rule.onAllNodesWithText(detail).assertCountEquals(1)
+        saveFrame("v55-ai-complete-dns-error-test-data", "无需关闭代理")
+        rule.onNodeWithText("查看第1步详情（1项）").performScrollTo().performClick()
+        rule.onNodeWithText("已观察到的域名跳转：old.example → new.example").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("重试").performScrollTo().assertIsDisplayed()
+    }
+
     private fun saveFrame(name: String, visibleText: String) {
         rule.waitForIdle()
         rule.mainClock.advanceTimeBy(800)

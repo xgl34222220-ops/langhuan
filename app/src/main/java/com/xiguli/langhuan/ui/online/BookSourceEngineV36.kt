@@ -613,11 +613,13 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
     require(method in setOf("GET", "HEAD", "POST")) { "不支持的书源请求方法" }
     require(body == null || body!!.length <= 64 * 1024) { "搜索请求过大" }
     val visited = HashSet<String>()
+    val routeHosts = ArrayList<String>()
     val cookies = ArrayList<Cookie>()
     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45)
     repeat(8) {
         if (Thread.currentThread().isInterrupted) throw CancellationException("书源请求已取消")
         check(visited.add(url.toString())) { "书源跳转形成循环" }
+        if (routeHosts.lastOrNull() != url.host) routeHosts += url.host
         val remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
         if (remaining <= 0) throw java.net.SocketTimeoutException("书源请求超时")
         val request = Request.Builder().url(url)
@@ -635,7 +637,11 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
         val requestBody = if (method == "POST") body.orEmpty().toByteArray(Charset.forName(initial.charset ?: "UTF-8"))
             .toRequestBody("application/x-www-form-urlencoded".toMediaType()) else null
         SourceCooldownV46.check(url)
-        val response = awaitSourceResponseV36(request.method(method, requestBody).build(), maxBytes, remaining)
+        val response = try {
+            awaitSourceResponseV36(request.method(method, requestBody).build(), maxBytes, remaining)
+        } catch (error: Exception) {
+            throw sourceDnsWithRouteV55(error, routeHosts)
+        }
         response.cookies.forEach { cookie ->
             cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
             if (cookie.expiresAt > System.currentTimeMillis()) cookies.add(cookie)
