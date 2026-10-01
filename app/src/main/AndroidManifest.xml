@@ -19,6 +19,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Langhuan">
         <activity
+            android:name=".ui.epub.EpubReaderActivity"
+            android:exported="false" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask">

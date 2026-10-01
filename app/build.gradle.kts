@@ -15,13 +15,14 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 130
-        versionName = "0.33.7-reader-preview10"
+        versionCode = 131
+        versionName = "0.33.8-reader-preview11"
     }
 
     buildFeatures { compose = true }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -55,6 +56,12 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
+    implementation("org.readium.kotlin-toolkit:readium-shared:3.4.0")
+    implementation("org.readium.kotlin-toolkit:readium-streamer:3.4.0")
+    implementation("org.readium.kotlin-toolkit:readium-navigator:3.4.0")
+    implementation("androidx.fragment:fragment-ktx:1.9.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

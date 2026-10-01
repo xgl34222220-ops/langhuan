@@ -56,6 +56,26 @@ class ExternalBookOpenFlowV1DeviceTest {
                     instrumentation.uiAutomation.executeShellCommand("mkdir -p /sdcard/Download/reader-qa").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
                     instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
                     rule.onNodeWithText("关闭").performClick()
+                    if (extension == "epub") {
+                        rule.waitUntil(20_000) {
+                            var opened = false
+                            instrumentation.runOnMainSync {
+                                opened = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                                    .any { it is com.xiguli.langhuan.ui.epub.EpubReaderActivity }
+                            }
+                            opened
+                        }
+                        instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                        rule.waitUntil(10_000) {
+                            var returned = false
+                            instrumentation.runOnMainSync {
+                                returned = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any { it is MainActivity }
+                            }
+                            returned
+                        }
+                    }
                 }
             }
         } finally {

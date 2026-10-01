@@ -1,0 +1,6 @@
+The original illustration, SVG, geometric test font, prose and EPUB fixtures in
+this directory were created for Langhuan's tests and are dedicated to the public
+domain under CC0 1.0 Universal: https://creativecommons.org/publicdomain/zero/1.0/
+
+The fixtures deliberately contain inert test attack strings using example.invalid.
+No third-party book, font, image or script content is included.

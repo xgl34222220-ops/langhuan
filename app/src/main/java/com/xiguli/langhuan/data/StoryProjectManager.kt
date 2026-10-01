@@ -153,7 +153,10 @@ class StoryProjectManager(context: Context) {
         return persisted
     }
 
-    suspend fun createImportedStory(manuscript: ImportedManuscript): PersistedStory = db.withTransaction {
+    suspend fun createImportedStory(
+        manuscript: ImportedManuscript,
+        beforeCommit: (PersistedStory) -> Unit = {},
+    ): PersistedStory = db.withTransaction {
         if (manuscript.sourceId.isNotBlank()) {
             require(manuscript.sourceBookUrl.isNotBlank() && manuscript.chapters.isNotEmpty()) { "在线书籍缺少来源或目录" }
             require(manuscript.chapters.all { it.sourceUrl.isNotBlank() } && manuscript.chapters.map { it.sourceUrl }.distinct().size == manuscript.chapters.size) { "在线目录包含空地址或重复章节" }
@@ -161,7 +164,7 @@ class StoryProjectManager(context: Context) {
                 loadStory(id)?.let { return@withTransaction it }
             }
         }
-        createImportedStoryInTransaction(manuscript)
+        createImportedStoryInTransaction(manuscript).also(beforeCommit)
     }
 
     private suspend fun createImportedStoryInTransaction(manuscript: ImportedManuscript): PersistedStory {

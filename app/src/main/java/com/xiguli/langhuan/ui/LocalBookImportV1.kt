@@ -6,7 +6,8 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.EpubImportedCoverV2
-import com.xiguli.langhuan.data.EpubImporterV2
+import com.xiguli.langhuan.data.epub.EpubImportBridge
+import com.xiguli.langhuan.data.epub.EpubOriginalStore
 import com.xiguli.langhuan.data.EpubOriginalTocV1
 import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.data.StoryProjectManager
@@ -86,20 +87,26 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                         }
                     } ?: error("无法读取这个文件")
                     val payload = prepareLocalBookPayloadV1(fileName, mimeType(), bytes, checkCancelled)
-                    val epub = if (payload.format == LocalBookFormatV1.EPUB) {
-                        EpubImporterV2.import(payload.fileName, payload.bytes, checkCancelled)
+                    val preparedEpub = if (payload.format == LocalBookFormatV1.EPUB) {
+                        EpubImportBridge.prepare(app, payload.fileName, payload.bytes, checkCancelled)
                     } else null
+                    val epub = preparedEpub?.text
                     val manuscript = epub?.manuscript ?: StoryExchange.`import`(payload.fileName, payload.bytes, checkCancelled)
                     require(manuscript.chapters.any { it.content.isNotBlank() }) { "没有识别到可阅读正文" }
                     checkCancelled()
-                    ParsedLocalBookV1(fileName, bytes.size, payload.format, manuscript, epub)
+                    ParsedLocalBookV1(fileName, bytes.size, payload.format, manuscript, epub, preparedEpub?.original)
                 }
                 currentCoroutineContext().ensureActive()
                 // Parsing and all size/content checks finish before the only shelf transaction.
                 // Once this short commit starts, disable Cancel and finish recording its result.
                 _state.update { it.copy(canCancel = false) }
                 withContext(NonCancellable + Dispatchers.IO) {
-                    var created = projects.createImportedStory(parsed.manuscript)
+                    var created = projects.createImportedStory(parsed.manuscript) { createdBook ->
+                        parsed.original?.let { original ->
+                            EpubOriginalStore(File(app.filesDir, "epub_originals_v1"))
+                                .associate(createdBook.snapshot.novel.id, original)
+                        }
+                    }
                     // Optional presentation metadata cannot turn a committed import into a reported
                     // failure. It only uses the newly allocated ID and never rewrites an existing book.
                     runCatching {
@@ -121,7 +128,7 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                             .putLong("size_$id", parsed.size.toLong())
                             .putString("format_$id", parsed.format.label)
                             .putString("author_$id", parsed.epub?.author.orEmpty())
-                            .putString("epub_parser_$id", if (parsed.format == LocalBookFormatV1.EPUB) "spine-nav-v3-tree" else "")
+                            .putString("epub_parser_$id", if (parsed.format == LocalBookFormatV1.EPUB) "readium-original-3.4.0" else "")
                             .putLong("imported_$id", System.currentTimeMillis())
                             .apply()
                     }
@@ -219,4 +226,5 @@ private data class ParsedLocalBookV1(
     val format: LocalBookFormatV1,
     val manuscript: com.xiguli.langhuan.data.ImportedManuscript,
     val epub: com.xiguli.langhuan.data.EpubImportResultV2?,
+    val original: EpubOriginalStore.Prepared?,
 )

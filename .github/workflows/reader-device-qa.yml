@@ -33,7 +33,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Build device tests
-        run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+        run: |
+          python3 -m unittest tools/test_instrumentation_verifier.py
+          gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -45,7 +47,9 @@ jobs:
             adb shell wm size 1080x2400
             adb shell wm density 420
             adb shell settings put secure immersive_mode_confirmations confirmed
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/app/src/androidTest/assets/source-fixture/" || { adb pull /sdcard/Download/reader-qa reader-qa; exit 1; }
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/app/src/androidTest/assets/source-fixture/" || { adb pull /sdcard/Download/reader-qa reader-qa; adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork || true; exit 1; }
+            python3 tools/verify_epub_process_death.py --evidence reader-qa/epub-process || { adb pull /sdcard/Download/reader-qa reader-qa; adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork || true; exit 1; }
+            adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork
             adb pull /sdcard/Download/reader-qa reader-qa
       - uses: actions/upload-artifact@v4
         if: always()

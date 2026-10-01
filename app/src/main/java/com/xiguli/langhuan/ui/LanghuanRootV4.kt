@@ -160,7 +160,34 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
         libraryVm.openBook(id)
     }
 
-    fun openBook(id: String) = requestBook(id, RootRouteV4.BOOK, showInfo = false)
+    var epubOpening by remember { mutableStateOf(false) }
+    val epubReaderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        epubOpening = false
+        if (result.resultCode == com.xiguli.langhuan.ui.epub.EpubReaderActivity.RESULT_TEXT_READER) {
+            result.data?.getStringExtra(com.xiguli.langhuan.ui.epub.EpubReaderActivity.EXTRA_BOOK_ID)?.let { id ->
+                requestBook(id, RootRouteV4.BOOK, showInfo = false)
+            }
+        }
+    }
+    fun openBook(id: String) {
+        if (epubOpening || libraryState.isBusy) return
+        if (libraryState.stories.none { it.id == id }) {
+            toast = "找不到这本小说，请刷新书架" to true
+            return
+        }
+        if (com.xiguli.langhuan.ui.epub.EpubReaderEntry.isEpub(appContext, id)) {
+            pendingBookId = null
+            pendingBookRoute = null
+            pendingBookFreshReload = false
+            epubOpening = true
+            try {
+                epubReaderLauncher.launch(com.xiguli.langhuan.ui.epub.EpubReaderEntry.intent(appContext, id))
+            } catch (error: Exception) {
+                epubOpening = false
+                toast = "无法打开 EPUB 原版：${error.message.orEmpty()}" to true
+            }
+        } else requestBook(id, RootRouteV4.BOOK, showInfo = false)
+    }
 
     LaunchedEffect(pendingOnlineOpen, libraryState.stories) {
         val id = pendingOnlineOpen ?: return@LaunchedEffect
@@ -250,8 +277,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
     // Reading a book must not silently switch the Studio's persisted active project.
     // Studio selection happens only when the user explicitly enters writing/story tools.
 
-    LaunchedEffect(localImportState.importedBookId, libraryState.stories) {
+    LaunchedEffect(localImportState.importedBookId, localImportState.externalRequestUri, libraryState.stories) {
         val id = localImportState.importedBookId ?: return@LaunchedEffect
+        // Finish the import result dialog before opening another Activity for an EPUB.
+        if (localImportState.externalRequestUri != null) return@LaunchedEffect
         if (libraryState.stories.any { it.id == id }) {
             localImportVm.consumeImportedBook()
             openBook(id)
