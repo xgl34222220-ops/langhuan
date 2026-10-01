@@ -14,8 +14,13 @@ class ImportCrashGuardV32ContractTest {
         val rootUi = File(root, "src/main/java/com/xiguli/langhuan/ui/LanghuanRootV4.kt").readText()
         val studio = File(root, "src/main/java/com/xiguli/langhuan/ui/StudioViewModel.kt").readText()
 
-        assertTrue(project.contains("val previousActive = activeStoryId()"))
-        assertTrue(project.contains("else clearActiveStoryId()"))
+        // Reader imports must not publish a temporary Studio selection, even before rollback.
+        assertTrue(project.contains("selectActive = false"))
+        assertTrue(project.contains("if (selectActive) setActiveStoryId(id)"))
+        val importBody = project.substringAfter("private suspend fun createImportedStoryInTransaction")
+            .substringBefore("/** Appends downloaded chapters")
+        assertFalse(importBody.contains("setActiveStoryId("))
+        assertFalse(importBody.contains("clearActiveStoryId("))
         assertFalse(rootUi.contains("LaunchedEffect(libraryState.openedBook?.id)"))
         assertTrue(rootUi.contains("if (target == RootRouteV4.TAVERN)"))
         assertTrue(studio.contains("local_book_meta_v1"))

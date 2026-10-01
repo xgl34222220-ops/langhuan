@@ -12,9 +12,12 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.MainActivity
 import com.xiguli.langhuan.data.StoryProjectManager
+import com.xiguli.langhuan.data.NewStoryRequest
+import com.xiguli.langhuan.data.local.LanghuanDatabase
 import java.io.InputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -27,6 +30,33 @@ class ExternalBookImportV1DeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val app get() = instrumentation.targetContext.applicationContext as Application
     private val uri = Uri.parse("content://external.book.fixture/document/42")
+
+    /** App startup legitimately restores its own project; settle it before measuring import effects. */
+    private suspend fun withReadyStudio(block: suspend () -> Unit) {
+        val projects = StoryProjectManager(app)
+        val previous = projects.activeStoryId()
+        val baseline = projects.createStory(NewStoryRequest("导入隔离基线", "测试", "原创测试", "保留当前项目", 10000)).snapshot.novel.id
+        try {
+            val launch = Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ActivityScenario.launch<MainActivity>(launch).use { scenario ->
+                lateinit var studio: StudioViewModel
+                scenario.onActivity { studio = ViewModelProvider(it)[StudioViewModel::class.java] }
+                withTimeout(20_000) {
+                    while (studio.state.value.chapters.isEmpty() || projects.activeStoryId() != studio.state.value.snapshot.novel.id) {
+                        delay(16)
+                    }
+                }
+                assertEquals("Startup must retain the explicit project", baseline, projects.activeStoryId())
+                block()
+            }
+        } finally {
+            val sql = LanghuanDatabase.get(app).openHelper.writableDatabase
+            listOf("chapter_versions", "chapter_state", "memory_chunks", "story_state").forEach {
+                sql.execSQL("DELETE FROM $it WHERE novelId = ?", arrayOf(baseline))
+            }
+            if (previous == null) projects.clearActiveStoryId() else projects.setActiveStoryId(previous)
+        }
+    }
 
     @Test fun manifestOffersBooksAndGenericFilesWithoutClaimingImagesPdfOrApk() {
         fun resolves(action: String, mime: String?): Boolean {
@@ -115,74 +145,78 @@ class ExternalBookImportV1DeviceTest {
     }
 
     @Test fun revokedAccessAndMalformedFilesLeaveExistingShelfAndMetadataUntouched() = runBlocking {
-        val manager = StoryProjectManager(app)
-        val before = manager.observeStories().first()
-        val active = manager.activeStoryId()
-        val metadata = app.getSharedPreferences("local_book_meta_v1", 0)
-        val metadataBefore = metadata.all.toMap()
-        val vm = LocalBookImportViewModelV1(app)
-        try {
-            instrumentation.runOnMainSync {
-                vm.importDocument({ "revoked.txt" }, { throw SecurityException("grant revoked") }, externalRequestUri = uri.toString())
+        withReadyStudio {
+            val manager = StoryProjectManager(app)
+            val before = manager.observeStories().first()
+            val active = manager.activeStoryId()
+            val metadata = app.getSharedPreferences("local_book_meta_v1", 0)
+            val metadataBefore = metadata.all.toMap()
+            val vm = LocalBookImportViewModelV1(app)
+            try {
+                instrumentation.runOnMainSync {
+                    vm.importDocument({ "revoked.txt" }, { throw SecurityException("grant revoked") }, externalRequestUri = uri.toString())
+                }
+                val revoked = withTimeout(20_000) { vm.state.first { !it.busy } }
+                assertTrue(revoked.error.orEmpty().contains("授权已失效"))
+                assertNull(revoked.importedBookId)
+                instrumentation.runOnMainSync {
+                    vm.dismissExternalRequest(uri.toString())
+                    assertNull(vm.state.value.externalRequestUri)
+                    vm.importDocument({ "wrong.txt" }, { byteArrayOf(0, 1, 2, 3).inputStream() })
+                }
+                val malformed = withTimeout(20_000) { vm.state.first { !it.busy } }
+                assertNotNull(malformed.error)
+                assertNull(malformed.importedBookId)
+                assertEquals(before, manager.observeStories().first())
+                assertEquals(active, manager.activeStoryId())
+                assertEquals(metadataBefore, metadata.all)
+            } finally {
+                instrumentation.runOnMainSync { vm.viewModelScope.cancel() }
             }
-            val revoked = withTimeout(20_000) { vm.state.first { !it.busy } }
-            assertTrue(revoked.error.orEmpty().contains("授权已失效"))
-            assertNull(revoked.importedBookId)
-            instrumentation.runOnMainSync {
-                vm.dismissExternalRequest(uri.toString())
-                assertNull(vm.state.value.externalRequestUri)
-                vm.importDocument({ "wrong.txt" }, { byteArrayOf(0, 1, 2, 3).inputStream() })
             }
-            val malformed = withTimeout(20_000) { vm.state.first { !it.busy } }
-            assertNotNull(malformed.error)
-            assertNull(malformed.importedBookId)
-            assertEquals(before, manager.observeStories().first())
-            assertEquals(active, manager.activeStoryId())
-            assertEquals(metadataBefore, metadata.all)
-        } finally {
-            instrumentation.runOnMainSync { vm.viewModelScope.cancel() }
-        }
     }
 
     @Test fun cancelClosesAnActiveProviderAndDoubleConfirmationCannotStartAnotherImport() = runBlocking {
-        val manager = StoryProjectManager(app)
-        val before = manager.observeStories().first()
-        val active = manager.activeStoryId()
-        val metadata = app.getSharedPreferences("local_book_meta_v1", 0)
-        val metadataBefore = metadata.all.toMap()
-        val enteredRead = CountDownLatch(1)
-        val released = CountDownLatch(1)
-        val closed = CountDownLatch(1)
-        val vm = LocalBookImportViewModelV1(app)
-        val source = object : InputStream() {
-            override fun read(): Int = error("Expected bounded bulk read")
-            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
-                enteredRead.countDown()
-                check(released.await(10, TimeUnit.SECONDS)) { "Cancel must release the provider stream" }
-                bytes.fill(65, offset, offset + length)
-                return length
+        withReadyStudio {
+            val manager = StoryProjectManager(app)
+            val before = manager.observeStories().first()
+            val active = manager.activeStoryId()
+            val metadata = app.getSharedPreferences("local_book_meta_v1", 0)
+            val metadataBefore = metadata.all.toMap()
+            val enteredRead = CountDownLatch(1)
+            val released = CountDownLatch(1)
+            val closed = CountDownLatch(1)
+            val vm = LocalBookImportViewModelV1(app)
+            val source = object : InputStream() {
+                override fun read(): Int = error("Expected bounded bulk read")
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                    enteredRead.countDown()
+                    check(released.await(10, TimeUnit.SECONDS)) { "Cancel must release the provider stream" }
+                    bytes.fill(65, offset, offset + length)
+                    return length
+                }
+                override fun close() { closed.countDown(); released.countDown() }
             }
-            override fun close() { closed.countDown(); released.countDown() }
-        }
-        try {
-            instrumentation.runOnMainSync {
-                assertTrue(vm.importDocument({ "large.txt" }, { source }, externalRequestUri = uri.toString()))
-                assertFalse(vm.importDocument({ error("Duplicate request must not query metadata") }, { error("Must not read twice") }))
+            try {
+                instrumentation.runOnMainSync {
+                    assertTrue(vm.importDocument({ "large.txt" }, { source }, externalRequestUri = uri.toString()))
+                    assertFalse(vm.importDocument({ error("Duplicate request must not query metadata") }, { error("Must not read twice") }))
+                }
+                assertTrue(enteredRead.await(10, TimeUnit.SECONDS))
+                instrumentation.runOnMainSync { vm.cancelImport() }
+                val cancelled = withTimeout(20_000) { vm.state.first { !it.busy } }
+                assertTrue(closed.await(1, TimeUnit.SECONDS))
+                assertNull(cancelled.error)
+                assertNull(cancelled.importedBookId)
+                assertEquals("已取消导入", cancelled.message)
+                assertEquals(before, manager.observeStories().first())
+                assertEquals(active, manager.activeStoryId())
+                assertEquals(metadataBefore, metadata.all)
+            } finally {
+                released.countDown()
+                instrumentation.runOnMainSync { vm.viewModelScope.cancel() }
             }
-            assertTrue(enteredRead.await(10, TimeUnit.SECONDS))
-            instrumentation.runOnMainSync { vm.cancelImport() }
-            val cancelled = withTimeout(20_000) { vm.state.first { !it.busy } }
-            assertTrue(closed.await(1, TimeUnit.SECONDS))
-            assertNull(cancelled.error)
-            assertNull(cancelled.importedBookId)
-            assertEquals("已取消导入", cancelled.message)
-            assertEquals(before, manager.observeStories().first())
-            assertEquals(active, manager.activeStoryId())
-            assertEquals(metadataBefore, metadata.all)
-        } finally {
-            released.countDown()
-            instrumentation.runOnMainSync { vm.viewModelScope.cancel() }
-        }
+            }
     }
     @Test fun clearingTheViewModelReleasesAProviderReadWithoutImportingABook() = runBlocking {
         val manager = StoryProjectManager(app)
