@@ -1,5 +1,13 @@
 package com.xiguli.langhuan.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import com.xiguli.langhuan.data.readBoundedImportV1
+import com.xiguli.langhuan.data.LocalImportLimitsV1
 import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -165,6 +173,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     )
     private val runtime = (application as LanghuanApplication).chapterRunRuntime
     private val backups = ProjectBackupManager(application)
+    private val importGeneration = java.util.concurrent.atomic.AtomicLong()
     private val detector = ProviderAutoDetector()
     private val _state = MutableStateFlow(
         StudioUiState(snapshot = demo.snapshot, draft = demo.currentDraft)
@@ -844,26 +853,61 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun importDocument(uri: Uri) {
-        if (_state.value.isImporting || runtime.state.value.active) return
+        val before = _state.value
+        if (busy(before)) return
+        if (before.isDraftDirty) {
+            _state.update { it.copy(error = "当前章节有未保存修改，请先保存后再导入") }
+            return
+        }
+        val request = importGeneration.incrementAndGet()
+        val expectedSelection = projects.activeStorySelectionV51()
+        val originalStoryId = before.snapshot.novel.id
+        // Publish busy state before launching so a second tap cannot start another restore.
+        _state.update { it.copy(isImporting = true, error = null) }
         viewModelScope.launch {
-            _state.update { it.copy(isImporting = true, error = null) }
-            runCatching {
-                val resolver = getApplication<Application>().contentResolver
-                val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) cursor.getString(0) else null
-                } ?: "导入稿件.txt"
-                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取选择的文件")
-                if (StoryExchange.isProjectBackup(name)) {
-                    backups.restore(StoryExchange.importProject(bytes))
-                } else {
-                    val manuscript = StoryExchange.import(name, bytes)
-                    require(manuscript.chapters.isNotEmpty()) { "没有识别到可导入的正文" }
-                    projects.createImportedStory(manuscript)
+            try {
+                val (name, bytes) = runInterruptible(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    } ?: uri.lastPathSegment ?: "导入稿件.txt"
+                    val bytes = resolver.openInputStream(uri)?.use {
+                        it.readBoundedImportV1(LocalImportLimitsV1.BOOK_BYTES, "导入文件过大，单个文件最多 96 MB")
+                    } ?: error("无法读取选择的文件")
+                    name to bytes
                 }
-            }.onSuccess { created ->
-                _state.update { it.copy(snapshot = created.snapshot, draft = created.draft, isImporting = false, isDraftDirty = false, agentReview = null, message = "已导入《${created.snapshot.novel.title}》") }
-                refreshWorkspace()
-            }.onFailure { error -> _state.update { it.copy(isImporting = false, error = error.message ?: "导入失败") } }
+                val created = withContext(Dispatchers.IO) {
+                    if (StoryExchange.isProjectBackup(name)) {
+                        backups.restore(StoryExchange.importProject(bytes))
+                    } else {
+                        val manuscript = runInterruptible { StoryExchange.import(name, bytes) }
+                        require(manuscript.chapters.isNotEmpty()) { "没有识别到可导入的正文" }
+                        projects.createImportedStory(manuscript)
+                    }
+                }
+                currentCoroutineContext().ensureActive()
+                if (request != importGeneration.get()) return@launch
+                // A committed restore is already a complete book. Switching the current Studio is
+                // a separate publication step and must not override a newer choice in another view.
+                val samePage = _state.value.snapshot.novel.id == originalStoryId
+                val publication = if (samePage) projects.publishRestoredStory(expectedSelection, created.snapshot.novel.id)
+                    else Result.success(false)
+                if (publication.getOrDefault(false)) {
+                    _state.update { it.copy(snapshot = created.snapshot, draft = created.draft, isImporting = false,
+                        isDraftDirty = false, agentReview = null, message = "已导入《${created.snapshot.novel.title}》") }
+                    refreshWorkspace()
+                } else {
+                    _state.update { it.copy(isImporting = false,
+                        message = "已完整导入《${created.snapshot.novel.title}》到书架，保留当前项目",
+                        error = publication.exceptionOrNull()?.let { "书籍已恢复，但当前项目选择未保存：${it.message.orEmpty()}" }) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (request == importGeneration.get()) _state.update { it.copy(error = error.message ?: "导入失败") }
+            } finally {
+                if (request == importGeneration.get()) _state.update { it.copy(isImporting = false) }
+            }
         }
     }
 
@@ -1067,7 +1111,8 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         val chapterDrafts = projects.chapterDrafts(current.snapshot.novel.id)
         val versions = repository.chapterVersions(current.snapshot.novel.id, current.draft.chapterNumber).map { it.toUi() }
         _state.update { state ->
-            state.copy(
+            if (state.snapshot.novel.id != current.snapshot.novel.id || state.draft.chapterNumber != current.draft.chapterNumber) state
+            else state.copy(
                 chapters = chapterDrafts.map { draft -> ChapterShelfUi(draft.chapterNumber, draft.title, draft.objective, draft.content.length, draft.chapterNumber == state.draft.chapterNumber) },
                 versions = versions,
             )

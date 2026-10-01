@@ -45,8 +45,10 @@ data class NewStoryRequest(
     val targetWords: Int,
 )
 
-class StoryProjectManager(context: Context) {
-    private val db = LanghuanDatabase.get(context)
+internal data class ActiveStorySelectionV51(val id: String?, val revision: Long)
+
+class StoryProjectManager internal constructor(context: Context, private val db: LanghuanDatabase) {
+    constructor(context: Context) : this(context, LanghuanDatabase.get(context))
     private val storyDao = db.storyStateDao()
     private val chapterStateDao = db.chapterStateDao()
     private val chapterVersionDao = db.chapterVersionDao()
@@ -60,15 +62,48 @@ class StoryProjectManager(context: Context) {
         entities.mapNotNull { entity -> entity.toShelfItemOrNull() }
     }
 
-    fun activeStoryId(): String? = preferences.getString(KEY_ACTIVE_STORY, null)
+    fun activeStoryId(): String? = activeStorySelectionV51().id
 
-    fun setActiveStoryId(id: String) {
+    internal fun activeStorySelectionV51(): ActiveStorySelectionV51 = synchronized(ACTIVE_STORY_LOCK) {
+        ActiveStorySelectionV51(preferences.getString(KEY_ACTIVE_STORY, null), activeStoryRevision)
+    }
+
+    fun setActiveStoryId(id: String) = synchronized(ACTIVE_STORY_LOCK) {
         preferences.edit().putString(KEY_ACTIVE_STORY, id).apply()
+        activeStoryRevision += 1
     }
 
-    fun clearActiveStoryId() {
+    fun clearActiveStoryId() = synchronized(ACTIVE_STORY_LOCK) {
         preferences.edit().remove(KEY_ACTIVE_STORY).apply()
+        activeStoryRevision += 1
     }
+
+    /** Publish only if another project selection has not superseded this restore request. */
+    internal fun publishRestoredStory(expected: ActiveStorySelectionV51, restoredId: String): Result<Boolean> =
+        synchronized(ACTIVE_STORY_LOCK) {
+            runCatching {
+                require(restoredId.isNotBlank()) { "恢复项目标识无效" }
+                val previous = preferences.getString(KEY_ACTIVE_STORY, null)
+                if (previous != expected.id || activeStoryRevision != expected.revision) return@runCatching false
+                val saved = runCatching {
+                    check(preferences.edit().putString(KEY_ACTIVE_STORY, restoredId).commit()) {
+                        "项目已恢复，但无法保存当前项目"
+                    }
+                }
+                saved.exceptionOrNull()?.let { failure ->
+                    // SharedPreferences changes its memory view even when committing to disk fails.
+                    runCatching {
+                        val rollback = preferences.edit()
+                        if (previous == null) rollback.remove(KEY_ACTIVE_STORY)
+                        else rollback.putString(KEY_ACTIVE_STORY, previous)
+                        rollback.commit()
+                    }
+                    throw failure
+                }
+                activeStoryRevision += 1
+                true
+            }
+        }
 
     suspend fun loadStory(id: String): PersistedStory? {
         val header = storyDao.getHeader(id) ?: return null
@@ -85,7 +120,9 @@ class StoryProjectManager(context: Context) {
         }.getOrNull()
     }
 
-    suspend fun createStory(request: NewStoryRequest): PersistedStory {
+    suspend fun createStory(request: NewStoryRequest): PersistedStory = createStory(request, selectActive = true)
+
+    private suspend fun createStory(request: NewStoryRequest, selectActive: Boolean): PersistedStory {
         val id = UUID.randomUUID().toString()
         val title = request.title.trim().ifBlank { "未命名小说" }
         val premise = request.premise.trim().ifBlank { "围绕主人公的核心目标展开故事。" }
@@ -149,7 +186,7 @@ class StoryProjectManager(context: Context) {
         )
         val draft = defaultDraft(id, chapter)
         val persisted = saveStructure(snapshot, draft)
-        setActiveStoryId(id)
+        if (selectActive) setActiveStoryId(id)
         return persisted
     }
 
@@ -168,18 +205,19 @@ class StoryProjectManager(context: Context) {
     }
 
     private suspend fun createImportedStoryInTransaction(manuscript: ImportedManuscript): PersistedStory {
-        // Local reading imports must never hijack the Studio's persisted active project.
-        // Otherwise a reader-only import can poison Studio startup and create a crash loop.
-        val previousActive = activeStoryId()
-        return try {
+        // Build a reading import without publishing a temporary active project.
+        // A concurrent explicit Studio selection must survive both success and rollback.
+        return run {
             val created = createStory(
                 NewStoryRequest(
                     title = manuscript.title,
                     genre = if (manuscript.sourceId.isBlank()) "导入作品" else "网络小说",
                     premise = manuscript.intro.ifBlank { "从外部稿件导入，待补充核心命题与完整大纲。" },
                     theme = "待完善",
-                    targetWords = maxOf(50_000, manuscript.chapters.sumOf { it.content.length } * 2),
-                )
+                    targetWords = (manuscript.chapters.sumOf { it.content.length.toLong() } * 2)
+                        .coerceIn(50_000L, 5_000_000L).toInt(),
+                ),
+                selectActive = false,
             )
             val base = created.snapshot
             val full = effectiveOutline(base).toMutableList()
@@ -242,8 +280,6 @@ class StoryProjectManager(context: Context) {
                 activeOutline = activeChain(full, 1),
             )
             saveStructure(snapshot, first)
-        } finally {
-            if (previousActive != null) setActiveStoryId(previousActive) else clearActiveStoryId()
         }
     }
     /** Appends downloaded chapters (online-source updates) after the current last chapter. */
@@ -713,6 +749,8 @@ class StoryProjectManager(context: Context) {
     }.getOrNull()
 
     companion object {
+        private val ACTIVE_STORY_LOCK = Any()
+        private var activeStoryRevision = 0L
         private const val KEY_ACTIVE_STORY = "active_story_id"
         // Keep each SQLite substr() result comfortably below CursorWindow's per-row ceiling.
         private const val DRAFT_JSON_CHUNK_CHARS = 96 * 1024

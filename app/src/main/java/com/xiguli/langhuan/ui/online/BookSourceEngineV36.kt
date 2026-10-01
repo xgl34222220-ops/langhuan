@@ -11,7 +11,6 @@ import java.util.concurrent.CancellationException
 import okhttp3.Call
 import okhttp3.Cookie
 import okhttp3.Callback
-import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -492,16 +491,7 @@ internal fun sourceRedirectV36(from: HttpUrl, location: String, code: Int, metho
 private val sourceClientV36 by lazy {
     OkHttpClient.Builder()
         .proxy(Proxy.NO_PROXY)
-        .dns(object : Dns {
-            override fun lookup(hostname: String): List<InetAddress> {
-                val addresses = Dns.SYSTEM.lookup(hostname)
-                if (addresses.isEmpty() || addresses.any { !publicSourceAddressV36(it) }) {
-                    throw java.net.UnknownHostException("书源域名解析到本机或内网地址，已阻止")
-                }
-                // OkHttp connects to these exact checked addresses, with TLS hostname checks intact.
-                return addresses
-            }
-        })
+        .dns(checkedSourceDnsV54())
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS).build()

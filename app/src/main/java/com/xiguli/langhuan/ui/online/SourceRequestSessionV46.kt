@@ -33,7 +33,7 @@ internal object SourceCooldownV46 {
 
 internal fun sourceStopFailureV46(error: Throwable): Throwable? =
     generateSequence(error) { it.cause }.take(12).firstOrNull {
-        it is SourceBrowserChallengeV46 || it is SourceHttpStatusExceptionV44 && (it.statusCode == 429 || it.browserChallenge)
+        it is SourceDnsBlockedV54 || it is SourceBrowserChallengeV46 || it is SourceHttpStatusExceptionV44 && (it.statusCode == 429 || it.browserChallenge)
     }
 
 /** One AI build owns one bounded, credential-scoped cache. Cached DOMs are always cloned. */
