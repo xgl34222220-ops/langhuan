@@ -56,4 +56,17 @@ class OnlineCatalogueV46Test {
         assertEquals(1035, chapters.size)
         assertEquals("第1章 正文", chapters.first().title)
     }
+
+    @Test fun unresolvedLatestPreviewCannotBeClaimedAsTotalChapterCount() {
+        val result = runCatching {
+            loadBookV36(source.copy(tocList = ".latest a"), book) { _, request -> Jsoup.parse("<div class='latest'>${links(1000..1035)}</div>", request.url) }
+        }
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("预览"))
+    }
+
+    @Test fun shortCompleteListDoesNotFailOnlyBecauseItsClassContainsLatest() {
+        val (_, chapters) = loadBookV36(source.copy(tocList = ".latest a"), book) { _, request -> Jsoup.parse("<div class='latest'>${links(1..12)}</div>", request.url) }
+        assertEquals(12, chapters.size)
+    }
 }

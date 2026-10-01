@@ -748,11 +748,7 @@ internal fun loadBookV36(
         // full catalogue is already on this page. Only prefer the larger dense catalogue
         // when the selected elements are explicitly inside that preview; don't indiscriminately
         // append recommendation/sidebar links to otherwise working rules.
-        val preview = elements.isNotEmpty() && elements.all { element ->
-            generateSequence(element) { it.parent() }.take(4).any { node ->
-                Regex("(?i)(latest|recent|newest)").containsMatchIn(node.id() + " " + node.className())
-            }
-        }
+        val preview = sourceSelectionIsPreviewV46(elements)
         if (preview) {
             val full = heuristicChapterLinksV39(doc, book.bookUrl)
             if (full.size > found.size) return full
@@ -780,10 +776,22 @@ internal fun loadBookV36(
     val chapters = ArrayList<OnlineChapterV36>()
     val visited = LinkedHashSet<String>()
     var triedHeuristicFromBookPage = false
+    val previewElements = ruleElementsV36(page, source.tocList)
+    val unresolvedPreview = firstToc == null && sourceSelectionIsPreviewV46(previewElements) &&
+        onPageChapters.size <= previewElements.size
+
+    fun completed(): Pair<OnlineBookV36, List<OnlineChapterV36>> {
+        val distinct = chapters.distinctBy { it.url }
+        val highestNumber = distinct.mapNotNull { Regex("第\\s*(\\d+)\\s*[章节節回]").find(it.title)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull()
+        check(!(unresolvedPreview && visited.size == 1 && highestNumber != null && highestNumber > distinct.size)) {
+            "仅取得最新章节预览，尚未取得完整目录；请检查完整目录入口与规则，未将预览数量当作总章数"
+        }
+        return detailed to distinct
+    }
 
     repeat(40) { pageIndex ->
         if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
-        if (!visited.add(publicSourceUrlV36(doc.location()).toString())) return detailed to chapters.distinctBy { it.url }
+        if (!visited.add(publicSourceUrlV36(doc.location()).toString())) return completed()
 
         val ruleFound = if (doc === page) onPageChapters else declaredChapters(doc)
 
@@ -810,13 +818,22 @@ internal fun loadBookV36(
             ?.let { resolveUrlV36(doc.location(), it) }
         val next = ruleNext ?: heuristicTocNextUrlV39(doc)
         if (next == null || next in visited || isLikelyChapterUrlV39(next)) {
-            return detailed to distinct
+            return completed()
         }
         check(pageIndex < 39) { "目录超过 40 页限制，未返回不完整目录" }
         doc = sourceAttemptV36 { fetchDocument(source, SourceRequestV36(next)) }
             .getOrElse { throw IllegalStateException("目录分页读取失败，未返回不完整目录：${it.message.orEmpty()}", it) }
     }
     error("目录超过 40 页限制，未返回不完整目录")
+}
+
+private fun sourceSelectionIsPreviewV46(elements: List<Element>): Boolean = elements.isNotEmpty() && elements.all { element ->
+    generateSequence(element) { it.parent() }.take(4).any { node ->
+        Regex("(?i)(latest|recent|newest)").containsMatchIn(node.id() + " " + node.className()) ||
+            (node.tagName() !in setOf("html", "body", "main") && node.children().any {
+                it.tagName() in setOf("h2", "h3", "h4") && Regex("最新.{0,4}[章节節]|最近更新|(?i)latest chapters").containsMatchIn(it.text())
+            })
+    }
 }
 
 /**
