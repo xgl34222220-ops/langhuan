@@ -34,6 +34,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import org.readium.r2.shared.publication.Layout
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -67,6 +72,8 @@ class EpubReaderActivity : FragmentActivity() {
     private var savedLocator: String? = null
     private var savedDigest: String? = null
     private var loaded = false
+    private var restoreTarget: Locator? = null
+    private var restoreJob: Job? = null
     private class AssociationCandidate(val staged: EpubOriginalStore.Staged, val opened: Publication) : java.io.Closeable {
         override fun close() {
             try { opened.close() } finally { staged.close() }
@@ -120,16 +127,19 @@ class EpubReaderActivity : FragmentActivity() {
         header.addView(heading, LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(button("目录") { showContents() })
         root.addView(header)
-        val host = FrameLayout(this).apply { id = HOST_ID }
+        val host = FrameLayout(this)
+        host.addView(FrameLayout(this).apply { id = HOST_ID }, FrameLayout.LayoutParams(-1, -1))
         status = TextView(this).apply {
             text = "正在打开 EPUB 原版…"; textSize = 17f; gravity = Gravity.CENTER
             setPadding(32, 24, 32, 24)
+            setBackgroundColor(Color.rgb(250, 247, 239))
+            isClickable = true; isFocusable = true
         }
         host.addView(status, FrameLayout.LayoutParams(-1, -1))
         root.addView(host, LinearLayout.LayoutParams(-1, 0, 1f))
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        controls.addView(button("上一页") { navigator?.goBackward(animated = true) })
-        controls.addView(button("下一页") { navigator?.goForward(animated = true) })
+        controls.addView(button("上一页") { if (loaded) navigator?.goBackward(animated = true) })
+        controls.addView(button("下一页") { if (loaded) navigator?.goForward(animated = true) })
         controls.addView(button("文字版") {
             setResult(RESULT_TEXT_READER, Intent().putExtra(EXTRA_BOOK_ID, bookId)); finish()
         })
@@ -275,12 +285,17 @@ class EpubReaderActivity : FragmentActivity() {
     private fun attach(book: EpubOriginalStore.Prepared, opened: Publication) {
         saveCurrentLocator()
         locatorJob?.cancel()
+        restoreJob?.cancel(); restoreJob = null
         navigator?.let { supportFragmentManager.beginTransaction().remove(it).commitNow() }
         publication?.close()
         prepared = book; publication = opened; loaded = false
         val initialJson = savedLocator?.takeIf { savedDigest == book.sha256 } ?: store.loadLocator(bookId, book.sha256)
         val initial = runCatching { initialJson?.let { Locator.fromJSON(JSONObject(it)) } }.getOrNull()
             ?.takeIf { locator -> opened.readingOrder.any { it.url().removeFragment() == locator.href.removeFragment() } }
+        restoreTarget = initial?.takeIf { opened.metadata.layout != Layout.FIXED }
+        status.setOnClickListener(null); status.isClickable = true
+        status.text = if (restoreTarget != null) "正在恢复原版阅读位置…" else "正在打开 EPUB 原版…"
+        status.visibility = View.VISIBLE
         val factory = EpubNavigatorFactory(opened).createFragmentFactory(
             initialLocator = initial,
             initialPreferences = EpubPreferences(publisherStyles = true),
@@ -290,7 +305,10 @@ class EpubReaderActivity : FragmentActivity() {
                 }
             },
             paginationListener = object : EpubNavigatorFragment.PaginationListener {
-                override fun onPageLoaded() { loaded = true; status.visibility = View.GONE }
+                override fun onPageLoaded() {
+                    if (restoreTarget == null) { loaded = true; status.visibility = View.GONE }
+                    else restorePendingPosition()
+                }
             },
         )
         supportFragmentManager.fragmentFactory = factory
@@ -314,7 +332,109 @@ class EpubReaderActivity : FragmentActivity() {
         }
     }
 
+    /** SDK page-loaded may precede the final inset/font layout. Do not persist that page's 0. */
+    private fun restorePendingPosition() {
+        val target = restoreTarget ?: return
+        val fragment = navigator ?: return
+        if (restoreJob?.isActive == true) return
+        restoreJob = lifecycleScope.launch {
+            try {
+                val restored = withTimeoutOrNull(12_000) {
+                    var previousGeometry: String? = null
+                    var stableSamples = 0
+                    while (true) {
+                        delay(120)
+                        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) continue
+                        if (navigator !== fragment || restoreTarget !== target) return@withTimeoutOrNull false
+                        val geometry = restorationGeometry(fragment, target) ?: continue
+                        val expectedPath = "/" + target.href.removeFragment().toString().substringBefore('?').trimStart('/')
+                        if (!geometry.optString("path").endsWith(expectedPath) || !geometry.optBoolean("ready")) continue
+                        val signature = listOf("width", "height", "rangeWidth", "rangeHeight")
+                            .joinToString(":") { geometry.optDouble(it).toString() }
+                        stableSamples = if (signature == previousGeometry) stableSamples + 1 else 0
+                        previousGeometry = signature
+                        if (stableSamples < 2) continue
+                        if (!fragment.go(target, animated = false)) continue
+                        // Readium emits its geometry-derived Locator after a 100ms debounce.
+                        delay(250)
+                        val after = restorationGeometry(fragment, target) ?: continue
+                        val afterSignature = listOf("width", "height", "rangeWidth", "rangeHeight")
+                            .joinToString(":") { after.optDouble(it).toString() }
+                        if (signature != afterSignature || !after.optBoolean("ready")) { stableSamples = 0; continue }
+                        val width = after.optDouble("width")
+                        val pages = (after.optDouble("rangeWidth") / width).coerceAtLeast(1.0)
+                        val actual = fragment.currentLocator.value
+                        val expectedProgression = target.locations.progression ?: 0.0
+                        val actualProgression = actual.locations.progression ?: 0.0
+                        if (width > 0 && pages.isFinite() && actual.href.removeFragment() == target.href.removeFragment() &&
+                            kotlin.math.abs(actualProgression - expectedProgression) <= .5 / pages + .005) {
+                            return@withTimeoutOrNull true
+                        }
+                    }
+                    @Suppress("UNREACHABLE_CODE") false
+                } == true
+                if (navigator !== fragment || restoreTarget !== target) return@launch
+                if (restored) {
+                    restoreTarget = null; loaded = true; status.visibility = View.GONE
+                    saveCurrentLocator()
+                } else {
+                    showRestoreFailure("原版阅读位置尚未恢复，已保留上次进度。")
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                if (navigator === fragment) {
+                    showRestoreFailure("原版阅读位置恢复失败，已保留上次进度。")
+                }
+            }
+        }
+    }
+
+    private fun showRestoreFailure(message: String) {
+        status.text = "$message\n可返回后重新打开，或点此从当前页继续阅读。"
+        status.visibility = View.VISIBLE
+        status.setOnClickListener {
+            if (restoreTarget == null) return@setOnClickListener
+            // Explicit user choice replaces the pending restoration intent. A late coroutine
+            // cannot pull the reader back or resurrect the old target on the next resume.
+            restoreTarget = null
+            restoreJob?.cancel(); restoreJob = null
+            loaded = true; status.visibility = View.GONE
+            status.setOnClickListener(null)
+            saveCurrentLocator()
+        }
+    }
+
+    private suspend fun restorationGeometry(fragment: EpubNavigatorFragment, target: Locator): JSONObject? {
+        val suffix = "/" + target.href.removeFragment().toString().substringBefore('?').trimStart('/')
+        fun find(view: View?): WebView? {
+            if (view is WebView && view.isShown && view.url?.substringBefore('#')?.substringBefore('?')?.endsWith(suffix) == true) return view
+            if (view is ViewGroup) for (i in 0 until view.childCount) find(view.getChildAt(i))?.let { return it }
+            return null
+        }
+        val webView = find(fragment.view) ?: return null
+        // Application-owned read-only geometry; never execute book-authored code or enable networking.
+        // A destroyed/backgrounded WebView need not return a callback, so the wait must be cancellable.
+        return suspendCancellableCoroutine { continuation ->
+            webView.evaluateJavascript("""JSON.stringify({path:location.pathname,
+                ready:document.readyState==='complete' && document.fonts.status==='loaded',
+                width:innerWidth,height:innerHeight,rangeWidth:document.documentElement.scrollWidth,
+                rangeHeight:document.documentElement.scrollHeight})""") { raw ->
+                val result = runCatching {
+                    val value = if (raw.startsWith('"')) org.json.JSONArray("[$raw]").getString(0) else raw
+                    JSONObject(value)
+                }.getOrNull()
+                if (continuation.isActive) continuation.resume(result)
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (restoreTarget != null && restoreJob?.isActive != true) restorePendingPosition()
+    }
+
     private fun showContents() {
+        if (!loaded) return
         val publication = publication ?: return
         val flattened = mutableListOf<Pair<String, Link>>()
         fun add(links: List<Link>, depth: Int = 0) {
@@ -349,7 +469,7 @@ class EpubReaderActivity : FragmentActivity() {
     }
     override fun onStop() { saveCurrentLocator(); super.onStop() }
     override fun onDestroy() {
-        locatorJob?.cancel()
+        locatorJob?.cancel(); restoreJob?.cancel()
         associationDialog?.dismiss(); associationDialog = null
         closeAssociationCandidate()
         super.onDestroy()

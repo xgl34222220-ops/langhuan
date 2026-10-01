@@ -15,12 +15,13 @@ import java.util.concurrent.atomic.AtomicReference
 
 class ReaderWritingCopyV53DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
-    private fun remove(id: String) {
-        val sql = LanghuanDatabase.get(rule.activity).openHelper.writableDatabase
+    private fun remove(context: android.content.Context, id: String) {
+        val sql = LanghuanDatabase.get(context).openHelper.writableDatabase
         listOf("chapter_versions", "chapter_state", "memory_chunks", "story_state").forEach { sql.execSQL("DELETE FROM $it WHERE novelId = ?", arrayOf(id)) }
     }
     @Test fun readerAiActionCreatesIndependentDraftAndCancelLeavesNoProject() = runBlocking {
-        val projects=StoryProjectManager(rule.activity)
+        val appContext = rule.activity.applicationContext
+        val projects=StoryProjectManager(appContext)
         val original=projects.createImportedStory(ImportedManuscript("阅读转创作测试", listOf(ImportedChapter("第一章 原创", "测试正文，海风吹过码头。".repeat(80), "https://copy.example/chapter/1")), "fixture", "https://copy.example/book/${UUID.randomUUID()}"))
         val id=original.snapshot.novel.id
         val opened=AtomicReference<String?>(null)
@@ -41,6 +42,7 @@ class ReaderWritingCopyV53DeviceTest {
             rule.onNodeWithText("AI 创作").performClick()
             rule.onNodeWithText("创建副本并进入").performClick()
             rule.waitUntil(15000) { opened.get()!=null }
+            rule.onNodeWithText("从本章开始 AI 创作").assertDoesNotExist()
             val copied=projects.loadStory(opened.get()!!)!!
             assertNotEquals(id,copied.snapshot.novel.id)
             assertEquals("创作副本",copied.snapshot.novel.genre)
@@ -49,18 +51,22 @@ class ReaderWritingCopyV53DeviceTest {
             assertEquals(original.draft.content,copied.draft.content)
             assertEquals(original,projects.loadStory(id))
         } finally {
-            rule.runOnUiThread { rule.activity.viewModelStore.clear() }
-            remove(id); opened.get()?.let(::remove)
+            // Exercise a real Activity/Composition exit before deleting rows it observes.
+            // The Activity owns its ViewModel lifecycle; clearing it underneath a live tree
+            // and deleting the rows before rule teardown was not the app's navigation flow.
+            try { rule.activityRule.scenario.close() }
+            finally { remove(appContext, id); opened.get()?.let { remove(appContext, it) } }
         }
     }
     @Test fun uncachedOrChangedChapterCannotCreateEmptyOrWrongWritingCopy() = runBlocking {
-        val projects=StoryProjectManager(rule.activity)
+        val appContext = rule.activity.applicationContext
+        val projects=StoryProjectManager(appContext)
         val original=projects.createImportedStory(ImportedManuscript("未缓存",listOf(ImportedChapter("第一章","","https://copy.example/chapter/1")),"fixture","https://copy.example/book/${UUID.randomUUID()}"))
         val id=original.snapshot.novel.id
         try {
             assertTrue(runCatching { projects.createWritingCopy(id,1,original.draft.id) }.isFailure)
             assertTrue(runCatching { projects.createWritingCopy(id,1,"wrong-chapter") }.isFailure)
             assertEquals(original,projects.loadStory(id))
-        } finally { remove(id) }
+        } finally { remove(appContext, id) }
     }
 }

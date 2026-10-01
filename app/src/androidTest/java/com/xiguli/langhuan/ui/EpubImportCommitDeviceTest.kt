@@ -155,7 +155,7 @@ class EpubImportCommitDeviceTest {
         }
     }
 
-    @Test fun backingOutOfAssociationDialogCleansStagingAndLeavesExistingFilesUntouched() = runBlocking {
+    @Test fun backingOutOfAssociationDialogCleansStagingAndLeavesExistingFilesUntouched(): Unit = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
         val originals = File(app.filesDir, "epub_originals_v1")

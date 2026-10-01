@@ -226,6 +226,62 @@ class EpubOriginalReaderDeviceTest {
         }
     }
 
+    @Test fun stoppingBeforeRestoreCompletesPreservesTheSavedNonzeroPosition() {
+        val id = seed("original-reflow.epub", "epub-device-pending-restore")
+        val store = EpubReaderEntry.store(context)
+        val digest = requireNotNull(store.digest(id))
+        val target = Locator.fromJSON(JSONObject("""{"href":"OPS/two.xhtml","type":"application/xhtml+xml","locations":{"progression":0.5}}"""))!!
+        store.saveLocator(id, digest, target.toJSON().toString())
+        repeat(3) {
+            withReader(id) { scenario ->
+                // Do not wait for a painted page: stop and destroy during the opening transition.
+                scenario.moveToState(Lifecycle.State.CREATED)
+            }
+            val saved = Locator.fromJSON(JSONObject(requireNotNull(store.loadLocator(id, digest))))!!
+            assertEquals(target.href, saved.href)
+            assertEquals("An unfinished restore must never replace the prior position with page zero",
+                0.5, saved.locations.progression ?: -1.0, 0.08)
+        }
+        withReader(id) { scenario ->
+            waitForPage(scenario, "two.xhtml")
+            waitUntil { kotlin.math.abs((current(scenario)?.locations?.progression ?: -1.0) - 0.5) < 0.08 &&
+                evaluate(scenario, "window.scrollX > 0 || window.scrollY > 0") == "true" }
+        }
+    }
+
+    @Test fun explicitContinueAfterRestoreFailureCancelsOldIntentAndAllowsNewNavigation() {
+        val id = seed("original-reflow.epub", "epub-device-restore-continue")
+        withReader(id) { scenario ->
+            waitForArt(scenario)
+            evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
+            waitForPage(scenario, "two.xhtml")
+            // Controlled renderer-failure state on a real loaded book; no external site or timer.
+            scenario.onActivity { activity ->
+                val target = nav(activity).currentLocator.value.copy(locations = Locator.Locations(progression = .7))
+                EpubReaderActivity::class.java.getDeclaredField("restoreTarget").apply { isAccessible = true }.set(activity, target)
+                EpubReaderActivity::class.java.getDeclaredField("loaded").apply { isAccessible = true }.setBoolean(activity, false)
+                EpubReaderActivity::class.java.getDeclaredMethod("restorePendingPosition").apply { isAccessible = true }.invoke(activity)
+                EpubReaderActivity::class.java.getDeclaredMethod("showRestoreFailure", String::class.java).apply { isAccessible = true }
+                    .invoke(activity, "合成恢复失败")
+                val notice = textViews(activity.window.decorView).single { it.text.contains("从当前页继续") }
+                assertTrue(notice.performClick())
+                assertNull(EpubReaderActivity::class.java.getDeclaredField("restoreTarget").apply { isAccessible = true }.get(activity))
+                textViews(activity.window.decorView).single { it.text == "下一页" }.performClick()
+            }
+            waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 &&
+                evaluate(scenario, "window.scrollX > 0 || window.scrollY > 0") == "true" }
+            val selected = requireNotNull(current(scenario))
+            assertTrue((selected.locations.progression ?: 0.0) < .5)
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            waitForPage(scenario, "two.xhtml")
+            assertEquals(selected.locations.progression ?: 0.0, current(scenario)!!.locations.progression ?: 0.0, .08)
+            val store = EpubReaderEntry.store(context)
+            val persisted = Locator.fromJSON(JSONObject(requireNotNull(store.loadLocator(id, requireNotNull(store.digest(id))))))!!
+            assertEquals(selected.locations.progression ?: 0.0, persisted.locations.progression ?: 0.0, .08)
+        }
+    }
+
     /** Default suite executes both phases; explicit phases require a real process boundary. */
     @Test fun processDeathRoundTrip() {
         when (val phase = InstrumentationRegistry.getArguments().getString("phase") ?: "both") {
