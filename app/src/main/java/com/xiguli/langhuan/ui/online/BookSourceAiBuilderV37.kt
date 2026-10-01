@@ -25,6 +25,10 @@ internal data class AiSourceStepV37(val label: String, val ok: Boolean? = null, 
 internal data class AiDiscoveryEvidenceV37(
     val label: String, val url: String, val bookCount: Int, val sampleBook: String,
     val chapterCount: Int, val nextPageUrl: String? = null, val nextPageBookCount: Int? = null,
+    val sampleChapter: String = "", val sampleChapterUrl: String = "",
+    val catalogueProof: SourceCatalogueProofV50? = null,
+    val chapterProof: SourceChapterProofV50? = null,
+    val readingWarnings: List<String> = emptyList(),
 )
 
 internal data class AiSourceReportV37(
@@ -36,6 +40,10 @@ internal data class AiSourceReportV37(
     val discoveryLabels: List<String> = emptyList(),
     val discoveryWarnings: List<String> = emptyList(),
     val discoveryEvidence: List<AiDiscoveryEvidenceV37> = emptyList(),
+    val sampleBookUrl: String = "", val sampleChapter: String = "", val sampleChapterUrl: String = "",
+    val catalogueProof: SourceCatalogueProofV50? = null,
+    val chapterProof: SourceChapterProofV50? = null,
+    val readingWarnings: List<String> = emptyList(),
 )
 
 /**
@@ -144,9 +152,11 @@ internal class BookSourceAiBuilderV37(
             .getOrElse { fail("书籍页打不开：${it.message.orEmpty().take(80)}") }
         rules = askRules(TOC_TASK, bookDoc, picked.name, feedback = null)
         source = source.withToc(rules)
-        var toc = sourceAttemptV36 { loadAiBookV37(source, picked).second }.getOrDefault(emptyList())
-        if (toc.isEmpty()) {
-            // The list may live on a separate page; show that page to the model if the book page links to one.
+        var catalogueAttempt = sourceAttemptV36 { loadAiBookV37(source, picked) }
+        if (catalogueAttempt.isFailure) {
+            // Preserve the reason: a partial/latest-only catalogue is not an empty selector.
+            network.checkActive()
+            val problem = catalogueAttempt.exceptionOrNull()?.message.orEmpty().take(240)
             val tocPage = ruleStringV36(bookDoc, source.infoTocUrl).takeIf { it.isNotBlank() }
                 ?.let { sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(resolveUrlV36(bookDoc.location(), it))) }.getOrNull() }
             val evidence = tocPage ?: bookDoc
@@ -154,30 +164,41 @@ internal class BookSourceAiBuilderV37(
                 TOC_TASK,
                 evidence,
                 picked.name,
-                feedback = "上次规则 ${rules.compact()} 没有取到任何章节。" + if (tocPage != null) "下面是目录页（由 infoTocUrl 打开），请写目录规则并保留 infoTocUrl。" else "请检查章节列表的选择器。",
+                feedback = "上次规则 ${rules.compact()} 未通过目录检查：$problem。" +
+                    if (tocPage != null) "下面是目录页（由 infoTocUrl 打开），请写完整目录规则并保留 infoTocUrl。" else "请按真实完整目录和分页链接纠正规则，不要使用最新章节或猜测地址。",
             )
             source = source.withToc(rules, keepTocUrl = tocPage != null)
-            toc = sourceAttemptV36 { loadAiBookV37(source, picked).second }.getOrDefault(emptyList())
+            catalogueAttempt = sourceAttemptV36 { loadAiBookV37(source, picked) }
         }
+        val catalogue = catalogueAttempt.getOrElse { fail("目录检查未通过：${it.message.orEmpty().take(260)}") }
+        val toc = catalogue.chapters
         if (toc.isEmpty()) fail("没能取到目录")
-        finish(true, "目录 ${toc.size} 章")
+        finish(true, sourceCatalogueSummaryV50(toc.size, catalogue.proof))
 
-        // 4. Chapter text
+        // 4. Validate the selected chapter and retain the provenance of the actual sample.
         step("分析正文页")
         val first = toc.first()
         val chapterDoc = sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(first.url)) }
             .getOrElse { fail("正文页打不开：${it.message.orEmpty().take(80)}") }
-        rules = askRules(CONTENT_TASK, chapterDoc, first.title, feedback = null)
+        val chapterHint = "《${catalogue.book.name}》 · ${first.title}"
+        rules = askRules(CONTENT_TASK, chapterDoc, chapterHint, feedback = null)
         source = source.withContent(rules)
         val tocUrls = toc.map { it.url }.toSet()
-        var text = sourceAttemptV36 { loadAiChapterV37(source, first, tocUrls) }.getOrDefault("")
-        if (text.length < 60) {
-            rules = askRules(CONTENT_TASK, chapterDoc, first.title, feedback = "上次规则 ${rules.compact()} 只取到 ${text.length} 个字。正文一般是页面里字数最多的那一块。")
+        var chapterAttempt = sourceAttemptV36 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
+        if (!aiChapterSampleAcceptedV50(chapterAttempt.getOrNull())) {
+            network.checkActive()
+            val problem = chapterAttempt.exceptionOrNull()?.message?.take(240)
+                ?: "仅取到 ${chapterAttempt.getOrNull()?.text.orEmpty().length} 个字"
+            rules = askRules(CONTENT_TASK, chapterDoc, chapterHint,
+                feedback = "上次规则 ${rules.compact()} 未通过正文检查：$problem。请核对当前书名、章节标题及正文容器，不要选择导航、目录、推荐、简介或其他文章，也不要仅按字数最多选择。")
             source = source.withContent(rules)
-            text = sourceAttemptV36 { loadAiChapterV37(source, first, tocUrls) }.getOrDefault("")
+            chapterAttempt = sourceAttemptV36 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
         }
-        if (text.length < 60) fail("没能取到正文")
-        finish(true, "第一章 ${text.length} 字")
+        val chapter = chapterAttempt.getOrElse { fail("正文检查未通过：${it.message.orEmpty().take(260)}") }
+        val text = chapter.text
+        if (!aiChapterSampleAcceptedV50(chapter)) fail("本次正文抽样不足 60 字且缺少书名或章名证据，暂未确认规则可用；可以换一章核对")
+        finish(true, "抽样「${first.title}」${text.length} 字 · " +
+            if (chapter.proof.identityVerified) "页面书名与章节已核对" else "页面身份信息不足，需人工核对")
 
         step("识别并验证发现分类与排行榜")
         val warnings = ArrayList<String>()
@@ -189,13 +210,16 @@ internal class BookSourceAiBuilderV37(
         }
         val labels = sourceDiscoveriesV41(source).map { it.label }
         finish(if (warnings.isNotEmpty()) false else if (labels.isEmpty()) null else true, when {
-            labels.isNotEmpty() -> "已验证 ${labels.size} 个分类/榜单：${labels.joinToString("、")}"
+            labels.isNotEmpty() -> "已抽样 ${labels.size} 个分类/榜单：${labels.joinToString("、")}"
             warnings.isNotEmpty() -> warnings.joinToString("；")
             else -> "网站静态页面未找到可验证的分类或排行榜；已保留搜索功能"
         })
         require(bookSourceSupportedV36(source)) { "生成规则包含不支持的语法" }
         currentCoroutineContext().ensureActive()
-        return AiSourceReportV37(source, results.size, picked.name, toc.size, text.take(160), labels, warnings, discoveryEvidence)
+        return AiSourceReportV37(source, results.size, catalogue.book.name, toc.size, text.take(160), labels, warnings, discoveryEvidence,
+            sampleBookUrl = catalogue.book.bookUrl, sampleChapter = first.title, sampleChapterUrl = chapter.proof.chapterUrl,
+            catalogueProof = catalogue.proof, chapterProof = chapter.proof,
+            readingWarnings = (catalogue.proof.warnings + chapter.proof.warnings).distinct())
     }
 
     private suspend fun buildDiscovery(initial: BookSourceV36, home: Document, warnings: MutableList<String>, evidence: MutableList<AiDiscoveryEvidenceV37>): BookSourceV36 {
@@ -271,17 +295,17 @@ internal class BookSourceAiBuilderV37(
             val reading = sourceAttemptV36 {
                 val sample = books.first()
                 require(sameSourceOriginV36(publicSourceUrlV36(initial.baseUrl), publicSourceUrlV36(sample.bookUrl))) { "发现书籍跳转到站外" }
-                val (book, chapters) = loadAiBookV37(candidate, sample)
-                require(chapters.isNotEmpty()) { "没有目录" }
-                val content = loadAiChapterV37(candidate, chapters.first(), chapters.map { it.url }.toSet())
-                require(content.length >= 60) { "正文不足 60 字，未验证通过" }
-                book to chapters.size
+                val catalogue = loadAiBookV37(candidate, sample)
+                require(catalogue.chapters.isNotEmpty()) { "没有目录" }
+                val content = loadAiChapterV37(candidate, catalogue.book, catalogue.chapters.first(), catalogue.chapters.map { it.url }.toSet())
+                require(aiChapterSampleAcceptedV50(content)) { "正文不足 60 字且身份未核对，未验证通过" }
+                catalogue to content
             }
             if (reading.isFailure) {
                 warnings += "${link.label}：详情/目录/正文验证失败，未添加（${reading.exceptionOrNull()?.message.orEmpty().take(100)}）"
                 continue
             }
-            val (book, chapterCount) = reading.getOrThrow()
+            val (catalogue, content) = reading.getOrThrow()
             val next = discoveryNextUrlV41(doc)
             var nextCount: Int? = null
             if (next != null) {
@@ -296,7 +320,10 @@ internal class BookSourceAiBuilderV37(
                 }
             }
             verified += link
-            evidence += AiDiscoveryEvidenceV37(link.label, link.url, books.size, book.name, chapterCount, next, nextCount)
+            evidence += AiDiscoveryEvidenceV37(link.label, link.url, books.size, catalogue.book.name, catalogue.chapters.size, next, nextCount,
+                sampleChapter = catalogue.chapters.first().title, sampleChapterUrl = content.proof.chapterUrl,
+                catalogueProof = catalogue.proof, chapterProof = content.proof,
+                readingWarnings = (catalogue.proof.warnings + content.proof.warnings).distinct())
         }
         if (verified.isEmpty()) return initial.copy(enabledExplore = false)
         // Store only observed URLs. Pagination follows observed next links, never AI-invented paths.
@@ -350,9 +377,9 @@ internal class BookSourceAiBuilderV37(
     private suspend fun searchAiSourceV37(source: BookSourceV36, key: String) =
         runInterruptible(Dispatchers.IO) { searchSourceV36(source, key, fetchDocument = network::document) }
     private suspend fun loadAiBookV37(source: BookSourceV36, book: OnlineBookV36) =
-        runInterruptible(Dispatchers.IO) { loadBookV36(source, book, network::document) }
-    private suspend fun loadAiChapterV37(source: BookSourceV36, chapter: OnlineChapterV36, urls: Set<String>) =
-        runInterruptible(Dispatchers.IO) { loadChapterTextV36(source, chapter, urls, network::document) }
+        runInterruptible(Dispatchers.IO) { loadBookCatalogueV50(source, book, network::document).also { check(it.chapters.isNotEmpty()) { "没有取到章节" } } }
+    private suspend fun loadAiChapterV37(source: BookSourceV36, book: OnlineBookV36, chapter: OnlineChapterV36, urls: Set<String>) =
+        runInterruptible(Dispatchers.IO) { loadChapterAuditV50(source, book, chapter, urls, network::document) }
 
     // ---- Model calls ---------------------------------------------------------------------------
 
@@ -482,11 +509,12 @@ searchList（每本书的外层元素）、searchName、searchAuthor、searchCov
         const val TOC_TASK = """任务：为“书籍详情页”写规则，并写目录规则。输出 JSON 键：
 infoName、infoAuthor、infoCover、infoIntro、infoTocUrl（如果目录在另一个页面，写跳转到目录页的链接规则；目录就在本页则留空）、
 tocList（每一章的元素，按正序）、tocName、tocUrl（用 @href）、tocNext（目录有分页时“下一页”链接规则，没有留空）。
-注意：很多站的目录前面有“最新章节”区块，tocList 要选正文目录而不是最新章节。"""
+注意：很多站的目录前面有“最新章节”区块，tocList 要选完整正文目录，不能把最新章节摘要当全书目录。检查同页完整目录、目录总数和已观察到的分页链接；不能猜测或拼造地址。"""
 
         const val CONTENT_TASK = """任务：为“章节正文页”写规则。输出 JSON 键：
 contentText（正文容器，用 @html 保留分段）、contentNext（同一章分页时“下一页”的链接规则，没有留空）、
-contentReplace（要从正文删掉的广告/提示文字，写成 "##正则"，没有留空）。"""
+contentReplace（要从正文删掉的广告/提示文字，写成 "##正则"，没有留空）。
+核对页面书名、章名与目标一致，只取该章正文；不要选推荐文章、书籍简介、导航或目录，也不能只按最长文字块选择。小说正文可能引用新闻，不得仅凭新闻、娱乐等词过滤。"""
     }
 }
 
@@ -716,3 +744,17 @@ internal fun validateAiDiscoveryLinksV37(raw: String, doc: Document): List<AiDis
             ?: error("AI 返回的分类/榜单没有网页链接证据：${section.label}")
     }
 }
+
+internal fun sourceCatalogueSummaryV50(count: Int, proof: SourceCatalogueProofV50?): String = buildString {
+    append("已解析 $count 章")
+    proof?.let { append(" · 目录 ${it.pagesRead} 页") }
+    append(if (proof?.hasCompletenessEvidence == true) " · 已核对完整目录结构" else " · 完整性待核实")
+}
+
+internal fun sourceSampleScopeV50(proof: SourceChapterProofV50?): String =
+    if (proof?.identityVerified == true) "抽样页书名与章名已核对；未逐章验证全书"
+    else "抽样页缺少可核对的书名或章名；请核对下方章节和原文，未逐章验证全书"
+
+/** A real, explicitly identified short chapter is not an extraction failure. */
+internal fun aiChapterSampleAcceptedV50(chapter: OnlineChapterAuditV50?): Boolean =
+    chapter != null && chapter.text.isNotBlank() && (chapter.text.length >= 60 || chapter.proof.identityVerified)

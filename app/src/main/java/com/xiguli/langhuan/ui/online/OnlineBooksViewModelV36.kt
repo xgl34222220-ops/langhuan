@@ -26,7 +26,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 
-internal data class OnlineDetailV36(val book: OnlineBookV36, val chapters: List<OnlineChapterV36>, val shelfStoryId: String? = null)
+internal data class OnlineDetailV36(val book: OnlineBookV36, val chapters: List<OnlineChapterV36>, val shelfStoryId: String? = null, val catalogueProof: SourceCatalogueProofV50? = null)
 
 internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed: Int, val saving: Boolean = false)
 
@@ -335,10 +335,10 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         detailJob?.cancel()
         _state.update { it.copy(detailLoading = true, detail = OnlineDetailV36(book, emptyList()), error = null) }
         detailJob = viewModelScope.launch {
-            sourceAttemptV36 { runInterruptible(Dispatchers.IO) { loadBookV36(source, book) } }
-                .onSuccess { (detailed, chapters) ->
-                    val existing = withContext(Dispatchers.IO) { projects.findOnlineStory(source.id, detailed.bookUrl) }
-                    _state.update { it.copy(detailLoading = false, detail = OnlineDetailV36(detailed, chapters, existing)) }
+            sourceAttemptV36 { runInterruptible(Dispatchers.IO) { loadBookCatalogueV50(source, book) } }
+                .onSuccess { catalogue ->
+                    val existing = withContext(Dispatchers.IO) { projects.findOnlineStory(source.id, catalogue.book.bookUrl) }
+                    _state.update { it.copy(detailLoading = false, detail = OnlineDetailV36(catalogue.book, catalogue.chapters, existing, catalogue.proof)) }
                 }
                 .onFailure { e -> _state.update { it.copy(detailLoading = false, error = "读取目录失败：${e.message.orEmpty()}") } }
         }
@@ -403,7 +403,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 val (_, chapters) = runInterruptible(Dispatchers.IO) { loadBookV36(source, book) }
                 val existing = withContext(Dispatchers.IO) { projects.chapterDrafts(novelId) }
                 val fresh = onlineCatalogueAppendV46(existing, chapters)
-                if (fresh.isEmpty()) return@sourceAttemptV36 "目录已是最新，共 ${chapters.size} 章"
+                if (fresh.isEmpty()) return@sourceAttemptV36 "本次目录未发现新增，已解析 ${chapters.size} 章"
                 currentCoroutineContext().ensureActive()
                 val added = withContext(Dispatchers.IO) {
                     projects.appendOnlineCatalogue(novelId, source.id, novel.sourceBookUrl, chapters.map { ImportedChapter(it.title, "", it.url) })

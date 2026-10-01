@@ -591,12 +591,15 @@ private fun OnlineDetailSheetV36(
                 Text(detail.book.name, color = t.foreground, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(detail.book.author.ifBlank { "佚名" }, Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    if (loading) "正在读取完整目录…" else if (detail.chapters.isEmpty()) "目录未读取完成 · ${detail.book.sourceName}" else "共 ${detail.chapters.size} 章 · ${detail.book.sourceName}",
+                    if (loading) "正在读取完整目录…" else if (detail.chapters.isEmpty()) "目录未读取完成 · ${detail.book.sourceName}" else "已解析 ${detail.chapters.size} 章 · ${detail.book.sourceName}",
                     Modifier.padding(top = 4.dp),
                     color = t.mutedForeground,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+        }
+        if (!loading && detail.chapters.isNotEmpty() && detail.catalogueProof?.hasCompletenessEvidence != true) {
+            Text("目录完整性尚未确认，已解析数量不代表全书总章数", Modifier.padding(top = 8.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
         }
         Text(
             detail.book.intro.ifBlank { "暂无简介" },
@@ -611,7 +614,7 @@ private fun OnlineDetailSheetV36(
                 repeat(3) { LanghuanSkeletonV31(Modifier.fillMaxWidth(.7f - it * .15f).height(12.dp)) }
             }
         } else if (detail.chapters.isNotEmpty()) {
-            Text("最新：${detail.chapters.last().title}", Modifier.padding(top = 12.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("目录末条：${detail.chapters.last().title}", Modifier.padding(top = 12.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         AnimatedContent(targetState = download != null, label = "downloadState", modifier = Modifier.padding(top = 18.dp)) { downloading ->
             if (downloading && download != null) {
@@ -767,19 +770,27 @@ internal fun OnlineAiSheetV36(
         state.aiReport?.let { report ->
             Surface(Modifier.fillMaxWidth().padding(top = 14.dp), shape = RoundedCornerShape(14.dp), color = t.muted) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("「${report.source.name}」搜索与阅读测试通过", color = t.foreground, style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "搜到 ${report.searchCount} 本 · 《${report.bookName}》目录 ${report.chapterCount} 章",
-                        Modifier.padding(top = 4.dp),
-                        color = t.mutedForeground,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(if (report.discoveryLabels.isEmpty()) "未添加发现入口：网站没有可验证的静态分类，或验证未通过" else "已验证发现：${report.discoveryLabels.joinToString("、")}", Modifier.padding(top = 6.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                    Text("「${report.source.name}」规则抽样完成", color = t.foreground, style = MaterialTheme.typography.titleSmall)
+                    Text("搜索返回 ${report.searchCount} 本 · 抽样《${report.bookName}》", Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                    Text(sourceCatalogueSummaryV50(report.chapterCount, report.catalogueProof), Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                    report.readingWarnings.forEach { Text(it, Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall) }
+                    Text(if (report.discoveryLabels.isEmpty()) "未添加发现入口：没有可验证的静态分类，或检查未通过" else "已添加抽样可读入口：${report.discoveryLabels.joinToString("、")}", Modifier.padding(top = 6.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
                     report.discoveryEvidence.forEach { proof ->
-                        Text("${proof.label} · ${proof.bookCount} 本 · 目录/正文已验证" + if (proof.nextPageUrl != null) " · 下一页${proof.nextPageBookCount?.let { " $it 本" } ?: "未通过"}" else "", Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                        Text("${proof.label} · 本页解析 ${proof.bookCount} 本 · 抽查 1 本" + if (proof.nextPageUrl != null) " · 下一页${proof.nextPageBookCount?.let { "解析 $it 本" } ?: "未通过"}" else "", Modifier.padding(top = 6.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                        Text("《${proof.sampleBook}》 · ${proof.sampleChapter.ifBlank { "章节未记录" }}", color = t.foreground, style = MaterialTheme.typography.bodySmall)
+                        Text(sourceCatalogueSummaryV50(proof.chapterCount, proof.catalogueProof), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
                         Text(proof.url, color = t.mutedForeground, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        proof.readingWarnings.forEach { Text(it, Modifier.padding(top = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall) }
                     }
                     report.discoveryWarnings.forEach { Text(it, Modifier.padding(top = 4.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall) }
+                    Text("正文抽样 · ${report.sampleChapter.ifBlank { "章节未记录" }}", Modifier.padding(top = 10.dp), color = t.foreground, style = MaterialTheme.typography.titleSmall)
+                    Text(sourceSampleScopeV50(report.chapterProof), Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+                    if (report.sampleBookUrl.isNotBlank()) androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text("书籍页：${report.sampleBookUrl}", Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (report.sampleChapterUrl.isNotBlank()) androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(report.sampleChapterUrl, Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.labelSmall)
+                    }
                     Text(report.sample, Modifier.padding(top = 8.dp), color = t.foreground, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
             }

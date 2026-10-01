@@ -728,7 +728,14 @@ internal fun loadBookV36(
     source: BookSourceV36,
     book: OnlineBookV36,
     fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
-): Pair<OnlineBookV36, List<OnlineChapterV36>> {
+): Pair<OnlineBookV36, List<OnlineChapterV36>> = loadBookCatalogueV50(source, book, fetchDocument).let { it.book to it.chapters }
+
+internal fun loadBookCatalogueV50(
+    source: BookSourceV36,
+    book: OnlineBookV36,
+    fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
+): OnlineBookCatalogueV50 {
+    if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
     val page = fetchDocument(source, SourceRequestV36(book.bookUrl))
     val detailed = book.copy(
         name = ruleStringV36(page, source.infoName).ifBlank { book.name },
@@ -736,104 +743,116 @@ internal fun loadBookV36(
         cover = ruleStringV36(page, source.infoCover).ifBlank { book.cover }.let { if (it.isBlank()) it else resolveUrlV36(page.location(), it) },
         intro = ruleStringV36(page, source.infoIntro).ifBlank { book.intro },
     )
+    val inspectors = HashMap<Document, CataloguePageInspectorV50>()
+    fun inspect(doc: Document) = inspectors.getOrPut(doc) { CataloguePageInspectorV50(doc) }
 
     fun declaredChapters(doc: Document): List<OnlineChapterV36> {
-        val elements = ruleElementsV36(doc, source.tocList)
-        val found = elements.mapNotNull { item ->
+        val found = ruleElementsV36(doc, source.tocList).mapNotNull { item ->
             val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }.trim()
             val url = ruleStringV36(item, source.tocUrl).ifBlank { item.selectFirst("a[href]")?.absUrl("href").orEmpty() }
             if (title.isNotBlank() && url.isNotBlank()) OnlineChapterV36(title, resolveUrlV36(doc.location(), url)) else null
-        }
-        // A generated selector can target a labelled "latest chapters" widget even when the
-        // full catalogue is already on this page. Only prefer the larger dense catalogue
-        // when the selected elements are explicitly inside that preview; don't indiscriminately
-        // append recommendation/sidebar links to otherwise working rules.
-        val preview = sourceSelectionIsPreviewV46(elements)
-        if (preview) {
-            val full = heuristicChapterLinksV39(doc, book.bookUrl)
-            if (full.size > found.size) return full
+        }.distinctBy { it.url }
+        val observedFull = inspect(doc).fullChapterLinks(book.bookUrl)
+        if (found.isEmpty()) return observedFull.ifEmpty { heuristicChapterLinksV39(doc, book.bookUrl) }
+        val fullUrls = observedFull.map { it.url }.toHashSet()
+        if (observedFull.size > found.size && found.all { it.url in fullUrls }) return observedFull
+        val evidence = inspect(doc).selection(found)
+        // Compare with a real full-list candidate even when the declared rule returns a plausible
+        // nonempty prefix. A working rule must never acquire recommendation/sidebar links.
+        val alternative = heuristicChapterLinksV39(doc, book.bookUrl)
+        if (alternative.size > found.size) {
+            val other = inspect(doc).selection(alternative)
+            val missingTotal = inspect(doc).declaredTotal(found)?.let { it > found.size } == true
+            if (other.full || ((evidence.preview || evidence.weakPreview || missingTotal) && !other.preview && !other.weakPreview)) return alternative
         }
         return found
     }
 
-    // A detail page may contain only a recent-chapter preview. An explicitly labelled full
-    // catalogue is stronger evidence than that preview; a path that merely contains "list"
-    // is not. Never skip page one because a "next page" URL looks like a directory.
     val onPageChapters = declaredChapters(page)
-    val declaredToc = ruleStringV36(page, source.infoTocUrl)
-        .takeIf { it.isNotBlank() }
-        ?.let { resolveUrlV36(page.location(), it) }
-    val heuristicToc = heuristicTocUrlV39(page)
+    val declaredToc = ruleStringV36(page, source.infoTocUrl).takeIf { it.isNotBlank() }?.let { resolveUrlV36(page.location(), it) }
     val explicitToc = heuristicTocUrlV39(page, explicitOnly = true)
-    val firstToc = declaredToc?.takeIf { it != page.location() }
-        ?: explicitToc?.takeIf { it != page.location() }
-        ?: heuristicToc?.takeIf { onPageChapters.isEmpty() && it != page.location() }
-    var doc = firstToc?.let {
-        sourceAttemptV36 { fetchDocument(source, SourceRequestV36(it)) }
-            .getOrElse { failure -> throw IllegalStateException("完整目录读取失败，未将预览章节当作完整目录：${failure.message.orEmpty()}", failure) }
-    } ?: page
-
-    val chapters = ArrayList<OnlineChapterV36>()
+    val heuristicToc = heuristicTocUrlV39(page)
+    fun otherPage(url: String?): String? = url?.takeIf { catalogueCanonicalUrlV50(it) != catalogueCanonicalUrlV50(page.location()) }
+    val firstToc = otherPage(declaredToc) ?: otherPage(explicitToc) ?: otherPage(heuristicToc).takeIf { onPageChapters.isEmpty() }
+    fun read(url: String, message: String): Document {
+        check(sameCatalogueOriginV50(page.location(), url)) { "目录入口不在当前网站，未继续读取" }
+        if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
+        return sourceAttemptV36 { fetchDocument(source, SourceRequestV36(url)) }.getOrElse { failure ->
+            throw IllegalStateException("$message：${failure.message.orEmpty()}", failure)
+        }.also { check(sameCatalogueOriginV50(page.location(), it.location())) { "目录跳转到站外，未将结果当作完整目录" } }
+    }
+    var doc = firstToc?.let { read(it, "完整目录读取失败，未将预览章节当作完整目录") } ?: page
+    val firstCatalogueUrl = catalogueCanonicalUrlV50(doc.location())
+    val chapters = LinkedHashMap<String, OnlineChapterV36>()
     val visited = LinkedHashSet<String>()
-    var triedHeuristicFromBookPage = false
-    val previewElements = ruleElementsV36(page, source.tocList)
-    val unresolvedPreview = firstToc == null && sourceSelectionIsPreviewV46(previewElements) &&
-        onPageChapters.size <= previewElements.size
+    val declaredTotals = LinkedHashSet<Int>()
+    inspect(page).declaredTotal(onPageChapters)?.let(declaredTotals::add)
+    var latestOrdinal = listOfNotNull(chapterOrdinalV50(book.latest), inspect(page).latestOrdinal(book.bookUrl)).maxOrNull()
+    var explicitFull = false
+    var unresolvedPreview = false
+    var hasVolumeNumbers = inspect(page).hasVolumes()
 
-    fun completed(): Pair<OnlineBookV36, List<OnlineChapterV36>> {
-        val distinct = chapters.distinctBy { it.url }
-        val highestNumber = distinct.mapNotNull { Regex("第\\s*(\\d+)\\s*[章节節回]").find(it.title)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull()
-        check(!(unresolvedPreview && visited.size == 1 && highestNumber != null && highestNumber > distinct.size)) {
+    fun completed(): OnlineBookCatalogueV50 {
+        val distinct = chapters.values.toList()
+        val declaredTotal = declaredTotals.singleOrNull()
+        check(declaredTotals.size <= 1) { "目录总章数在分页间不一致，尚未确认完整目录" }
+        check(declaredTotal == null || distinct.size >= declaredTotal) {
+            "目录不完整：页面声明 $declaredTotal 章，实际仅取得 ${distinct.size} 章；未将所取数量当作总章数"
+        }
+        val ordinals = distinct.mapNotNull { chapterOrdinalV50(it.title) }
+        val maxOrdinal = ordinals.maxOrNull()
+        // Volume-local numbering can restart. A chapter ordinal is not a chapter count.
+        hasVolumeNumbers = hasVolumeNumbers || distinct.any { Regex("第.{1,12}[卷部篇]").containsMatchIn(it.title) } || ordinals.distinct().size < ordinals.size
+        check(hasVolumeNumbers || latestOrdinal == null || maxOrdinal == null || maxOrdinal >= latestOrdinal!!) {
+            "目录不完整：页面最新章节序号为 $latestOrdinal，所取目录仅到 $maxOrdinal；请检查完整目录入口"
+        }
+        check(!unresolvedPreview || declaredTotal == distinct.size) {
             "仅取得最新章节预览，尚未取得完整目录；请检查完整目录入口与规则，未将预览数量当作总章数"
         }
-        return detailed to distinct
+        val totalsMatch = declaredTotal != null && declaredTotal == distinct.size
+        val warnings = buildList {
+            if (declaredTotal != null && !totalsMatch) add("页面声明 $declaredTotal 章，实际取得 ${distinct.size} 条；条目数不一致，完整性未确认")
+            if (!totalsMatch && !explicitFull) add("已取得可读目录；网站没有提供可核对的完整目录标记或总章数，完整性未确认")
+        }
+        return OnlineBookCatalogueV50(detailed, distinct, SourceCatalogueProofV50(
+            tocUrl = firstCatalogueUrl,
+            pagesRead = visited.size,
+            declaredTotal = declaredTotal,
+            latestOrdinal = latestOrdinal,
+            warnings = warnings,
+            hasCompletenessEvidence = distinct.isNotEmpty() && (totalsMatch || (explicitFull && declaredTotal == null)),
+        ))
     }
 
     repeat(40) { pageIndex ->
         if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
-        if (!visited.add(publicSourceUrlV36(doc.location()).toString())) return completed()
-
-        val ruleFound = if (doc === page) onPageChapters else declaredChapters(doc)
-
-        // Generic fallback for pages whose structure changed or whose AI/Legado rule missed the list.
-        // 101 看书, for example, uses /txt/<bookId>/<chapterId>.html chapter links.
-        chapters += ruleFound.ifEmpty { heuristicChapterLinksV39(doc, book.bookUrl) }
+        val currentUrl = catalogueCanonicalUrlV50(doc.location())
+        check(visited.add(currentUrl)) { "目录分页循环返回已读取页面，未返回不完整目录" }
+        val found = if (doc === page) onPageChapters else declaredChapters(doc)
+        val inspector = inspect(doc)
+        val section = inspector.selection(found)
+        val previousSize = chapters.size
+        found.forEach { chapters.putIfAbsent(it.url, it) }
         check(chapters.size <= 50_000) { "目录超过 50000 章限制" }
-
-        val distinct = chapters.distinctBy { it.url }
-        if (distinct.isEmpty() && !triedHeuristicFromBookPage) {
-            triedHeuristicFromBookPage = true
-            val alternate = heuristicTocUrlV39(page)
-            if (alternate != null && alternate !in visited) {
-                val fetched = sourceAttemptV36 { fetchDocument(source, SourceRequestV36(alternate)) }.getOrNull()
-                if (fetched != null) {
-                    doc = fetched
-                    return@repeat
-                }
-            }
-        }
-
+        check(pageIndex == 0 || chapters.size > previousSize) { "目录分页没有新增章节，未返回不完整目录" }
+        inspector.declaredTotal(found)?.let(declaredTotals::add)
+        latestOrdinal = listOfNotNull(latestOrdinal, inspector.latestOrdinal(book.bookUrl)).maxOrNull()
+        hasVolumeNumbers = hasVolumeNumbers || inspector.hasVolumes()
+        val observedFullUrls = inspector.fullChapterLinks(book.bookUrl).map { it.url }.toSet()
+        explicitFull = explicitFull || (section.full && observedFullUrls.isNotEmpty() && observedFullUrls == found.map { it.url }.toSet())
+        val numbers = found.mapNotNull { chapterOrdinalV50(it.title) }
+        val weakPreviewGap = section.weakPreview && numbers.maxOrNull()?.let { it > found.size && numbers.minOrNull() != 1 } == true
+        unresolvedPreview = unresolvedPreview || section.preview || weakPreviewGap
         val ruleNext = ruleStringV36(doc, source.tocNext)
-            .takeIf { it.isNotBlank() }
-            ?.let { resolveUrlV36(doc.location(), it) }
-        val next = ruleNext ?: heuristicTocNextUrlV39(doc)
-        if (next == null || next in visited || isLikelyChapterUrlV39(next)) {
-            return completed()
-        }
+        val navigation = catalogueNavigationV50(doc, ruleNext)
+        check(!navigation.unresolved) { "页面仍有更多章节或目录分页，但没有可读取的静态同站链接；未将当前列表当作完整目录" }
+        val next = navigation.next
+        if (next == null) return completed()
+        check(catalogueCanonicalUrlV50(next) !in visited) { "目录分页循环返回已读取页面，未返回不完整目录" }
         check(pageIndex < 39) { "目录超过 40 页限制，未返回不完整目录" }
-        doc = sourceAttemptV36 { fetchDocument(source, SourceRequestV36(next)) }
-            .getOrElse { throw IllegalStateException("目录分页读取失败，未返回不完整目录：${it.message.orEmpty()}", it) }
+        doc = read(next, "目录分页读取失败，未返回不完整目录")
     }
     error("目录超过 40 页限制，未返回不完整目录")
-}
-
-private fun sourceSelectionIsPreviewV46(elements: List<Element>): Boolean = elements.isNotEmpty() && elements.all { element ->
-    generateSequence(element) { it.parent() }.take(4).any { node ->
-        Regex("(?i)(latest|recent|newest)").containsMatchIn(node.id() + " " + node.className()) ||
-            (node.tagName() !in setOf("html", "body", "main") && node.children().any {
-                it.tagName() in setOf("h2", "h3", "h4") && Regex("最新.{0,4}[章节節]|最近更新|(?i)latest chapters").containsMatchIn(it.text())
-            })
-    }
 }
 
 /**
@@ -846,7 +865,7 @@ internal fun heuristicTocUrlV39(doc: Document, explicitOnly: Boolean = false): S
     val candidates = doc.select("a[href]").mapNotNull { a ->
         val text = a.text().replace("\\s+".toRegex(), "").trim()
         val href = a.absUrl("href").ifBlank { resolveUrlV36(doc.location(), a.attr("href")) }
-        if (href.isBlank() || href == doc.location() || isLikelyChapterUrlV39(href)) return@mapNotNull null
+        if (href.isBlank() || !sameCatalogueOriginV50(doc.location(), href) || catalogueCanonicalUrlV50(href) == catalogueCanonicalUrlV50(doc.location()) || isLikelyChapterUrlV39(href)) return@mapNotNull null
         val labelScore = labels.indexOfFirst { text.equals(it, true) }.let { if (it >= 0) 100 - it else 0 }
         val containsScore = if (labels.any { text.contains(it, true) }) 45 else 0
         if (explicitOnly && maxOf(labelScore, containsScore) == 0) return@mapNotNull null
@@ -872,10 +891,11 @@ internal fun heuristicChapterLinksV39(doc: Document, bookUrl: String = ""): List
 
     // Group links by their nearest five ancestors once. The previous implementation rebuilt
     // each ancestor's full descendant list for every link, becoming quadratic/cubic on large TOCs.
+    val inspector = CataloguePageInspectorV50(doc)
     val candidates = LinkedHashMap<Element, MutableList<OnlineChapterV36>>()
     all.forEach { (anchor, chapter) ->
         var parent: Element? = anchor.parent()
-        repeat(5) {
+        repeat(10) {
             val node = parent ?: return@repeat
             candidates.getOrPut(node) { ArrayList() }.add(chapter)
             parent = node.parent()
@@ -901,7 +921,9 @@ internal fun heuristicChapterLinksV39(doc: Document, bookUrl: String = ""): List
             else -> 0.0
         }
         val broadPenalty = if (container.tagName() in setOf("html", "body", "main")) 400.0 else 0.0
-        val score = links.size.coerceAtMost(800) + density * 500.0 + depth * 35.0 + semanticBonus - broadPenalty
+        val section = inspector.section(container)
+        val catalogueBonus = if (section.full) 2000.0 else if (section.preview || section.weakPreview) -2000.0 else 0.0
+        val score = links.size.coerceAtMost(800) + density * 500.0 + depth * 35.0 + semanticBonus + catalogueBonus - broadPenalty
         Triple(score, container, links)
     }.maxByOrNull { it.first }
 
@@ -909,15 +931,7 @@ internal fun heuristicChapterLinksV39(doc: Document, bookUrl: String = ""): List
     return picked.filter { it.title.isNotBlank() }.distinctBy { it.url }
 }
 
-internal fun heuristicTocNextUrlV39(doc: Document): String? {
-    val labels = setOf("下一页", "下一頁", "下页", "下頁", "后一页", "後一頁", "next", "›", "»", ">")
-    return doc.select("a[href]").firstNotNullOfOrNull { a ->
-        val text = a.text().replace("\\s+".toRegex(), "").trim().lowercase()
-        if (text !in labels) return@firstNotNullOfOrNull null
-        val href = a.absUrl("href").ifBlank { resolveUrlV36(doc.location(), a.attr("href")) }
-        href.takeIf { it.isNotBlank() && it != doc.location() && !isLikelyChapterUrlV39(it) }
-    }
-}
+internal fun heuristicTocNextUrlV39(doc: Document): String? = catalogueNavigationV50(doc).next
 
 internal fun isLikelyChapterUrlV39(url: String): Boolean {
     val clean = runCatching { URL(url).path }.getOrDefault(url)
@@ -926,8 +940,14 @@ internal fun isLikelyChapterUrlV39(url: String): Boolean {
         Regex("(?i)/txt/\\d+/\\d+(?:[_-]\\d+)?\\.html?$").containsMatchIn(clean)
 }
 
-private fun isLikelyChapterLinkV39(title: String, url: String, bookUrl: String): Boolean {
+internal fun isLikelyChapterLinkV39(title: String, url: String, bookUrl: String): Boolean {
     if (title.isBlank() || url.isBlank() || url == bookUrl) return false
+    if (bookUrl.isNotBlank() && !sameCatalogueOriginV50(bookUrl, url)) return false
+    val bookPath = runCatching { URL(bookUrl).path }.getOrDefault("")
+    val chapterPath = runCatching { URL(url).path }.getOrDefault("")
+    val bookKey = Regex("(?i)/(?:book|novel|txt)/(\\d+)(?:\\.html?)?/?$").find(bookPath)?.groupValues?.get(1)
+    val chapterKey = Regex("(?i)/(?:txt|read|chapters?)/(\\d+)/").find(chapterPath)?.groupValues?.get(1)
+    if (bookKey != null && chapterKey != null && bookKey != chapterKey) return false
     if (isLikelyChapterUrlV39(url)) return true
     val chapterTitle = Regex(
         "^(第.{1,16}[章节章節回卷]|番外|楔子|序章|序言|后记|後記|尾声|尾聲|chapter\\s*\\d+)",
@@ -944,29 +964,7 @@ internal fun loadChapterTextV36(
     chapter: OnlineChapterV36,
     tocUrls: Set<String>,
     fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
-): String {
-    val parts = ArrayList<String>()
-    var url = chapter.url
-    val visited = HashSet<String>()
-    repeat(12) {
-        if (!visited.add(publicSourceUrlV36(url).toString())) return parts.joinToString("\n").trim()
-        val doc = fetchDocument(source, SourceRequestV36(url))
-        val finalUrl = publicSourceUrlV36(doc.location()).toString()
-        if (finalUrl != publicSourceUrlV36(url).toString() && !visited.add(finalUrl)) return parts.joinToString("\n").trim()
-        val rule = source.contentText.ifBlank { "@css:#content@html" }
-        val cleanupAt = rule.indexOf("##").takeIf { it >= 0 } ?: rule.length
-        val valueRule = rule.substring(0, cleanupAt)
-        val textRule = if (valueRule.substringAfterLast('@') in VALUE_ATTRS) rule
-            else "$valueRule@html${rule.substring(cleanupAt)}"
-        val text = ruleStringV36(doc, textRule)
-        parts += cleanContentV36(text, source.contentReplace)
-        check(parts.sumOf { it.length } <= MAX_SOURCE_BYTES_V36) { "单章正文超过大小限制" }
-        val next = ruleStringV36(doc, source.contentNext).takeIf { it.isNotBlank() }?.let { resolveUrlV36(doc.location(), it) }
-        if (next == null || publicSourceUrlV36(next).toString() in visited || next in tocUrls) return parts.joinToString("\n").trim()
-        url = next
-    }
-    return parts.joinToString("\n").trim()
-}
+): String = loadChapterAuditV50(source, null, chapter, tocUrls, fetchDocument).text
 
 /** Legado replaceRegex: "##regex##replacement", possibly several joined; plain text is a regex. */
 internal fun cleanContentV36(text: String, replace: String): String {
