@@ -4,7 +4,6 @@ import java.io.ByteArrayInputStream
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
-import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Document
 import org.w3c.dom.Element
@@ -26,11 +25,12 @@ data class EpubImportResultV2(
     val manuscript: ImportedManuscript,
     val author: String = "",
     val cover: EpubImportedCoverV2? = null,
+    val originalToc: List<EpubTocNodeV1> = emptyList(),
 )
 
 object EpubImporterV2 {
-    fun import(fileName: String, bytes: ByteArray): EpubImportResultV2 {
-        val archive = unzip(bytes)
+    fun import(fileName: String, bytes: ByteArray, checkCancelled: () -> Unit = ::checkImportThreadV1): EpubImportResultV2 {
+        val archive = readBoundedEpubV1(bytes, normalizeName = ::normalizePath, checkCancelled = checkCancelled)
         require(archive.isNotEmpty()) { "EPUB 压缩包是空的" }
 
         val opfPath = findOpfPath(archive)
@@ -62,10 +62,14 @@ object EpubImporterV2 {
         )
 
         require(chapters.any { it.content.isNotBlank() }) { "EPUB 没有识别到可阅读正文" }
+        checkCancelled()
+        val originalToc = EpubOriginalTocV1.extractArchive(archive, chapters.size)
+        checkCancelled()
         return EpubImportResultV2(
             manuscript = ImportedManuscript(title = title, chapters = chapters),
             author = author,
             cover = cover,
+            originalToc = originalToc,
         )
     }
 
@@ -86,21 +90,6 @@ object EpubImporterV2 {
         val fragment: String,
         val label: String,
     )
-
-    private fun unzip(bytes: ByteArray): Map<String, ByteArray> {
-        val entries = linkedMapOf<String, ByteArray>()
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                if (!entry.isDirectory) {
-                    val name = normalizePath(entry.name)
-                    if (name.isNotBlank()) entries[name] = zip.readBytes()
-                }
-                zip.closeEntry()
-            }
-        }
-        return entries
-    }
 
     private fun findOpfPath(entries: Map<String, ByteArray>): String? {
         val container = findEntry(entries, "META-INF/container.xml")

@@ -25,43 +25,6 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-
-/** Where a shelf book came from online, for "检查更新". */
-@Serializable
-internal data class OnlineLinkV36(
-    val novelId: String,
-    val sourceId: String,
-    val bookUrl: String,
-    val chapterCount: Int,
-)
-
-internal object BookSourceStoreV36 {
-    private const val PREFS = "book_sources_v36"
-
-    fun load(context: Context): List<BookSourceV36> = sourceAttemptV36 {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("sources", null) ?: return emptyList()
-        BookSourceJsonV36.decodeFromString(ListSerializer(BookSourceV36.serializer()), raw)
-    }.getOrDefault(emptyList())
-
-    fun save(context: Context, sources: List<BookSourceV36>) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString("sources", BookSourceJsonV36.encodeToString(ListSerializer(BookSourceV36.serializer()), sources))
-            .apply()
-    }
-
-    fun link(context: Context, novelId: String): OnlineLinkV36? = sourceAttemptV36 {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("link_$novelId", null) ?: return null
-        BookSourceJsonV36.decodeFromString(OnlineLinkV36.serializer(), raw)
-    }.getOrNull()
-
-    fun saveLink(context: Context, link: OnlineLinkV36) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString("link_${link.novelId}", BookSourceJsonV36.encodeToString(OnlineLinkV36.serializer(), link))
-            .apply()
-    }
-}
 
 internal data class OnlineDetailV36(val book: OnlineBookV36, val chapters: List<OnlineChapterV36>, val shelfStoryId: String? = null)
 
@@ -69,6 +32,7 @@ internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed:
 
 internal data class OnlineBooksStateV36(
     val sources: List<BookSourceV36> = emptyList(),
+    val sourceStorageError: String? = null,
     val sourceEditId: String? = null,
     val sourceEditDraft: String = "",
     val sourceEditSaving: Boolean = false,
@@ -103,7 +67,8 @@ internal data class OnlineBooksStateV36(
 internal class OnlineBooksViewModelV36(application: Application) : AndroidViewModel(application) {
     private val context get() = getApplication<Application>()
     private val projects = StoryProjectManager(application)
-    private val _state = MutableStateFlow(OnlineBooksStateV36(sources = BookSourceStoreV36.load(application)))
+    private val initialSources = BookSourceStoreV36.read(application)
+    private val _state = MutableStateFlow(OnlineBooksStateV36(sources = initialSources.getOrDefault(emptyList()), sourceStorageError = initialSources.exceptionOrNull()?.message))
     val state: StateFlow<OnlineBooksStateV36> = _state.asStateFlow()
     private var sourceEditJob: Job? = null
     private var searchJob: Job? = null
@@ -130,6 +95,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     // ---- AI-written sources ---------------------------------------------------------------------
 
     fun buildWithAi(siteUrl: String, keyword: String) {
+        if (!sourceStorageReady()) { _state.update { it.copy(aiError = it.sourceStorageError) }; return }
         if (aiJob?.isActive == true) return
         if (siteUrl.isBlank() || keyword.isBlank()) {
             _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名") }
@@ -166,7 +132,10 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
             _state.update { it.copy(aiError = "这个网站的书源已存在。为保护原配置，本次没有覆盖；请在书源管理中编辑或移除旧规则后重试。") }
             return false
         }
-        merge(BookSourceImportResultV36(listOf(report.source), emptyList()))
+        if (!merge(BookSourceImportResultV36(listOf(report.source), emptyList()))) {
+            _state.update { it.copy(aiError = it.sourceStorageError ?: it.error ?: "书源保存失败") }
+            return false
+        }
         _state.update { it.copy(aiReport = null, aiSteps = emptyList()) }
         return true
     }
@@ -180,6 +149,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     // ---- Sources ------------------------------------------------------------------------------
 
     fun importSources(raw: String) {
+        if (!sourceStorageReady()) return
         viewModelScope.launch {
             sourceAttemptV36 { withContext(Dispatchers.Default) { parseBookSourcesV36(raw) } }
                 .onSuccess { result -> merge(result) }
@@ -188,6 +158,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     }
 
     fun importFromUrl(url: String) {
+        if (!sourceStorageReady()) return
         viewModelScope.launch {
             sourceAttemptV36 {
                 runInterruptible(Dispatchers.IO) {
@@ -199,6 +170,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     }
 
     fun importFromFile(uri: Uri) {
+        if (!sourceStorageReady()) return
         viewModelScope.launch {
             sourceAttemptV36 {
                 runInterruptible(Dispatchers.IO) {
@@ -209,26 +181,46 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         }
     }
 
-    private fun merge(result: BookSourceImportResultV36) {
+    private fun merge(result: BookSourceImportResultV36): Boolean {
         val previous = _state.value.sources
         val merged = mergeSourceImportsV36(previous, result)
+        if (!saveSources(merged.sources, previous)) return false
         invalidateSourceResults()
-        BookSourceStoreV36.save(context, merged.sources)
         val skipped = if (merged.skipped.isEmpty()) "" else "；${merged.skipped.size} 个跳过：${merged.skipped.take(3).joinToString("、")}${if (merged.skipped.size > 3) " 等" else ""}"
         val added = merged.sources.size - previous.size
         _state.update { it.copy(sources = merged.sources, message = "导入 $added 个书源$skipped") }
+        return true
     }
 
-    fun toggleSource(id: String) = updateSources { list -> list.map { if (it.id == id) it.copy(enabled = !it.enabled) else it } }
+    fun toggleSource(id: String) { updateSources { list -> list.map { if (it.id == id) it.copy(enabled = !it.enabled) else it } } }
 
-    fun deleteSource(id: String) = updateSources { list -> list.filterNot { it.id == id } }
+    fun deleteSource(id: String) { updateSources { list -> list.filterNot { it.id == id } } }
 
-    private fun updateSources(transform: (List<BookSourceV36>) -> List<BookSourceV36>) {
-        val next = transform(_state.value.sources)
+    private fun updateSources(transform: (List<BookSourceV36>) -> List<BookSourceV36>): Boolean {
+        val previous = _state.value.sources
+        val next = transform(previous)
+        if (!saveSources(next, previous)) return false
         invalidateSourceResults()
-        BookSourceStoreV36.save(context, next)
         _state.update { it.copy(sources = next) }
+        return true
     }
+
+    private fun sourceStorageReady(): Boolean {
+        val read = BookSourceStoreV36.read(context)
+        if (read.isFailure) {
+            _state.update { it.copy(sourceStorageError = read.exceptionOrNull()?.message, error = read.exceptionOrNull()?.message) }
+            return false
+        }
+        if (_state.value.sourceStorageError != null) _state.update { it.copy(sources = read.getOrThrow(), sourceStorageError = null) }
+        return true
+    }
+
+    private fun saveSources(next: List<BookSourceV36>, previous: List<BookSourceV36>): Boolean = sourceAttemptV36 {
+        BookSourceStoreV36.save(context, next, expected = previous)
+    }.onFailure { error ->
+        val storageError = BookSourceStoreV36.read(context).exceptionOrNull()?.message
+        _state.update { it.copy(error = error.message ?: "书源保存失败", sourceStorageError = storageError) }
+    }.isSuccess
 
     private fun invalidateSourceResults() {
         searchGeneration.incrementAndGet()
@@ -452,7 +444,8 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     }
 
     /** Exports the supported stored format; credentials in source headers stay user-visible. */
-    fun exportSources(): String = BookSourceJsonV36.encodeToString(ListSerializer(BookSourceV36.serializer()), _state.value.sources)
+    fun exportSources(): String = sourceAttemptV36 { BookSourceStoreV36.raw(context) ?: "[]" }
+        .getOrElse { error -> _state.update { it.copy(error = "原始书源无法导出，请保留应用数据：${error.javaClass.simpleName}") }; "" }
 
     fun beginSourceEdit(id: String) {
         val source = _state.value.sources.firstOrNull { it.id == id } ?: return
@@ -485,7 +478,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                 require(result.sources.size == 1 && result.skipped.isEmpty()) { "请提供一个有效的静态 HTML 书源" }
                 val edited = result.sources.single().copy(id = id)
                 require(_state.value.sourceEditId == id && _state.value.sources.any { it.id == id }) { "书源编辑已取消或原书源已删除" }
-                updateSources { list -> list.map { if (it.id == id) edited else it } }
+                check(updateSources { list -> list.map { if (it.id == id) edited else it } }) { _state.value.error ?: "书源保存失败" }
                 _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null, message = "已更新书源「${edited.name}」") }
             }.onFailure { error -> _state.update { it.copy(sourceEditSaving = false, sourceEditError = error.message ?: "书源编辑失败") } }
         }

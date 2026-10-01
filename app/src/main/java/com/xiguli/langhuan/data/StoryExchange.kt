@@ -2,11 +2,9 @@ package com.xiguli.langhuan.data
 
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.domain.StorySnapshot
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -89,10 +87,11 @@ object StoryExchange {
         ExchangeJson.decodeFromString(StoryProjectBackup.serializer(), bytes.toString(Charsets.UTF_8))
     }.getOrElse { error("无法读取琅嬛项目备份：${it.message ?: "格式损坏"}") }
 
-    fun `import`(fileName: String, bytes: ByteArray): ImportedManuscript {
+    fun `import`(fileName: String, bytes: ByteArray, checkCancelled: () -> Unit = ::checkImportThreadV1): ImportedManuscript {
+        checkCancelled()
         require(!isProjectBackup(fileName)) { "这是琅嬛项目备份，请使用项目恢复流程" }
         val lower = fileName.lowercase()
-        return if (lower.endsWith(".epub")) importEpub(fileName, bytes)
+        return if (lower.endsWith(".epub")) importEpub(fileName, bytes, checkCancelled)
         else importText(fileName, bytes.toString(Charsets.UTF_8), markdown = lower.endsWith(".md") || lower.endsWith(".markdown"))
     }
 
@@ -206,17 +205,12 @@ $paragraphs
         return ImportedManuscript(title, chapters.filter { it.content.isNotBlank() })
     }
 
-    private fun importEpub(fileName: String, bytes: ByteArray): ImportedManuscript {
-        val entries = mutableMapOf<String, String>()
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                if (!entry.isDirectory && (entry.name.endsWith(".xhtml", true) || entry.name.endsWith(".html", true) || entry.name.endsWith(".opf", true))) {
-                    entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
-                }
-                zip.closeEntry()
-            }
-        }
+    private fun importEpub(fileName: String, bytes: ByteArray, checkCancelled: () -> Unit): ImportedManuscript {
+        val entries = readBoundedEpubV1(
+            bytes,
+            keepEntry = { it.endsWith(".xhtml", true) || it.endsWith(".html", true) || it.endsWith(".opf", true) },
+            checkCancelled = checkCancelled,
+        ).mapValues { (_, data) -> checkCancelled(); data.toString(Charsets.UTF_8) }
         val opf = entries.entries.firstOrNull { it.key.endsWith(".opf", true) }?.value.orEmpty()
         val title = Regex("<dc:title[^>]*>(.*?)</dc:title>", RegexOption.IGNORE_CASE).find(opf)?.groupValues?.getOrNull(1)
             ?.let(::htmlDecode)?.trim().orEmpty()

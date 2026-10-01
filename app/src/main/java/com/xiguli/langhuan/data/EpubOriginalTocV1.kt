@@ -5,7 +5,6 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
-import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -31,9 +30,14 @@ data class EpubTocArchiveV1(
 object EpubOriginalTocV1 {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = false }
 
-    fun extract(bytes: ByteArray, chapterCount: Int): List<EpubTocNodeV1> {
+    fun extract(bytes: ByteArray, chapterCount: Int, checkCancelled: () -> Unit = ::checkImportThreadV1): List<EpubTocNodeV1> {
         if (chapterCount <= 0) return emptyList()
-        val archive = unzip(bytes)
+        val archive = readBoundedEpubV1(bytes, normalizeName = ::normalizePath, checkCancelled = checkCancelled)
+        checkCancelled()
+        return extractArchive(archive, chapterCount).also { checkCancelled() }
+    }
+
+    internal fun extractArchive(archive: Map<String, ByteArray>, chapterCount: Int): List<EpubTocNodeV1> {
         val opfPath = findOpfPath(archive) ?: return emptyList()
         val opf = findEntry(archive, opfPath)?.let(::parseXml) ?: return emptyList()
         val manifest = descendants(opf, "item").mapNotNull { item ->
@@ -138,18 +142,6 @@ object EpubOriginalTocV1 {
         if (next <= chapterCount) {
             val extras = (next..chapterCount).map { EpubTocNodeV1("第 $it 章", it) }
             return result + extras
-        }
-        return result
-    }
-
-    private fun unzip(bytes: ByteArray): Map<String, ByteArray> {
-        val result = linkedMapOf<String, ByteArray>()
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                if (!entry.isDirectory) result[normalizePath(entry.name)] = zip.readBytes()
-                zip.closeEntry()
-            }
         }
         return result
     }

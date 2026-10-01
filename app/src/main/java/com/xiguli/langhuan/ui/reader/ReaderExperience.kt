@@ -204,6 +204,9 @@ private fun ReaderExperiencePage(
     var showSearch by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     var archive by remember(book.id) { mutableStateOf(ReaderReadingStoreV11.load(context, book.id)) }
+    LaunchedEffect(archive.storageError) {
+        archive.storageError?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }
+    }
 
     var fontSize by remember(book.id) { mutableFloatStateOf(prefs.getFloat("font_${book.id}", 20f)) }
     var lineFactor by remember(book.id) { mutableFloatStateOf(prefs.getFloat("line_${book.id}", 1.68f)) }

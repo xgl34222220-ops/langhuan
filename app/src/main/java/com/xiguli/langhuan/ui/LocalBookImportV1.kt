@@ -10,12 +10,18 @@ import com.xiguli.langhuan.data.EpubImporterV2
 import com.xiguli.langhuan.data.EpubOriginalTocV1
 import com.xiguli.langhuan.data.StoryExchange
 import com.xiguli.langhuan.data.StoryProjectManager
+import com.xiguli.langhuan.data.LocalImportLimitsV1
+import com.xiguli.langhuan.data.readBoundedImportV1
 import java.io.File
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.nio.charset.Charset
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,26 +43,37 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
     val state: StateFlow<LocalBookImportUiStateV1> = _state.asStateFlow()
 
     fun importUri(uri: Uri) {
+        importDocument(
+            displayName = { queryDisplayName(uri) },
+            openInput = { getApplication<Application>().contentResolver.openInputStream(uri) },
+        )
+    }
+
+    internal fun importDocument(displayName: () -> String, openInput: () -> InputStream?) {
         if (_state.value.busy) return
         viewModelScope.launch {
             val app = getApplication<Application>()
             _state.update { it.copy(busy = true, error = null, message = null, importedBookId = null) }
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val resolver = app.contentResolver
-                    val fileName = queryDisplayName(uri).ifBlank { "本地小说.txt" }
+                    val importContext = currentCoroutineContext()
+                    val checkCancelled = { importContext.ensureActive() }
+                    val fileName = displayName().ifBlank { "本地小说.txt" }
                     _state.update { it.copy(currentFileName = fileName) }
-                    val bytes = resolver.openInputStream(uri)?.use { input -> input.readBytes() }
+                    val bytes = openInput()?.use { input ->
+                        input.readBoundedImportV1(LocalImportLimitsV1.BOOK_BYTES, "文件过大，目前单本最大支持 96 MB", checkCancelled)
+                    }
                         ?: error("无法读取这个文件")
                     require(bytes.isNotEmpty()) { "文件是空的" }
-                    require(bytes.size <= MAX_LOCAL_BOOK_BYTES) { "文件过大，目前单本最大支持 96 MB" }
 
                     val normalized = normalizeBookBytesV1(fileName, bytes)
                     val isEpub = fileName.endsWith(".epub", ignoreCase = true)
-                    val epubResult = if (isEpub) EpubImporterV2.import(fileName, normalized) else null
-                    val manuscript = epubResult?.manuscript ?: StoryExchange.`import`(fileName, normalized)
+                    val epubResult = if (isEpub) EpubImporterV2.import(fileName, normalized, checkCancelled) else null
+                    val manuscript = epubResult?.manuscript ?: StoryExchange.`import`(fileName, normalized, checkCancelled)
                     require(manuscript.chapters.any { it.content.isNotBlank() }) { "没有识别到可阅读正文" }
 
+                    // Parsing, archive limits and TOC validation finish before any shelf mutation.
+                    checkCancelled()
                     var created = projects.createImportedStory(manuscript)
                     val cover = epubResult?.cover
                     if (cover != null && cover.bytes.isNotEmpty()) {
@@ -71,8 +88,7 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
 
                     val id = created.snapshot.novel.id
                     if (isEpub) {
-                        val toc = EpubOriginalTocV1.extract(normalized, manuscript.chapters.size)
-                        EpubOriginalTocV1.save(app, id, toc)
+                        EpubOriginalTocV1.save(app, id, epubResult?.originalToc.orEmpty())
                     }
 
                     app.getSharedPreferences("local_book_meta_v1", Application.MODE_PRIVATE)
@@ -96,6 +112,10 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) {
+                    _state.update { it.copy(busy = false, currentFileName = "") }
+                    throw error
+                }
                 _state.update {
                     it.copy(
                         busy = false,
@@ -116,11 +136,7 @@ class LocalBookImportViewModelV1(application: Application) : AndroidViewModel(ap
             resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
             }.orEmpty()
-        }.getOrDefault("")
-    }
-
-    companion object {
-        private const val MAX_LOCAL_BOOK_BYTES = 96 * 1024 * 1024
+        }.onFailure { if (it is CancellationException) throw it }.getOrDefault("")
     }
 }
 

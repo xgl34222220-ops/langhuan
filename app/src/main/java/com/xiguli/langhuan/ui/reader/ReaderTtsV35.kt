@@ -18,11 +18,12 @@ internal interface ReaderSpeechV47 {
 }
 
 internal fun interface ReaderSpeechFactoryV47 {
-    fun create(context: Context, onReady: (Boolean) -> Unit, onChunkStart: (Int) -> Unit, onQueueDone: () -> Unit): ReaderSpeechV47
+    fun create(context: Context, onReady: (Boolean) -> Unit, onChunkStart: (Int) -> Unit,
+        onQueueDone: () -> Unit, onQueueError: () -> Unit): ReaderSpeechV47
 }
 
-internal val systemReaderSpeechFactoryV47 = ReaderSpeechFactoryV47 { context, ready, chunk, done ->
-    ReaderTtsV35(context, ready, chunk, done)
+internal val systemReaderSpeechFactoryV47 = ReaderSpeechFactoryV47 { context, ready, chunk, done, error ->
+    ReaderTtsV35(context, ready, chunk, done, error)
 }
 
 /**
@@ -53,77 +54,153 @@ internal fun readerTtsChunksV35(body: String, fromOffset: Int, maxChars: Int = 6
     return result
 }
 
+/** The Android boundary is replaceable so tests exercise the production queue and callbacks. */
+internal interface ReaderTtsEngineV48 {
+    fun useChinese(): Boolean
+    fun setRate(rate: Float)
+    fun setCallbacks(start: (String?) -> Unit, done: (String?) -> Unit, error: (String?) -> Unit)
+    fun enqueue(text: String, id: String): Boolean
+    fun stop()
+    fun release()
+}
+
+private class AndroidReaderTtsEngineV48(context: Context, initialized: (Boolean) -> Unit) : ReaderTtsEngineV48 {
+    private val tts = TextToSpeech(context.applicationContext) { initialized(it == TextToSpeech.SUCCESS) }
+    override fun useChinese(): Boolean {
+        val result = tts.setLanguage(Locale.SIMPLIFIED_CHINESE)
+        return result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+    }
+    override fun setRate(rate: Float) { tts.setSpeechRate(rate) }
+    override fun setCallbacks(start: (String?) -> Unit, done: (String?) -> Unit, error: (String?) -> Unit) {
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = start(utteranceId)
+            override fun onDone(utteranceId: String?) = done(utteranceId)
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) = error(utteranceId)
+            override fun onError(utteranceId: String?, errorCode: Int) = error(utteranceId)
+        })
+    }
+    override fun enqueue(text: String, id: String) = tts.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
+    override fun stop() { tts.stop() }
+    override fun release() { tts.shutdown() }
+}
+
 /**
- * Thin wrapper over [TextToSpeech]. Callbacks arrive on the main thread.
- * [onChunkStart] reports the body offset being read; [onQueueDone] fires after the last chunk.
+ * A queue completes only when every chunk succeeds. Any enqueue/utterance failure stops it and
+ * reports [onQueueError] separately. All engine callbacks are serialized onto the main thread;
+ * stopping, replacing a queue or releasing also invalidates callbacks already posted there.
  */
 internal class ReaderTtsV35(
-    context: Context,
     private val onReady: (Boolean) -> Unit,
     private val onChunkStart: (Int) -> Unit,
     private val onQueueDone: () -> Unit,
+    private val onQueueError: () -> Unit,
+    private val postToMain: (() -> Unit) -> Unit,
+    createEngine: ((Boolean) -> Unit) -> ReaderTtsEngineV48,
 ) : ReaderSpeechV47 {
-    private val main = Handler(Looper.getMainLooper())
+    constructor(context: Context, onReady: (Boolean) -> Unit, onChunkStart: (Int) -> Unit,
+        onQueueDone: () -> Unit, onQueueError: () -> Unit) : this(
+        onReady, onChunkStart, onQueueDone, onQueueError,
+        { action -> Handler(Looper.getMainLooper()).post(action) },
+        { initialized -> AndroidReaderTtsEngineV48(context, initialized) },
+    )
+
     private var chunks: List<ReaderTtsChunkV35> = emptyList()
+    private var completed = BooleanArray(0)
     private var generation = 0
+    private var active = false
     private var ready = false
+    private var released = false
     override var rate: Float = 1f
         set(value) {
             field = value
-            tts.setSpeechRate(value)
+            if (!released) engine.setRate(value)
         }
 
-    private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
-        ready = status == TextToSpeech.SUCCESS
-        if (ready) {
-            val result = tts.setLanguage(Locale.SIMPLIFIED_CHINESE)
-            ready = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+    // Posting initialization also avoids accessing the engine before its constructor returns.
+    private val engine: ReaderTtsEngineV48 = createEngine { initialized ->
+        postToMain {
+            if (!released) {
+                ready = initialized && engine.useChinese()
+                if (!ready) stop()
+                onReady(ready)
+            }
         }
-        main.post { onReady(ready) }
     }
 
     init {
-        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {
-                val (gen, index) = parse(utteranceId) ?: return
-                main.post { if (gen == generation) chunks.getOrNull(index)?.let { onChunkStart(it.offset) } }
-            }
-
-            override fun onDone(utteranceId: String?) {
-                val (gen, index) = parse(utteranceId) ?: return
-                main.post { if (gen == generation && index == chunks.lastIndex) onQueueDone() }
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) = onDone(utteranceId)
-        })
+        engine.setCallbacks(
+            start = { id -> withChunk(id) { index -> onChunkStart(chunks[index].offset) } },
+            done = { id -> withChunk(id) { index ->
+                completed[index] = true
+                if (completed.all { it }) {
+                    invalidateQueue()
+                    onQueueDone()
+                }
+            } },
+            error = { id -> withChunk(id) { failQueue() } },
+        )
     }
 
-    private fun parse(id: String?): Pair<Int, Int>? {
-        val parts = id?.split(':') ?: return null
-        return (parts.getOrNull(0)?.toIntOrNull() ?: return null) to (parts.getOrNull(1)?.toIntOrNull() ?: return null)
-    }
-
-    /** Replaces whatever is queued with [items] and starts speaking. Returns false if TTS is unusable. */
-    override fun speak(items: List<ReaderTtsChunkV35>): Boolean {
-        if (!ready) return false
-        generation++
-        chunks = items
-        tts.stop()
-        items.forEachIndexed { index, chunk ->
-            tts.speak(chunk.text, TextToSpeech.QUEUE_ADD, null, "$generation:$index")
+    private fun withChunk(id: String?, action: (Int) -> Unit) {
+        val parts = id?.split(':') ?: return
+        if (parts.size != 2) return
+        val gen = parts[0].toIntOrNull() ?: return
+        val index = parts[1].toIntOrNull() ?: return
+        postToMain {
+            if (!released && active && gen == generation && index in chunks.indices) action(index)
         }
-        if (items.isEmpty()) main.post(readerSpeechCompletionV47(generation, { generation }, onQueueDone))
+    }
+
+    private fun invalidateQueue() {
+        generation++
+        active = false
+        chunks = emptyList()
+        completed = BooleanArray(0)
+    }
+
+    private fun failQueue() {
+        invalidateQueue()
+        engine.stop()
+        val failedGeneration = generation
+        postToMain {
+            if (!released && generation == failedGeneration) onQueueError()
+        }
+    }
+
+    /** Replaces the current queue. False also covers an engine rejecting any individual chunk. */
+    override fun speak(items: List<ReaderTtsChunkV35>): Boolean {
+        if (!ready || released) return false
+        stop()
+        chunks = items.toList()
+        completed = BooleanArray(items.size)
+        active = true
+        val queuedGeneration = generation
+        for ((index, chunk) in chunks.withIndex()) {
+            if (!engine.enqueue(chunk.text, "$queuedGeneration:$index")) {
+                failQueue()
+                return false
+            }
+        }
+        if (items.isEmpty()) postToMain {
+            if (!released && active && generation == queuedGeneration) {
+                invalidateQueue()
+                onQueueDone()
+            }
+        }
         return true
     }
 
     override fun stop() {
-        generation++
-        tts.stop()
+        invalidateQueue()
+        if (!released) engine.stop()
     }
 
     override fun release() {
+        if (released) return
         stop()
-        tts.shutdown()
+        ready = false
+        released = true
+        engine.release()
     }
 }

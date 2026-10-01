@@ -226,15 +226,30 @@ internal fun ReaderSessionV30(
 
     // ---- Position -----------------------------------------------------------------------
     val initialIndex = remember { chapters.indexOfFirst { it.id == externalChapterId }.coerceAtLeast(0) }
+    val initialProgress = remember {
+        ReaderProgressStoreV11.load(context, book.id, chapters.getOrNull(initialIndex)?.chapterNumber ?: 1)
+    }
     val initialAnchor = remember {
         val chapter = chapters.getOrNull(initialIndex)
-        val saved = ReaderProgressStoreV11.load(context, book.id, chapter?.chapterNumber ?: 1)
-        if (chapter != null && saved.chapterNumber == chapter.chapterNumber) saved.textOffset.coerceAtLeast(0) else 0
+        if (chapter != null && initialProgress.chapterNumber == chapter.chapterNumber)
+            readerRestoreBodyOffsetV48(chapter.title, chapter.content, initialProgress.textOffset, initialProgress.bodyVersion) else 0
     }
+    var deferredHeadingAnchor by remember { mutableStateOf(initialProgress.bodyVersion < 48 && initialProgress.textOffset > 0 && chapters.getOrNull(initialIndex)?.content?.isBlank() == true) }
     var chapterIndex by remember { mutableIntStateOf(initialIndex) }
     var pageIndex by remember { mutableIntStateOf(0) }
     var pendingAnchor by remember { mutableStateOf<Int?>(initialAnchor) }
     val anchorHolder = remember { intArrayOf(initialAnchor) }
+    LaunchedEffect(chapters, chapterIndex) {
+        if (deferredHeadingAnchor) {
+            if (chapterIndex != initialIndex) deferredHeadingAnchor = false
+            else chapters.getOrNull(chapterIndex)?.takeIf { it.content.isNotBlank() }?.let { chapter ->
+                val restored = readerRestoreBodyOffsetV48(chapter.title, chapter.content, initialProgress.textOffset, initialProgress.bodyVersion)
+                pendingAnchor = restored
+                anchorHolder[0] = restored
+                deferredHeadingAnchor = false
+            }
+        }
+    }
     // Reflow may place this sentence in the middle of a different page. Keep the sentence
     // offset until an actual navigation changes the page, otherwise each transient window
     // size on Activity recreation can round backwards to another page start.
@@ -636,9 +651,23 @@ internal fun ReaderSessionV30(
     var ttsFollowPage by remember { mutableIntStateOf(-1) }
     var ttsAdvancing by remember { mutableStateOf(false) }
     val ttsHolder = remember { arrayOfNulls<ReaderSpeechV47>(1) }
+    val ttsEngineGeneration = remember { intArrayOf(0) }
+    var ttsReady by remember { mutableStateOf(false) }
     var ttsChapterId by remember { mutableStateOf<String?>(null) }
 
+    fun stopListening() {
+        listening = false
+        ttsAdvancing = false
+        ttsHolder[0]?.stop()
+    }
+
+    fun failListening() {
+        stopListening()
+        edgeHint = "朗读失败，已停止；请点听书重试"
+    }
+
     fun ttsStartFromPage() {
+        if (!listening || !ttsReady) return
         val tts = ttsHolder[0] ?: return
         val chapter = chapters.getOrNull(chapterIndex) ?: return
         if (waitingForOnlineBody || layoutFor(chapterIndex) == null) {
@@ -648,27 +677,24 @@ internal fun ReaderSessionV30(
         }
         val body = readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
         val from = layoutFor(chapterIndex)?.pages?.getOrNull(pageIndex)?.startOffset ?: 0
+        ttsAdvancing = false
         ttsFollowPage = pageIndex
         ttsChapterId = chapter.id
         if (!tts.speak(readerTtsChunksV35(body, from))) {
-            listening = false
-            edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
+            failListening()
         }
-    }
-
-    fun stopListening() {
-        listening = false
-        ttsAdvancing = false
-        ttsHolder[0]?.stop()
     }
 
     // The speech engine outlives individual compositions. Its callbacks must read the
     // latest chapter bodies/layouts, including text that arrived after starting playback.
     val speechReady = rememberUpdatedState<(Boolean) -> Unit> { ok ->
+        ttsReady = ok
         if (!ok) {
-            listening = false
-            ttsAdvancing = false
-            edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
+            if (listening) edgeHint = "朗读引擎不可用，请安装中文语音后点听书重试"
+            stopListening()
+            ttsEngineGeneration[0]++
+            ttsHolder[0]?.release()
+            ttsHolder[0] = null
         } else if (listening) {
             ttsHolder[0]?.rate = ttsRate
             ttsStartFromPage()
@@ -676,7 +702,7 @@ internal fun ReaderSessionV30(
     }
     val speechChunk = rememberUpdatedState<(Int) -> Unit> { offset ->
         val layout = layoutFor(chapterIndex)
-        if (listening && !waitingForOnlineBody && layout != null) {
+        if (listening && currentChapter?.id == ttsChapterId && !waitingForOnlineBody && layout != null) {
             val target = layout.pageForOffset(offset)
             if (target != pageIndex) {
                 ttsFollowPage = target
@@ -690,7 +716,7 @@ internal fun ReaderSessionV30(
     val speechDone = rememberUpdatedState<() -> Unit> {
         val next = chapters.getOrNull(chapterIndex + 1)
         when {
-            !listening -> Unit
+            !listening || currentChapter?.id != ttsChapterId -> Unit
             waitingForOnlineBody -> { ttsAdvancing = true } // Never finish a placeholder.
             next == null -> { stopListening(); edgeHint = "已读到最后一章" }
             else -> {
@@ -704,11 +730,19 @@ internal fun ReaderSessionV30(
             }
         }
     }
+    val speechError = rememberUpdatedState<() -> Unit> {
+        if (listening && currentChapter?.id == ttsChapterId) failListening()
+    }
     fun startListening() {
         listening = true
         if (ttsHolder[0] != null) { ttsStartFromPage(); return }
+        ttsReady = false
+        val engineGeneration = ++ttsEngineGeneration[0]
         ttsHolder[0] = speechFactory.create(context,
-            { speechReady.value(it) }, { speechChunk.value(it) }, { speechDone.value() })
+            { if (engineGeneration == ttsEngineGeneration[0]) speechReady.value(it) },
+            { if (engineGeneration == ttsEngineGeneration[0]) speechChunk.value(it) },
+            { if (engineGeneration == ttsEngineGeneration[0]) speechDone.value() },
+            { if (engineGeneration == ttsEngineGeneration[0]) speechError.value() })
     }
 
     LaunchedEffect(ttsAdvancing, listening, chapterIndex, currentLayout, waitingForOnlineBody, loadingChapterNumber, chapterLoadError) {
@@ -734,6 +768,8 @@ internal fun ReaderSessionV30(
         onDispose {
             listening = false
             ttsAdvancing = false
+            ttsReady = false
+            ttsEngineGeneration[0]++
             ttsHolder[0]?.release()
             ttsHolder[0] = null
         }

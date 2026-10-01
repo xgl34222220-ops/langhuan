@@ -10,9 +10,13 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import com.xiguli.langhuan.data.LocalImportLimitsV1
+import com.xiguli.langhuan.data.copyBoundedImportV1
+import com.xiguli.langhuan.data.checkImportThreadV1
 import java.io.File
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CancellationException
 import kotlin.math.roundToInt
 
 internal enum class ReaderPageModeV10(val key: String, val label: String, val summary: String) {
@@ -35,27 +39,36 @@ internal data class ReaderFontAssetV10(
 )
 
 internal object ReaderFontStoreV10 {
-    private const val MAX_FONT_BYTES = 24L * 1024L * 1024L
-
     fun import(context: Context, uri: Uri): Result<ReaderFontAssetV10> = runCatching {
         val resolver = context.contentResolver
         val displayName = runCatching {
             resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
             }.orEmpty()
-        }.getOrDefault("").ifBlank { "reader-font.ttf" }
+        }.onFailure { if (it is CancellationException) throw it }.getOrDefault("").ifBlank { "reader-font.ttf" }
         val ext = displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
         require(ext in setOf("ttf", "otf")) { "请选择 TTF 或 OTF 字体文件" }
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取字体文件")
-        require(bytes.isNotEmpty()) { "字体文件是空的" }
-        require(bytes.size.toLong() <= MAX_FONT_BYTES) { "字体文件过大，目前最大支持 24 MB" }
         val dir = File(context.filesDir, "reader_fonts_v1").apply { mkdirs() }
         val safeBase = displayName.substringBeforeLast('.').replace(Regex("[^0-9A-Za-z一-龥._-]+"), "_").take(48).ifBlank { "font" }
         val id = UUID.randomUUID().toString().replace("-", "").take(12)
         val file = File(dir, "${safeBase}_$id.$ext")
-        file.writeBytes(bytes)
-        Typeface.createFromFile(file)
+        val pending = File.createTempFile("font-import-", ".partial", dir)
+        try {
+            val size = resolver.openInputStream(uri)?.use { input ->
+                pending.outputStream().use { output ->
+                    input.copyBoundedImportV1(output, LocalImportLimitsV1.FONT_BYTES, "字体文件过大，目前最大支持 24 MB")
+                }
+            } ?: error("无法读取字体文件")
+            require(size > 0) { "字体文件是空的" }
+            Typeface.createFromFile(pending)
+            checkImportThreadV1()
+            check(pending.renameTo(file)) { "无法保存字体文件" }
+        } finally {
+            pending.delete()
+        }
         ReaderFontAssetV10(id = file.nameWithoutExtension, name = displayName.substringBeforeLast('.'), path = file.absolutePath)
+    }.onFailure {
+        if (it is CancellationException) throw it
     }
 
     fun list(context: Context): List<ReaderFontAssetV10> {
@@ -104,8 +117,9 @@ internal fun readerBodyWithoutDuplicateHeadingV13(title: String, content: String
     if (displayTitle.isBlank()) return body
 
     val compactBody = body.replaceFirst(Regex("^[\\uFEFF\\s]*"), "")
-    if (compactBody.startsWith(displayTitle, ignoreCase = true)) {
-        return compactBody.drop(displayTitle.length).trimStart('\n', '\r', ' ', '\t')
+    val firstLine = compactBody.substringBefore('\n')
+    if (firstLine.trim().replace(Regex("\\s+"), " ").equals(displayTitle, ignoreCase = true)) {
+        return compactBody.drop(firstLine.length).trimStart('\n', '\r', ' ', '\t')
     }
 
     val chapterPrefix = Regex("^(第\\s*[0-9０-９一二三四五六七八九十百千万零〇两]+\\s*[章节回卷])(?:\\s+|$)")

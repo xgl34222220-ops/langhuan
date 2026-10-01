@@ -57,6 +57,7 @@ internal data class ReaderReadingArchiveV11(
     val annotations: List<ReaderAnnotationV11> = emptyList(),
     val presets: List<ReaderThemePresetV11> = emptyList(),
     val updatedAt: Long = System.currentTimeMillis(),
+    @kotlinx.serialization.Transient val storageError: String? = null,
 )
 
 /**
@@ -71,25 +72,34 @@ internal data class ReaderProgressV11(
     val positionFraction: Float = 0f,
     val textOffset: Int = 0,
     val modeKey: String = ReaderPageModeV10.SCROLL.key,
+    val bodyVersion: Int = 48,
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
 internal object ReaderReadingStoreV11 {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = false }
 
+    @Synchronized
     fun load(context: Context, bookId: String): ReaderReadingArchiveV11 = runCatching {
         val file = archiveFile(context, bookId)
-        if (!file.exists()) ReaderReadingArchiveV11(bookId) else json.decodeFromString(ReaderReadingArchiveV11.serializer(), file.readText())
-    }.getOrDefault(ReaderReadingArchiveV11(bookId))
+        if (!file.exists()) ReaderReadingArchiveV11(bookId) else json.decodeFromString(ReaderReadingArchiveV11.serializer(), file.readText()).also {
+            check(it.bookId == bookId) { "归档书籍标识不匹配" }
+        }
+    }.getOrElse { ReaderReadingArchiveV11(bookId, storageError = "阅读笔记归档无法完整读取，原文件已保留，暂停修改；请勿清除应用数据") }
 
+    @Synchronized
     fun save(context: Context, archive: ReaderReadingArchiveV11): ReaderReadingArchiveV11 {
-        val normalized = archive.copy(updatedAt = System.currentTimeMillis())
-        val file = archiveFile(context, archive.bookId)
-        file.parentFile?.mkdirs()
-        file.writeText(json.encodeToString(ReaderReadingArchiveV11.serializer(), normalized))
-        return normalized
+        val previous = load(context, archive.bookId)
+        if (previous.storageError != null) return previous
+        if (archive.storageError != null) return previous.copy(storageError = archive.storageError)
+        val normalized = archive.copy(updatedAt = System.currentTimeMillis(), storageError = null)
+        return runCatching {
+            writeReaderArchiveAtomicallyV48(archiveFile(context, archive.bookId), json.encodeToString(ReaderReadingArchiveV11.serializer(), normalized).toByteArray(Charsets.UTF_8))
+            normalized
+        }.getOrElse { previous.copy(storageError = "阅读笔记保存失败，原文件未修改；请检查存储空间后重试") }
     }
 
+    @Synchronized
     fun addBookmark(
         context: Context,
         bookId: String,
@@ -126,11 +136,13 @@ internal object ReaderReadingStoreV11 {
         return save(context, next)
     }
 
+    @Synchronized
     fun deleteBookmark(context: Context, bookId: String, id: String): ReaderReadingArchiveV11 {
         val current = load(context, bookId)
         return save(context, current.copy(bookmarks = current.bookmarks.filterNot { it.id == id }))
     }
 
+    @Synchronized
     fun addAnnotation(
         context: Context,
         bookId: String,
@@ -157,6 +169,7 @@ internal object ReaderReadingStoreV11 {
         return save(context, current.copy(annotations = (current.annotations + annotation).sortedByDescending { it.updatedAt }))
     }
 
+    @Synchronized
     fun updateAnnotation(context: Context, bookId: String, id: String, note: String): ReaderReadingArchiveV11 {
         require(note.trim().isNotBlank()) { "批注内容不能为空" }
         val current = load(context, bookId)
@@ -170,11 +183,13 @@ internal object ReaderReadingStoreV11 {
         )
     }
 
+    @Synchronized
     fun deleteAnnotation(context: Context, bookId: String, id: String): ReaderReadingArchiveV11 {
         val current = load(context, bookId)
         return save(context, current.copy(annotations = current.annotations.filterNot { it.id == id }))
     }
 
+    @Synchronized
     fun savePreset(context: Context, bookId: String, preset: ReaderThemePresetV11): ReaderReadingArchiveV11 {
         val current = load(context, bookId)
         val normalizedName = preset.name.trim().ifBlank { "阅读方案" }.take(28)
@@ -183,6 +198,7 @@ internal object ReaderReadingStoreV11 {
         return save(context, current.copy(presets = listOf(normalized) + withoutSame))
     }
 
+    @Synchronized
     fun deletePreset(context: Context, bookId: String, id: String): ReaderReadingArchiveV11 {
         val current = load(context, bookId)
         return save(context, current.copy(presets = current.presets.filterNot { it.id == id }))
@@ -238,6 +254,7 @@ internal object ReaderProgressStoreV11 {
             textOffset = prefs.getInt("offset_$bookId", 0).coerceAtLeast(0),
             modeKey = prefs.getString("mode_$bookId", ReaderPageModeV10.SCROLL.key) ?: ReaderPageModeV10.SCROLL.key,
             updatedAt = prefs.getLong("updated_$bookId", 0L),
+            bodyVersion = prefs.getInt("body_version_$bookId", 0),
         )
     }
 
@@ -248,6 +265,7 @@ internal object ReaderProgressStoreV11 {
             .putInt("scroll_$bookId", progress.scrollY.coerceAtLeast(0))
             .putFloat("fraction_$bookId", progress.positionFraction.coerceIn(0f, 1f))
             .putInt("offset_$bookId", progress.textOffset.coerceAtLeast(0))
+            .putInt("body_version_$bookId", progress.bodyVersion)
             .putString("mode_$bookId", progress.modeKey)
             .putLong("updated_$bookId", System.currentTimeMillis())
             .apply()

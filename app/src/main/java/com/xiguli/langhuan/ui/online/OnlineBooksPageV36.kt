@@ -181,14 +181,14 @@ private fun OnlineBooksPaperContentV44(
                 )
             }
         }
-        AnimatedVisibility(state.message != null || state.error != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            val text = state.error ?: state.message.orEmpty()
+        AnimatedVisibility(state.message != null || state.error != null || state.sourceStorageError != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            val text = state.sourceStorageError ?: state.error ?: state.message.orEmpty()
             Surface(
                 Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp).springClickV31(pressedScale = .98f) { viewModel.clearMessage() },
                 shape = RoundedCornerShape(14.dp),
-                color = if (state.error != null) t.destructive.copy(alpha = .12f) else t.muted,
+                color = if (state.error != null || state.sourceStorageError != null) t.destructive.copy(alpha = .12f) else t.muted,
             ) {
-                Text(text, Modifier.padding(14.dp), color = if (state.error != null) t.destructive else t.foreground, style = MaterialTheme.typography.bodySmall)
+                Text(text, Modifier.padding(14.dp), color = if (state.error != null || state.sourceStorageError != null) t.destructive else t.foreground, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
