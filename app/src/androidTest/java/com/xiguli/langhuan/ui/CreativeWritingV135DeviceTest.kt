@@ -57,6 +57,31 @@ class CreativeWritingV135DeviceTest {
         }
         return node.assertIsDisplayed().assertIsEnabled()
     }
+    private fun dismissSceneSheet() {
+        val label = "本章场景"
+        val beforeTop = rule.onNodeWithText(label).fetchSemanticsNode().boundsInWindow.top
+        var previousTop = beforeTop
+        var stableSince = SystemClock.uptimeMillis()
+        back()
+        // Material3 Back first collapses an expanded sheet when it has a half-height anchor.
+        // Accept either complete dismissal or a settled downward transition, never a no-op.
+        rule.waitUntil(10_000) {
+            val nodes = rule.onAllNodesWithText(label).fetchSemanticsNodes()
+            if (nodes.isEmpty()) true else {
+                val top = nodes.single().boundsInWindow.top
+                if (top <= beforeTop + 8f || top != previousTop) {
+                    previousTop = top
+                    stableSince = SystemClock.uptimeMillis()
+                    false
+                } else SystemClock.uptimeMillis() - stableSince >= 300
+            }
+        }
+        if (rule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()) {
+            back()
+            rule.waitUntil(10_000) { rule.onAllNodesWithText(label).fetchSemanticsNodes().isEmpty() }
+        }
+        rule.onNodeWithText(label).assertDoesNotExist()
+    }
     private fun send(text: String) {
         input().performTextReplacement(text)
         rule.onNodeWithContentDescription("发送").performClick()
@@ -197,8 +222,8 @@ class CreativeWritingV135DeviceTest {
                 back()
                 rule.waitUntil(10_000) { !keyboardVisible() }
             }
-            back()
-            rule.onNodeWithText("本章场景").assertDoesNotExist()
+            dismissSceneSheet()
+            markPhase("scene sheet dismissed")
             listOf(AiTaskType.PROSE_AUTHOR, AiTaskType.NOVELIZATION, AiTaskType.EDITOR_REWRITE).forEach {
                 routes.setRoute(it, providerId!!, "gpt-4o-prose-v135")
             }
