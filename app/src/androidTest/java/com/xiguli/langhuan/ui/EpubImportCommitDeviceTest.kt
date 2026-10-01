@@ -84,6 +84,7 @@ class EpubImportCommitDeviceTest {
         val manager = StoryProjectManager(app)
         val originals = File(app.filesDir, "epub_originals_v1")
         val before = originalsSnapshot(originals)
+        val existingNames = originals.listFiles().orEmpty().map { it.name }.toSet()
         val shelves = manager.observeStories().first()
         val active = manager.activeStoryId()
         val metadata = app.getSharedPreferences("local_book_meta_v1", 0).all.toMap()
@@ -98,11 +99,14 @@ class EpubImportCommitDeviceTest {
                 }))
             }
             withTimeout(30_000) { prepared.await() }
-            assertTrue(originals.listFiles().orEmpty().any { it.name.startsWith("pending-import-") })
+            val pending = originals.listFiles().orEmpty().filter { it.name.startsWith("pending-import-") && it.name !in existingNames }
+            assertEquals(1, pending.size)
             assertEquals(shelves, manager.observeStories().first())
             instrumentation.runOnMainSync { vm.cancelImport() }
             val cancelled = withTimeout(15_000) { vm.state.first { !it.busy } }
-            withTimeout(10_000) { while (originalsSnapshot(originals) != before) delay(20) }
+            // Wait for owned cleanup first; reading a file while it is being deleted races ENOENT.
+            withTimeout(10_000) { while (pending.any { it.exists() }) delay(20) }
+            assertEquals(before, originalsSnapshot(originals))
             assertEquals("已取消导入", cancelled.message)
             assertNull(cancelled.importedBookId); assertNull(cancelled.error)
             assertEquals(shelves, manager.observeStories().first())
@@ -160,6 +164,7 @@ class EpubImportCommitDeviceTest {
         val app = instrumentation.targetContext
         val originals = File(app.filesDir, "epub_originals_v1")
         val before = originalsSnapshot(originals)
+        val existingNames = originals.listFiles().orEmpty().map { it.name }.toSet()
         val input = File(app.cacheDir, "synthetic-association-${UUID.randomUUID()}.epub")
         instrumentation.context.assets.open("epub/original-fixed.epub").use { source -> input.outputStream().use { source.copyTo(it) } }
         try {
@@ -178,9 +183,12 @@ class EpubImportCommitDeviceTest {
                         delay(20)
                     }
                 }
-                assertTrue(originals.listFiles().orEmpty().any { it.name.startsWith("pending-import-") })
+                val pending = originals.listFiles().orEmpty().filter { it.name.startsWith("pending-import-") && it.name !in existingNames }
+                assertEquals(1, pending.size)
                 instrumentation.runOnMainSync { requireNotNull(dialog).onBackPressed() }
-                withTimeout(10_000) { while (originalsSnapshot(originals) != before) delay(20) }
+                // The dialog dismiss callback is asynchronous: observe deletion, then hash survivors.
+                withTimeout(10_000) { while (pending.any { it.exists() }) delay(20) }
+                assertEquals(before, originalsSnapshot(originals))
                 assertFalse(requireNotNull(dialog).isShowing)
                 assertFalse(EpubOriginalStore(originals).hasOriginal("unassociated-staging-test"))
                 scenario.onActivity { assertFalse(it.isFinishing) }
