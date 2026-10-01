@@ -181,14 +181,16 @@ class ReaderProgressV42DeviceTest {
     @Test fun headingCorrectionMigratesCachedAnchorOnce() = assertHeadingMigration(false)
     @Test fun headingCorrectionWaitsForOnlineBodyBeforeMigratingAnchor() = assertHeadingMigration(true)
 
-    private fun assertHeadingMigration(delayedBody: Boolean) {
+    @Test fun missingOldChapterDoesNotApplyItsAnchorToADifferentOnlineChapter() = assertHeadingMigration(true, storedChapter = 99)
+
+    private fun assertHeadingMigration(delayedBody: Boolean, storedChapter: Int = 1) {
         val fullBody = "回家的路很长，他走了一整夜。".repeat(400)
         val content = mutableStateOf(if (delayedBody) "" else fullBody)
         val visible = mutableStateOf(true)
         lateinit var settings: ReaderSettingsV30
         val targetBook = book.copy(id = "heading-migration-${java.util.UUID.randomUUID()}", sourceId = if (delayedBody) "fixture" else "")
         rule.runOnUiThread {
-            ReaderProgressStoreV11.save(rule.activity, targetBook.id, ReaderProgressV11(1, textOffset = 1200, bodyVersion = 0))
+            ReaderProgressStoreV11.save(rule.activity, targetBook.id, ReaderProgressV11(storedChapter, textOffset = 1200, bodyVersion = 0))
             settings = ReaderSettingsV30(rule.activity.getSharedPreferences("heading-migration-v48", 0)).apply {
                 fontSize = 20f; turnMode = ReaderTurnModeV30.NONE; clickAnimation = false
             }
@@ -207,13 +209,13 @@ class ReaderProgressV42DeviceTest {
             it.config[SemanticsProperties.StateDescription].startsWith("第")
         } }
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
-        assertEquals(1202, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).textOffset)
+        assertEquals(if (storedChapter == 1) 1202 else 0, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).textOffset)
         assertEquals(48, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).bodyVersion)
         rule.runOnIdle { visible.value = false }
         rule.waitForIdle()
         rule.runOnIdle { visible.value = true }
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
-        assertEquals("Reopening must not add the restored prefix twice", 1202, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).textOffset)
+        assertEquals("Reopening must not add the restored prefix twice", if (storedChapter == 1) 1202 else 0, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).textOffset)
     }
 
 }

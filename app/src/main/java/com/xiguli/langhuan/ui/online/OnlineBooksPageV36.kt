@@ -329,6 +329,7 @@ private fun OnlineSearchTabV36(
             }
         }
         when {
+            state.sourceStorageError != null -> OnlineEmptyV36("书源暂时无法读取", "原始配置仍保存在本机，可到书源管理导出留档。", "查看书源", onGoSources)
             state.sources.isEmpty() -> OnlineEmptyV36("为书城添加第一盏灯", "导入你有权使用的书源，或让 AI 为你生成。\n书城会从这些网站搜索真实书籍。", "添加书源 / AI 生成", onGoSources)
             enabled == 0 && discoveries.isEmpty() -> OnlineEmptyV36("书源还没有启用", "到书源管理打开至少一个书源，再来寻找喜欢的故事。", "启用书源", onGoSources)
             state.discoverySection != null && sectionGroup != "全部" && state.discoverySection !in filteredSections && !state.searching -> OnlineEmptyV36("暂未提供${sectionGroup}入口", "可以在全部发现入口中继续浏览，或添加其他书源。", null, null)
@@ -422,15 +423,15 @@ private fun OnlineSourcesTabV36(
                         focusedContainerColor = t.muted, unfocusedContainerColor = t.muted,
                         focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${state.sources.size} 个书源 · 已启用 ${state.sources.count { it.enabled }} 个", Modifier.weight(1f), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = { exportConfirm = true }, enabled = state.sources.isNotEmpty()) { Text("导出", color = t.primary) }
+                    Text(if (state.sourceStorageError != null) "读取异常 · 原始配置已保留" else "${state.sources.size} 个书源 · 已启用 ${state.sources.count { it.enabled }} 个", Modifier.weight(1f), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = { exportConfirm = true }, enabled = state.sources.isNotEmpty() || state.sourceStorageError != null) { Text(if (state.sourceStorageError != null) "导出原始数据" else "导出", color = t.primary) }
                 }
             }
             if (state.sources.isEmpty()) item {
                 PaperCardV44(Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.MenuBook, null, Modifier.size(32.dp), tint = t.primary)
-                    Text("连接你的阅读世界", Modifier.padding(top = 12.dp), fontFamily = FontFamily.Serif, color = t.foreground, style = MaterialTheme.typography.titleLarge)
-                    Text("导入你有权使用的书源，或从网站链接生成规则。书城会显示网站实际提供的书籍与发现入口。", Modifier.padding(top = 8.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
+                    Text(if (state.sourceStorageError != null) "暂未载入已有书源" else "连接你的阅读世界", Modifier.padding(top = 12.dp), fontFamily = FontFamily.Serif, color = t.foreground, style = MaterialTheme.typography.titleLarge)
+                    Text(if (state.sourceStorageError != null) "已有配置读取失败，可先导出原始数据留档。修复前暂停导入和编辑，以保留原数据。" else "导入你有权使用的书源，或从网站链接生成规则。书城会显示网站实际提供的书籍与发现入口。", Modifier.padding(top = 8.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             val filtered = state.sources.filter { sourceQuery.isBlank() || it.name.contains(sourceQuery, true) || it.group.contains(sourceQuery, true) || it.baseUrl.contains(sourceQuery, true) }
@@ -490,7 +491,7 @@ private fun OnlineSourcesTabV36(
         }
     }
     if (exportConfirm) AlertDialog(
-        onDismissRequest = { exportConfirm = false }, title = { Text("复制书源 JSON") },
+        onDismissRequest = { exportConfirm = false }, title = { Text(if (state.sourceStorageError != null) "复制原始书源数据" else "复制书源 JSON") },
         text = { Text("将全部书源复制到剪贴板。自定义请求头也会包含在内，请勿把带登录凭据的书源分享给他人。") },
         confirmButton = { TextButton(onClick = { onExport(); exportConfirm = false }) { Text("复制") } },
         dismissButton = { TextButton(onClick = { exportConfirm = false }) { Text("取消") } }, containerColor = t.card,

@@ -234,7 +234,7 @@ internal fun ReaderSessionV30(
         if (chapter != null && initialProgress.chapterNumber == chapter.chapterNumber)
             readerRestoreBodyOffsetV48(chapter.title, chapter.content, initialProgress.textOffset, initialProgress.bodyVersion) else 0
     }
-    var deferredHeadingAnchor by remember { mutableStateOf(initialProgress.bodyVersion < 48 && initialProgress.textOffset > 0 && chapters.getOrNull(initialIndex)?.content?.isBlank() == true) }
+    var deferredHeadingAnchor by remember { mutableStateOf(initialProgress.bodyVersion < 48 && initialProgress.textOffset > 0 && initialProgress.chapterNumber == chapters.getOrNull(initialIndex)?.chapterNumber && chapters.getOrNull(initialIndex)?.content?.isBlank() == true) }
     var chapterIndex by remember { mutableIntStateOf(initialIndex) }
     var pageIndex by remember { mutableIntStateOf(0) }
     var pendingAnchor by remember { mutableStateOf<Int?>(initialAnchor) }

@@ -11,8 +11,3 @@ internal fun readerSpeechResumeV47(
     awaitingOnlineBody || !hasLayout -> ReaderSpeechResumeV47.WAIT
     else -> ReaderSpeechResumeV47.START
 }
-
-/** Empty local chapters complete asynchronously too; cancellation must invalidate that callback. */
-internal fun readerSpeechCompletionV47(expectedGeneration: Int, currentGeneration: () -> Int, completed: () -> Unit): () -> Unit = {
-    if (currentGeneration() == expectedGeneration) completed()
-}

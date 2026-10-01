@@ -20,17 +20,4 @@ class ReaderSpeechResumeV47Test {
     @Test fun realLocalEmptyChapterRetainsNormalCompletionBehaviour() {
         assertEquals(ReaderSpeechResumeV47.START, readerSpeechResumeV47(true, true, false, false, true))
     }
-
-    @Test fun stoppedEmptyQueueCannotCompleteNewSpeechGeneration() {
-        var generation = 1
-        var completions = 0
-        val oldEmptyDone = readerSpeechCompletionV47(generation, { generation }) { completions++ }
-        generation++ // stop
-        generation++ // new speak
-        val currentDone = readerSpeechCompletionV47(generation, { generation }) { completions++ }
-        oldEmptyDone()
-        assertEquals(0, completions)
-        currentDone()
-        assertEquals(1, completions)
-    }
 }

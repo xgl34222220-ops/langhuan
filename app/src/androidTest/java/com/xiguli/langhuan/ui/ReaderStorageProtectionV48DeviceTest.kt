@@ -1,6 +1,9 @@
 package com.xiguli.langhuan.ui
 
+import android.app.Application
 import android.content.Context
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import androidx.test.platform.app.InstrumentationRegistry
@@ -31,6 +34,19 @@ class ReaderStorageProtectionV48DeviceTest {
         assertTrue(runCatching { BookSourceStoreV36.save(context, emptyList()) }.isFailure)
         assertEquals(corrupt, prefs.getString("sources", null))
         assertEquals(corrupt, BookSourceStoreV36.raw(context))
+    }
+    @Test fun syntacticallyValidDuplicateOrBlankSourceIdsStayProtected() {
+        val prefs = context.getSharedPreferences("book_sources_v36", 0)
+        val cases = listOf(
+            "[{\"id\":\"same\",\"name\":\"A\",\"baseUrl\":\"https://a.example\"},{\"id\":\"same\",\"name\":\"B\",\"baseUrl\":\"https://b.example\"}]",
+            "[{\"id\":\"\",\"name\":\"A\",\"baseUrl\":\"https://a.example\"}]",
+        )
+        cases.forEach { original ->
+            prefs.edit().putString("sources", original).commit()
+            assertTrue(BookSourceStoreV36.read(context).isFailure)
+            assertTrue(runCatching { BookSourceStoreV36.save(context, listOf(source)) }.isFailure)
+            assertEquals(original, BookSourceStoreV36.raw(context))
+        }
     }
     @Test fun staleSourceEditorCannotOverwriteNewerConfiguration() {
         BookSourceStoreV36.save(context, listOf(source))
@@ -88,4 +104,25 @@ class ReaderStorageProtectionV48DeviceTest {
         ReaderProgressStoreV11.save(context, "book", ReaderProgressV11(1, textOffset = 20))
         assertEquals(48, ReaderProgressStoreV11.load(context, "book", 1).bodyVersion)
     }
+    @Test fun staleViewModelRefreshesTheNewerSourcesSoAnExplicitRetryCanSucceed() {
+        val app = base.applicationContext as Application
+        val prior = BookSourceStoreV36.load(app)
+        var vm: OnlineBooksViewModelV36? = null
+        try {
+            BookSourceStoreV36.save(app, listOf(source))
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { vm = OnlineBooksViewModelV36(app) }
+            val changed = source.copy(name = "Newer fixture")
+            BookSourceStoreV36.save(app, listOf(changed))
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { vm!!.toggleSource(source.id) }
+            assertNotNull(vm!!.state.value.error)
+            assertEquals(listOf(changed), vm!!.state.value.sources)
+            assertEquals(listOf(changed), BookSourceStoreV36.load(app))
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { vm!!.toggleSource(source.id) }
+            assertEquals(listOf(changed.copy(enabled = !changed.enabled)), BookSourceStoreV36.load(app))
+        } finally {
+            vm?.let { model -> InstrumentationRegistry.getInstrumentation().runOnMainSync { model.viewModelScope.cancel() } }
+            BookSourceStoreV36.save(app, prior)
+        }
+    }
+
 }

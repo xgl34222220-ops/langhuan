@@ -218,8 +218,9 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     private fun saveSources(next: List<BookSourceV36>, previous: List<BookSourceV36>): Boolean = sourceAttemptV36 {
         BookSourceStoreV36.save(context, next, expected = previous)
     }.onFailure { error ->
-        val storageError = BookSourceStoreV36.read(context).exceptionOrNull()?.message
-        _state.update { it.copy(error = error.message ?: "书源保存失败", sourceStorageError = storageError) }
+        val current = BookSourceStoreV36.read(context)
+        if (current.isSuccess && current.getOrThrow() != previous) invalidateSourceResults()
+        _state.update { it.copy(sources = current.getOrDefault(it.sources), error = error.message ?: "书源保存失败", sourceStorageError = current.exceptionOrNull()?.message) }
     }.isSuccess
 
     private fun invalidateSourceResults() {
