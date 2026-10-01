@@ -215,6 +215,7 @@ internal fun ReaderSessionV30(
     onLoadChapter: (Int) -> Unit = {},
     loadingChapterNumber: Int? = null,
     chapterLoadError: String? = null,
+    speechFactory: ReaderSpeechFactoryV47 = systemReaderSpeechFactoryV47,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -634,11 +635,16 @@ internal fun ReaderSessionV30(
     var ttsRate by remember { mutableStateOf(prefs.getFloat("tts_rate", 1f)) }
     var ttsFollowPage by remember { mutableIntStateOf(-1) }
     var ttsAdvancing by remember { mutableStateOf(false) }
-    val ttsHolder = remember { arrayOfNulls<ReaderTtsV35>(1) }
+    val ttsHolder = remember { arrayOfNulls<ReaderSpeechV47>(1) }
 
     fun ttsStartFromPage() {
         val tts = ttsHolder[0] ?: return
         val chapter = chapters.getOrNull(chapterIndex) ?: return
+        if (waitingForOnlineBody || layoutFor(chapterIndex) == null) {
+            ttsAdvancing = true
+            if (waitingForOnlineBody && loadingChapterNumber != chapter.chapterNumber && chapterLoadError == null) onLoadChapter(chapter.chapterNumber)
+            return
+        }
         val body = readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
         val from = layoutFor(chapterIndex)?.pages?.getOrNull(pageIndex)?.startOffset ?: 0
         ttsFollowPage = pageIndex
@@ -654,63 +660,63 @@ internal fun ReaderSessionV30(
         ttsHolder[0]?.stop()
     }
 
+    // The speech engine outlives individual compositions. Its callbacks must read the
+    // latest chapter bodies/layouts, including text that arrived after starting playback.
+    val speechReady = rememberUpdatedState<(Boolean) -> Unit> { ok ->
+        if (!ok) {
+            listening = false
+            edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
+        } else if (listening) {
+            ttsHolder[0]?.rate = ttsRate
+            ttsStartFromPage()
+        }
+    }
+    val speechChunk = rememberUpdatedState<(Int) -> Unit> { offset ->
+        val layout = layoutFor(chapterIndex)
+        if (listening && !waitingForOnlineBody && layout != null) {
+            val target = layout.pageForOffset(offset)
+            if (target != pageIndex) {
+                ttsFollowPage = target
+                anchorHolder[0] = offset
+                pendingAnchor = offset
+                pageIndex = target
+                if (mode == ReaderTurnModeV30.SCROLL) scrollJump++
+            }
+        }
+    }
+    val speechDone = rememberUpdatedState<() -> Unit> {
+        val next = chapters.getOrNull(chapterIndex + 1)
+        when {
+            !listening -> Unit
+            waitingForOnlineBody -> { ttsAdvancing = true } // Never finish a placeholder.
+            next == null -> { stopListening(); edgeHint = "已读到最后一章" }
+            else -> {
+                chapters.getOrNull(chapterIndex)?.let { ReaderStatsV35.markChapterFinished(context, book.id, it.chapterNumber) }
+                ttsAdvancing = true
+                anchorHolder[0] = 0
+                pendingAnchor = 0
+                chapterIndex += 1
+                pageIndex = 0
+                onChapterChanged(next.chapterNumber)
+            }
+        }
+    }
     fun startListening() {
         listening = true
-        val existing = ttsHolder[0]
-        if (existing != null) {
-            ttsStartFromPage()
-            return
-        }
-        ttsHolder[0] = ReaderTtsV35(
-            context,
-            onReady = { ok ->
-                if (!ok) {
-                    listening = false
-                    edgeHint = "朗读引擎不可用，请在系统设置里安装中文语音"
-                } else if (listening) {
-                    ttsHolder[0]?.rate = ttsRate
-                    ttsStartFromPage()
-                }
-            },
-            onChunkStart = { offset ->
-                // Turn the page under the voice without animation.
-                val layout = layoutFor(chapterIndex)
-                if (listening && layout != null) {
-                    val target = layout.pageForOffset(offset)
-                    if (target != pageIndex) {
-                        ttsFollowPage = target
-                        anchorHolder[0] = offset
-                        pendingAnchor = offset
-                        pageIndex = target
-                        if (mode == ReaderTurnModeV30.SCROLL) scrollJump++
-                    }
-                }
-            },
-            onQueueDone = {
-                val next = chapters.getOrNull(chapterIndex + 1)
-                if (!listening) {
-                    Unit
-                } else if (next == null) {
-                    stopListening()
-                    edgeHint = "已读到最后一章"
-                } else {
-                    chapters.getOrNull(chapterIndex)?.let { ReaderStatsV35.markChapterFinished(context, book.id, it.chapterNumber) }
-                    ttsAdvancing = true
-                    anchorHolder[0] = 0
-                    pendingAnchor = 0
-                    chapterIndex += 1
-                    pageIndex = 0
-                    onChapterChanged(next.chapterNumber)
-                }
-            },
-        )
+        if (ttsHolder[0] != null) { ttsStartFromPage(); return }
+        ttsHolder[0] = speechFactory.create(context,
+            { speechReady.value(it) }, { speechChunk.value(it) }, { speechDone.value() })
     }
 
-    // After an automatic chapter change, resume once the new chapter is paginated.
-    LaunchedEffect(ttsAdvancing, chapterIndex, layouts.size) {
-        if (ttsAdvancing && listening && layoutFor(chapterIndex) != null) {
-            ttsAdvancing = false
-            ttsStartFromPage()
+    LaunchedEffect(ttsAdvancing, listening, chapterIndex, currentLayout, waitingForOnlineBody, loadingChapterNumber, chapterLoadError) {
+        when (readerSpeechResumeV47(ttsAdvancing, listening, waitingForOnlineBody,
+            chapterLoadError != null && loadingChapterNumber != currentChapter?.chapterNumber, currentLayout != null)) {
+            ReaderSpeechResumeV47.START -> { ttsAdvancing = false; ttsStartFromPage() }
+            ReaderSpeechResumeV47.PAUSE_FOR_ERROR -> {
+                ttsHolder[0]?.stop()
+                edgeHint = "本章加载失败，朗读已暂停；重试后可继续"
+            }
+            else -> Unit
         }
     }
     // A manual page turn while listening restarts the voice from the new page.
@@ -719,6 +725,8 @@ internal fun ReaderSessionV30(
     }
     DisposableEffect(Unit) {
         onDispose {
+            listening = false
+            ttsAdvancing = false
             ttsHolder[0]?.release()
             ttsHolder[0] = null
         }
@@ -1039,7 +1047,7 @@ internal fun ReaderSessionV30(
             Surface(shape = RoundedCornerShape(999.dp), color = theme.sheet, shadowElevation = 6.dp) {
                 Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     com.xiguli.langhuan.ui.design.LanghuanTypingDotsV31(theme.accent, dot = 5.dp)
-                    Text("正在朗读", Modifier.padding(start = 10.dp, end = 12.dp), color = theme.sheetText, fontSize = 13.sp)
+                    Text(if (waitingForOnlineBody) { if (chapterLoadError != null && loadingChapterNumber == null) "朗读已暂停" else "等待本章正文" } else "正在朗读", Modifier.padding(start = 10.dp, end = 12.dp), color = theme.sheetText, fontSize = 13.sp)
                     Text(
                         "${ttsRate}x",
                         Modifier

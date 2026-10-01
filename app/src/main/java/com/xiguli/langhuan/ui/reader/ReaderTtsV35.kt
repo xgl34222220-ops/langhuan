@@ -10,6 +10,21 @@ import java.util.Locale
 /** One paragraph queued for speech, with its offset in the normalized chapter body. */
 internal data class ReaderTtsChunkV35(val offset: Int, val text: String)
 
+internal interface ReaderSpeechV47 {
+    var rate: Float
+    fun speak(items: List<ReaderTtsChunkV35>): Boolean
+    fun stop()
+    fun release()
+}
+
+internal fun interface ReaderSpeechFactoryV47 {
+    fun create(context: Context, onReady: (Boolean) -> Unit, onChunkStart: (Int) -> Unit, onQueueDone: () -> Unit): ReaderSpeechV47
+}
+
+internal val systemReaderSpeechFactoryV47 = ReaderSpeechFactoryV47 { context, ready, chunk, done ->
+    ReaderTtsV35(context, ready, chunk, done)
+}
+
 /**
  * Splits [body] from [fromOffset] into speakable chunks: one per paragraph, long paragraphs cut at
  * sentence ends so no utterance exceeds the engine limit.
@@ -47,12 +62,12 @@ internal class ReaderTtsV35(
     private val onReady: (Boolean) -> Unit,
     private val onChunkStart: (Int) -> Unit,
     private val onQueueDone: () -> Unit,
-) {
+) : ReaderSpeechV47 {
     private val main = Handler(Looper.getMainLooper())
     private var chunks: List<ReaderTtsChunkV35> = emptyList()
     private var generation = 0
     private var ready = false
-    var rate: Float = 1f
+    override var rate: Float = 1f
         set(value) {
             field = value
             tts.setSpeechRate(value)
@@ -90,7 +105,7 @@ internal class ReaderTtsV35(
     }
 
     /** Replaces whatever is queued with [items] and starts speaking. Returns false if TTS is unusable. */
-    fun speak(items: List<ReaderTtsChunkV35>): Boolean {
+    override fun speak(items: List<ReaderTtsChunkV35>): Boolean {
         if (!ready) return false
         generation++
         chunks = items
@@ -102,12 +117,12 @@ internal class ReaderTtsV35(
         return true
     }
 
-    fun stop() {
+    override fun stop() {
         generation++
         tts.stop()
     }
 
-    fun release() {
+    override fun release() {
         stop()
         tts.shutdown()
     }
