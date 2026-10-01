@@ -114,10 +114,15 @@ fun WritingWorkspaceLuoShuV11(
         conversationVm.load(novelId)
         canonVm.loadMigrationQueue(novelId)
     }
-    LaunchedEffect(flow.message, flow.error, conversation.error) {
+    LaunchedEffect(flow.message, flow.error, conversation.error, flow.chapterCommitted) {
         val notice = flow.error ?: flow.message ?: conversation.error
         if (!notice.isNullOrBlank()) {
-            snackbar.showSnackbar(notice)
+            // The saved-body card and run history already report a successful commit.
+            // Repeating its long technical receipt in an overlay intercepts taps on Edit.
+            val savedReceipt = flow.error == null && conversation.error == null &&
+                flow.chapterCommitted && notice == flow.message &&
+                notice.startsWith("正文与版本已保存")
+            if (!savedReceipt) snackbar.showSnackbar(notice)
             viewModel.clearNotice()
             conversationVm.clearError()
         }

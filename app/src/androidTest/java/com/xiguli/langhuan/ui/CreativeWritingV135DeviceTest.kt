@@ -258,13 +258,16 @@ class CreativeWritingV135DeviceTest {
             val editSaved = workspaceItem("精修正文 · 保存后仍可反复修改")
             deviceWindowEvidenceV46("v135-writing-open-editor-control")
             editSaved.performClick()
-            rule.waitUntil(15_000) { rule.onAllNodesWithText("正文编辑").fetchSemanticsNodes().isNotEmpty() }
+            rule.waitUntil(15_000) { editor.state.value.ready && editor.state.value.novelId == copiedId && editor.state.value.draft?.content == generatedProse }
+            rule.onNodeWithText("正文编辑").assertIsDisplayed()
             markPhase("edit saved prose")
             val firstEdit = "受控创作副本第一次修改：林舟读完来信，走向港口书店。"
             rule.onNode(hasSetTextAction() and hasText(generatedProse)).performTextReplacement(firstEdit)
             rule.onNodeWithContentDescription("保存并返回").performClick()
             rule.waitUntil(20_000) { flow.state.value.draft?.content == firstEdit }
             workspaceItem("精修正文 · 保存后仍可反复修改").performClick()
+            rule.waitUntil(15_000) { editor.state.value.ready && editor.state.value.novelId == copiedId && editor.state.value.draft?.content == firstEdit }
+            rule.onNodeWithText("正文编辑").assertIsDisplayed()
             markPhase("edit prose again")
             val finalEdit = "受控创作副本第二次修改：林舟温和地回信，保留了自己的选择。"
             rule.onNode(hasSetTextAction() and hasText(firstEdit)).performTextReplacement(finalEdit)
@@ -273,6 +276,7 @@ class CreativeWritingV135DeviceTest {
             assertEquals(finalEdit, projects.chapterDraft(copiedId!!, 1)!!.content)
             // Reenter the same retained editor and leave without typing; a previous close must not lock Back.
             workspaceItem("精修正文 · 保存后仍可反复修改").performClick()
+            rule.waitUntil(15_000) { editor.state.value.ready && editor.state.value.novelId == copiedId && editor.state.value.draft?.content == finalEdit }
             rule.onNodeWithText("正文编辑").assertIsDisplayed()
             rule.onNodeWithContentDescription("保存并返回").performClick()
             rule.waitUntil(15_000) { rule.onAllNodesWithText("章节工作台").fetchSemanticsNodes().isNotEmpty() }

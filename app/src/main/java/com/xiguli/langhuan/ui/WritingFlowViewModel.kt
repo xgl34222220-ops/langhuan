@@ -322,7 +322,12 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
     /** The chapter editor persists through a separate store; force the next writing-page entry to reload it. */
     fun invalidateAfterExternalEdit(novelId: String) {
         val current = _state.value
-        if (current.novelId == novelId && !current.busy && !runtime.state.value.active) {
+        val live = runtime.state.value
+        val activeForThisBook = live.active && live.novelId == novelId
+        if (current.novelId == novelId && !current.busy && !activeForThisBook) {
+            // A completed run holds the pre-edit draft. Drop only that in-memory terminal
+            // state so the following durable load is not immediately replaced by old AI text.
+            current.draft?.let { runtime.clearTerminalState(novelId, it.chapterNumber) }
             requests.open("")
             _state.value = WritingFlowUiState(
                 novelId = novelId, workspaceInput = current.workspaceInput, sceneInstruction = current.sceneInstruction,
