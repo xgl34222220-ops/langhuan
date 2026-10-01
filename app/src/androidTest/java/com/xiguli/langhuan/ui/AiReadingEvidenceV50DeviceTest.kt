@@ -53,12 +53,12 @@ class AiReadingEvidenceV50DeviceTest {
         rule.onAllNodesWithText("目录/正文已验证", substring = true).assertCountEquals(0)
         rule.onNodeWithText("「离线测试站」书源草稿").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("未找到完整目录证据，当前 36 条不能视为全书总章数").assertExists()
-        saveFrame("v50-ai-reading-evidence-test-data")
+        saveFrame("v50-ai-reading-evidence-test-data", "书源草稿")
         rule.onNodeWithText("小说分类 · 本页解析 25 本 · 抽查 1 本").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("正文抽样 · 第一章 开场").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("https://books.example/read/1").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText(sourceSampleScopeV50(chapter)).assertExists()
-        saveFrame("v50-ai-chapter-provenance-test-data")
+        saveFrame("v50-ai-chapter-provenance-test-data", "https://books.example/read/1")
         rule.onNodeWithText("保存书源").performScrollTo().performClick()
         rule.runOnIdle { assertEquals(1, saved) }
         rule.onNodeWithText("AI 生成书源").performScrollTo().assertIsDisplayed()
@@ -92,26 +92,40 @@ class AiReadingEvidenceV50DeviceTest {
         rule.onNodeWithText("收起发现详情").performScrollTo().performClick()
         rule.onAllNodesWithText(limit).assertCountEquals(0)
         rule.onNodeWithText("保存搜索书源").performScrollTo().assertIsDisplayed()
-        saveFrame("v51-ai-partial-discovery-summary-test-data")
+        saveFrame("v51-ai-partial-discovery-summary-test-data", "保存搜索书源")
     }
 
-    private fun saveFrame(name: String) {
+    private fun saveFrame(name: String, visibleText: String) {
         rule.waitForIdle()
         rule.mainClock.advanceTimeBy(800)
         rule.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.waitForIdleSync()
         val automation = instrumentation.uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
         // Compose semantics can be ready before the Dialog's native window and surface.
         // Wait for the actual accessibility window, not a guessed delay or the Activity alone.
         try {
             rule.waitUntil(10_000) {
-                val root = automation.rootInActiveWindow
-                root?.packageName?.toString() == rule.activity.packageName &&
-                    root.findAccessibilityNodeInfosByText("书源草稿").any { it.isVisibleToUser }
+                val roots = listOfNotNull(automation.rootInActiveWindow) + automation.windows.mapNotNull { it.root }
+                roots.any { root -> root.packageName?.toString() == rule.activity.packageName &&
+                    containsVisibleText(root, visibleText) }
             }
-        } catch (error: AssertionError) {
-            deviceWindowEvidenceV46("v51-ai-native-window-not-ready")
+        } catch (error: Throwable) {
+            deviceWindowEvidenceV46("$name-native-window-not-ready")
+            val dump = StringBuilder("expected=$visibleText\n")
+            fun record(node: android.view.accessibility.AccessibilityNodeInfo?, depth: Int = 0) {
+                if (node == null || depth > 20 || dump.length > 60000) return
+                dump.append(" ".repeat(depth)).append("visible=${node.isVisibleToUser} package=${node.packageName} text=${node.text} description=${node.contentDescription}\n")
+                for (i in 0 until node.childCount) record(node.getChild(i), depth + 1)
+            }
+            record(automation.rootInActiveWindow)
+            automation.windows.forEach { record(it.root) }
+            val file = File(rule.activity.getExternalFilesDir(null), "reader-qa/$name-accessibility.txt")
+            file.writeText(dump.toString())
+            automation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
             throw error
         }
         instrumentation.waitForIdleSync()
@@ -133,5 +147,11 @@ class AiReadingEvidenceV50DeviceTest {
         bitmap.recycle()
         automation.executeShellCommand("mkdir -p /sdcard/Download/reader-qa").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
         automation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/$name.png").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
+    }
+
+    private fun containsVisibleText(node: android.view.accessibility.AccessibilityNodeInfo, text: String, depth: Int = 0): Boolean {
+        if (depth > 20) return false
+        if (node.isVisibleToUser && (node.text?.contains(text) == true || node.contentDescription?.contains(text) == true)) return true
+        return (0 until node.childCount).any { index -> node.getChild(index)?.let { containsVisibleText(it, text, depth + 1) } == true }
     }
 }
