@@ -1,6 +1,8 @@
 package com.xiguli.langhuan.ui
 
 import android.view.KeyEvent
+import android.util.Log
+import java.io.File
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -72,28 +74,36 @@ class CreativeWritingV135DeviceTest {
             else if (request.getJSONArray("messages").toString().contains(secondInstruction)) "第二轮已收到：回信可以更温和，正文尚未修改。"
             else "第一轮讨论：让角色先说出自己的顾虑，再作决定。"
         }
+        var currentPhase = "setup"
+        fun markPhase(next: String) { currentPhase = next; Log.i("CreativeWritingV135", "phase=$next; modelRequests=${server.requests.size}") }
         try {
+            markPhase("prepare view models")
             rule.runOnUiThread {
                 library = ViewModelProvider(rule.activity)[LibraryExperienceViewModel::class.java]
                 flow = ViewModelProvider(rule.activity)[WritingFlowViewModel::class.java]
                 chat = ViewModelProvider(rule.activity)[ProjectConversationViewModel::class.java]
             }
             rule.waitUntil(20_000) { library.state.value.stories.any { it.id == originalId } }
+            markPhase("open reader")
             rule.onNodeWithText("创作完整入口V135").performClick()
             rule.waitUntil(30_000) { library.state.value.readingChapter?.content?.contains("远处亮起一盏灯") == true }
+            markPhase("current chapter loaded")
             val sourceBody = projects.chapterDraft(originalId, 1)!!.content
             assertTrue(projects.chapterDraft(originalId, 2)!!.content.isBlank())
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.onNodeWithText("详情").performClick()
             rule.onNodeWithText("AI 创作").performScrollTo().performClick()
+            markPhase("create independent writing copy")
             rule.onNodeWithText("创建副本并进入").performClick()
             rule.waitUntil(20_000) { flow.state.value.ready && flow.state.value.novelId != originalId && chat.state.value.isLoaded }
+            markPhase("writing workspace ready")
             copiedId = flow.state.value.novelId
             assertEquals(sourceBody, flow.state.value.draft?.content)
             assertTrue(flow.state.value.snapshot!!.novel.sourceId.isBlank())
             rule.onNodeWithText("先配置 AI 服务").assertExists()
             val unsent = "只讨论一下：这个场景可以怎样写得更自然？"
             input().performTextReplacement(unsent)
+            markPhase("open AI settings")
             rule.onNodeWithText("配置 AI 服务").performScrollTo().performClick()
             rule.onNodeWithText("还没有配置可用服务").assertExists()
             assertEquals(0, server.requests.size)
@@ -101,12 +111,15 @@ class CreativeWritingV135DeviceTest {
             providerId = repository.saveProvider(ProviderSaveRequest(name = "本机受控模型", baseUrl = server.baseUrl,
                 protocol = ApiProtocol.OPENAI_COMPATIBLE, model = "gpt-4o-chat-v135", supportsJsonMode = false, apiKey = "")).id
             AiTaskType.entries.forEach { routes.setRoute(it, providerId!!, if (it == AiTaskType.SCENE_DIRECTOR) "gpt-4o-scenes-v135" else "gpt-4o-chat-v135") }
+            markPhase("return from AI settings")
             rule.onNodeWithContentDescription("返回").performClick()
             rule.waitUntil(15_000) { flow.aiReady.value }
+            markPhase("send first discussion")
             input().assertTextContains(unsent)
             rule.onNodeWithContentDescription("发送").performClick()
             rule.waitUntil(20_000) { !chat.state.value.isBusy && chat.state.value.messages.any { it.text.startsWith("第一轮讨论") } }
             rule.onNodeWithText("第一轮讨论：让角色先说出自己的顾虑，再作决定。").assertIsDisplayed()
+            markPhase("send second discussion")
             send(secondInstruction)
             rule.waitUntil(20_000) { !chat.state.value.isBusy && chat.state.value.messages.any { it.text.startsWith("第二轮已收到") } }
             assertEquals(2, server.requests.size)
@@ -114,6 +127,7 @@ class CreativeWritingV135DeviceTest {
             assertEquals("user", secondMessages.getJSONObject(secondMessages.length() - 1).getString("role"))
             assertTrue(secondMessages.getJSONObject(secondMessages.length() - 1).getString("content").contains(secondInstruction))
             assertEquals(4, ProjectConversationStore(context).load(copiedId!!).size)
+            markPhase("plan scenes")
             rule.onNodeWithText("场景").performClick()
             rule.onNode(hasSetTextAction() and hasText("告诉 AI 怎么调整：例如第三场提前到傍晚、不要闪回、让配角更早入场")).performTextReplacement("安排两个上午连续发生的书店场景。")
             rule.onNodeWithText("AI 调整").performClick()
@@ -121,6 +135,7 @@ class CreativeWritingV135DeviceTest {
             assertEquals("gpt-4o-scenes-v135", server.requests.last().getString("model"))
             assertEquals(2, flow.state.value.workingScenes.size)
             assertEquals(1, projects.chapterDraft(copiedId!!, 1)!!.scenePlan.size)
+            markPhase("confirm scene preview")
             rule.onNodeWithText("确认场景").performClick()
             rule.waitUntil(20_000) { !flow.state.value.sceneDirty && !flow.state.value.isSaving }
             assertEquals(2, projects.chapterDraft(copiedId!!, 1)!!.scenePlan.size)
@@ -132,14 +147,17 @@ class CreativeWritingV135DeviceTest {
                 AiTaskType.EXECUTION_AUDIT, AiTaskType.AUTONOMOUS_PLANNER).forEach {
                 routes.setRoute(it, providerId!!, "gpt-4o-structured-v135")
             }
+            markPhase("generate prose")
             send("重写本章正文，写出完整回信经过。")
             rule.waitUntil(60_000) { !flow.state.value.isGenerating && (flow.state.value.result != null || flow.state.value.error != null) }
+            markPhase("prose response received")
             val result = requireNotNull(flow.state.value.result) { flow.state.value.error.orEmpty() }
             assertTrue(result.issues.toString(), result.canCommit)
             assertEquals(generatedProse, result.chapter.content)
             rule.onNodeWithText("新版本已完成").performScrollTo().assertIsDisplayed()
             deviceWindowEvidenceV46("v135-writing-generated-preview-controlled-model")
             assertEquals(sourceBody, projects.chapterDraft(copiedId!!, 1)!!.content)
+            markPhase("save generated prose")
             rule.onNodeWithText("保存本章").performClick()
             rule.waitUntil(60_000) { !flow.state.value.isSaving && flow.state.value.draft?.content == generatedProse }
             assertEquals(generatedProse, projects.chapterDraft(copiedId!!, 1)!!.content)
@@ -149,11 +167,13 @@ class CreativeWritingV135DeviceTest {
             assertTrue(server.requests.drop(4).all { it.getString("model") == "gpt-4o-structured-v135" })
             rule.onNodeWithText("精修正文 · 保存后仍可反复修改").performScrollTo().performClick()
             rule.waitUntil(15_000) { rule.onAllNodesWithText("正文编辑").fetchSemanticsNodes().isNotEmpty() }
+            markPhase("edit saved prose")
             val firstEdit = "受控创作副本第一次修改：林舟读完来信，走向港口书店。"
             rule.onNode(hasSetTextAction() and hasText(generatedProse)).performTextReplacement(firstEdit)
             rule.onNodeWithContentDescription("保存并返回").performClick()
             rule.waitUntil(20_000) { flow.state.value.draft?.content == firstEdit }
             rule.onNodeWithText("精修正文 · 保存后仍可反复修改").performScrollTo().performClick()
+            markPhase("edit prose again")
             val finalEdit = "受控创作副本第二次修改：林舟温和地回信，保留了自己的选择。"
             rule.onNode(hasSetTextAction() and hasText(firstEdit)).performTextReplacement(finalEdit)
             rule.onNodeWithContentDescription("保存并返回").performClick()
@@ -168,10 +188,24 @@ class CreativeWritingV135DeviceTest {
             assertTrue(projects.chapterDraft(originalId, 2)!!.content.isBlank())
             assertTrue("Bounded fixture requests: ${server.requests.size}", server.requests.size in 6..12)
             assertTrue(server.failures.toString(), server.failures.isEmpty())
+            markPhase("return to reader")
             deviceWindowEvidenceV46("v135-creative-writing-controlled-model")
             rule.onNodeWithContentDescription("返回").performClick()
             rule.waitUntil(20_000) { library.state.value.openedBook?.id == copiedId && library.state.value.readingChapter?.content == finalEdit }
             rule.onNodeWithContentDescription("阅读正文").assertExists()
+        } catch (failure: Throwable) {
+            val libraryState = runCatching { library.state.value.let { "book=${it.openedBook?.id}, chapter=${it.readingChapter?.chapterNumber}, chars=${it.readingChapter?.content?.length}, loading=${it.loadingChapterNumber}, error=${it.readerLoadError}" } }.getOrDefault("unavailable")
+            val writingState = runCatching { flow.state.value.let { "ready=${it.ready}, loading=${it.isLoading}, generating=${it.isGenerating}, saving=${it.isSaving}, error=${it.error}" } }.getOrDefault("unavailable")
+            val chatState = runCatching { chat.state.value.let { "loaded=${it.isLoaded}, busy=${it.isBusy}, messages=${it.messages.size}, error=${it.error}" } }.getOrDefault("unavailable")
+            val diagnostic = "phase=$currentPhase; modelRequests=${server.requests.size}; models=${server.requests.map { it.optString("model") }}; serverFailures=${server.failures.map { it.toString() }}; library=$libraryState; writing=$writingState; chat=$chatState"
+            Log.e("CreativeWritingV135", diagnostic, failure)
+            runCatching {
+                val file = File(context.getExternalFilesDir(null), "reader-qa/v135-writing-failure-state.txt").apply { parentFile!!.mkdirs() }
+                file.writeText(diagnostic)
+                file.appendText("\n" + runCatching { rule.onRoot(useUnmergedTree = true).printToString() }.getOrDefault("Semantics unavailable"))
+            }
+            runCatching { deviceWindowEvidenceV46("v135-writing-failure") }
+            throw AssertionError(diagnostic, failure)
         } finally {
             try { rule.activityRule.scenario.close() } finally {
                 server.close()

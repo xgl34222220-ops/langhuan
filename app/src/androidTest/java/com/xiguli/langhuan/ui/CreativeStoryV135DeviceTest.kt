@@ -150,18 +150,40 @@ class CreativeStoryV135DeviceTest {
         }
         val fixture = prepare(server)
         lateinit var vm: StoryPlayV3ViewModel
+        var stage = "create StoryCore"
         try {
             rule.runOnUiThread { vm = ViewModelProvider(rule.activity)[StoryPlayV3ViewModel::class.java] }
             rule.setContent { LanghuanStableTheme { StoryCoreExperience(fixture.book, fixture.library, true, {}) } }
             rule.waitUntil(15_000) { vm.state.value.active != null }
+            val branchId = vm.state.value.active!!.id
+            stage = "send first action"
             sendStoryAction("观察合成码头")
             rule.waitUntil(15_000) { vm.state.value.active?.turns?.size == 1 }
+            stage = "send held action"
             sendStoryAction("等待一条将取消的回复")
             rule.waitUntil(15_000) { server.requests.size == 2 && vm.state.value.busy }
+            stage = "stop held action"
             rule.onNodeWithText("停止生成").performScrollTo().performClick()
             rule.waitUntil(5_000) { !vm.state.value.busy }
+            assertEquals(branchId, vm.state.value.active?.id)
+            deviceWindowEvidenceV46("v135-story-stopped-controlled-model")
+            stage = "send action after stop"
             sendStoryAction("继续检查新的脚印")
-            rule.waitUntil(15_000) { vm.state.value.active?.turns?.size == 2 }
+            // Preserve the original total 15-second budget; distinguish UI dispatch from HTTP/result handling.
+            val deadline = SystemClock.uptimeMillis() + 15_000
+            fun remaining() = (deadline - SystemClock.uptimeMillis()).coerceAtLeast(1)
+            stage = "third HTTP request must arrive"
+            rule.waitUntil(remaining()) { server.requests.size >= 3 || vm.state.value.error != null }
+            assertNull("New action failed before its HTTP request", vm.state.value.error)
+            assertEquals("The new action must use the same branch", branchId, vm.state.value.active?.id)
+            assertTrue("The third request must contain the new action", lastUserContent(server.requests[2]).contains("继续检查新的脚印"))
+            stage = "third response must become the second turn"
+            rule.waitUntil(remaining()) { vm.state.value.active?.turns?.size == 2 || vm.state.value.error != null }
+            assertNull("New action returned an error", vm.state.value.error)
+            assertEquals(2, vm.state.value.active?.turns?.size)
+            assertEquals("继续检查新的脚印", vm.state.value.active!!.turns.last().player)
+            deviceWindowEvidenceV46("v135-story-resumed-controlled-model")
+            stage = "release cancelled response and verify isolation"
             release.countDown(); check(replied.await(5, TimeUnit.SECONDS))
             assertStableAfterResponse {
                 assertEquals(2, vm.state.value.active?.turns?.size)
@@ -172,6 +194,10 @@ class CreativeStoryV135DeviceTest {
             rule.runOnUiThread { vm.open("other-${fixture.id}", 1, "other", "source"); vm.open(fixture.id, 1, "合成章", BODY) }
             assertEquals(2, vm.state.value.active?.turns?.size)
             assertEquals(fixture.original, fixture.projects.loadStory(fixture.id))
+        } catch (error: Throwable) {
+            val diagnostic = storyFailureEvidence(stage, runCatching { vm }.getOrNull(), server,
+                "callbacks=${calls.get()}, heldRelease=${release.count}, heldReplied=${replied.count}")
+            throw AssertionError("StoryCore failed at '$stage': $diagnostic", error)
         } finally { release.countDown(); cleanup(fixture, server) }
     }
 
@@ -199,8 +225,36 @@ class CreativeStoryV135DeviceTest {
         rule.onNodeWithContentDescription("发送").performClick()
     }
     private fun sendStoryAction(text: String) {
-        rule.onNode(hasSetTextAction()).performTextInput(text)
-        rule.onNodeWithContentDescription("发送故事动作").performClick()
+        rule.onNode(hasSetTextAction()).assertIsEnabled().performTextReplacement(text).assertTextContains(text)
+        rule.onNodeWithContentDescription("发送故事动作").assertIsEnabled().assertIsDisplayed().performClick()
+    }
+
+    /** Capture before cleanup: screenshot is the full device surface, not a Compose crop. */
+    private fun storyFailureEvidence(stage: String, vm: StoryPlayV3ViewModel?, server: CreativeAiFixtureServerV135, extra: String): String {
+        val state = vm?.state?.value
+        val summary = "novel=${state?.novelId}, active=${state?.active?.id}, runtime=${state?.runtime?.sessionId}, " +
+            "busy=${state?.busy}, turns=${state?.active?.turns?.size}, error=${state?.error}, notice=${state?.notice}, " +
+            "requests=${server.requests.size}, completed=${server.completedResponses.get()}, serverFailures=${server.failures}; $extra"
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val dir = File(instrumentation.targetContext.getExternalFilesDir(null), "reader-qa").apply { mkdirs() }
+        val file = File(dir, "v135-story-failure-diagnostics.txt")
+        // Save state first even if the emulator/screen capture later fails.
+        runCatching { file.writeText("stage=$stage\n$summary\n\nturns=${state?.active?.turns}\n\n" +
+            server.requests.mapIndexed { index, request -> "REQUEST ${index + 1}: $request" }.joinToString("\n\n")) }
+        runCatching { deviceWindowEvidenceV46("v135-story-failure") }
+            .onFailure { runCatching { file.appendText("\nScreenshot/window capture failed: $it\n") } }
+        runCatching { rule.onRoot(useUnmergedTree = true).printToString() }
+            .onSuccess { runCatching { file.appendText("\nUNMERGED SEMANTICS\n$it\n") } }
+            .onFailure { runCatching { file.appendText("\nSemantics capture failed: $it\n") } }
+        runCatching {
+            instrumentation.uiAutomation.executeShellCommand("mkdir -p /sdcard/Download/reader-qa").use {
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()
+            }
+            instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use {
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()
+            }
+        }
+        return summary
     }
 
     /** The held HTTP callback has returned; give queued IO/main-thread completions a bounded drain window. */

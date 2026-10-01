@@ -57,10 +57,7 @@ jobs:
             adb exec-out screencap -p > reader-qa/emulator-before-tests.png
             if rg -q 'Application Not Responding:' reader-qa/emulator-before-tests-window.txt; then exit 1; fi
             # Keep only this CI emulator installation for artwork collection and the two process phases.
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/app/src/androidTest/assets/source-fixture/" || { adb pull /sdcard/Download/reader-qa reader-qa; adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork || true; exit 1; }
-            python3 tools/verify_epub_process_death.py --evidence reader-qa/epub-process || { adb pull /sdcard/Download/reader-qa reader-qa; adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork || true; exit 1; }
-            adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork
-            adb pull /sdcard/Download/reader-qa reader-qa
+            bash tools/run_reader_device_checks.sh "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/app/src/androidTest/assets/source-fixture/"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
