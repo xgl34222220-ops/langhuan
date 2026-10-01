@@ -148,11 +148,11 @@ internal class BookSourceAiBuilderV37(
             .getOrElse { fail("搜索请求失败：${it.message.orEmpty().take(80)}") }
         var rules = askRules(SEARCH_TASK, searchDoc, keyword, feedback = null)
         source = source.withSearch(rules)
-        var results = sourceAttemptV36 { searchAiSourceV37(source, keyword) }.getOrDefault(emptyList())
+        var results = extractionAttemptV55 { searchAiSourceV37(source, keyword) }.getOrDefault(emptyList())
         if (results.isEmpty()) {
             rules = askRules(SEARCH_TASK, searchDoc, keyword, feedback = "上次规则 ${rules.compact()} 在这个页面上一个结果都没取到。请对照页面结构重新写，列表规则要能选中每一本书的外层元素。")
             source = source.withSearch(rules)
-            results = sourceAttemptV36 { searchAiSourceV37(source, keyword) }.getOrDefault(emptyList())
+            results = extractionAttemptV55 { searchAiSourceV37(source, keyword) }.getOrDefault(emptyList())
         }
         if (results.isEmpty()) fail("搜索结果页的规则没能取到书。请确认测试书名在该站能搜到")
         val picked = results.firstOrNull { it.name == keyword } ?: results.firstOrNull { it.name.contains(keyword) } ?: results.first()
@@ -164,7 +164,7 @@ internal class BookSourceAiBuilderV37(
             .getOrElse { fail("书籍页打不开：${it.message.orEmpty().take(80)}") }
         rules = askRules(TOC_TASK, bookDoc, picked.name, feedback = null)
         source = source.withToc(rules)
-        var catalogueAttempt = sourceAttemptV36 { loadAiBookV37(source, picked) }
+        var catalogueAttempt = extractionAttemptV55 { loadAiBookV37(source, picked) }
         if (catalogueAttempt.isFailure) {
             // Preserve the reason: a partial/latest-only catalogue is not an empty selector.
             network.checkActive()
@@ -180,7 +180,7 @@ internal class BookSourceAiBuilderV37(
                     if (tocPage != null) "下面是目录页（由 infoTocUrl 打开），请写完整目录规则并保留 infoTocUrl。" else "请按真实完整目录和分页链接纠正规则，不要使用最新章节或猜测地址。",
             )
             source = source.withToc(rules, keepTocUrl = tocPage != null)
-            catalogueAttempt = sourceAttemptV36 { loadAiBookV37(source, picked) }
+            catalogueAttempt = extractionAttemptV55 { loadAiBookV37(source, picked) }
         }
         val catalogue = catalogueAttempt.getOrElse { fail("目录检查未通过：${it.message.orEmpty().take(260)}") }
         val toc = catalogue.chapters
@@ -196,7 +196,7 @@ internal class BookSourceAiBuilderV37(
         rules = askRules(CONTENT_TASK, chapterDoc, chapterHint, feedback = null)
         source = source.withContent(rules)
         val tocUrls = toc.map { it.url }.toSet()
-        var chapterAttempt = sourceAttemptV36 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
+        var chapterAttempt = extractionAttemptV55 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
         if (!aiChapterSampleAcceptedV50(chapterAttempt.getOrNull())) {
             network.checkActive()
             val problem = chapterAttempt.exceptionOrNull()?.message?.take(240)
@@ -204,7 +204,7 @@ internal class BookSourceAiBuilderV37(
             rules = askRules(CONTENT_TASK, chapterDoc, chapterHint,
                 feedback = "上次规则 ${rules.compact()} 未通过正文检查：$problem。请核对当前书名、章节标题及正文容器，不要选择导航、目录、推荐、简介或其他文章，也不要仅按字数最多选择。")
             source = source.withContent(rules)
-            chapterAttempt = sourceAttemptV36 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
+            chapterAttempt = extractionAttemptV55 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
         }
         val chapter = chapterAttempt.getOrElse { fail("正文检查未通过：${it.message.orEmpty().take(260)}") }
         val text = chapter.text
@@ -408,6 +408,15 @@ internal class BookSourceAiBuilderV37(
         exploreCover = r["exploreCover"].orEmpty(), exploreIntro = r["exploreIntro"].orEmpty(),
         exploreLatest = r["exploreLatest"].orEmpty(),
     )
+
+    /** A request failure cannot be repaired by rewriting a selector or spending another model call. */
+    private inline fun <T> extractionAttemptV55(block: () -> T): Result<T> {
+        val attempt = sourceAttemptV36(block)
+        attempt.exceptionOrNull()?.let { error ->
+            if (generateSequence(error as Throwable) { it.cause }.take(12).any { it is java.io.IOException }) throw error
+        }
+        return attempt
+    }
 
     private suspend fun fetchAiDocumentV37(source: BookSourceV36, request: SourceRequestV36) =
         runInterruptible(Dispatchers.IO) { network.document(source, request) }
