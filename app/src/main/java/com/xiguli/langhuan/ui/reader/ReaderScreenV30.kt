@@ -388,7 +388,10 @@ internal fun ReaderSessionV30(
             delay(20_000)
         }
     }
-    var bookmarks by remember { mutableStateOf(prefs.getStringSet("bookmarks", emptySet())?.toSet().orEmpty()) }
+    var bookmarkState by remember(book.id) { mutableStateOf(ReaderBookmarkStoreV49.load(prefs, book.id)) }
+    val bookmarks = bookmarkState.getOrDefault(emptySet())
+    var bookmarkError by remember(book.id) { mutableStateOf(bookmarkState.exceptionOrNull()?.message) }
+    val legacyBookmarkState = remember { ReaderBookmarkStoreV49.legacy(prefs) }
 
     fun infoFor(page: ReaderPageV30?, index: Int): ReaderChromeInfoV30 {
         val chapter = chapters.getOrNull(index)
@@ -513,6 +516,18 @@ internal fun ReaderSessionV30(
     var dragX by remember { mutableFloatStateOf(0f) }
     val turn = remember { ReaderTurnHolderV30() }
     var edgeHint by remember { mutableStateOf<String?>(null) }
+    fun applyBookmarkResult(result: Result<Set<String>>, successMessage: String? = null) {
+        result.onSuccess {
+            bookmarkState = Result.success(it)
+            bookmarkError = null
+            if (successMessage != null) edgeHint = successMessage
+        }.onFailure {
+            bookmarkError = it.message ?: "书签保存失败，未修改原数据"
+            edgeHint = bookmarkError
+        }
+    }
+    LaunchedEffect(bookmarkError) { if (bookmarkError != null) edgeHint = bookmarkError }
+
     // Long-pressed paragraph (copy / share / look up). Cleared whenever the page changes.
     var selection by remember { mutableStateOf<ReaderSelectionV30?>(null) }
     val selectionAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -1134,14 +1149,9 @@ internal fun ReaderSessionV30(
                         .onFailure { edgeHint = "没有可用的搜索应用" }
                 },
                 onBookmark = {
-                    val number = chapters.getOrNull(picked.chapterIndex)?.chapterNumber?.toString()
-                    if (number != null) {
-                        val next = bookmarks + number
-                        prefs.edit().putStringSet("bookmarks", next).apply()
-                        bookmarks = next
-                    }
+                    val number = chapters.getOrNull(picked.chapterIndex)?.chapterNumber
+                    if (number != null) applyBookmarkResult(ReaderBookmarkStoreV49.add(prefs, book.id, number), "已加入本书书签")
                     selection = null
-                    edgeHint = "已加入书签"
                 },
                 onDismiss = { selection = null },
             )
@@ -1167,13 +1177,10 @@ internal fun ReaderSessionV30(
                 onBack()
             },
             onToggleBookmark = {
-                val number = currentChapter?.chapterNumber?.toString()
+                val number = currentChapter?.chapterNumber
                 if (number != null) {
                     haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                    val next = bookmarks.toMutableSet()
-                    if (!next.add(number)) next.remove(number)
-                    prefs.edit().putStringSet("bookmarks", next).apply()
-                    bookmarks = next
+                    applyBookmarkResult(ReaderBookmarkStoreV49.setMarked(prefs, book.id, number, number.toString() !in bookmarks))
                 }
             },
             onJumpChapter = { index, anchor ->
@@ -1194,6 +1201,12 @@ internal fun ReaderSessionV30(
             onWriting = onWriting,
             onStory = onStory,
             bookmarkedChapters = bookmarks.mapNotNull { it.toIntOrNull() }.toSet(),
+            bookmarkError = bookmarkError,
+            legacyBookmarkedChapters = legacyBookmarkState.getOrDefault(emptySet()).mapNotNull { it.toIntOrNull() }.toSet(),
+            legacyBookmarkError = legacyBookmarkState.exceptionOrNull()?.message,
+            onRestoreLegacyBookmark = { number ->
+                applyBookmarkResult(ReaderBookmarkStoreV49.restoreLegacy(prefs, book.id, number, chapters.map { it.chapterNumber }.toSet()), "已归入本书，旧版暂存仍保留")
+            },
             listening = listening,
             onListen = {
                 if (listening) stopListening() else {

@@ -171,6 +171,10 @@ internal fun ReaderMenuV30(
     onDeleteLastChapter: () -> Unit = {},
     listening: Boolean = false,
     onListen: () -> Unit = {},
+    bookmarkError: String? = null,
+    legacyBookmarkedChapters: Set<Int> = emptySet(),
+    legacyBookmarkError: String? = null,
+    onRestoreLegacyBookmark: (Int) -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible = visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(200))) {
@@ -256,6 +260,7 @@ internal fun ReaderMenuV30(
                                 ReaderMenuTabV30.DIRECTORY -> ReaderDirectoryTabV30(
                                     book, chapters, chapterIndex, theme, bookmarked, settings, onBack, onToggleBookmark, onJumpChapter,
                                     bookmarkedChapters, onRenameChapter, onAppendChapter, onDeleteLastChapter,
+                                    bookmarkError, legacyBookmarkedChapters, legacyBookmarkError, onRestoreLegacyBookmark,
                                 )
                                 ReaderMenuTabV30.MORE -> ReaderMoreTabV30(settings, theme, onPanel, onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) }, listening = listening, onListen = onListen)
                             }
@@ -326,7 +331,7 @@ private fun ReaderSheetHeaderV30(
         IconButton(onClick = onBookmark) {
             Icon(
                 if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                "书签",
+                if (bookmarked) "取消本章书签" else "添加本章书签",
                 tint = if (bookmarked) theme.accent else theme.sheetText,
             )
         }
@@ -352,19 +357,27 @@ private fun ReaderDirectoryTabV30(
     onRenameChapter: (Int, String) -> Unit = { _, _ -> },
     onAppendChapter: () -> Unit = {},
     onDeleteLastChapter: () -> Unit = {},
+    bookmarkError: String? = null,
+    legacyBookmarkedChapters: Set<Int> = emptySet(),
+    legacyBookmarkError: String? = null,
+    onRestoreLegacyBookmark: (Int) -> Unit = {},
 ) {
     val height = (LocalConfiguration.current.screenHeightDp * .46f).dp
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (chapterIndex - 3).coerceAtLeast(0))
     val scope = rememberCoroutineScope()
     var showBookmarks by remember { mutableStateOf(false) }
+    var showLegacyBookmarks by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ChapterDraft?>(null) }
     Column {
         ReaderSheetHeaderV30(book.title, theme, bookmarked, settings, onBack, onBookmark)
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             ReaderSegmentV30("目录 ${chapters.size}", !showBookmarks, theme) { showBookmarks = false }
             Spacer(Modifier.width(8.dp))
-            ReaderSegmentV30("书签 ${bookmarkedChapters.size}", showBookmarks, theme) { showBookmarks = true }
+            ReaderSegmentV30(if (bookmarkError == null) "书签 ${bookmarkedChapters.size}" else "书签", showBookmarks, theme) { showBookmarks = true }
             Spacer(Modifier.weight(1f))
+            if (showBookmarks && (legacyBookmarkedChapters.isNotEmpty() || legacyBookmarkError != null)) {
+                TextButton(onClick = { showLegacyBookmarks = true }) { Text("旧版暂存", color = theme.accent, fontSize = 12.sp) }
+            }
             if (!showBookmarks) {
                 Text(
                     "+ 新章",
@@ -376,6 +389,7 @@ private fun ReaderDirectoryTabV30(
             }
         }
         if (showBookmarks) {
+            bookmarkError?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = theme.accent, fontSize = 12.sp) }
             val marked = chapters.withIndex().filter { it.value.chapterNumber in bookmarkedChapters }
             Box(Modifier.fillMaxWidth().height(height)) {
                 if (marked.isEmpty()) {
@@ -466,6 +480,37 @@ private fun ReaderDirectoryTabV30(
             }
         }
         }
+    }
+    if (showLegacyBookmarks) {
+        val candidates = remember(chapters, legacyBookmarkedChapters) { chapters.filter { it.chapterNumber in legacyBookmarkedChapters } }
+        val unmatched = (legacyBookmarkedChapters.size - candidates.map { it.chapterNumber }.toSet().size).coerceAtLeast(0)
+        AlertDialog(
+            onDismissRequest = { showLegacyBookmarks = false },
+            title = { Text("旧版书签暂存") },
+            containerColor = theme.sheet,
+            titleContentColor = theme.sheetText,
+            textContentColor = theme.sheetText,
+            text = {
+                Column {
+                    Text("旧版只记录了章节号，没有书籍归属。请核对下列本书章节，再逐条归入「${book.title}」。原始暂存会保留。")
+                    legacyBookmarkError?.let { Text(it, Modifier.padding(top = 8.dp), color = theme.accent) }
+                    bookmarkError?.let { Text(it, Modifier.padding(top = 8.dp), color = theme.accent) }
+                    if (unmatched > 0) Text("另有 $unmatched 条超出本书目录，仍保留在暂存中。", Modifier.padding(top = 8.dp), fontSize = 12.sp)
+                    LazyColumn(Modifier.fillMaxWidth().padding(top = 8.dp).height((candidates.size.coerceAtMost(5) * 52).dp)) {
+                        itemsIndexed(candidates, key = { _, chapter -> chapter.id }) { _, chapter ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), Modifier.weight(1f), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                val restored = chapter.chapterNumber in bookmarkedChapters
+                                TextButton(onClick = { onRestoreLegacyBookmark(chapter.chapterNumber) }, enabled = !restored) {
+                                    Text(if (restored) "已归入" else "归入本书", color = if (restored) theme.sheetMuted else theme.accent)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showLegacyBookmarks = false }) { Text("关闭", color = theme.accent) } },
+        )
     }
     editing?.let { chapter ->
         var title by remember(chapter.id) { mutableStateOf(chapter.title) }
