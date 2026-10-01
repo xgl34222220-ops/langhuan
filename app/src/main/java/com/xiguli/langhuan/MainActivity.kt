@@ -1,5 +1,6 @@
 package com.xiguli.langhuan
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,23 +24,42 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 import com.xiguli.langhuan.data.local.StartupDatabaseStatus
 import com.xiguli.langhuan.data.local.StartupDatabaseGate
 import com.xiguli.langhuan.engine.PostStartupInitializer
 import com.xiguli.langhuan.ui.LanghuanRootV4
+import com.xiguli.langhuan.ui.ExternalBookImportCoordinatorV1
 import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
 
 class MainActivity : ComponentActivity() {
+    private val externalBooks by lazy { ViewModelProvider(this)[ExternalBookImportCoordinatorV1::class.java] }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        receiveExternalBook(intent)
         enableEdgeToEdge()
         setContent {
             // Keep the proven launcher path plain and dependency-light until Room is healthy.
             MaterialTheme {
-                StartupDatabaseRoot()
+                StartupDatabaseRoot(externalBooks)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receiveExternalBook(intent)
+    }
+
+    private fun receiveExternalBook(incoming: Intent?) {
+        // Strip external default arguments BEFORE creating a SavedStateHandle ViewModel.
+        // Its restoration is also validated, and the consumed launch must not replay on rotation.
+        setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+        if (incoming?.action != Intent.ACTION_VIEW && incoming?.action != Intent.ACTION_SEND) return
+        externalBooks.receive(requireNotNull(incoming))
     }
 }
 
@@ -50,7 +70,7 @@ private sealed class LauncherState {
 }
 
 @Composable
-private fun StartupDatabaseRoot() {
+private fun StartupDatabaseRoot(externalBooks: ExternalBookImportCoordinatorV1) {
     val context = LocalContext.current.applicationContext
     var launcherState by remember { mutableStateOf<LauncherState>(LauncherState.Checking) }
 
@@ -73,7 +93,7 @@ private fun StartupDatabaseRoot() {
             LanghuanStableTheme {
                 LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
                 val studioViewModel: StudioViewModel = viewModel()
-                LanghuanRootV4(studioViewModel)
+                LanghuanRootV4(studioViewModel, externalBooks)
             }
         }
     }

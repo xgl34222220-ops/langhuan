@@ -52,7 +52,7 @@ private enum class RootRouteV4 {
 }
 
 @Composable
-fun LanghuanRootV4(studioVm: StudioViewModel) {
+fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportCoordinatorV1? = null) {
     val studioState by studioVm.state.collectAsStateWithLifecycle()
     val libraryVm: LibraryExperienceViewModel = viewModel()
     val libraryState by libraryVm.state.collectAsStateWithLifecycle()
@@ -308,6 +308,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel) {
     }
 
     val routeStates = rememberSaveableStateHolder()
+    if (externalBooks != null) ExternalBookImportHostV1(externalBooks, localImportVm)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
             targetState = route,
