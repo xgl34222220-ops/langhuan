@@ -36,6 +36,7 @@ class ExternalBookOpenFlowV1DeviceTest {
                 val launch = Intent(app, MainActivity::class.java).setAction(Intent.ACTION_VIEW)
                     .setDataAndType(uri, "application/octet-stream").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 ActivityScenario.launch<MainActivity>(launch).use { scenario ->
+                    try {
                     rule.waitUntil(20_000) { rule.onAllNodesWithText("导入到琅嬛？").fetchSemanticsNodes().size == 1 }
                     assertEquals(before + created, manager.observeStories().first().map { it.id }.toSet())
                     rule.onNodeWithText("导入").performClick()
@@ -75,6 +76,20 @@ class ExternalBookOpenFlowV1DeviceTest {
                             }
                             returned
                         }
+                    }
+                    } catch (error: Throwable) {
+                        runCatching { deviceWindowEvidenceV46("v55-external-$extension-failure") }
+                        runCatching {
+                            var state = ""
+                            scenario.onActivity { activity ->
+                                val vm = androidx.lifecycle.ViewModelProvider(activity)[LocalBookImportViewModelV1::class.java]
+                                state = vm.state.value.toString()
+                            }
+                            val file = File(app.getExternalFilesDir(null), "reader-qa/v55-external-$extension-state.txt").apply { parentFile!!.mkdirs() }
+                            file.writeText(state)
+                            instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
+                        }
+                        throw error
                     }
                 }
             }

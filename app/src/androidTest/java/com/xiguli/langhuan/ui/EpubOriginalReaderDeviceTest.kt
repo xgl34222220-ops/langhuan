@@ -179,19 +179,26 @@ class EpubOriginalReaderDeviceTest {
             waitForArt(scenario)
             evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
             waitForPage(scenario, "two.xhtml")
-            scenario.onActivity { nav(it).goForward(animated = false) }
-            waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
+            scenario.onActivity { assertTrue("The ready EPUB must accept the page turn", nav(it).goForward(animated = false)) }
+            waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 &&
+                evaluate(scenario, "window.scrollX > 0 || window.scrollY > 0") == "true" }
             val before = requireNotNull(current(scenario))
+            traceBackgroundLocator(scenario, id, "before-stop", before)
+            deviceWindowEvidenceV46("epub-background-before-stop")
             scenario.moveToState(Lifecycle.State.CREATED)
+            traceBackgroundLocator(scenario, id, "after-stop", before)
             assertEquals(Lifecycle.State.CREATED, scenario.state)
             scenario.moveToState(Lifecycle.State.RESUMED)
             waitForPage(scenario, "two.xhtml")
-            waitUntil { current(scenario)?.href == before.href }
+            traceBackgroundLocator(scenario, id, "first-resume", before)
+            waitUntil { current(scenario)?.href == before.href && kotlin.math.abs((current(scenario)?.locations?.progression ?: -1.0) - (before.locations.progression ?: 0.0)) < 0.08 }
+            traceBackgroundLocator(scenario, id, "first-resume-settled", before)
             scenario.moveToState(Lifecycle.State.CREATED)
             // ActivityScenario.recreate temporarily resumes even when called while stopped.
             // It restores CREATED on return; do not pretend the new Activity was never resumed.
             scenario.recreate()
             assertEquals(Lifecycle.State.CREATED, scenario.state)
+            traceBackgroundLocator(scenario, id, "after-recreate-stopped", before)
             // Keep that actual stopped instance in the background while pending IO can finish.
             // Loading or an already attached navigator are both valid until we resume below.
             val backgroundDeadline = android.os.SystemClock.uptimeMillis() + 1500
@@ -205,6 +212,7 @@ class EpubOriginalReaderDeviceTest {
             }
             scenario.moveToState(Lifecycle.State.RESUMED)
             waitForPage(scenario, "two.xhtml")
+            traceBackgroundLocator(scenario, id, "recreated-resume", before)
             waitUntil { current(scenario)?.href == before.href && kotlin.math.abs((current(scenario)?.locations?.progression ?: -1.0) - (before.locations.progression ?: 0.0)) < 0.08 }
             // A second ordinary stop/resume must retain a functioning navigator and original art.
             scenario.moveToState(Lifecycle.State.CREATED)
@@ -264,6 +272,21 @@ class EpubOriginalReaderDeviceTest {
             waitUntil { current(scenario)?.href == before.href && (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
             assertEquals(before.locations.progression ?: 0.0, current(scenario)!!.locations.progression ?: 0.0, 0.08)
         }
+    }
+
+    private fun traceBackgroundLocator(scenario: ActivityScenario<EpubReaderActivity>, id: String, phase: String, expected: Locator) {
+        val store = EpubReaderEntry.store(context)
+        val digest = store.digest(id)
+        val record = JSONObject().put("phase", phase).put("lifecycle", scenario.state.name)
+            .put("expected", expected.toJSON()).put("current", current(scenario)?.toJSON())
+            .put("persisted", digest?.let { store.loadLocator(id,it) })
+        if (scenario.state.isAtLeast(Lifecycle.State.RESUMED)) record.put("viewport", runCatching {
+            evaluate(scenario, "JSON.stringify({href:location.href,x:window.scrollX,y:window.scrollY,width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,fonts:document.fonts.status})")
+        }.getOrElse { it.message.orEmpty() })
+        val file = File(context.getExternalFilesDir(null), "reader-qa/epub-background-locator-trace.jsonl").apply { parentFile!!.mkdirs() }
+        file.appendText(record.toString()+"\n")
+        instrumentation.uiAutomation.executeShellCommand("mkdir -p /sdcard/Download/reader-qa").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
+        instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
     }
 
     private fun seed(file: String, id: String): String {
