@@ -138,7 +138,7 @@ class OnlineCatalogueCompletenessTest {
         val html = "<section><h2>全部章节</h2><ul id='chapter-list'>${links(1..72)}</ul></section>"
         val result = loadBookCatalogueV50(source.copy(tocList = "a.chapter:lt(36)"), book, fetch(mapOf(book.bookUrl to html)))
         assertEquals(72, result.chapters.size)
-        assertTrue(result.proof.hasCompletenessEvidence)
+        assertFalse("A full-list label alone is not independent completeness evidence", result.proof.hasCompletenessEvidence)
     }
 
     @Test fun declaredTotalLargerThanObservedCatalogueFailsEvenWithFullLabel() {
@@ -165,7 +165,7 @@ class OnlineCatalogueCompletenessTest {
         val html = "<section><h2>全部章节</h2><h3>第一卷</h3>${links(1..3)}<h3>第二卷</h3>${links(4..6) { "第${it - 3}章 第二卷正文" }}</section>"
         val result = loadBookCatalogueV50(source, book.copy(latest = "第二卷 第3章 第二卷正文"), fetch(mapOf(book.bookUrl to html)))
         assertEquals(6, result.chapters.size)
-        assertTrue(result.proof.hasCompletenessEvidence)
+        assertFalse("A full-list label alone is not independent completeness evidence", result.proof.hasCompletenessEvidence)
     }
 
     @Test fun numberedPaginationFollowsOnlyTheObservedNextPage() {
@@ -221,7 +221,7 @@ class OnlineCatalogueCompletenessTest {
         val html = "<aside><button>更多</button></aside><section><h2>全部章节</h2>${links(1..36)}</section>"
         val result = loadBookCatalogueV50(source, book, fetch(mapOf(book.bookUrl to html)))
         assertEquals(36, result.chapters.size)
-        assertTrue(result.proof.hasCompletenessEvidence)
+        assertFalse("A full-list label alone is not independent completeness evidence", result.proof.hasCompletenessEvidence)
     }
 
     @Test fun emptyLocalTargetForMoreChaptersIsNotACompleteEnding() {
@@ -235,6 +235,6 @@ class OnlineCatalogueCompletenessTest {
         val result = loadBookCatalogueV50(source, book, fetch(mapOf(book.bookUrl to html)))
         assertEquals(3, result.chapters.size)
         assertNull(result.proof.latestOrdinal)
-        assertTrue(result.proof.hasCompletenessEvidence)
+        assertFalse("A full-list label alone is not independent completeness evidence", result.proof.hasCompletenessEvidence)
     }
 }

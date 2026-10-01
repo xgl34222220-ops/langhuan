@@ -750,9 +750,14 @@ internal fun OnlineAiSheetV36(
                                 step.detail,
                                 color = if (step.ok == false) t.destructive else t.mutedForeground,
                                 style = MaterialTheme.typography.bodySmall,
-                                maxLines = if (step.ok == false) Int.MAX_VALUE else 2,
+                                maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            val reportDetails = state.aiReport?.discoveryWarnings.orEmpty().map { it.trim() }.toSet()
+                            val details = step.details.filterNot { it.trim() in reportDetails }.ifEmpty {
+                                if (step.details.isEmpty() && step.detail.length > 140) listOf(step.detail) else emptyList()
+                            }
+                            AiDiagnosticsV51("第${index + 1}步详情", details)
                         }
                     }
                 }
@@ -770,7 +775,7 @@ internal fun OnlineAiSheetV36(
         state.aiReport?.let { report ->
             Surface(Modifier.fillMaxWidth().padding(top = 14.dp), shape = RoundedCornerShape(14.dp), color = t.muted) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("「${report.source.name}」规则抽样完成", color = t.foreground, style = MaterialTheme.typography.titleSmall)
+                    Text("「${report.source.name}」书源草稿", color = t.foreground, style = MaterialTheme.typography.titleSmall)
                     Text("搜索返回 ${report.searchCount} 本 · 抽样《${report.bookName}》", Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
                     Text(sourceCatalogueSummaryV50(report.chapterCount, report.catalogueProof), Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
                     report.readingWarnings.forEach { Text(it, Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall) }
@@ -782,7 +787,7 @@ internal fun OnlineAiSheetV36(
                         Text(proof.url, color = t.mutedForeground, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         proof.readingWarnings.forEach { Text(it, Modifier.padding(top = 2.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall) }
                     }
-                    report.discoveryWarnings.forEach { Text(it, Modifier.padding(top = 4.dp), color = t.destructive, style = MaterialTheme.typography.bodySmall) }
+                    AiDiagnosticsV51("发现详情", report.discoveryWarnings)
                     Text("正文抽样 · ${report.sampleChapter.ifBlank { "章节未记录" }}", Modifier.padding(top = 10.dp), color = t.foreground, style = MaterialTheme.typography.titleSmall)
                     Text(sourceSampleScopeV50(report.chapterProof), Modifier.padding(top = 4.dp), color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
                     if (report.sampleBookUrl.isNotBlank()) androidx.compose.foundation.text.selection.SelectionContainer {
@@ -801,12 +806,30 @@ internal fun OnlineAiSheetV36(
                 state.aiRunning -> OnlineSheetButtonV36("停止", primary = false, Modifier.weight(1f), onCancel)
                 state.aiReport != null -> {
                     OnlineSheetButtonV36("重新生成", primary = false, Modifier.weight(1f)) { onCancel(); onStart(site, keyword) }
-                    OnlineSheetButtonV36("保存书源", primary = true, Modifier.weight(1f), onSave)
+                    OnlineSheetButtonV36(if (state.aiReport.source.enabledExplore) "保存书源" else "保存搜索书源", primary = true, Modifier.weight(1f), onSave)
                 }
                 else -> OnlineSheetButtonV36(if (state.aiError != null) "重试" else "开始生成", primary = true, Modifier.weight(1f)) { onStart(site, keyword) }
             }
         }
+        state.aiReport?.takeIf { !it.source.enabledExplore }?.let {
+            Text("将保存搜索与阅读规则；发现入口尚未通过", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+        }
         Spacer(Modifier.navigationBarsPadding().height(18.dp))
+    }
+}
+
+/** A failed optional stage has one readable summary; diagnostics remain available on demand. */
+@Composable
+private fun AiDiagnosticsV51(label: String, messages: List<String>) {
+    val distinct = messages.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    if (distinct.isEmpty()) return
+    val t = LocalLanghuanUiTokens.current
+    var expanded by remember(distinct) { mutableStateOf(false) }
+    TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(vertical = 4.dp)) {
+        Text(if (expanded) "收起$label" else "查看$label（${distinct.size}项）", color = t.primary, style = MaterialTheme.typography.labelLarge)
+    }
+    if (expanded) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        distinct.forEach { detail -> Text(detail, color = t.mutedForeground, style = MaterialTheme.typography.bodySmall) }
     }
 }
 

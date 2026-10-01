@@ -195,11 +195,11 @@ private fun identityTextV50(value: String): String = Normalizer.normalize(value,
 private fun chapterTitleV50(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC).trim()
     .replace(Regex("\\s*\\((?:第\\s*)?\\d+\\s*(?:[/]\\s*\\d+|[页頁])\\)\\s*$"), "").trim()
 
-private val CHAPTER_NUMBER_V50 = Regex("^(?:第\\s*([0-9零〇一二两兩三四五六七八九十百千万萬]+)\\s*[章节節回]|chapter\\s+(\\d+))", RegexOption.IGNORE_CASE)
+private val CHAPTER_NUMBER_V50 = Regex("^(?:第\\s*([0-9零〇一二两兩三四五六七八九十百千万萬]+)\\s*[章节節回]|chapter\\s+(\\d+)|([0-9零〇一二两兩三四五六七八九十百千万萬]+)\\s*(?:[、)）]|[.．](?![0-9])))", RegexOption.IGNORE_CASE)
 
 private fun chapterNumberV50(value: String): Long? {
     val match = CHAPTER_NUMBER_V50.find(chapterTitleV50(value)) ?: return null
-    val digits = match.groupValues[1].ifBlank { match.groupValues[2] }
+    val digits = match.groupValues.drop(1).first { it.isNotBlank() }
     digits.toLongOrNull()?.let { return it }
     var total = 0L
     var group = 0L

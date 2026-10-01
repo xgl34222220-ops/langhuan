@@ -88,6 +88,24 @@ class SourceChapterAuditV50Test {
         assertEquals(SourceIdentityStateV50.UNKNOWN, result.proof.chapterIdentity)
     }
 
+    @Test fun bareChapterOrdinalMismatchIsRejectedWithoutRequiringDiChapterPrefix() {
+        for ((expected, actual) in listOf("1、初遇" to "2、重逢", "1. 初遇" to "2. 重逢", "一、初遇" to "二、重逢")) {
+            val selected = chapter.copy(title = expected)
+            val html = page(title = null, extra = "<title>$actual - 合成书站</title>")
+            assertRejected("章节号不符") {
+                loadChapterAuditV50(source, book, selected, setOf(selected.url)) { _, request -> Jsoup.parse(html, request.url) }
+            }
+        }
+    }
+
+    @Test fun matchingBareOrdinalNovelChapterRemainsReadable() {
+        val selected = chapter.copy(title = "1、咖啡店没有剧本")
+        val html = page(title = "1、咖啡店没有剧本", body = "这是合成小说里的咖啡店场景。")
+        val result = loadChapterAuditV50(source, book, selected, setOf(selected.url)) { _, request -> Jsoup.parse(html, request.url) }
+        assertTrue(result.proof.identityVerified)
+        assertTrue(result.text.contains("咖啡店"))
+    }
+
     @Test fun veryShortRealChapterIsReadableWithoutArtificialMinimum() {
         val result = audit(page("完。"))
         assertEquals("完。", result.text)

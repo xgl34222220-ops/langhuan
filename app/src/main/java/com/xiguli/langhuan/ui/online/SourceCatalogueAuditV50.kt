@@ -3,6 +3,8 @@ package com.xiguli.langhuan.ui
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
+internal enum class SourceCatalogueEvidenceV51 { PARSED_ONLY, STATIC_PAGINATION_END, MATCHED_DECLARED_TOTAL }
+
 /** Evidence about the observed catalogue, not a claim based on a plausible chapter count. */
 internal data class SourceCatalogueProofV50(
     val tocUrl: String,
@@ -11,6 +13,7 @@ internal data class SourceCatalogueProofV50(
     val latestOrdinal: Int? = null,
     val warnings: List<String> = emptyList(),
     val hasCompletenessEvidence: Boolean = false,
+    val evidence: SourceCatalogueEvidenceV51 = SourceCatalogueEvidenceV51.PARSED_ONLY,
 )
 
 internal data class OnlineBookCatalogueV50(
@@ -45,9 +48,14 @@ internal fun catalogueNumberV50(raw: String): Int? {
     return (total + section + digit).toInt()
 }
 
-internal fun chapterOrdinalV50(title: String): Int? =
-    Regex("(?i)(?:第\\s*($numberPatternV50)\\s*[章节節回]|chapter\\s*($numberPatternV50))").find(title)
+internal fun chapterOrdinalV50(title: String): Int? {
+    val formal = Regex("(?i)(?:第\\s*($numberPatternV50)\\s*[章节節回]|chapter\\s*($numberPatternV50))").find(title)
         ?.groupValues?.drop(1)?.firstOrNull { it.isNotBlank() }?.let(::catalogueNumberV50)
+    if (formal != null) return formal
+    val stripped = title.trim().replace(Regex("^(?:最新章节|最新章節|最新更新)\\s*[：:]\\s*"), "")
+    return Regex("^($numberPatternV50)\\s*(?:[、：:]|[.．](?![0-9０-９]))\\s*\\S").find(stripped)
+        ?.groupValues?.get(1)?.let(::catalogueNumberV50)
+}
 
 internal fun catalogueCanonicalUrlV50(url: String): String = publicSourceUrlV36(url).newBuilder().fragment(null).build().toString()
 
@@ -59,11 +67,52 @@ internal fun catalogueFullLabelV50(text: String): Boolean = fullLabelV50.contain
 
 /** Resolve only real static HTML targets. Numeric option values are JS parameters, not URLs. */
 internal fun catalogueObservedUrlV50(doc: Document, element: Element): String? {
-    val raw = when (element.tagName()) { "option" -> element.attr("value"); else -> element.attr("href") }.trim()
-    if (raw.isBlank() || raw == "#" || Regex("(?i)^(javascript|data|mailto):").containsMatchIn(raw)) return null
-    if (element.tagName() == "option" && !Regex("(?i)^(https?://|/|\\./|\\.\\./|\\?)|\\.html?(?:[?#]|$)").containsMatchIn(raw)) return null
-    val target = resolveUrlV36(doc.location(), raw)
-    return target.takeIf { sameCatalogueOriginV50(doc.location(), it) }
+    val attributes = listOf(if (element.tagName() == "option") "value" else "href", "data-url", "data-href", "data-next-url", "data-next", "data-page-url")
+    return attributes.firstNotNullOfOrNull { attribute ->
+        val raw = element.attr(attribute).trim()
+        if (raw.isBlank() || raw == "#" || Regex("(?i)^(javascript|data|mailto):").containsMatchIn(raw)) return@firstNotNullOfOrNull null
+        if ((element.tagName() == "option" || attribute.startsWith("data-")) && !Regex("(?i)^(https?://|/|\\./|\\.\\./|\\?|#)|\\.html?(?:[?#]|$)").containsMatchIn(raw)) return@firstNotNullOfOrNull null
+        resolveUrlV36(doc.location(), raw).takeIf { sameCatalogueOriginV50(doc.location(), it) }
+    }
+}
+
+private fun catalogueControlsV51(doc: Document): List<Element> = doc.select("button, a, [role=button], [aria-controls], [data-target], [data-bs-target], [data-url], [data-href], [data-next-url], .load-more, .loadmore, .more-chapters")
+
+private fun catalogueControlTargetsV51(doc: Document, control: Element): List<Element> {
+    val ids = control.attr("aria-controls").split(Regex("\\s+")).filter { it.isNotBlank() }.toMutableList()
+    listOf("data-target", "data-bs-target").forEach { attribute ->
+        control.attr(attribute).takeIf { it.startsWith("#") && !it.contains(Regex("\\s")) }?.removePrefix("#")?.let(ids::add)
+    }
+    catalogueObservedUrlV50(doc, control)?.let { url ->
+        if (catalogueCanonicalUrlV50(url) == catalogueCanonicalUrlV50(doc.location())) runCatching { java.net.URI(url).fragment }.getOrNull()?.let(ids::add)
+    }
+    return ids.distinct().mapNotNull(doc::getElementById)
+}
+
+private fun catalogueMoreControlV51(doc: Document, node: Element, inspector: CataloguePageInspectorV50): Boolean {
+    if (node.tagName() == "a" && (isLikelyChapterUrlV39(node.absUrl("href")) || chapterOrdinalV50(node.text()) != null)) return false
+    val text = (node.text().ifBlank { node.attr("aria-label") }).trim()
+    val section = inspector.section(node)
+    val hints = generateSequence<Element>(node) { it.parent() }.take(8).joinToString(" ") { element ->
+        element.attributes().filter { it.key in setOf("id", "class", "name", "aria-controls") || it.key.startsWith("data-") }.joinToString(" ") { it.key + " " + it.value }
+    }
+    val inCatalogue = section.full || section.preview || section.weakPreview || Regex("(?i)chapter|catalog|toc|目录|目錄").containsMatchIn(hints) ||
+        catalogueControlTargetsV51(doc, node).any { target -> target.select("a[href]").any { isLikelyChapterUrlV39(it.absUrl("href")) } }
+    return Regex("(?:加载|加載|展开|展開|查看更多|查看全部|更多)[\\s：:]*(?:全部|更多)?[\\s：:]*(?:章节|章節|目录|目錄)|^(?:加载更多|加載更多|展开全部|展開全部|全部章节|全部章節|完整目录|完整目錄)$").containsMatchIn(text) ||
+        (inCatalogue && text in setOf("更多", "查看更多", "查看全部", "展开", "展開"))
+}
+
+/** Parse already delivered hidden HTML, never execute the handler which toggles or fills it. */
+internal fun catalogueInlineChapterLinksV51(doc: Document, bookUrl: String): List<OnlineChapterV36> {
+    val inspector = CataloguePageInspectorV50(doc)
+    return catalogueControlsV51(doc).filter { catalogueMoreControlV51(doc, it, inspector) }
+        .flatMap { catalogueControlTargetsV51(doc, it) }.distinct().flatMap { target ->
+            target.select("a[href]").mapNotNull { anchor ->
+                val title = anchor.text().trim()
+                val url = anchor.absUrl("href")
+                if (isLikelyChapterLinkV39(title, url, bookUrl)) OnlineChapterV36(title, url) else null
+            }
+        }.distinctBy { it.url }
 }
 
 /** Cache sibling heading scopes once per parent, including dl/dt and deeply nested lists. */
@@ -152,18 +201,22 @@ internal class CataloguePageInspectorV50(private val doc: Document) {
             generateSequence<Element>(anchor.parent()) { it.parent() }.take(12).forEach { ancestor ->
                 if (seenAncestors.add(ancestor) && ancestor.tagName() !in setOf("html", "body", "main")) {
                     ancestor.children().filter { it.tagName() in headingTagsV50 || (it.selectFirst("a[href]") == null && it.text().length <= 100) }.forEach(nodes::add)
+                    val preceding: Element? = ancestor.previousElementSibling()
+                    if (preceding != null && preceding.tagName() in headingTagsV50) nodes.add(preceding)
                 }
             }
         }
         // Standard novel metadata is attached to this book, unlike arbitrary recommendation text.
         val metadata = doc.select("meta[property], meta[name]").filter {
-            Regex("(?i)(?:novel|book).*(?:chapter_count|total_chapters)").containsMatchIn(it.attr("property") + it.attr("name"))
+            val key = it.attr("property") + it.attr("name")
+            Regex("(?i)(?:novel|book).*(?:chapter_count|total_chapters)").containsMatchIn(key) && !Regex("(?i)latest|recent|newest").containsMatchIn(key)
         }.mapNotNull { catalogueNumberV50(it.attr("content")) }
-        val pattern = Regex("(?:共|总共|總共|总计|總計|合计|合計|总章节[：:]?|總章節[：:]?)\\s*($numberPatternV50)\\s*[章节節]?")
+        val pattern = Regex("(?:共|总共|總共|总计|總計|合计|合計)\\s*($numberPatternV50)\\s*(?:章节|章節|[章节節])|(?:总章节|總章節|章节总数|章節總數)\\s*[：:]\\s*($numberPatternV50)")
         val visible = nodes.mapNotNull { node ->
             val text = node.text()
-            if (!Regex("[章节節目录目錄]").containsMatchIn(text)) null
-            else pattern.find(text)?.groupValues?.get(1)?.let(::catalogueNumberV50)
+            val wholeBookCount = !latestLabelV50.containsMatchIn(text) && (catalogueFullLabelV50(text) || section(node).full || Regex("全[书書]|总章节|總章節|章节总数|章節總數").containsMatchIn(text))
+            if (!wholeBookCount) null
+            else pattern.find(text)?.groupValues?.drop(1)?.firstOrNull { it.isNotBlank() }?.let(::catalogueNumberV50)
         }
         return (metadata + visible).filter { it > 0 }.maxOrNull()
     }
@@ -185,13 +238,13 @@ internal class CataloguePageInspectorV50(private val doc: Document) {
 
 internal data class CatalogueNavigationV50(val next: String? = null, val unresolved: Boolean = false, val paginated: Boolean = false)
 
-internal fun catalogueNavigationV50(doc: Document, ruleNext: String = ""): CatalogueNavigationV50 {
+internal fun catalogueNavigationV50(doc: Document, ruleNext: String = "", bookUrl: String = doc.location()): CatalogueNavigationV50 {
     val labels = setOf("下一页", "下一頁", "下页", "下頁", "后一页", "後一頁", "next", "›", "»", ">")
     fun isNext(node: Element): Boolean = node.attr("rel").split(Regex("\\s+")).any { it.equals("next", true) } ||
         listOf(node.text(), node.attr("aria-label"), node.attr("title")).any { it.replace("\\s+".toRegex(), "").lowercase() in labels }
     fun disabled(node: Element): Boolean = node.hasAttr("disabled") || node.attr("aria-disabled") == "true" ||
         node.classNames().any { it.equals("disabled", true) } || node.parent()?.classNames()?.any { it.equals("disabled", true) } == true
-    val linked = doc.select("a[href], link[rel][href], option[value]")
+    val linked = doc.select("a[href], link[rel][href], option[value], [data-url], [data-href], [data-next-url], [data-next], [data-page-url]")
     if (ruleNext.isNotBlank()) {
         val resolved = resolveUrlV36(doc.location(), ruleNext)
         val observed = linked.firstOrNull { catalogueObservedUrlV50(doc, it) == resolved && !disabled(it) }
@@ -208,9 +261,15 @@ internal fun catalogueNavigationV50(doc: Document, ruleNext: String = ""): Catal
     for (select in doc.select("select")) {
         val options = select.select("option")
         if (options.size < 2) continue
-        val catalogueHint = (select.id() + " " + select.className() + " " + select.attr("aria-label")).lowercase()
+        val catalogueHint = select.attributes().filter { it.key in setOf("id", "class", "name", "aria-label") || it.key.startsWith("data-") }
+            .joinToString(" ") { it.key + " " + it.value }.lowercase()
+        val observedNumberedPages = options.all { it.text().trim().matches(Regex("\\d+(?:\\s*[-—~～至到]\\s*\\d+)?")) } &&
+            options.count { option -> catalogueObservedUrlV50(doc, option)?.let { url ->
+                val path = publicSourceUrlV36(url).encodedPath
+                path == publicSourceUrlV36(doc.location()).encodedPath || Regex("(?i)catalog|/toc(?:/|\\.)|/index(?:[_-]\\d+)?\\.html?").containsMatchIn(path)
+            } == true } >= 2
         val relevant = Regex("page|chapter|catalog|toc|目录|目錄|[页頁]").containsMatchIn(catalogueHint) ||
-            options.any { Regex("[页頁]|[章节節].*[-—~～]").containsMatchIn(it.text()) }
+            options.any { Regex("[页頁]|[章节節].*[-—~～]").containsMatchIn(it.text()) } || observedNumberedPages
         if (!relevant) continue
         val selected = options.indexOfFirst { it.hasAttr("selected") }.takeIf { it >= 0 }
             ?: options.indexOfFirst { catalogueObservedUrlV50(doc, it)?.let(::catalogueCanonicalUrlV50) == catalogueCanonicalUrlV50(doc.location()) }.takeIf { it >= 0 } ?: 0
@@ -234,20 +293,13 @@ internal fun catalogueNavigationV50(doc: Document, ruleNext: String = ""): Catal
         unresolved = true
     }
     val inspector = CataloguePageInspectorV50(doc)
-    val dynamic = doc.select("button, a, [role=button]").any { node ->
-        val text = node.text().trim()
-        val section = inspector.section(node)
-        val inCatalogue = section.full || section.preview || section.weakPreview || generateSequence<Element>(node) { it.parent() }.take(8).any {
-            Regex("(?i)chapter|catalog|toc|目录|目錄").containsMatchIn(it.id() + " " + it.className())
-        }
-        val more = Regex("(?:加载|加載|展开|展開|查看更多|查看全部|更多)[\\s：:]*(?:全部|更多)?[\\s：:]*(?:章节|章節|目录|目錄)|^(?:加载更多|加載更多|展开全部|展開全部|全部章节|全部章節|完整目录|完整目錄)$").containsMatchIn(text) ||
-            (inCatalogue && text in setOf("更多", "查看更多", "查看全部", "展开", "展開"))
+    for (node in catalogueControlsV51(doc).filter { !disabled(it) && catalogueMoreControlV51(doc, it, inspector) }) {
         val observed = catalogueObservedUrlV50(doc, node)
-        val emptyLocalTarget = observed?.let { url ->
-            val fragment = runCatching { java.net.URI(url).fragment }.getOrNull()
-            catalogueCanonicalUrlV50(url) == catalogueCanonicalUrlV50(doc.location()) && !fragment.isNullOrBlank() && doc.getElementById(fragment)?.selectFirst("a[href]") == null
-        } == true
-        !disabled(node) && more && (observed == null || emptyLocalTarget)
+        if (observed != null && catalogueCanonicalUrlV50(observed) != catalogueCanonicalUrlV50(doc.location()) && !isLikelyChapterUrlV39(observed)) return CatalogueNavigationV50(observed, paginated = true)
+        val staticChapters = catalogueControlTargetsV51(doc, node).any { target ->
+            target.select("a[href]").any { isLikelyChapterLinkV39(it.text(), it.absUrl("href"), bookUrl) }
+        }
+        if (!staticChapters) unresolved = true
     }
-    return CatalogueNavigationV50(unresolved = unresolved || dynamic)
+    return CatalogueNavigationV50(unresolved = unresolved)
 }

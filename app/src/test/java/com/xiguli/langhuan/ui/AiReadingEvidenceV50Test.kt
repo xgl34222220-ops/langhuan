@@ -12,7 +12,7 @@ import org.junit.Test
 /** Invented local HTML/model responses, including a fictional novel quoting a news headline. */
 class AiReadingEvidenceV50Test {
     private class Fixture(
-        val bookHtml: String = "<h2>全部章节</h2><div id='chapters'>${links(1..36)}</div>",
+        val bookHtml: String = "<h2>全部章节（共36章）</h2><div id='chapters'>${links(1..36)}</div>",
         val chapterHtml: String = chapterPage(),
         val tocRule: String = TOC,
         val failSeparateToc: Boolean = false,

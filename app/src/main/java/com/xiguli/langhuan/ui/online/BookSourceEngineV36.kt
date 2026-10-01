@@ -747,15 +747,16 @@ internal fun loadBookCatalogueV50(
     fun inspect(doc: Document) = inspectors.getOrPut(doc) { CataloguePageInspectorV50(doc) }
 
     fun declaredChapters(doc: Document): List<OnlineChapterV36> {
+        fun withInline(found: List<OnlineChapterV36>) = (found + catalogueInlineChapterLinksV51(doc, book.bookUrl)).distinctBy { it.url }
         val found = ruleElementsV36(doc, source.tocList).mapNotNull { item ->
             val title = ruleStringV36(item, source.tocName).ifBlank { item.text() }.trim()
             val url = ruleStringV36(item, source.tocUrl).ifBlank { item.selectFirst("a[href]")?.absUrl("href").orEmpty() }
             if (title.isNotBlank() && url.isNotBlank()) OnlineChapterV36(title, resolveUrlV36(doc.location(), url)) else null
         }.distinctBy { it.url }
         val observedFull = inspect(doc).fullChapterLinks(book.bookUrl)
-        if (found.isEmpty()) return observedFull.ifEmpty { heuristicChapterLinksV39(doc, book.bookUrl) }
+        if (found.isEmpty()) return withInline(observedFull.ifEmpty { heuristicChapterLinksV39(doc, book.bookUrl) })
         val fullUrls = observedFull.map { it.url }.toHashSet()
-        if (observedFull.size > found.size && found.all { it.url in fullUrls }) return observedFull
+        if (observedFull.size > found.size && found.all { it.url in fullUrls }) return withInline(observedFull)
         val evidence = inspect(doc).selection(found)
         // Compare with a real full-list candidate even when the declared rule returns a plausible
         // nonempty prefix. A working rule must never acquire recommendation/sidebar links.
@@ -763,9 +764,9 @@ internal fun loadBookCatalogueV50(
         if (alternative.size > found.size) {
             val other = inspect(doc).selection(alternative)
             val missingTotal = inspect(doc).declaredTotal(found)?.let { it > found.size } == true
-            if (other.full || ((evidence.preview || evidence.weakPreview || missingTotal) && !other.preview && !other.weakPreview)) return alternative
+            if (other.full || ((evidence.preview || evidence.weakPreview || missingTotal) && !other.preview && !other.weakPreview)) return withInline(alternative)
         }
-        return found
+        return withInline(found)
     }
 
     val onPageChapters = declaredChapters(page)
@@ -788,7 +789,6 @@ internal fun loadBookCatalogueV50(
     val declaredTotals = LinkedHashSet<Int>()
     inspect(page).declaredTotal(onPageChapters)?.let(declaredTotals::add)
     var latestOrdinal = listOfNotNull(chapterOrdinalV50(book.latest), inspect(page).latestOrdinal(book.bookUrl)).maxOrNull()
-    var explicitFull = false
     var unresolvedPreview = false
     var hasVolumeNumbers = inspect(page).hasVolumes()
 
@@ -812,7 +812,8 @@ internal fun loadBookCatalogueV50(
         val totalsMatch = declaredTotal != null && declaredTotal == distinct.size
         val warnings = buildList {
             if (declaredTotal != null && !totalsMatch) add("页面声明 $declaredTotal 章，实际取得 ${distinct.size} 条；条目数不一致，完整性未确认")
-            if (!totalsMatch && !explicitFull) add("已取得可读目录；网站没有提供可核对的完整目录标记或总章数，完整性未确认")
+            if (!totalsMatch) add(if (visited.size > 1) "已沿静态分页读取到当前末端；没有独立总章数核对，不能据此确认全书完整"
+                else "已解析当前页面的章节；目录标签与当页条目自比不能证明全书完整，尚无独立总章数核对")
         }
         return OnlineBookCatalogueV50(detailed, distinct, SourceCatalogueProofV50(
             tocUrl = firstCatalogueUrl,
@@ -820,7 +821,12 @@ internal fun loadBookCatalogueV50(
             declaredTotal = declaredTotal,
             latestOrdinal = latestOrdinal,
             warnings = warnings,
-            hasCompletenessEvidence = distinct.isNotEmpty() && (totalsMatch || (explicitFull && declaredTotal == null)),
+            hasCompletenessEvidence = distinct.isNotEmpty() && totalsMatch,
+            evidence = when {
+                distinct.isNotEmpty() && totalsMatch -> SourceCatalogueEvidenceV51.MATCHED_DECLARED_TOTAL
+                visited.size > 1 -> SourceCatalogueEvidenceV51.STATIC_PAGINATION_END
+                else -> SourceCatalogueEvidenceV51.PARSED_ONLY
+            },
         ))
     }
 
@@ -838,13 +844,11 @@ internal fun loadBookCatalogueV50(
         inspector.declaredTotal(found)?.let(declaredTotals::add)
         latestOrdinal = listOfNotNull(latestOrdinal, inspector.latestOrdinal(book.bookUrl)).maxOrNull()
         hasVolumeNumbers = hasVolumeNumbers || inspector.hasVolumes()
-        val observedFullUrls = inspector.fullChapterLinks(book.bookUrl).map { it.url }.toSet()
-        explicitFull = explicitFull || (section.full && observedFullUrls.isNotEmpty() && observedFullUrls == found.map { it.url }.toSet())
         val numbers = found.mapNotNull { chapterOrdinalV50(it.title) }
         val weakPreviewGap = section.weakPreview && numbers.maxOrNull()?.let { it > found.size && numbers.minOrNull() != 1 } == true
         unresolvedPreview = unresolvedPreview || section.preview || weakPreviewGap
         val ruleNext = ruleStringV36(doc, source.tocNext)
-        val navigation = catalogueNavigationV50(doc, ruleNext)
+        val navigation = catalogueNavigationV50(doc, ruleNext, book.bookUrl)
         check(!navigation.unresolved) { "页面仍有更多章节或目录分页，但没有可读取的静态同站链接；未将当前列表当作完整目录" }
         val next = navigation.next
         if (next == null) return completed()

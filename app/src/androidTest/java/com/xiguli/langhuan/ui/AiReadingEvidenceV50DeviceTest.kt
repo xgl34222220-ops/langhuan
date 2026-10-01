@@ -18,13 +18,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
-/** An explicitly synthetic result rendered in an actual ModalBottomSheet window. No AI/network call. */
+/** Synthetic result views; the first case uses an actual ModalBottomSheet. No AI/network call. */
 @OptIn(ExperimentalMaterial3Api::class)
 class AiReadingEvidenceV50DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun resultNamesItsSampleAndUnknownsWithoutClaimingAllBooksWereVerified() {
-        val source = BookSourceV36("fixture", "离线测试站", "https://books.example")
+        val source = BookSourceV36("fixture", "离线测试站", "https://books.example", enabledExplore = true)
         val catalogue = SourceCatalogueProofV50("https://books.example/book/1", 1,
             warnings = listOf("未找到完整目录证据，当前 36 条不能视为全书总章数"))
         val chapter = SourceChapterProofV50("https://books.example/read/1", 1,
@@ -50,7 +50,7 @@ class AiReadingEvidenceV50DeviceTest {
         }
         rule.onAllNodesWithText("搜索与阅读测试通过", substring = true).assertCountEquals(0)
         rule.onAllNodesWithText("目录/正文已验证", substring = true).assertCountEquals(0)
-        rule.onNodeWithText("「离线测试站」规则抽样完成").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("「离线测试站」书源草稿").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("未找到完整目录证据，当前 36 条不能视为全书总章数").assertExists()
         saveFrame("v50-ai-reading-evidence-test-data")
         rule.onNodeWithText("小说分类 · 本页解析 25 本 · 抽查 1 本").performScrollTo().assertIsDisplayed()
@@ -64,6 +64,34 @@ class AiReadingEvidenceV50DeviceTest {
         InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
         rule.waitUntil(10_000) { !open }
         rule.onNodeWithText("AI 抽样结果组件测试").assertIsDisplayed()
+    }
+
+    @Test fun optionalDiscoveryFailureShowsOneSummaryAndDeduplicatedExpandableDetails() {
+        val limit = "分类较多，本次最多验证 12 个入口；其余可稍后编辑添加"
+        val invalid = "发现规则格式未通过，已保留搜索与阅读规则"
+        val noBooks = "玄幻：未取到书目，未添加此入口"
+        val warnings = listOf(limit, limit, limit, invalid, noBooks)
+        val state = OnlineBooksStateV36(
+            aiSteps = listOf(AiSourceStepV37("识别并验证发现分类与排行榜", false,
+                "发现入口未通过，搜索与阅读草稿已保留", true, warnings)),
+            aiReport = AiSourceReportV37(BookSourceV36("fixture", "离线测试站", "https://books.example", enabledExplore = false),
+                1, "原创故事", 36, "原创正文抽样。", discoveryWarnings = warnings),
+        )
+        rule.setContent { LanghuanStableTheme { PaperReaderThemeV44 {
+            Surface(Modifier.fillMaxSize()) { OnlineAiSheetV36(state, { _, _ -> }, {}, {}, {}) }
+        } } }
+        rule.onAllNodesWithText(limit).assertCountEquals(0)
+        rule.onAllNodesWithText("已停止，未保存书源", substring = true).assertCountEquals(0)
+        rule.onNodeWithText("查看发现详情（3项）").performScrollTo().assertIsDisplayed()
+        rule.onAllNodesWithText("查看第1步详情", substring = true).assertCountEquals(0)
+        rule.onNodeWithText("查看发现详情（3项）").performClick()
+        rule.onAllNodesWithText(limit).assertCountEquals(1)
+        rule.onAllNodesWithText(invalid).assertCountEquals(1)
+        rule.onAllNodesWithText(noBooks).assertCountEquals(1)
+        rule.onNodeWithText("收起发现详情").performScrollTo().performClick()
+        rule.onAllNodesWithText(limit).assertCountEquals(0)
+        rule.onNodeWithText("保存搜索书源").performScrollTo().assertIsDisplayed()
+        saveFrame("v51-ai-partial-discovery-summary-test-data")
     }
 
     private fun saveFrame(name: String) {

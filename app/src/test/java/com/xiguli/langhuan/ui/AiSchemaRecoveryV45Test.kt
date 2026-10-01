@@ -190,7 +190,7 @@ class AiSchemaRecoveryV45Test {
         }
     }
 
-    @Test fun correctingTheInitialDiscoverySetDoesNotConsumeTheExpandedSetsBudget() = runBlocking {
+    @Test fun directoriesAreExpandedBeforeSpendingTheFinalDiscoverySetsBudget() = runBlocking {
         val fixture = DiscoveryFixture { expanded, attempt ->
             if (!expanded && attempt == 1) """{"type":"object","exploreList":"@css:li.book"}"""
             else DiscoveryFixture.ALL_BOOKS
@@ -198,8 +198,8 @@ class AiSchemaRecoveryV45Test {
         val report = fixture.build()
         fixture.assertVerified(report, listOf("月榜", "玄幻"))
         assertTrue(report.discoveryWarnings.toString(), report.discoveryWarnings.isEmpty())
-        assertEquals(2, fixture.calls(expanded = false))
-        assertEquals("New observed child pages need their own bounded generation budget", 1, fixture.calls(expanded = true))
+        assertEquals("Directory HTML must not consume a book-rule generation call", 0, fixture.calls(expanded = false))
+        assertEquals("Only the final observed book pages are sent for rule generation", 1, fixture.calls(expanded = true))
         assertTrue(fixture.requests.contains("https://books.example/category/fantasy"))
         assertEquals(true, fixture.steps.last().ok)
     }
@@ -226,22 +226,22 @@ class AiSchemaRecoveryV45Test {
                 }
             }
             val report = fixture.build()
-            fixture.assertVerified(report, listOf("月榜"))
-            assertTrue("The unverified child must remain visible as a warning", report.discoveryWarnings.any { it.contains("玄幻") })
-            assertEquals(1, fixture.calls(expanded = false))
-            assertEquals("Expanded-set schema and extraction recovery must share two calls", 2, fixture.calls(expanded = true))
-            assertEquals(false, fixture.steps.last().ok)
+            fixture.assertVerified(report, listOf("月榜", "玄幻"))
+            assertEquals("Directory-only rules are no longer generated", 0, fixture.calls(expanded = false))
+            assertEquals("Final-set schema and extraction recovery must share two calls", 2, fixture.calls(expanded = true))
+            assertEquals("A valid observed static fallback still undergoes the complete reading check", 2, report.discoveryEvidence.size)
+            assertEquals(schemaFirst, fixture.steps.last().ok)
         }
     }
 
-    @Test fun failedExpandedGenerationStillValidatesThePreviousCandidate() = runBlocking {
+    @Test fun failedFinalGenerationStillValidatesObservedStaticFallbacks() = runBlocking {
         val fixture = DiscoveryFixture { expanded, _ ->
             if (expanded) """{"unexpected":"fixture"}""" else DiscoveryFixture.ALL_BOOKS
         }
         val report = fixture.build()
         fixture.assertVerified(report, listOf("月榜", "玄幻"))
         assertTrue("A failed optional regeneration must be reported", report.discoveryWarnings.isNotEmpty())
-        assertEquals(1, fixture.calls(expanded = false))
+        assertEquals(0, fixture.calls(expanded = false))
         assertEquals(2, fixture.calls(expanded = true))
         assertEquals(false, fixture.steps.last().ok)
     }

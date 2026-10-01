@@ -20,7 +20,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 /** One visible step of the AI build, shown to the user as it runs. */
-internal data class AiSourceStepV37(val label: String, val ok: Boolean? = null, val detail: String = "", val completed: Boolean = false)
+internal data class AiSourceStepV37(val label: String, val ok: Boolean? = null, val detail: String = "", val completed: Boolean = false, val details: List<String> = emptyList())
 
 internal data class AiDiscoveryEvidenceV37(
     val label: String, val url: String, val bookCount: Int, val sampleBook: String,
@@ -67,9 +67,9 @@ internal class BookSourceAiBuilderV37(
         onSteps(steps.toList())
     }
 
-    private suspend fun finish(ok: Boolean?, detail: String = "") {
+    private suspend fun finish(ok: Boolean?, detail: String = "", details: List<String> = emptyList()) {
         if (steps.isEmpty()) return
-        steps[steps.lastIndex] = steps.last().copy(ok = ok, detail = detail, completed = true)
+        steps[steps.lastIndex] = steps.last().copy(ok = ok, detail = detail, completed = true, details = details.distinct())
         currentCoroutineContext().ensureActive()
         onSteps(steps.toList())
     }
@@ -203,87 +203,113 @@ internal class BookSourceAiBuilderV37(
         step("识别并验证发现分类与排行榜")
         val warnings = ArrayList<String>()
         val discoveryEvidence = ArrayList<AiDiscoveryEvidenceV37>()
-        val discovery = sourceAttemptV36 { buildDiscovery(source, homeDoc, warnings, discoveryEvidence) }
+        val discovery = sourceAttemptV36 { buildDiscovery(source, homeDoc, results.map { it.bookUrl }, warnings, discoveryEvidence) }
         source = discovery.getOrElse {
-            warnings += "发现未完成：${it.message.orEmpty().take(180)}"
+            warnings += "发现规则：${it.message.orEmpty().take(220)}；已保留搜索与阅读规则"
             source.copy(enabledExplore = false)
         }
         val labels = sourceDiscoveriesV41(source).map { it.label }
-        finish(if (warnings.isNotEmpty()) false else if (labels.isEmpty()) null else true, when {
-            labels.isNotEmpty() -> "已抽样 ${labels.size} 个分类/榜单：${labels.joinToString("、")}"
-            warnings.isNotEmpty() -> warnings.joinToString("；")
+        val distinctWarnings = warnings.distinct()
+        finish(if (distinctWarnings.isNotEmpty()) false else if (labels.isEmpty()) null else true, when {
+            labels.isNotEmpty() -> "已抽样 ${labels.size} 个分类/榜单" + if (distinctWarnings.isNotEmpty()) "，部分检查未通过" else ""
+            distinctWarnings.isNotEmpty() -> "发现分类未验证通过，已保留搜索与阅读规则"
             else -> "网站静态页面未找到可验证的分类或排行榜；已保留搜索功能"
-        })
+        }, distinctWarnings)
         require(bookSourceSupportedV36(source)) { "生成规则包含不支持的语法" }
         currentCoroutineContext().ensureActive()
-        return AiSourceReportV37(source, results.size, catalogue.book.name, toc.size, text.take(160), labels, warnings, discoveryEvidence,
+        return AiSourceReportV37(source, results.size, catalogue.book.name, toc.size, text.take(160), labels, distinctWarnings, discoveryEvidence,
             sampleBookUrl = catalogue.book.bookUrl, sampleChapter = first.title, sampleChapterUrl = chapter.proof.chapterUrl,
             catalogueProof = catalogue.proof, chapterProof = chapter.proof,
             readingWarnings = (catalogue.proof.warnings + chapter.proof.warnings).distinct())
     }
 
-    private suspend fun buildDiscovery(initial: BookSourceV36, home: Document, warnings: MutableList<String>, evidence: MutableList<AiDiscoveryEvidenceV37>): BookSourceV36 {
+    private suspend fun buildDiscovery(initial: BookSourceV36, home: Document, knownBookUrls: List<String>, warnings: MutableList<String>, evidence: MutableList<AiDiscoveryEvidenceV37>): BookSourceV36 {
         val selected = askDiscoveryLinks(home)
         if (selected.isEmpty()) return initial.copy(enabledExplore = false)
         val pages = linkedMapOf<AiDiscoveryLinkV37, Document>()
-        for (link in selected) {
-            if (network.stopFailure != null) break
-            sourceAttemptV36 { fetchAiDocumentV37(initial, SourceRequestV36(link.url)) }
-                .onSuccess {
+        val visited = linkedSetOf(home.location())
+        val navigationUrls = selected.mapTo(linkedSetOf()) { it.url }
+        val queue = java.util.ArrayDeque<Pair<AiDiscoveryLinkV37, Int>>()
+        selected.forEach { queue.add(it to 0) }
+        var reachedLimit = false
+        // Directory pages do not consume the 12 book-list slots. Expansion is bounded by
+        // two navigation levels and 24 observed URLs in total, even for cyclic navigation.
+        while (queue.isNotEmpty() && network.stopFailure == null) {
+            if (pages.size >= 12 || visited.size - 1 >= 24) { reachedLimit = true; break }
+            val (link, depth) = queue.removeFirst()
+            if (!visited.add(link.url)) continue
+            val pageAttempt = sourceAttemptV36 {
+                fetchAiDocumentV37(initial, SourceRequestV36(link.url)).also {
                     require(sameSourceOriginV36(publicSourceUrlV36(initial.baseUrl), publicSourceUrlV36(it.location()))) { "发现入口跳转到站外，未添加" }
-                    pages[link] = it
                 }
-                .onFailure { warnings += "${link.label}：页面读取失败，未添加（${it.message.orEmpty().take(80)}）" }
+            }
+            val doc = pageAttempt.getOrNull()
+            if (doc == null) {
+                warnings += "${link.label} · 页面读取失败：${pageAttempt.exceptionOrNull()?.message.orEmpty().take(100)}"
+                continue
+            }
+            network.checkActive()
+            val isDirectory = aiDiscoveryDirectoryV51(doc, knownBookUrls)
+            if (isDirectory && depth < 2) {
+                val children = sourceAttemptV36 { askDiscoveryLinks(doc) }.getOrElse {
+                    warnings += "${link.label} · 子分类识别：${it.message.orEmpty().take(180)}"
+                    emptyList()
+                }.filter { it.url !in visited }
+                if (children.isNotEmpty()) {
+                    children.forEach { navigationUrls += it.url }
+                    // Visit the directory's children first so global navigation cannot
+                    // fill every slot before the actual category pages are reached.
+                    children.asReversed().forEach { queue.addFirst(it to depth + 1) }
+                    continue
+                }
+            }
+            if (isDirectory) {
+                warnings += "${link.label} · 分类目录：未找到可验证的书目页" + if (depth >= 2) "（已达到 2 层导航上限）" else ""
+            } else pages[link] = doc
         }
+        if (reachedLimit) warnings += "发现范围：本次最多验证 12 个书目入口、读取 24 个分类页面；其余入口未添加"
         if (network.stopFailure != null) {
-            warnings += "网站限制访问，已停止其余发现验证；未验证入口未添加"
+            warnings += "发现访问：网站限制访问，已停止其余验证；未验证入口未添加"
             return initial.copy(enabledExplore = false)
         }
         if (pages.isEmpty()) return initial.copy(enabledExplore = false)
-        var rules = askExploreRules(pages, null)
-        var candidate = initial.withExplore(rules)
-        // Rank/category directories sometimes contain another level of navigation instead of books.
-        val hubs = pages.filterValues { ruleElementsV36(it, candidate.exploreList).isEmpty() }
-        val children = linkedMapOf<AiDiscoveryLinkV37, Document>()
-        for ((hub, doc) in hubs) {
-            if (network.stopFailure != null) break
-            val previousChildren = children.size
-            for (link in askDiscoveryLinks(doc)) {
-                if (network.stopFailure != null) break
-                if (link.url in pages.keys.map { it.url } || link.url in children.keys.map { it.url }) continue
-                if (pages.size + children.size >= 12) {
-                    warnings += "分类较多，本次最多验证 12 个入口；其余可稍后编辑添加"
-                    break
-                }
-                sourceAttemptV36 { fetchAiDocumentV37(initial, SourceRequestV36(link.url)) }
-                    .onSuccess { children[link] = it }
-                    .onFailure { warnings += "${link.label}：子分类页面读取失败，未添加" }
-            }
-            if (children.size > previousChildren) pages.remove(hub)
-        }
-        var expansionFailed = false
-        if (children.isNotEmpty() && network.stopFailure == null) {
-            pages.putAll(children)
-            sourceAttemptV36 { askExploreRules(pages, null) }
-                .onSuccess { rules = it; candidate = initial.withExplore(it) }
-                .onFailure {
-                    expansionFailed = true
-                    warnings += "子分类规则生成失败，继续实测此前规则并保留通过入口（${it.message.orEmpty().take(160)}）"
-                }
-        }
-        fun validate(src: BookSourceV36, link: AiDiscoveryLinkV37, doc: Document) = sourceAttemptV36 {
-            searchSourceV36(discoveryRuleSourceV41(src, SourceDiscoveryV41(src.id, link.label, link.url)), "", fetchDocument = { _, _ -> doc })
+        fun validate(src: BookSourceV36, link: AiDiscoveryLinkV37, doc: Document): List<OnlineBookV36> = sourceAttemptV36 {
+            val books = searchSourceV36(discoveryRuleSourceV41(src, SourceDiscoveryV41(src.id, link.label, link.url)), "", fetchDocument = { _, _ -> doc })
+            // Do not count category/navigation rows or chapters as extracted books.
+            require(books.all { sameSourceOriginV36(publicSourceUrlV36(initial.baseUrl), publicSourceUrlV36(it.bookUrl)) }) { "发现书目包含站外链接" }
+            val excluded = aiDiscoveryExcludedUrlsV51(doc)
+            require(books.none { it.bookUrl in navigationUrls || it.bookUrl in excluded || isLikelyChapterUrlV39(it.bookUrl) }) { "规则选中了导航、侧栏推荐或章节链接" }
+            books.distinctBy { it.bookUrl }
         }.getOrDefault(emptyList())
-        if (pages.any { (link, doc) -> validate(candidate, link, doc).isEmpty() } && !expansionFailed && network.stopFailure == null) {
-            if ((generationCalls[exploreEvidenceKey(pages)] ?: 0) < 2) {
-                sourceAttemptV36 {
-                    askExploreRules(pages, "上次规则 ${rules.compact()} 没有覆盖全部页面。分类和榜单可能结构不同，请用 CSS 逗号选择器覆盖真实书目元素。")
-                }.onSuccess { rules = it; candidate = initial.withExplore(it) }
-                    .onFailure { warnings += "发现规则纠正未采用，保留此前可验证入口（${it.message.orEmpty().take(160)}）" }
-            } else {
-                warnings += "这一组发现页面的规则已生成 2 次；不再追加调用，仅保留实测通过的入口"
+        fun coverage(src: BookSourceV36) = pages.count { (link, doc) -> validate(src, link, doc).isNotEmpty() }
+        val candidates = ArrayList<BookSourceV36>()
+        var lastRules: Map<String, String> = emptyMap()
+        var generationFailed = false
+        sourceAttemptV36 { askExploreRules(pages, knownBookUrls, null) }
+            .onSuccess { lastRules = it; candidates += initial.withExplore(it) }
+            .onFailure {
+                if (it is UnsupportedAiRuleCapabilityV45) throw it
+                generationFailed = true
+                warnings += "发现规则生成：${it.message.orEmpty().take(220)}"
             }
+        val firstCandidate = candidates.firstOrNull()
+        if (firstCandidate != null && coverage(firstCandidate) < pages.size && (generationCalls[exploreEvidenceKey(pages)] ?: 0) < 2) {
+            val missing = pages.filter { (link, doc) -> validate(firstCandidate, link, doc).isEmpty() }.keys.joinToString("、") { it.label }
+            sourceAttemptV36 {
+                askExploreRules(pages, knownBookUrls, "上次规则 ${lastRules.compact()} 在这些页面未取到书目：$missing。请对照书目结构，用 CSS 逗号选择器覆盖真实书目元素，取值规则相对于列表项。")
+            }.onSuccess { candidates += initial.withExplore(it) }
+                .onFailure {
+                    if (it is UnsupportedAiRuleCapabilityV45) throw it
+                    generationFailed = true
+                    warnings += "发现规则纠正：${it.message.orEmpty().take(220)}"
+                }
         }
+        // Both fallbacks are static rules, run on the observed pages and then subjected to
+        // the same detail/catalogue/content audit. They do not create a synthetic book list.
+        candidates += initial.withExplore(aiSearchAsExploreV51(initial))
+        aiObservedExploreRulesV51(pages.values, knownBookUrls)?.let { candidates += initial.withExplore(it) }
+        val candidate = candidates.maxByOrNull(::coverage) ?: return initial.copy(enabledExplore = false)
+        if (generationFailed && coverage(candidate) > 0) warnings += "发现备用规则：已用现有搜索规则或已观察书籍链接继续实测，仅添加阅读验证通过的入口"
         val verified = ArrayList<AiDiscoveryLinkV37>()
         for ((link, doc) in pages) {
             if (network.stopFailure != null) {
@@ -346,7 +372,7 @@ internal class BookSourceAiBuilderV37(
         return validateAiDiscoveryLinksV37(rules["exploreUrl"].orEmpty(), doc)
     }
 
-    private suspend fun askExploreRules(pages: Map<AiDiscoveryLinkV37, Document>, feedback: String?): Map<String, String> {
+    private suspend fun askExploreRules(pages: Map<AiDiscoveryLinkV37, Document>, knownBookUrls: List<String>, feedback: String?): Map<String, String> {
         return requestRuleObject(AiRuleStageV45.EXPLORE, PromptBundle(system = RULE_SYSTEM, user = buildString {
             appendLine("任务：为这些真实分类/排行榜页面生成共用的发现书目规则（对应阅读 ruleExplore）。")
             appendLine("输出 JSON 键：exploreList（每本书的外层元素）、exploreName、exploreAuthor、exploreBookUrl（详情页 @href）、exploreCover、exploreIntro、exploreLatest。")
@@ -354,14 +380,13 @@ internal class BookSourceAiBuilderV37(
             feedback?.let { appendLine("【上次问题】$it") }
             pages.forEach { (link, doc) ->
                 appendLine("【${link.label} ${doc.location()}】")
-                appendLine(pageSkeletonV37(doc, (24_000 / pages.size).coerceAtMost(10_000)))
+                appendLine(aiDiscoverySkeletonV51(doc, knownBookUrls, (30_000 / pages.size).coerceIn(2_500, 10_000)))
             }
         }), budgetKey = exploreEvidenceKey(pages))
     }
 
-    // Expanding a real category directory changes the input evidence, not the retry attempt.
-    // There are only the initial set and one expanded set; each set shares two calls across
-    // schema repair and empty-result repair. Labels/order cannot reset the same set's budget.
+    // One final set of observed book-list pages shares two calls across schema repair and
+    // extraction repair. Navigation expansion runs first; labels/order cannot reset the budget.
     private fun exploreEvidenceKey(pages: Map<AiDiscoveryLinkV37, Document>): String =
         "explore:" + pages.values.map { it.location() }.distinct().sorted().joinToString("\n")
 
@@ -454,7 +479,7 @@ internal class BookSourceAiBuilderV37(
                 return parseRulesV37(raw, stage)
             } catch (error: AiRuleFormatExceptionV45) {
                 if (generationCalls.getValue(budgetKey) >= 2) {
-                    throw IllegalArgumentException("AI 规则格式经最多 2 次生成仍未通过：${error.message.orEmpty().take(300)}；已停止，未保存书源", error)
+                    throw IllegalArgumentException("${stage.label}格式经最多 2 次生成仍未通过：${error.message.orEmpty().take(300)}；该阶段已停止", error)
                 }
                 formattingProblem = error.message
             }
@@ -550,7 +575,8 @@ internal class UnsupportedAiRuleCapabilityV45(message: String) : IllegalArgument
 
 /** Explicit engine/script declarations outrank malformed shape, even in nested objects. */
 private fun rejectUnsupportedAiCapabilitiesV45(root: JsonObject) {
-    val fields = AiRuleStageV45.entries.flatMap { it.fields }.toSet()
+    val fields = AiRuleStageV45.entries.flatMap { it.fields }.toSet() +
+        setOf("bookList", "name", "author", "bookUrl", "coverUrl", "intro", "lastChapter")
     val scriptFields = setOf("jsLib", "mainJs", "loginCheckJs", "webJs", "bodyJs", "coverDecodeJs", "webView")
     val engines = setOf("js", "javascript", "script", "java", "webview", "json", "jsonpath", "xpath")
     val pending = java.util.ArrayDeque<kotlinx.serialization.json.JsonElement>()
@@ -580,9 +606,11 @@ private fun rejectUnsupportedAiCapabilitiesV45(root: JsonObject) {
 
 internal fun parseRulesV37(raw: String, stage: AiRuleStageV45? = null): Map<String, String> {
     if (raw.length > 64 * 1024) throw AiRuleFormatExceptionV45("AI 规则响应过大")
-    val element = sourceAttemptV36 { BookSourceJsonV36.parseToJsonElement(repairModelJsonV34(raw)) }.getOrNull() as? JsonObject
+    val root = sourceAttemptV36 { BookSourceJsonV36.parseToJsonElement(repairModelJsonV34(raw)) }.getOrNull() as? JsonObject
         ?: throw AiRuleFormatExceptionV45("AI 未返回有效的 JSON 规则对象")
     val supported = stage?.fields ?: AiRuleStageV45.entries.flatMap { it.fields }.toSet()
+    rejectUnsupportedAiCapabilitiesV45(root)
+    val element = normalizeAiExploreObjectV51(root, stage)
     rejectUnsupportedAiCapabilitiesV45(element)
     val unsupportedCapabilities = element.keys.intersect(setOf("jsLib", "mainJs", "loginCheckJs", "webJs", "bodyJs", "coverDecodeJs", "webView"))
     if (unsupportedCapabilities.isNotEmpty()) throw UnsupportedAiRuleCapabilityV45("AI 返回不支持的脚本能力字段：$unsupportedCapabilities")
@@ -748,7 +776,11 @@ internal fun validateAiDiscoveryLinksV37(raw: String, doc: Document): List<AiDis
 internal fun sourceCatalogueSummaryV50(count: Int, proof: SourceCatalogueProofV50?): String = buildString {
     append("已解析 $count 章")
     proof?.let { append(" · 目录 ${it.pagesRead} 页") }
-    append(if (proof?.hasCompletenessEvidence == true) " · 已核对完整目录结构" else " · 完整性待核实")
+    append(when (proof?.evidence) {
+        SourceCatalogueEvidenceV51.MATCHED_DECLARED_TOTAL -> " · 与网站声明总章数一致"
+        SourceCatalogueEvidenceV51.STATIC_PAGINATION_END -> " · 已读至静态分页末页，完整性待核实"
+        else -> " · 完整性待核实"
+    })
 }
 
 internal fun sourceSampleScopeV50(proof: SourceChapterProofV50?): String =
