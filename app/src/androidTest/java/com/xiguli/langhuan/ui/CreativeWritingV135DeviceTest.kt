@@ -25,6 +25,11 @@ class CreativeWritingV135DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private fun back() = InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
     private fun input() = rule.onNode(hasSetTextAction())
+    private fun workspaceItem(text: String): SemanticsNodeInteraction {
+        // The workspace is lazy: an off-screen card may not yet have a semantics node.
+        rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))
+        return rule.onNodeWithText(text).assertIsDisplayed()
+    }
     private fun send(text: String) {
         input().performTextReplacement(text)
         rule.onNodeWithContentDescription("发送").performClick()
@@ -92,7 +97,8 @@ class CreativeWritingV135DeviceTest {
             assertTrue(projects.chapterDraft(originalId, 2)!!.content.isBlank())
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.onNodeWithText("详情").performClick()
-            rule.onNodeWithText("AI 创作").performScrollTo().performClick()
+            // Reader detail actions are fixed, visible controls, not children of a scroll container.
+            rule.onNodeWithText("AI 创作").assertIsDisplayed().performClick()
             markPhase("create independent writing copy")
             rule.onNodeWithText("创建副本并进入").performClick()
             rule.waitUntil(20_000) { flow.state.value.ready && flow.state.value.novelId != originalId && chat.state.value.isLoaded }
@@ -104,7 +110,7 @@ class CreativeWritingV135DeviceTest {
             val unsent = "只讨论一下：这个场景可以怎样写得更自然？"
             input().performTextReplacement(unsent)
             markPhase("open AI settings")
-            rule.onNodeWithText("配置 AI 服务").performScrollTo().performClick()
+            workspaceItem("配置 AI 服务").performClick()
             rule.onNodeWithText("还没有配置可用服务").assertExists()
             assertEquals(0, server.requests.size)
             // Save a key-free local test provider through the production repository. No external AI account is used.
@@ -154,7 +160,7 @@ class CreativeWritingV135DeviceTest {
             val result = requireNotNull(flow.state.value.result) { flow.state.value.error.orEmpty() }
             assertTrue(result.issues.toString(), result.canCommit)
             assertEquals(generatedProse, result.chapter.content)
-            rule.onNodeWithText("新版本已完成").performScrollTo().assertIsDisplayed()
+            workspaceItem("新版本已完成")
             deviceWindowEvidenceV46("v135-writing-generated-preview-controlled-model")
             assertEquals(sourceBody, projects.chapterDraft(copiedId!!, 1)!!.content)
             markPhase("save generated prose")
@@ -165,14 +171,14 @@ class CreativeWritingV135DeviceTest {
             assertTrue(server.requests.any { it.optString("model") == "gpt-4o-structured-v135" })
             assertEquals(listOf("gpt-4o-chat-v135", "gpt-4o-chat-v135", "gpt-4o-scenes-v135", "gpt-4o-prose-v135"), server.requests.take(4).map { it.getString("model") })
             assertTrue(server.requests.drop(4).all { it.getString("model") == "gpt-4o-structured-v135" })
-            rule.onNodeWithText("精修正文 · 保存后仍可反复修改").performScrollTo().performClick()
+            workspaceItem("精修正文 · 保存后仍可反复修改").performClick()
             rule.waitUntil(15_000) { rule.onAllNodesWithText("正文编辑").fetchSemanticsNodes().isNotEmpty() }
             markPhase("edit saved prose")
             val firstEdit = "受控创作副本第一次修改：林舟读完来信，走向港口书店。"
             rule.onNode(hasSetTextAction() and hasText(generatedProse)).performTextReplacement(firstEdit)
             rule.onNodeWithContentDescription("保存并返回").performClick()
             rule.waitUntil(20_000) { flow.state.value.draft?.content == firstEdit }
-            rule.onNodeWithText("精修正文 · 保存后仍可反复修改").performScrollTo().performClick()
+            workspaceItem("精修正文 · 保存后仍可反复修改").performClick()
             markPhase("edit prose again")
             val finalEdit = "受控创作副本第二次修改：林舟温和地回信，保留了自己的选择。"
             rule.onNode(hasSetTextAction() and hasText(firstEdit)).performTextReplacement(finalEdit)
@@ -180,7 +186,7 @@ class CreativeWritingV135DeviceTest {
             rule.waitUntil(20_000) { flow.state.value.draft?.content == finalEdit }
             assertEquals(finalEdit, projects.chapterDraft(copiedId!!, 1)!!.content)
             // Reenter the same retained editor and leave without typing; a previous close must not lock Back.
-            rule.onNodeWithText("精修正文 · 保存后仍可反复修改").performScrollTo().performClick()
+            workspaceItem("精修正文 · 保存后仍可反复修改").performClick()
             rule.onNodeWithText("正文编辑").assertIsDisplayed()
             rule.onNodeWithContentDescription("保存并返回").performClick()
             rule.waitUntil(15_000) { rule.onAllNodesWithText("章节工作台").fetchSemanticsNodes().isNotEmpty() }
