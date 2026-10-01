@@ -47,6 +47,15 @@ jobs:
             adb shell wm size 1080x2400
             adb shell wm density 420
             adb shell settings put secure immersive_mode_confirmations confirmed
+            mkdir -p reader-qa
+            # A fresh Google image can leave Launcher ANR after display-density recreation.
+            # Reset only the emulator launcher BEFORE tests; retain all app foreground checks.
+            adb shell am force-stop com.google.android.apps.nexuslauncher
+            timeout 45s adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME
+            sleep 5
+            adb shell dumpsys window windows > reader-qa/emulator-before-tests-window.txt
+            adb exec-out screencap -p > reader-qa/emulator-before-tests.png
+            if rg -q 'Application Not Responding:' reader-qa/emulator-before-tests-window.txt; then exit 1; fi
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/app/src/androidTest/assets/source-fixture/" || { adb pull /sdcard/Download/reader-qa reader-qa; adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork || true; exit 1; }
             python3 tools/verify_epub_process_death.py --evidence reader-qa/epub-process || { adb pull /sdcard/Download/reader-qa reader-qa; adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork || true; exit 1; }
             adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork

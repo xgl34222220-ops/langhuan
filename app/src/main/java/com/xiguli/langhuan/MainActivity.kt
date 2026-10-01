@@ -38,7 +38,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        receiveExternalBook(intent)
+        val incoming = intent
+        // Preserve the Activity's launch identity for Android lifecycle/result tracking.
+        // Clear untrusted default arguments before the SavedStateHandle ViewModel is created.
+        setIntent(Intent(incoming ?: Intent(this, MainActivity::class.java)).apply {
+            replaceExtras(null as Bundle?)
+            clipData = null
+        })
+        // Restored requests already live in the validated saved queue. Never replay a launch.
+        if (savedInstanceState == null) receiveExternalBook(incoming)
         enableEdgeToEdge()
         setContent {
             // Keep the proven launcher path plain and dependency-light until Room is healthy.
@@ -50,14 +58,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
+        // Each new delivery is consumed directly. getIntent retains this Activity's launch
+        // identity; changing it here would also break lifecycle tracking across recreation.
         receiveExternalBook(intent)
     }
 
     private fun receiveExternalBook(incoming: Intent?) {
-        // Strip external default arguments BEFORE creating a SavedStateHandle ViewModel.
-        // Its restoration is also validated, and the consumed launch must not replay on rotation.
-        setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
         if (incoming?.action != Intent.ACTION_VIEW && incoming?.action != Intent.ACTION_SEND) return
         externalBooks.receive(requireNotNull(incoming))
     }

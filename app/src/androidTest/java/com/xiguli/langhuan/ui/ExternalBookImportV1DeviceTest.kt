@@ -91,7 +91,9 @@ class ExternalBookImportV1DeviceTest {
         ActivityScenario.launch<MainActivity>(launch).use { scenario ->
             scenario.onActivity { activity ->
                 assertEquals(1, ViewModelProvider(activity)[ExternalBookImportCoordinatorV1::class.java].pending.value.size)
-                assertEquals(Intent.ACTION_MAIN, activity.intent.action)
+                assertTrue("Activity launch identity must survive sanitization", launch.filterEquals(activity.intent))
+                assertFalse(activity.intent.hasExtra("external_book_uris"))
+                assertNull(activity.intent.clipData)
             }
             scenario.recreate()
             scenario.onActivity { activity ->
@@ -102,7 +104,7 @@ class ExternalBookImportV1DeviceTest {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 })
                 assertEquals(1, coordinator.pending.value.size)
-                assertEquals(Intent.ACTION_MAIN, activity.intent.action)
+                assertTrue("Warm deliveries must not replace the Activity launch identity", launch.filterEquals(activity.intent))
                 coordinator.dismiss(uri.toString())
             }
             scenario.recreate()
