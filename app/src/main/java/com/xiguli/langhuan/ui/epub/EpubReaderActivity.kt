@@ -23,6 +23,8 @@ import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.withResumed
 import com.xiguli.langhuan.data.epub.EpubOriginalStore
@@ -80,6 +82,18 @@ class EpubReaderActivity : FragmentActivity() {
         savedLocator = savedInstanceState?.getString("epub_locator")
         savedDigest = savedInstanceState?.getString("epub_digest")
         store = EpubReaderEntry.store(this)
+        supportFragmentManager.registerFragmentLifecycleCallbacks(object : FragmentManager.FragmentLifecycleCallbacks() {
+            override fun onFragmentViewCreated(fm: FragmentManager, fragment: Fragment, view: View, state: Bundle?) {
+                fun protect(current: View) {
+                    if (current is WebView && current.webViewClient !is EpubSecureWebViewClient) {
+                        current.webViewClient = EpubSecureWebViewClient(current.webViewClient, assets)
+                    } else if (current is ViewGroup) {
+                        for (index in 0 until current.childCount) protect(current.getChildAt(index))
+                    }
+                }
+                protect(view)
+            }
+        }, true)
         buildChrome()
         if (store.hasOriginal(bookId)) openStored()
         else status.text = "这本旧书只保存了文字。重新关联原 EPUB 后可阅读插画和作者排版；现有文字和阅读进度会保留。"

@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -26,6 +27,13 @@ class ReaderProgressV42DeviceTest {
     private class Owner : LifecycleOwner {
         val registry = LifecycleRegistry(this)
         override val lifecycle: Lifecycle get() = registry
+    }
+
+    private fun bodyReady(): Boolean {
+        val nodes = rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes()
+        // SemanticsConfiguration can be recomputed from Compose state. Read it only on
+        // the UI thread, including while a just-loaded online body invalidates semantics.
+        return rule.runOnIdle { nodes.any { it.config.getOrNull(SemanticsProperties.StateDescription)?.startsWith("第") == true } }
     }
 
     private fun saved() = ReaderProgressStoreV11.load(rule.activity, book.id, 1)
@@ -49,9 +57,7 @@ class ReaderProgressV42DeviceTest {
             }
         }
         rule.waitUntil(20000) {
-            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
-                it.config[SemanticsProperties.StateDescription].startsWith("第")
-            }
+            bodyReady()
         }
         repeat(5) {
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
@@ -105,9 +111,7 @@ class ReaderProgressV42DeviceTest {
             }
         }
         rule.waitUntil(20000) {
-            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
-                it.config[SemanticsProperties.StateDescription].startsWith("第")
-            }
+            bodyReady()
         }
         repeat(3) {
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
@@ -124,9 +128,7 @@ class ReaderProgressV42DeviceTest {
                 android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_VOLUME_DOWN))
         }
         rule.waitUntil(20000) {
-            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
-                it.config[SemanticsProperties.StateDescription].startsWith("第")
-            }
+            bodyReady()
         }
         rule.mainClock.advanceTimeBy(1000)
         rule.waitForIdle()
@@ -134,9 +136,7 @@ class ReaderProgressV42DeviceTest {
         val turnedAnchor = saved().textOffset
         rule.runOnUiThread { settings.fontSize = 18f }
         rule.waitUntil(20000) {
-            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
-                it.config[SemanticsProperties.StateDescription].startsWith("第")
-            }
+            bodyReady()
         }
         rule.mainClock.advanceTimeBy(1000)
         rule.waitForIdle()
@@ -161,9 +161,7 @@ class ReaderProgressV42DeviceTest {
             }
         }
         rule.waitUntil(20000) {
-            rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
-                it.config[SemanticsProperties.StateDescription].startsWith("第")
-            }
+            bodyReady()
         }
         rule.mainClock.advanceTimeBy(400)
         val before = saved().textOffset
@@ -205,9 +203,7 @@ class ReaderProgressV42DeviceTest {
             rule.mainClock.advanceTimeBy(400)
             rule.runOnIdle { content.value = fullBody }
         }
-        rule.waitUntil(20000) { rule.onAllNodesWithContentDescription("阅读正文").fetchSemanticsNodes().any {
-            it.config[SemanticsProperties.StateDescription].startsWith("第")
-        } }
+        rule.waitUntil(20000) { bodyReady() }
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
         assertEquals(1, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).chapterNumber)
         assertEquals(if (storedChapter == 1) 1202 else 0, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).textOffset)

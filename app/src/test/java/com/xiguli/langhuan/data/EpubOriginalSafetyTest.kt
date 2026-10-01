@@ -3,6 +3,7 @@ package com.xiguli.langhuan.data
 import com.xiguli.langhuan.data.epub.EpubArchivePolicy
 import com.xiguli.langhuan.data.epub.EpubContentSanitizer
 import com.xiguli.langhuan.data.epub.EpubOriginalStore
+import com.xiguli.langhuan.data.epub.EpubWebContentPolicy
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -206,7 +207,9 @@ class EpubOriginalSafetyTest {
         assertTrue(doc.select("script,iframe,foreignObject,set,base").isEmpty())
         assertFalse(result.contains("onload=")); assertFalse(result.contains("javascript:")); assertFalse(result.contains("content://")); assertFalse(result.contains("https://bad"))
         assertTrue(result.contains("art.svg")); assertTrue(result.contains("two.xhtml#second"))
-        assertTrue(EpubContentSanitizer.CSP.contains("readium-reflowable.js"))
+        assertTrue(EpubContentSanitizer.CSP.contains(EpubWebContentPolicy.REFLOW_HASH))
+        assertFalse(EpubContentSanitizer.CSP.contains("readium_package"))
+        assertFalse(EpubContentSanitizer.CSP.contains("readium_assets"))
         assertFalse(EpubContentSanitizer.CSP.substringAfter("script-src ").substringBefore(';').contains("'unsafe-inline'"))
     }
 
@@ -222,5 +225,32 @@ class EpubOriginalSafetyTest {
         val store = EpubOriginalStore(root())
         assertThrows(InterruptedException::class.java) { store.prepare(fixture().inputStream()) { throw InterruptedException() } }
         assertFalse(store.hasOriginal("new-book"))
+    }
+
+    @Test fun finalSdkInjectionUsesSameOriginResourcesAndHashPinnedScripts() {
+        val content = """<html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" href="https://readium_assets/readium/readium-css/ReadiumCSS-before.css"/><link rel="stylesheet" href="author.css"/><style>@font-face{font-family:x;src:url('https://readium_assets/readium/fonts/OpenDyslexic-Regular.otf')}</style><script src="https://readium_assets/readium/scripts/readium-reflowable.js"></script><script src="book.js"></script><script>window.bad=true</script></head><body><img src="art.png"/></body></html>"""
+        val result = EpubWebContentPolicy.secureFinalHtml(content.toByteArray(), xhtml = true).toString(Charsets.UTF_8)
+        val doc = Jsoup.parse(result)
+        assertEquals(1, doc.select("script").size)
+        val script = doc.selectFirst("script")!!
+        assertEquals(EpubWebContentPolicy.SDK_ALIAS + EpubWebContentPolicy.REFLOW_SCRIPT, script.attr("src"))
+        assertEquals(EpubWebContentPolicy.REFLOW_HASH, script.attr("integrity"))
+        assertTrue(doc.select("link").any { it.attr("href") == "author.css" })
+        assertTrue(result.contains(EpubWebContentPolicy.SDK_ALIAS + "readium/readium-css/ReadiumCSS-before.css"))
+        assertFalse(result.contains("https://readium_assets/"))
+        assertFalse(result.contains("window.bad"))
+        assertEquals("3", doc.selectFirst("html")!!.attr("data-langhuan-secure-readium"))
+    }
+
+    @Test fun sdkAliasCannotAuthorizeOutsideAssetsOrAcceptUnpinnedCode() {
+        assertEquals("OPS/art.png", EpubWebContentPolicy.packagePath("https://readium_package/OPS/art.png"))
+        for (url in listOf("https://evil/OPS/art.png", "https://readium_package.evil/x", "https://readium_package@evil/x",
+            "file:///OPS/art.png", "content://book/x", "http://readium_package/x", "https://readium_package:443/x")) {
+            assertNull(EpubWebContentPolicy.packagePath(url))
+        }
+        assertNull(EpubWebContentPolicy.aliasedAsset(EpubWebContentPolicy.SDK_ALIAS + "../secrets"))
+        assertNull(EpubWebContentPolicy.aliasedAsset(EpubWebContentPolicy.SDK_ALIAS + "readium/scripts/book.js"))
+        assertFalse(EpubWebContentPolicy.assetHashMatches(EpubWebContentPolicy.REFLOW_SCRIPT, "window.bad=true".toByteArray()))
+        assertFalse(EpubWebContentPolicy.assetHashMatches("readium/scripts/book.js", ByteArray(0)))
     }
 }

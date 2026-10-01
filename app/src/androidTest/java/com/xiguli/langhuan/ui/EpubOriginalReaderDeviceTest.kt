@@ -13,6 +13,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.Lifecycle
 import com.xiguli.langhuan.ui.epub.EpubReaderActivity
 import com.xiguli.langhuan.ui.epub.EpubReaderEntry
+import com.xiguli.langhuan.data.epub.EpubWebContentPolicy
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -50,6 +51,10 @@ class EpubOriginalReaderDeviceTest {
     }
 
     @Test fun reflowActuallyDrawsPngSvgCssFontAndBlocksBookCode() {
+        EpubWebContentPolicy.scriptHashes.keys.forEach { path ->
+            val bytes = context.assets.open(path).use { it.readBytes() }
+            assertTrue("Packaged SDK script does not match the pinned Readium 3.4 build: $path", EpubWebContentPolicy.assetHashMatches(path, bytes))
+        }
         val id = seed("original-reflow.epub", "epub-device-reflow")
         withReader(id) { scenario ->
             waitForArt(scenario)
@@ -66,12 +71,18 @@ class EpubOriginalReaderDeviceTest {
                 css:getComputedStyle(document.querySelector('.author-box')).borderLeftWidth,
                 font:Array.from(document.fonts).some(f => f.family.replaceAll('"','') === 'LanghuanFixture' && f.status === 'loaded') && document.fonts.check('24px LanghuanFixture'),
                 scripts:!!(window.bookScriptExecuted||window.bookEventExecuted||window.svgScriptExecuted),
-                forbidden:document.querySelectorAll('iframe,script:not([src^="https://readium_assets/"]),[onerror]').length
+                protectedDocument:document.documentElement.getAttribute('data-langhuan-secure-readium') === '3',
+                pinnedScripts:Array.from(document.scripts).every(s =>
+                    s.src.startsWith('https://readium_package/__langhuan_readium_3_4__/readium/scripts/') &&
+                    ['sha256-1hP+D3S4dxEbDG8uU0ZSsCzF1GE3kxZ75eaSkIHV+sk=', 'sha256-ySatQJeZ+aC4QdXbNqULAddIQB+U93azAO4lvRD7jVE='].includes(s.integrity)),
+                forbidden:document.querySelectorAll('iframe,script:not([integrity]),[onerror]').length
             })"""))
             assertEquals("rgb(51, 68, 85)", result.getString("color"))
             assertEquals("6px", result.getString("css"))
             assertTrue(result.getBoolean("font"))
             assertFalse(result.getBoolean("scripts"))
+            assertTrue(result.getBoolean("protectedDocument"))
+            assertTrue(result.getBoolean("pinnedScripts"))
             assertEquals(0, result.getInt("forbidden"))
             val screenshot = instrumentation.uiAutomation.takeScreenshot()
             try {
@@ -91,11 +102,12 @@ class EpubOriginalReaderDeviceTest {
             waitForArt(scenario)
             // Follow the actual EPUB navigation anchor instead of indexing extracted text chapters.
             evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
-            waitUntil { current(scenario)?.href?.toString()?.endsWith("two.xhtml") == true }
+            waitForPage(scenario, "two.xhtml")
             scenario.onActivity { nav(it).goForward(animated = false) }
             waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
             before = current(scenario)
             scenario.recreate()
+            waitForPage(scenario, "two.xhtml")
             waitUntil { current(scenario)?.href == before?.href && kotlin.math.abs((current(scenario)?.locations?.progression ?: -1.0) - (before?.locations?.progression ?: 0.0)) < 0.08 }
             scenario.onActivity { nav(it).goBackward(animated = false) }
             waitUntil { (current(scenario)?.locations?.progression ?: 1.0) < (before?.locations?.progression ?: 0.0) }
@@ -104,6 +116,7 @@ class EpubOriginalReaderDeviceTest {
         // Fresh Activity + reopened publication proves disk-backed Locator reconstruction.
         // Actual OS process-death coverage is the separate two-invocation CI recipe.
         withReader(id) { reopened ->
+            waitForPage(reopened, "two.xhtml")
             waitUntil { current(reopened)?.href == before?.href }
             assertEquals(before!!.locations.progression ?: 0.0, current(reopened)!!.locations.progression ?: 0.0, 0.08)
         }
@@ -122,7 +135,7 @@ class EpubOriginalReaderDeviceTest {
                 File(destination, "original-fixed.png").outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
             } finally { screenshot?.recycle() }
             scenario.onActivity { nav(it).goForward(animated = false) }
-            waitUntil { current(scenario)?.href?.toString()?.endsWith("two.xhtml") == true }
+            waitForPage(scenario, "two.xhtml")
             scenario.onActivity { nav(it).goBackward(animated = false) }
             waitForArt(scenario)
         }
@@ -141,7 +154,7 @@ class EpubOriginalReaderDeviceTest {
                 val navigator = nav(activity)
                 navigator.go(contents[1], animated = false)
             }
-            waitUntil { current(scenario)?.href?.toString()?.endsWith("two.xhtml") == true }
+            waitForPage(scenario, "two.xhtml")
         }
     }
 
@@ -150,13 +163,14 @@ class EpubOriginalReaderDeviceTest {
         withReader(id) { scenario ->
             waitForArt(scenario)
             evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
-            waitUntil { current(scenario)?.href?.toString()?.endsWith("two.xhtml") == true }
+            waitForPage(scenario, "two.xhtml")
             scenario.onActivity { nav(it).goForward(animated = false) }
             waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
             val before = requireNotNull(current(scenario))
             scenario.moveToState(Lifecycle.State.CREATED)
             assertEquals(Lifecycle.State.CREATED, scenario.state)
             scenario.moveToState(Lifecycle.State.RESUMED)
+            waitForPage(scenario, "two.xhtml")
             waitUntil { current(scenario)?.href == before.href }
             scenario.moveToState(Lifecycle.State.CREATED)
             // ActivityScenario.recreate temporarily resumes even when called while stopped.
@@ -175,6 +189,7 @@ class EpubOriginalReaderDeviceTest {
                 Thread.sleep(100)
             }
             scenario.moveToState(Lifecycle.State.RESUMED)
+            waitForPage(scenario, "two.xhtml")
             waitUntil { current(scenario)?.href == before.href && kotlin.math.abs((current(scenario)?.locations?.progression ?: -1.0) - (before.locations.progression ?: 0.0)) < 0.08 }
             // A second ordinary stop/resume must retain a functioning navigator and original art.
             scenario.moveToState(Lifecycle.State.CREATED)
@@ -204,7 +219,7 @@ class EpubOriginalReaderDeviceTest {
         withReader(id) { scenario ->
             waitForArt(scenario)
             evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
-            waitUntil { current(scenario)?.href?.toString()?.endsWith("two.xhtml") == true }
+            waitForPage(scenario, "two.xhtml")
             scenario.onActivity { nav(it).goForward(animated = false) }
             waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
             expected = current(scenario)
@@ -230,6 +245,7 @@ class EpubOriginalReaderDeviceTest {
         assertEquals("Seed locator was not persisted", before.href, persisted.href)
         assertEquals(before.locations.progression ?: 0.0, persisted.locations.progression ?: 0.0, 0.08)
         withReader(id) { scenario ->
+            waitForPage(scenario, "two.xhtml")
             waitUntil { current(scenario)?.href == before.href && (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
             assertEquals(before.locations.progression ?: 0.0, current(scenario)!!.locations.progression ?: 0.0, 0.08)
         }
@@ -263,15 +279,23 @@ class EpubOriginalReaderDeviceTest {
     private fun evaluate(scenario: ActivityScenario<EpubReaderActivity>, code: String): String {
         val latch = CountDownLatch(1); var result = "null"
         scenario.onActivity { activity ->
-            val view = webViews(activity.window.decorView).firstOrNull { it.isShown && it.url?.contains("one.xhtml") == true }
-                ?: webViews(activity.window.decorView).firstOrNull { it.isShown }
+            val currentHref = (activity.supportFragmentManager.findFragmentByTag("epub_original_navigator") as? EpubNavigatorFragment)
+                ?.currentLocator?.value?.href?.toString()?.substringBefore('#')?.substringBefore('?')
+            val visible = webViews(activity.window.decorView).filter { it.isShown }
+            val view = visible.firstOrNull { currentHref != null && it.url?.substringBefore('#')?.substringBefore('?')?.endsWith("/$currentHref") == true }
+                ?: visible.firstOrNull()
             if (view == null) latch.countDown()
             else view.evaluateJavascript(code) { value -> result = value; latch.countDown() }
         }
         assertTrue("WebView JS response timed out", latch.await(5, TimeUnit.SECONDS))
         return if (result.startsWith('"')) org.json.JSONArray("[$result]").getString(0) else result
     }
+    private fun waitForPage(scenario: ActivityScenario<EpubReaderActivity>, file: String) {
+        waitUntil { current(scenario)?.href?.toString()?.endsWith(file) == true &&
+            evaluate(scenario, "!!(location.pathname.endsWith(${JSONObject.quote(file)}) && window.readium && document.documentElement.getAttribute('data-langhuan-secure-readium') === '3')") == "true" }
+    }
     private fun waitForArt(scenario: ActivityScenario<EpubReaderActivity>) {
+        waitForPage(scenario, "one.xhtml")
         waitUntil { evaluate(scenario, "!!(document.getElementById('png-art')?.complete && document.getElementById('png-art')?.naturalWidth===240 && document.getElementById('svg-art')?.complete && document.getElementById('svg-art')?.naturalWidth===240 && document.fonts.status==='loaded' && window.readium)") == "true" }
     }
     private fun waitUntil(test: () -> Boolean) {

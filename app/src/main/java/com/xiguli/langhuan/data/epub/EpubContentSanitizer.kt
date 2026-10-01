@@ -7,13 +7,8 @@ import org.jsoup.parser.Parser
 
 /** Publisher styling is retained, but EPUBs are documents, never trusted app code. */
 object EpubContentSanitizer {
-    const val POLICY_VERSION = 2
-    const val CSP = "default-src 'none'; " +
-        "script-src https://readium_assets/readium/scripts/readium-reflowable.js https://readium_assets/readium/scripts/readium-fixed.js; " +
-        "script-src-attr 'none'; style-src 'unsafe-inline' https://readium_package https://readium_assets; " +
-        "img-src https://readium_package; font-src https://readium_package https://readium_assets; " +
-        "connect-src 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; " +
-        "media-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'"
+    const val POLICY_VERSION = 3
+    const val CSP = EpubWebContentPolicy.CSP
 
     fun markup(bytes: ByteArray, svg: Boolean = false, xhtml: Boolean = false): ByteArray {
         EpubArchivePolicy.validateMarkupStructure(bytes, html = !svg && !xhtml)
