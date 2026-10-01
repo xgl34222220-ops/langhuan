@@ -30,6 +30,11 @@ reader_cleanup() {
   exit "$reader_exit"
 }
 trap reader_cleanup EXIT
+# Fail early on the full user-visible creation chain before spending time on the aggregate suite.
+# A successful focused check never substitutes for the original full-suite/process gates below.
+gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url" -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.CreativeWritingV135DeviceTest
+mkdir -p reader-qa/creative-focused
+cp -R app/build/reports/androidTests reader-qa/creative-focused/
 gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url"
 python3 tools/verify_epub_process_death.py --evidence reader-qa/epub-process
 adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork

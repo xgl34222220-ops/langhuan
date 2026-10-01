@@ -1,8 +1,11 @@
 package com.xiguli.langhuan.ui
 
 import android.view.KeyEvent
+import android.view.WindowManager
 import android.util.Log
 import java.io.File
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -25,6 +28,14 @@ class CreativeWritingV135DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private fun back() = InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
     private fun input() = rule.onNode(hasSetTextAction())
+    private fun keyboardVisible(): Boolean {
+        var shown = false
+        rule.runOnUiThread {
+            shown = ViewCompat.getRootWindowInsets(rule.activity.window.decorView)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        return shown
+    }
     private fun workspaceItem(text: String): SemanticsNodeInteraction {
         // The workspace is lazy: an off-screen card may not yet have a semantics node.
         rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))
@@ -109,8 +120,17 @@ class CreativeWritingV135DeviceTest {
             rule.onNodeWithText("先配置 AI 服务").assertExists()
             val unsent = "只讨论一下：这个场景可以怎样写得更自然？"
             input().performTextReplacement(unsent)
+            markPhase("keyboard must preserve workspace header")
+            rule.waitUntil(10_000) { keyboardVisible() }
+            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
+                rule.activity.window.attributes.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)
+            rule.waitUntil(10_000) { rule.onRoot().fetchSemanticsNode().boundsInWindow.top >= 0f }
+            rule.onNodeWithText("章节工作台").assertIsDisplayed()
+            rule.onNodeWithText("AI 服务").assertIsDisplayed()
             markPhase("open AI settings")
-            workspaceItem("配置 AI 服务").performClick()
+            val setup = workspaceItem("配置 AI 服务")
+            deviceWindowEvidenceV46("v135-writing-settings-with-keyboard")
+            setup.performClick()
             rule.onNodeWithText("还没有配置可用服务").assertExists()
             assertEquals(0, server.requests.size)
             // Save a key-free local test provider through the production repository. No external AI account is used.
@@ -145,7 +165,13 @@ class CreativeWritingV135DeviceTest {
             rule.onNodeWithText("确认场景").performClick()
             rule.waitUntil(20_000) { !flow.state.value.sceneDirty && !flow.state.value.isSaving }
             assertEquals(2, projects.chapterDraft(copiedId!!, 1)!!.scenePlan.size)
+            // Android Back first dismisses a visible IME, then closes the actual scene sheet.
+            if (keyboardVisible()) {
+                back()
+                rule.waitUntil(10_000) { !keyboardVisible() }
+            }
             back()
+            rule.onNodeWithText("本章场景").assertDoesNotExist()
             listOf(AiTaskType.PROSE_AUTHOR, AiTaskType.NOVELIZATION, AiTaskType.EDITOR_REWRITE).forEach {
                 routes.setRoute(it, providerId!!, "gpt-4o-prose-v135")
             }
