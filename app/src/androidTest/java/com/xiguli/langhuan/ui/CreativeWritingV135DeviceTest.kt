@@ -9,6 +9,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.MainActivity
@@ -41,7 +42,9 @@ class CreativeWritingV135DeviceTest {
     private fun workspaceItem(text: String): SemanticsNodeInteraction {
         // The workspace is lazy: an off-screen card may not yet have a semantics node.
         rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))
-        return rule.onNodeWithText(text).assertIsDisplayed()
+        // A prose card can exceed the viewport: reveal the descendant, not only its lazy item.
+        rule.onNodeWithText(text).performScrollTo()
+        return stableButton(text)
     }
     private fun stableButton(text: String): SemanticsNodeInteraction {
         val node = rule.onNodeWithText(text)
@@ -116,6 +119,7 @@ class CreativeWritingV135DeviceTest {
         lateinit var library: LibraryExperienceViewModel
         lateinit var flow: WritingFlowViewModel
         lateinit var chat: ProjectConversationViewModel
+        lateinit var editor: ChapterEditorViewModel
         val generatedProse = InstrumentationRegistry.getInstrumentation().context.assets.open("creative-fixture/prose.txt").bufferedReader().use { it.readText().trim() }
         val secondInstruction = "只讨论一下：让林舟的回信语气更温和，先不要改正文。"
         val server = CreativeAiFixtureServerV135 { request ->
@@ -139,6 +143,7 @@ class CreativeWritingV135DeviceTest {
                 library = ViewModelProvider(rule.activity)[LibraryExperienceViewModel::class.java]
                 flow = ViewModelProvider(rule.activity)[WritingFlowViewModel::class.java]
                 chat = ViewModelProvider(rule.activity)[ProjectConversationViewModel::class.java]
+                editor = ViewModelProvider(rule.activity)[ChapterEditorViewModel::class.java]
             }
             rule.waitUntil(20_000) { library.state.value.stories.any { it.id == originalId } }
             markPhase("open reader")
@@ -249,7 +254,10 @@ class CreativeWritingV135DeviceTest {
             assertTrue(server.requests.any { it.optString("model") == "gpt-4o-structured-v135" })
             assertEquals(listOf("gpt-4o-chat-v135", "gpt-4o-chat-v135", "gpt-4o-scenes-v135", "gpt-4o-prose-v135"), server.requests.take(4).map { it.getString("model") })
             assertTrue(server.requests.drop(4).all { it.getString("model") == "gpt-4o-structured-v135" })
-            workspaceItem("精修正文 · 保存后仍可反复修改").performClick()
+            markPhase("open saved prose editor")
+            val editSaved = workspaceItem("精修正文 · 保存后仍可反复修改")
+            deviceWindowEvidenceV46("v135-writing-open-editor-control")
+            editSaved.performClick()
             rule.waitUntil(15_000) { rule.onAllNodesWithText("正文编辑").fetchSemanticsNodes().isNotEmpty() }
             markPhase("edit saved prose")
             val firstEdit = "受控创作副本第一次修改：林舟读完来信，走向港口书店。"
@@ -282,8 +290,9 @@ class CreativeWritingV135DeviceTest {
             val writingState = runCatching { flow.state.value.let { "ready=${it.ready}, loading=${it.isLoading}, generating=${it.isGenerating}, saving=${it.isSaving}, busy=${it.busy}, sceneDirty=${it.sceneDirty}, workingScenes=${it.workingScenes.size}, draftScenes=${it.draft?.scenePlan?.size}, message=${it.message}, error=${it.error}" } }.getOrDefault("unavailable")
             val durableScenes = runCatching { copiedId?.let { projects.chapterDraft(it, 1)?.scenePlan?.size } }.getOrNull()
             val runtimeState = (rule.activity.application as LanghuanApplication).chapterRunRuntime.state.value
+            val editorState = runCatching { editor.state.value.let { "novel=${it.novelId}, ready=${it.ready}, loading=${it.isLoading}, saving=${it.isSaving}, error=${it.error}" } }.getOrDefault("unavailable")
             val chatState = runCatching { chat.state.value.let { "loaded=${it.isLoaded}, busy=${it.isBusy}, messages=${it.messages.size}, error=${it.error}" } }.getOrDefault("unavailable")
-            val diagnostic = "phase=$currentPhase; modelRequests=${server.requests.size}; models=${server.requests.map { it.optString("model") }}; serverFailures=${server.failures.map { it.toString() }}; library=$libraryState; writing=$writingState; durableScenes=$durableScenes; runtimeActive=${runtimeState.active}; chat=$chatState"
+            val diagnostic = "phase=$currentPhase; modelRequests=${server.requests.size}; models=${server.requests.map { it.optString("model") }}; serverFailures=${server.failures.map { it.toString() }}; library=$libraryState; writing=$writingState; durableScenes=$durableScenes; runtimeActive=${runtimeState.active}; editor=$editorState; chat=$chatState"
             Log.e("CreativeWritingV135", diagnostic, failure)
             runCatching {
                 val file = File(context.getExternalFilesDir(null), "reader-qa/v135-writing-failure-state.txt").apply { parentFile!!.mkdirs() }
@@ -291,6 +300,17 @@ class CreativeWritingV135DeviceTest {
                 file.appendText("\n" + runCatching { rule.onAllNodes(isRoot(), useUnmergedTree = true).printToString() }.getOrDefault("Semantics unavailable"))
             }
             runCatching { deviceWindowEvidenceV46("v135-writing-failure") }
+            if (currentPhase == "open saved prose editor") {
+                // Diagnostic control only. The original physical-click failure is still thrown below.
+                val callbackProbe = runCatching {
+                    rule.onNodeWithText("精修正文 · 保存后仍可反复修改")
+                        .performSemanticsAction(SemanticsActions.OnClick) { it() }
+                    rule.waitUntil(5_000) { rule.onAllNodesWithText("正文编辑").fetchSemanticsNodes().isNotEmpty() }
+                    "Accessibility callback reached the editor; physical click did not"
+                }.getOrElse { "Accessibility callback also failed: ${it.message}" }
+                Log.e("CreativeWritingV135", callbackProbe)
+                runCatching { File(context.getExternalFilesDir(null), "reader-qa/v135-writing-editor-callback-probe.txt").writeText(callbackProbe) }
+            }
             throw AssertionError(diagnostic, failure)
         } finally {
             try { rule.activityRule.scenario.close() } finally {
