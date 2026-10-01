@@ -12,11 +12,13 @@ fun WritingFlowPage(
     viewModel: WritingFlowViewModel,
     onClose: () -> Unit,
     onEditChapter: (novelId: String, chapterNumber: Int) -> Unit,
+    onAiSetup: (() -> Unit)? = null,
 ) {
     WritingWorkspaceV10(
         novelId = novelId,
         viewModel = viewModel,
         onClose = onClose,
         onEditChapter = onEditChapter,
+        onAiSetup = onAiSetup,
     )
 }

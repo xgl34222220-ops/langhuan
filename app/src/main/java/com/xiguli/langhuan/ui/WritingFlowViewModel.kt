@@ -13,6 +13,7 @@ import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
 import com.xiguli.langhuan.engine.AgentReview
+import com.xiguli.langhuan.engine.hasConfiguredDefaultAi
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.AppChapterRunStore
 import com.xiguli.langhuan.engine.ChapterRunCoordinator
@@ -35,6 +36,9 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -53,6 +57,8 @@ data class WritingFlowUiState(
     val providerLabel: String = "",
     val workingScenes: List<ScenePlan> = emptyList(),
     val sceneNote: String = "",
+    val workspaceInput: String = "",
+    val sceneInstruction: String = "",
     val sceneConversation: List<WritingFlowMessage> = emptyList(),
     val streamPreview: String = "",
     val runEvents: List<RunEvent> = emptyList(),
@@ -85,8 +91,12 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
     private val runtime = (application as LanghuanApplication).chapterRunRuntime
     private val _state = MutableStateFlow(WritingFlowUiState())
     val state: StateFlow<WritingFlowUiState> = _state.asStateFlow()
+    val aiReady: StateFlow<Boolean> = repository.observeProviders()
+        .map(::hasConfiguredDefaultAi)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val requests = StoryRequestScope()
+    private val refreshedCanonApplications = mutableMapOf<String, Long>()
 
     init { viewModelScope.launch { runtime.state.collect(::syncRuntimeState) } }
 
@@ -96,7 +106,11 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         if (current.novelId == novelId && (current.ready || current.isLoading)) { syncRuntimeState(runtime.state.value); return }
         requests.open(novelId)
         val request = requests.begin("load")
-        _state.value = WritingFlowUiState(novelId = novelId, isLoading = true)
+        _state.value = WritingFlowUiState(
+            novelId = novelId, isLoading = true,
+            workspaceInput = current.workspaceInput.takeIf { current.novelId == novelId }.orEmpty(),
+            sceneInstruction = current.sceneInstruction.takeIf { current.novelId == novelId }.orEmpty(),
+        )
         requests.launch(viewModelScope, request) {
             runCatching {
                 val loaded = projects.loadStory(novelId) ?: error("找不到这本小说")
@@ -281,12 +295,26 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
             }.onSuccess { next ->
                 requests.ensureCurrent(request)
                 projects.setActiveStoryId(next.snapshot.novel.id); runtime.clearTerminalState(snapshot.novel.id, draft.chapterNumber)
-                updateRequest(request) { it.copy(snapshot = next.snapshot, draft = next.draft, workingScenes = next.draft.scenePlan, sceneNote = "", sceneConversation = emptyList(), streamPreview = "", runEvents = emptyList(), runtimePlan = null, runtimeAudit = null, result = null, review = null, isSaving = false, chapterCommitted = next.draft.content.isNotBlank(), memoryApplied = false, message = "已进入第${next.draft.chapterNumber}章。先确认场景计划，再开始正文生成。") }
+                updateRequest(request) { it.copy(snapshot = next.snapshot, draft = next.draft, workingScenes = next.draft.scenePlan, sceneNote = "", workspaceInput = "", sceneInstruction = "", sceneConversation = emptyList(), streamPreview = "", runEvents = emptyList(), runtimePlan = null, runtimeAudit = null, result = null, review = null, isSaving = false, chapterCommitted = next.draft.content.isNotBlank(), memoryApplied = false, message = "已进入第${next.draft.chapterNumber}章。先确认场景计划，再开始正文生成。") }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 updateRequest(request) { it.copy(isSaving = false, error = error.message ?: "进入下一章失败") }
             }
         }
+    }
+
+    fun updateWorkspaceInput(value: String) = _state.update { it.copy(workspaceInput = value) }
+    fun updateSceneInstruction(value: String) = _state.update { it.copy(sceneInstruction = value) }
+
+    /** A page recreated after settings must not replay an already consumed Canon refresh. */
+    fun refreshAfterCanonChange(novelId: String, appliedAt: Long) {
+        val current = _state.value
+        if (appliedAt <= (refreshedCanonApplications[novelId] ?: 0L) || current.novelId != novelId ||
+            !current.ready || current.busy || runtime.state.value.active
+        ) return
+        refreshedCanonApplications[novelId] = appliedAt
+        invalidateAfterExternalEdit(novelId)
+        load(novelId)
     }
 
     fun clearNotice() = _state.update { it.copy(message = null, error = null) }
@@ -296,7 +324,9 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         val current = _state.value
         if (current.novelId == novelId && !current.busy && !runtime.state.value.active) {
             requests.open("")
-            _state.value = WritingFlowUiState()
+            _state.value = WritingFlowUiState(
+                novelId = novelId, workspaceInput = current.workspaceInput, sceneInstruction = current.sceneInstruction,
+            )
         }
     }
 

@@ -89,19 +89,22 @@ fun WritingWorkspaceLuoShuV11(
     viewModel: WritingFlowViewModel,
     onClose: () -> Unit,
     onEditChapter: (novelId: String, chapterNumber: Int) -> Unit,
+    onAiSetup: (() -> Unit)? = null,
     statusAccessory: (@Composable () -> Unit)? = null,
 ) {
     val flow by viewModel.state.collectAsStateWithLifecycle()
+    val aiReady by viewModel.aiReady.collectAsStateWithLifecycle()
     val conversationVm: ProjectConversationViewModel = viewModel()
-    val conversation by conversationVm.state.collectAsStateWithLifecycle()
+    val observedConversation by conversationVm.state.collectAsStateWithLifecycle()
+    val conversation = observedConversation.takeIf { it.novelId == novelId } ?: ProjectConversationUiState(novelId = novelId)
     val canonVm: CanonChangeProposalViewModel = viewModel()
     val canon by canonVm.state.collectAsStateWithLifecycle()
     val t = LocalLanghuanUiTokens.current
     val snackbar = remember { SnackbarHostState() }
 
     var sheet by remember { mutableStateOf<WritingSheetV11?>(null) }
-    var input by remember(novelId) { mutableStateOf("") }
-    var sceneInstruction by remember(novelId) { mutableStateOf("") }
+    val input = flow.workspaceInput
+    val sceneInstruction = flow.sceneInstruction
     var lastPlan by remember(novelId) { mutableStateOf<WorkspaceNaturalPlan?>(null) }
     var pendingCompound by remember(novelId) { mutableStateOf<PendingCompoundV11?>(null) }
     var showTrace by remember { mutableStateOf(false) }
@@ -111,10 +114,6 @@ fun WritingWorkspaceLuoShuV11(
         conversationVm.load(novelId)
         canonVm.loadMigrationQueue(novelId)
     }
-    LaunchedEffect(flow.draft?.chapterNumber) {
-        input = ""
-        sceneInstruction = ""
-    }
     LaunchedEffect(flow.message, flow.error, conversation.error) {
         val notice = flow.error ?: flow.message ?: conversation.error
         if (!notice.isNullOrBlank()) {
@@ -123,11 +122,8 @@ fun WritingWorkspaceLuoShuV11(
             conversationVm.clearError()
         }
     }
-    LaunchedEffect(canon.appliedAt) {
-        if (canon.appliedAt > 0L) {
-            viewModel.invalidateAfterExternalEdit(novelId)
-            viewModel.load(novelId)
-        }
+    LaunchedEffect(novelId, canon.novelId, canon.appliedAt, flow.busy) {
+        if (canon.novelId == novelId) viewModel.refreshAfterCanonChange(novelId, canon.appliedAt)
     }
 
     LaunchedEffect(
@@ -165,7 +161,7 @@ fun WritingWorkspaceLuoShuV11(
     } else false
     val quickAction = writingQuickActionV11(flow, hasPendingResult, pendingCandidates.size)
     val externalBusy = canon.active
-    val disabled = flow.busy || conversation.isBusy || externalBusy
+    val disabled = flow.busy || conversation.isBusy || conversation.isLoading || !conversation.isLoaded || externalBusy
 
     Scaffold(
         containerColor = t.background,
@@ -176,6 +172,7 @@ fun WritingWorkspaceLuoShuV11(
                 onClose = onClose,
                 onStory = { sheet = WritingSheetV11.STORY },
                 onRun = { sheet = WritingSheetV11.RUN },
+                onAiSetup = onAiSetup,
             )
         },
         bottomBar = {
@@ -187,17 +184,24 @@ fun WritingWorkspaceLuoShuV11(
                 input = input,
                 lastPlan = lastPlan,
                 quickAction = quickAction,
-                onInput = { input = it },
+                onInput = viewModel::updateWorkspaceInput,
                 onHistory = { sheet = WritingSheetV11.HISTORY },
+                onCancelReply = conversationVm::cancelReply,
                 onTrace = { showTrace = true },
                 onScenes = { sheet = WritingSheetV11.SCENES },
                 onMigrationQueue = canonVm::openMigrationQueue,
-                onQuickAction = { action -> performQuickActionV11(action, flow, viewModel) },
+                onQuickAction = { action ->
+                    if (aiReady || action in setOf(WritingQuickActionV11.STOP, WritingQuickActionV11.SAVE, WritingQuickActionV11.APPLY_SCENE)) {
+                        performQuickActionV11(action, flow, viewModel)
+                    } else onAiSetup?.invoke()
+                },
                 onSend = {
                     val clean = input.trim()
-                    if (clean.isNotBlank() && !disabled) {
+                    if (clean.isNotBlank() && !disabled && !aiReady) {
+                        onAiSetup?.invoke()
+                    } else if (clean.isNotBlank() && !disabled) {
                         val plan = WorkspaceNaturalLanguageRouter.route(clean)
-                        input = ""
+                        viewModel.updateWorkspaceInput("")
                         lastPlan = plan
                         when {
                             plan.requestsCanonProposal -> {
@@ -250,6 +254,19 @@ fun WritingWorkspaceLuoShuV11(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                if (!aiReady && onAiSetup != null) item(key = "aiSetup") {
+                    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+                        Text("先配置 AI 服务", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                        Text("添加已保存的服务后，即可规划场景、生成正文和继续会话。", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                        TextButton(onClick = onAiSetup) { Text("配置 AI 服务") }
+                    }
+                }
+                if (!conversation.isLoaded && !conversation.isLoading) item(key = "conversationRetry") {
+                    LanghuanCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+                        Text("会话暂未载入", style = MaterialTheme.typography.titleMedium, color = t.foreground)
+                        TextButton(onClick = { conversationVm.load(novelId) }) { Text("重新加载会话") }
+                    }
+                }
                 item(key = "runtime") {
                     // The health pill sits beside the runtime strip instead of floating over the cards.
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -305,10 +322,12 @@ fun WritingWorkspaceLuoShuV11(
                 flow = flow,
                 draftScenes = draft.scenePlan,
                 instruction = sceneInstruction,
-                onInstruction = { sceneInstruction = it },
+                onInstruction = viewModel::updateSceneInstruction,
                 onAdjust = {
-                    viewModel.planScenes(sceneInstruction)
-                    sceneInstruction = ""
+                    if (aiReady) {
+                        viewModel.planScenes(sceneInstruction)
+                        viewModel.updateSceneInstruction("")
+                    } else onAiSetup?.invoke()
                 },
                 onApply = viewModel::applyScenePlan,
                 onDismiss = { sheet = null },
@@ -359,6 +378,7 @@ private fun WritingHeaderV11(
     onClose: () -> Unit,
     onStory: () -> Unit,
     onRun: () -> Unit,
+    onAiSetup: (() -> Unit)?,
 ) {
     val t = LocalLanghuanUiTokens.current
     val snapshot = flow.snapshot
@@ -381,6 +401,7 @@ private fun WritingHeaderV11(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        if (onAiSetup != null) TextButton(onClick = onAiSetup) { Text("AI 服务") }
         LanghuanIconButton(Icons.Rounded.FactCheck, "故事状态", onStory)
         LanghuanIconButton(
             if (flow.runEvents.any { it.status == RunStatus.RUNNING }) Icons.Rounded.AutoAwesome else Icons.Rounded.History,
@@ -701,6 +722,7 @@ private fun WritingControllerDockV11(
     quickAction: WritingQuickActionV11?,
     onInput: (String) -> Unit,
     onHistory: () -> Unit,
+    onCancelReply: () -> Unit,
     onTrace: () -> Unit,
     onScenes: () -> Unit,
     onMigrationQueue: () -> Unit,
@@ -708,7 +730,7 @@ private fun WritingControllerDockV11(
     onSend: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val disabled = flow.busy || conversation.isBusy || externalBusy
+    val disabled = flow.busy || conversation.isBusy || conversation.isLoading || !conversation.isLoaded || externalBusy
     val latestAssistant = conversation.streamingReply.takeIf(String::isNotBlank)
         ?: conversation.messages.lastOrNull { it.role == "assistant" }?.text.orEmpty()
 
@@ -734,6 +756,7 @@ private fun WritingControllerDockV11(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Icon(Icons.Rounded.History, "会话", Modifier.size(17.dp), tint = t.mutedForeground)
+                    if (conversation.isBusy) TextButton(onClick = onCancelReply) { Text("停止回复") }
                 }
             }
         }

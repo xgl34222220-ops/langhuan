@@ -468,6 +468,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                         novelId = id,
                         viewModel = writingVm,
                         onClose = { openBook(id) },
+                        onAiSetup = { writingStoryId = id; openAiSetup(RootRouteV4.WRITING) },
                         onEditChapter = { storyId, chapter ->
                             editorStoryId = storyId
                             editorChapter = chapter

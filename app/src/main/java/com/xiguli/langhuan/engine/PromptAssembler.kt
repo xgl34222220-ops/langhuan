@@ -14,6 +14,8 @@ data class PromptBundle(
     val attachments: List<PromptAttachment> = emptyList(),
     val messages: List<PromptMessage> = emptyList(),
     val jsonMode: Boolean = true,
+    /** App-owned routing metadata; user text and quoted book text cannot change this task. */
+    val task: AiTaskType? = null,
 )
 
 data class PromptAttachment(

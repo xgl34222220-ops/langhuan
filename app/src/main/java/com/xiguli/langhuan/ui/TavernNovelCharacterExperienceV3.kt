@@ -56,14 +56,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.engine.PromptBundle
-import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.engine.AiGateway
+import com.xiguli.langhuan.engine.AiTaskType
+import com.xiguli.langhuan.engine.TaskModelRouter
+import com.xiguli.langhuan.engine.hasConfiguredDefaultAi
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -148,6 +153,9 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
     private val _state = MutableStateFlow(NovelCharacterDistillUiStateV3())
     val state: StateFlow<NovelCharacterDistillUiStateV3> = _state.asStateFlow()
+    val aiReady: StateFlow<Boolean> = repository.observeProviders()
+        .map(::hasConfiguredDefaultAi)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val requests = StoryRequestScope()
     private var previewOwner: StoryRequestScope.Ticket? = null
@@ -194,7 +202,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
         }
         requests.launch(viewModelScope, request) {
             runCatching {
-                val gateway = activeGateway()
+                val gateway = activeGateway(AiTaskType.CHARACTER_EXTRACTION)
                 requests.ensureCurrent(request)
                 val batches = buildNovelCharacterBatchesV3(usable, mode)
                 var merged = emptyList<NovelCharacterProfileV3>()
@@ -207,6 +215,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                     }
                     val result = gateway.generate(
                         PromptBundle(
+                            task = AiTaskType.CHARACTER_EXTRACTION,
                             system = novelCharacterDistillSystemPromptV3(),
                             user = """
                                 来源作品：《${book.title}》
@@ -305,7 +314,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
 
         requests.launch(viewModelScope, request) {
             runCatching {
-                val gateway = activeGateway()
+                val gateway = activeGateway(AiTaskType.ROLEPLAY)
                 requests.ensureCurrent(request)
                 val recent = optimistic.takeLast(20).joinToString("\n") { message ->
                     if (message.role == "user") "用户：${message.text}" else "${profile.name}：${message.text}"
@@ -325,6 +334,7 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
                             不要输出 JSON 外文字。
                         """.trimIndent(),
                         user = buildCharacterChatContextV3(profile, evidence, recent),
+                        task = AiTaskType.ROLEPLAY,
                     )
                 ).content.trim().ifBlank { error("AI 没有返回角色回复") }
             }.onSuccess { reply ->
@@ -359,13 +369,8 @@ class TavernNovelCharacterViewModelV3(application: Application) : AndroidViewMod
 
     fun clearFeedback() = _state.update { it.copy(notice = null, error = null) }
 
-    private suspend fun activeGateway(): UniversalAiGateway {
-        val providers = repository.observeProviders().first()
-        val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
-            ?: error("还没有可用 AI，请先配置模型")
-        val config = repository.providerConfig(provider.id) ?: error("AI 配置不可用")
-        return UniversalAiGateway(config)
-    }
+    private suspend fun activeGateway(task: AiTaskType): AiGateway =
+        TaskModelRouter(getApplication<Application>()).snapshot().selection(task).gateway
 
     private fun archiveFile(novelId: String): File = File(getApplication<Application>().filesDir, "tavern_novel_character_v3")
         .apply { mkdirs() }
@@ -648,6 +653,7 @@ fun TavernNovelCharacterExperienceV3(
 ) {
     val vm: TavernNovelCharacterViewModelV3 = viewModel()
     val observedState by vm.state.collectAsStateWithLifecycle()
+    val configuredAi by vm.aiReady.collectAsStateWithLifecycle()
     val state = observedState.takeIf { it.novelId == book.id } ?: NovelCharacterDistillUiStateV3(novelId = book.id)
     val snackbar = remember { SnackbarHostState() }
     var screen by rememberSaveable(book.id) { mutableStateOf(NovelCharacterScreenV3.LIBRARY) }
@@ -690,8 +696,8 @@ fun TavernNovelCharacterExperienceV3(
                 book = book,
                 chapterCount = sourceChapters.count { it.content.isNotBlank() },
                 state = state,
-                onQuick = { if (aiReady) vm.distill(book, sourceChapters, NovelCharacterDistillModeV3.QUICK, true) else onAiSetup() },
-                onDeep = { if (aiReady) vm.distill(book, sourceChapters, NovelCharacterDistillModeV3.DEEP, true) else onAiSetup() },
+                onQuick = { if (configuredAi) vm.distill(book, sourceChapters, NovelCharacterDistillModeV3.QUICK, true) else onAiSetup() },
+                onDeep = { if (configuredAi) vm.distill(book, sourceChapters, NovelCharacterDistillModeV3.DEEP, true) else onAiSetup() },
                 onOpen = { profile -> selectedId = profile.id; screen = NovelCharacterScreenV3.DETAIL },
                 onChatImport = { screen = NovelCharacterScreenV3.CHAT_IMPORT },
                 onStory = { screen = NovelCharacterScreenV3.STORY },
@@ -706,7 +712,7 @@ fun TavernNovelCharacterExperienceV3(
                     profile = selected,
                     messageCount = state.chats[selected.id].orEmpty().size,
                     onBack = { screen = NovelCharacterScreenV3.LIBRARY },
-                    onChat = { if (aiReady) screen = NovelCharacterScreenV3.CHAT else onAiSetup() },
+                    onChat = { if (configuredAi) screen = NovelCharacterScreenV3.CHAT else onAiSetup() },
                     onDelete = { vm.deleteProfile(selected.id); selectedId = null; screen = NovelCharacterScreenV3.LIBRARY },
                 )
             }
@@ -721,10 +727,10 @@ fun TavernNovelCharacterExperienceV3(
                 )
             }
             NovelCharacterScreenV3.CHAT_IMPORT -> SecondaryTavernRouteV3("导入聊天角色", onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
-                TavernCharacterHubV2(book, libraryState, aiReady, onAiSetup)
+                TavernCharacterHubV2(book, libraryState, configuredAi, onAiSetup)
             }
             NovelCharacterScreenV3.STORY -> SecondaryTavernRouteV3("故事分支", onBack = { screen = NovelCharacterScreenV3.LIBRARY }) {
-                StoryCoreExperience(book, libraryState, aiReady, onAiSetup)
+                StoryCoreExperience(book, libraryState, configuredAi, onAiSetup)
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 42.dp, vertical = 8.dp))
@@ -743,7 +749,7 @@ private fun SecondaryTavernRouteV3(title: String, onBack: () -> Unit, content: @
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回人物蒸馏") }
+            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回故事入口") }
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
         // The child already pads for the status bar; our bar has taken that space.
@@ -777,9 +783,22 @@ private fun NovelCharacterLibraryV3(
             if (onBack != null) {
                 IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp)) { Icon(Icons.Rounded.ArrowBack, "返回") }
             }
-            Text("人物蒸馏", fontSize = 32.sp, fontWeight = FontWeight.Black)
-            Text("从《${book.title}》正文提取可聊天的原著人物卡", color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 3.dp))
+            Text("进入故事", fontSize = 32.sp, fontWeight = FontWeight.Black)
+            Text("从《${book.title}》当前章开始互动，或提取人物后聊天", color = LocalLanghuanUiTokens.current.mutedForeground, modifier = Modifier.padding(top = 3.dp))
+            Button(onClick = onStory, enabled = !currentChapterNeedsLoading, modifier = Modifier.fillMaxWidth().padding(top = 14.dp), shape = RoundedCornerShape(18.dp)) {
+                Icon(Icons.Rounded.AutoStories, null)
+                Spacer(Modifier.width(8.dp))
+                Text("从当前章开始互动故事")
+            }
+            Text(
+                if (currentChapterNeedsLoading) "当前章尚无可用正文，先加载或编辑正文后开始互动。" else "进入后可选择分支、扮演身份并推进情节。",
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalLanghuanUiTokens.current.mutedForeground,
+                modifier = Modifier.padding(top = 6.dp),
+            )
             Spacer(Modifier.height(16.dp))
+            Text("提取人物并聊天", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
             Surface(shape = RoundedCornerShape(26.dp), color = LocalLanghuanUiTokens.current.card) {
                 Column(Modifier.fillMaxWidth().padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -792,9 +811,10 @@ private fun NovelCharacterLibraryV3(
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    if (chapterCount == 0 && (book.sourceId.isNotBlank() || book.sourceBookUrl.isNotBlank())) {
+                    if (currentChapterNeedsLoading && (book.sourceId.isNotBlank() || book.sourceBookUrl.isNotBlank())) {
                         Text(
-                            "尚无可分析正文，先加载当前章；更多章节可在书架离线缓存",
+                            if (chapterCount == 0) "尚无可分析正文，先加载当前章；更多章节可在书架离线缓存"
+                            else "加载当前章后可开始互动故事；人物提取可使用已加载的正文",
                             style = MaterialTheme.typography.bodySmall,
                             color = LocalLanghuanUiTokens.current.mutedForeground,
                         )
@@ -833,9 +853,6 @@ private fun NovelCharacterLibraryV3(
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onChatImport, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
                     Icon(Icons.Rounded.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("聊天导入")
-                }
-                OutlinedButton(onClick = onStory, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Rounded.AutoStories, null); Spacer(Modifier.width(6.dp)); Text("故事分支")
                 }
             }
             Spacer(Modifier.height(12.dp))

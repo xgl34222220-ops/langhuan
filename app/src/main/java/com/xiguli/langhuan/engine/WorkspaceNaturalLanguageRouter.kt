@@ -48,6 +48,15 @@ object WorkspaceNaturalLanguageRouter {
         val text = input.trim()
         if (text.isBlank()) return WorkspaceNaturalPlan("", listOf(WorkspaceNaturalAction.DISCUSS))
 
+        // An explicit discussion-only instruction is not consent to execute paid draft or
+        // Canon work, even when the topic contains words such as “重写” or “修改人物设定”.
+        val discussionOnly = Regex("(?:^|[，,；;。])\\s*(?:请)?(?:先|只|仅|只是|只要)(?:讨论|聊聊|聊一聊|分析|解释|提建议)")
+            .containsMatchIn(text)
+        if (discussionOnly) return WorkspaceNaturalPlan(
+            text, listOf(WorkspaceNaturalAction.DISCUSS),
+            listOf("用户明确要求只讨论；保留当前正文、场景和项目事实"),
+        )
+
         val sceneCue = containsAny(
             text,
             "场景", "场次", "第一场", "第二场", "第三场", "第四场", "第五场", "第六场",

@@ -20,17 +20,17 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xiguli.langhuan.data.PersistentStoryRepository
 import com.xiguli.langhuan.engine.PromptBundle
-import com.xiguli.langhuan.engine.UniversalAiGateway
+import com.xiguli.langhuan.engine.AiGateway
+import com.xiguli.langhuan.engine.AiTaskType
+import com.xiguli.langhuan.engine.TaskModelRouter
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -110,14 +110,17 @@ data class StoryPlayV3UiState(
 )
 
 class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = PersistentStoryRepository(application)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
     private val _state = MutableStateFlow(StoryPlayV3UiState())
     val state: StateFlow<StoryPlayV3UiState> = _state.asStateFlow()
+    private val requests = StoryRequestScope()
 
     fun open(novelId: String, anchorChapter: Int, anchorTitle: String, anchorText: String) {
-        if (_state.value.novelId == novelId && _state.value.active != null) return
-        viewModelScope.launch {
+        if (novelId.isBlank() || (_state.value.novelId == novelId && _state.value.active != null)) return
+        requests.open(novelId)
+        val request = requests.begin("open")
+        _state.value = StoryPlayV3UiState(novelId = novelId)
+        requests.launch(viewModelScope, request) {
             val playArchive = loadPlayArchive(novelId)
             val seed = anchorText.takeLast(2_800)
             var active = playArchive.sessions.firstOrNull { it.id == playArchive.activeSessionId }
@@ -155,6 +158,7 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
                 runtimeArchive.sessions + activeRuntime
             }
 
+            requests.ensureCurrent(request)
             savePlayArchive(StoryPlayArchive(novelId, active.id, sessions))
             saveRuntimeArchive(StoryRuntimeArchiveV3(novelId, runtimes))
             _state.value = StoryPlayV3UiState(
@@ -354,13 +358,16 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
 
     fun act(book: ReaderBookUi, chapterText: String, action: String) {
         val clean = action.trim()
+        if (_state.value.novelId != book.id) return
         val session = _state.value.active ?: return
         val runtime = _state.value.runtime ?: return
         if (clean.isBlank() || _state.value.busy) return
-        viewModelScope.launch {
-            _state.update { it.copy(busy = true, error = null, notice = null) }
+        val request = requests.begin("action", session.id)
+        updateRequest(request) { it.copy(busy = true, error = null, notice = null) }
+        requests.launch(viewModelScope, request) {
             runCatching {
-                val gateway = activeGateway()
+                val gateway = activeGateway(AiTaskType.ROLEPLAY)
+                requests.ensureCurrent(request)
                 val visibleVars = session.variables.filter { it.access != StoryVariableAccess.AUTHOR_LOCKED }
                 val vars = visibleVars.joinToString("\n") { "${it.subject}.${it.field}=${it.value} [${it.access.label}]" }
                 val recent = session.turns.takeLast(10).joinToString("\n\n") { "玩家：${it.player}\n叙事：${it.narration}" }
@@ -370,6 +377,7 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
                 val p = session.playerProfile
                 val output = gateway.generate(
                     PromptBundle(
+                        task = AiTaskType.ROLEPLAY,
                         system = """
                             你是琅嬛互动小说导演 DM。当前是原小说的独立分支，绝不能改写原著正文。
                             严格尊重世界观、时代技术、人物性格、人物知识账本和关系网。角色只能根据“自己已知”的事实、当前场景亲眼可见信息和本轮明确得到的新证据行动。
@@ -419,6 +427,7 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 )
 
+                requests.ensureCurrent(request)
                 val turnId = UUID.randomUUID().toString()
                 var nextRuntime = runtime
                 val ordinaryChanges = mutableListOf<StoryPlayVariable>()
@@ -506,19 +515,23 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
                 )
                 updatedSession to updatedRuntime
             }.onSuccess { (updatedSession, updatedRuntime) ->
-                persistSuccess(updatedSession, updatedRuntime)
+                requests.ensureCurrent(request)
+                persistSuccess(updatedSession, updatedRuntime, request = request)
             }.onFailure { error ->
-                _state.update { it.copy(busy = false, error = error.message ?: "故事生成失败") }
+                if (error is CancellationException) throw error
+                updateRequest(request) { it.copy(busy = false, error = error.message ?: "故事生成失败") }
             }
         }
     }
 
     fun generateChapterDraft(book: ReaderBookUi) {
+        if (_state.value.novelId != book.id) return
         val session = _state.value.active ?: return
         val runtime = _state.value.runtime ?: return
         if (session.turns.isEmpty() || _state.value.busy) return
-        viewModelScope.launch {
-            _state.update { it.copy(busy = true, error = null, notice = null) }
+        val request = requests.begin("action", session.id)
+        updateRequest(request) { it.copy(busy = true, error = null, notice = null) }
+        requests.launch(viewModelScope, request) {
             runCatching {
                 val transcript = session.turns.joinToString("\n\n") { "玩家动作：${it.player}\n剧情结果：${it.narration}" }
                 val context = buildString {
@@ -526,8 +539,11 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
                     appendLine("人物知识：${renderKnowledge(runtime.knowledge)}")
                     appendLine("角色关系：${renderRelationships(runtime.relationships)}")
                 }
-                val output = activeGateway().generate(
+                val gateway = activeGateway(AiTaskType.PROSE_AUTHOR)
+                requests.ensureCurrent(request)
+                val output = gateway.generate(
                     PromptBundle(
+                        task = AiTaskType.PROSE_AUTHOR,
                         system = """
                             你是中文网络小说编辑。把互动演绎记录改写为自然连贯的小说章节草稿。
                             不得出现“玩家、DM、选项、游戏”等界面痕迹，不新增演绎中没有依据的关键事实，不改变人物知识边界。
@@ -543,6 +559,7 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
                         """.trimIndent(),
                     )
                 )
+                requests.ensureCurrent(request)
                 val body = output.content.trim().ifBlank { error("AI 没有返回章节草稿") }
                 session.copy(
                     chapterDraftCandidate = buildString {
@@ -551,9 +568,11 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
                     updatedAt = System.currentTimeMillis(),
                 )
             }.onSuccess { updatedSession ->
-                persistSuccess(updatedSession, runtime, "章节草稿已生成；原正文没有被覆盖")
+                requests.ensureCurrent(request)
+                persistSuccess(updatedSession, runtime, "章节草稿已生成；原正文没有被覆盖", request)
             }.onFailure { error ->
-                _state.update { it.copy(busy = false, error = error.message ?: "章节草稿生成失败") }
+                if (error is CancellationException) throw error
+                updateRequest(request) { it.copy(busy = false, error = error.message ?: "章节草稿生成失败") }
             }
         }
     }
@@ -561,13 +580,21 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
     fun clearError() = _state.update { it.copy(error = null) }
     fun clearNotice() = _state.update { it.copy(notice = null) }
 
-    private suspend fun activeGateway(): UniversalAiGateway {
-        val providers = repository.observeProviders().first()
-        val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
-            ?: error("还没有可用 AI，请先配置模型")
-        val config = repository.providerConfig(provider.id) ?: error("AI 配置不可用")
-        return UniversalAiGateway(config)
+    fun cancelGeneration() {
+        requests.cancel("action")
+        _state.update { it.copy(busy = false, error = null, notice = "已停止本次生成") }
     }
+
+    private inline fun updateRequest(request: StoryRequestScope.Ticket, transform: (StoryPlayV3UiState) -> StoryPlayV3UiState) {
+        _state.update { current ->
+            if (requests.isCurrent(request) && current.novelId == request.novelId &&
+                (request.profileId == null || current.active?.id == request.profileId)
+            ) transform(current) else current
+        }
+    }
+
+    private suspend fun activeGateway(task: AiTaskType): AiGateway =
+        TaskModelRouter(getApplication<Application>()).snapshot().selection(task).gateway
 
     private fun mergeVariables(old: List<StoryPlayVariable>, incoming: List<StoryPlayVariable>): List<StoryPlayVariable> {
         val map = old.associateBy { "${it.subject}\u0000${it.field}" }.toMutableMap()
@@ -604,8 +631,10 @@ class StoryPlayV3ViewModel(application: Application) : AndroidViewModel(applicat
         persist(current.novelId, active, current.sessions, updated, runtimes)
     }
 
-    private fun persistSuccess(updatedSession: StoryPlaySession, updatedRuntime: StoryRuntimeSessionV3, message: String? = null) {
+    private fun persistSuccess(updatedSession: StoryPlaySession, updatedRuntime: StoryRuntimeSessionV3, message: String? = null, request: StoryRequestScope.Ticket? = null) {
         val current = _state.value
+        if (request != null && (!requests.isCurrent(request) || current.novelId != request.novelId)) return
+        if (current.active?.id != updatedSession.id || current.runtime?.sessionId != updatedRuntime.sessionId) return
         val sessions = current.sessions.map { if (it.id == updatedSession.id) updatedSession else it }
         val runtimes = current.runtimes.map { if (it.sessionId == updatedRuntime.sessionId) updatedRuntime else it }
         _state.update {

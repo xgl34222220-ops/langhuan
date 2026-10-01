@@ -18,7 +18,12 @@ import com.xiguli.langhuan.engine.ChronologyRepairReport
 import com.xiguli.langhuan.engine.PromptBundle
 import com.xiguli.langhuan.engine.UniversalAiGateway
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -76,12 +81,21 @@ data class ChapterEditorUiState(
     val busy: Boolean get() = isLoading || isSaving || isRewriting || isPlanningRepair || isRepairingChronology
 }
 
-class ChapterEditorViewModel(application: Application) : AndroidViewModel(application) {
+class ChapterEditorViewModel internal constructor(
+    application: Application,
+    private val beforePersist: suspend () -> Unit,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, {})
     private val store = ChapterEditorStore(application)
     private val repository = PersistentStoryRepository(application)
     private val _state = MutableStateFlow(ChapterEditorUiState())
     val state: StateFlow<ChapterEditorUiState> = _state.asStateFlow()
     private var autosaveJob: Job? = null
+    private var loadJob: Job? = null
+    private var closeJob: Job? = null
+    private val saveMutex = Mutex()
+    private var editorGeneration = 0L
+    private var closedGeneration: Long? = null
     private var lastPersistedContent: String = ""
     private var pendingLearningSource: AuthorLearningSource = AuthorLearningSource.MANUAL_EDIT
     private var pendingLearningInstruction: String = ""
@@ -89,14 +103,21 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     fun load(novelId: String, chapterNumber: Int? = null) {
         if (novelId.isBlank()) return
         val current = _state.value
-        if (current.novelId == novelId && current.ready && (chapterNumber == null || current.draft?.chapterNumber == chapterNumber)) return
-        autosaveJob?.cancel()
-        viewModelScope.launch {
-            _state.value = ChapterEditorUiState(novelId = novelId, isLoading = true)
+        if (current.novelId == novelId && current.ready && (chapterNumber == null || current.draft?.chapterNumber == chapterNumber)) {
+            // The Activity retains this ViewModel when the user leaves and reopens the editor.
+            // A completed close belongs to the previous visible entry, not to all future visits.
+            closedGeneration = null
+            return
+        }
+        autosaveJob?.cancel(); loadJob?.cancel(); closeJob?.cancel()
+        val generation = ++editorGeneration
+        _state.value = ChapterEditorUiState(novelId = novelId, isLoading = true)
+        loadJob = viewModelScope.launch {
             runCatching {
                 val loaded = store.load(novelId, chapterNumber)
                 Triple(loaded, store.chapters(novelId), store.versions(novelId, loaded.draft.chapterNumber))
             }.onSuccess { (loaded, chapters, versions) ->
+                if (generation != editorGeneration) return@onSuccess
                 _state.update {
                     it.copy(
                         snapshot = loaded.snapshot,
@@ -112,7 +133,8 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
                 pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
                 pendingLearningInstruction = ""
             }.onFailure { error ->
-                _state.update { it.copy(isLoading = false, error = error.message ?: "加载正文失败") }
+                if (error is CancellationException) throw error
+                if (generation == editorGeneration) _state.update { it.copy(isLoading = false, error = error.message ?: "加载正文失败") }
             }
         }
     }
@@ -120,6 +142,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     fun updateTitle(title: String) {
         val draft = _state.value.draft ?: return
         if (draft.title == title) return
+        closedGeneration = null
         val updated = draft.copy(title = title)
         _state.update {
             it.copy(
@@ -138,6 +161,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     fun updateContent(content: String) {
         val draft = _state.value.draft ?: return
         if (draft.content == content) return
+        closedGeneration = null
         val updated = draft.copy(content = content)
         _state.update {
             it.copy(
@@ -169,51 +193,70 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private suspend fun persist(createVersion: Boolean, announce: Boolean): Boolean {
-        val current = _state.value
-        val snapshot = current.snapshot ?: return false
-        val draft = current.draft ?: return false
-        if (current.isSaving) return false
-        if (!current.dirty && !createVersion) return true
-        _state.update { it.copy(isSaving = true, error = null) }
-        val baseline = lastPersistedContent
-        val learningSource = pendingLearningSource
-        val learningInstruction = pendingLearningInstruction
-        return runCatching {
-            val persisted = if (createVersion) store.checkpoint(snapshot, draft) else store.autosave(snapshot, draft)
-            val profiledSnapshot = AuthorPreferenceEngine.observeEdit(
-                snapshot = persisted.snapshot,
-                chapterNumber = persisted.draft.chapterNumber,
-                before = baseline,
-                after = persisted.draft.content,
-                source = learningSource,
-                instruction = learningInstruction,
-            )
-            if (profiledSnapshot != persisted.snapshot) store.autosave(profiledSnapshot, persisted.draft) else persisted
-        }.fold(
-            onSuccess = { persisted ->
-                val versions = if (createVersion) store.versions(persisted.draft.novelId, persisted.draft.chapterNumber) else _state.value.versions
-                _state.update {
-                    it.copy(
-                        snapshot = persisted.snapshot,
-                        draft = persisted.draft,
-                        chapters = it.chapters.replaceDraft(persisted.draft),
-                        versions = versions,
-                        dirty = false,
-                        isSaving = false,
-                        lastSavedAt = System.currentTimeMillis(),
-                        message = if (announce) "已创建版本 v${persisted.draft.version}" else it.message,
-                    )
-                }
+        val generation = editorGeneration
+        val owner = _state.value.draft ?: return false
+        fun ownsEntry(): Boolean = generation == editorGeneration && _state.value.draft?.id == owner.id &&
+            _state.value.draft?.novelId == owner.novelId
+        return saveMutex.withLock {
+            if (!ownsEntry()) return@withLock false
+            // Other explicit editor operations also use isSaving. Do not race their Room writes.
+            _state.first { !it.isSaving || !ownsEntry() }
+            if (!ownsEntry()) return@withLock false
+            val current = _state.value
+            val snapshot = current.snapshot ?: return@withLock false
+            val draft = current.draft ?: return@withLock false
+            if (!current.dirty && !createVersion) return@withLock true
+            _state.update { it.copy(isSaving = true, error = null) }
+            val baseline = lastPersistedContent
+            val learningSource = pendingLearningSource
+            val learningInstruction = pendingLearningInstruction
+            try {
+                beforePersist()
+                currentCoroutineContext().ensureActive()
+                val written = if (createVersion) store.checkpoint(snapshot, draft) else store.autosave(snapshot, draft)
+                currentCoroutineContext().ensureActive()
+                val profiled = AuthorPreferenceEngine.observeEdit(
+                    snapshot = written.snapshot, chapterNumber = written.draft.chapterNumber,
+                    before = baseline, after = written.draft.content, source = learningSource,
+                    instruction = learningInstruction,
+                )
+                val persisted = if (profiled != written.snapshot) store.autosave(profiled, written.draft) else written
+                val versions = if (createVersion) runCatching {
+                    store.versions(persisted.draft.novelId, persisted.draft.chapterNumber)
+                }.onFailure { if (it is CancellationException) throw it }.getOrDefault(current.versions) else current.versions
+                if (!ownsEntry()) return@withLock false
+                val live = _state.value.draft ?: return@withLock false
+                val hasNewerText = live.title != draft.title || live.content != draft.content
+                // Keep version/summary metadata from the completed save, but never overwrite input
+                // typed after that request captured its draft.
+                val visible = if (hasNewerText) persisted.draft.copy(title = live.title, content = live.content) else persisted.draft
+                _state.update { it.copy(
+                    snapshot = persisted.snapshot, draft = visible, chapters = it.chapters.replaceDraft(visible),
+                    versions = versions, dirty = hasNewerText, isSaving = false,
+                    lastSavedAt = System.currentTimeMillis(),
+                    message = if (announce) "已创建版本 v${persisted.draft.version}" else it.message,
+                ) }
                 lastPersistedContent = persisted.draft.content
-                pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
-                pendingLearningInstruction = ""
+                if (!hasNewerText) {
+                    pendingLearningSource = AuthorLearningSource.MANUAL_EDIT
+                    pendingLearningInstruction = ""
+                }
                 true
-            },
-            onFailure = { error ->
-                _state.update { it.copy(isSaving = false, error = error.message ?: "保存正文失败") }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                if (ownsEntry()) _state.update { it.copy(error = error.message ?: "保存正文失败") }
                 false
-            },
-        )
+            } finally {
+                if (ownsEntry()) _state.update { it.copy(isSaving = false) }
+            }
+        }
+    }
+
+    private suspend fun flushEntry(generation: Long): Boolean {
+        do {
+            if (generation != editorGeneration || !persist(createVersion = false, announce = false)) return false
+        } while (generation == editorGeneration && _state.value.dirty)
+        return generation == editorGeneration
     }
 
     fun openChapter(chapterNumber: Int) {
@@ -585,6 +628,7 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             runCatching {
+                currentCoroutineContext().ensureActive()
                 val profiled = AuthorPreferenceEngine.observeEdit(
                     snapshot = snapshot,
                     chapterNumber = draft.chapterNumber,
@@ -726,10 +770,20 @@ class ChapterEditorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun flushAndClose(onDone: () -> Unit) {
+        val generation = editorGeneration
+        if (closeJob?.isActive == true || closedGeneration == generation) return
         autosaveJob?.cancel()
-        viewModelScope.launch {
-            val ok = if (_state.value.dirty) persist(createVersion = false, announce = false) else true
-            if (ok) onDone()
+        if (!_state.value.ready) {
+            loadJob?.cancel()
+            closedGeneration = ++editorGeneration
+            onDone()
+            return
+        }
+        closeJob = viewModelScope.launch {
+            if (flushEntry(generation) && closedGeneration != generation) {
+                closedGeneration = generation
+                onDone()
+            }
         }
     }
 

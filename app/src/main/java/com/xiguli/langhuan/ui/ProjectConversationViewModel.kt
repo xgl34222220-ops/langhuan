@@ -20,13 +20,12 @@ import com.xiguli.langhuan.engine.PromptMessage
 import com.xiguli.langhuan.engine.ReferenceDnaAwareAiGateway
 import com.xiguli.langhuan.engine.ReferenceDnaBindingStore
 import com.xiguli.langhuan.engine.TaskModelRouter
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 
 data class ProjectConversationUiState(
     val novelId: String = "",
@@ -36,6 +35,7 @@ data class ProjectConversationUiState(
     /** Live V7 process metadata for the inspectable execution UI. Never story Canon. */
     val workflow: NovelWorkflowState? = null,
     val isLoading: Boolean = false,
+    val isLoaded: Boolean = false,
     val isBusy: Boolean = false,
     val error: String? = null,
 )
@@ -55,30 +55,33 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
     private val workflows = PersistentNovelWorkflowStateStore(application)
     private val _state = MutableStateFlow(ProjectConversationUiState())
     val state: StateFlow<ProjectConversationUiState> = _state.asStateFlow()
-    private var workflowJob: Job? = null
-    private var observedWorkflowNovelId: String = ""
+    private val requests = StoryRequestScope()
 
     fun load(novelId: String) {
         if (novelId.isBlank()) return
-        observeWorkflow(novelId)
         val current = _state.value
-        if (current.novelId == novelId && !current.isLoading) return
-        viewModelScope.launch {
-            _state.value = ProjectConversationUiState(novelId = novelId, isLoading = true)
-            val messages = conversations.load(novelId)
-            val loaded = projects.loadStory(novelId)
-            val storedWorkflow = workflows.loadOrCreate(novelId)
-            val workflow = loaded?.snapshot?.let {
-                NovelWorkflowBootstrap.fromSnapshot(storedWorkflow, it)
-            } ?: storedWorkflow
-            if (workflow != storedWorkflow) workflows.save(workflow)
-            _state.update {
-                it.copy(
-                    messages = messages,
-                    workflow = workflow,
-                    routeSummary = workflow.displaySummary(),
-                    isLoading = false,
-                )
+        if (current.novelId == novelId && (current.isLoading || current.isLoaded)) return
+        requests.open(novelId)
+        val request = requests.begin("load")
+        _state.value = ProjectConversationUiState(novelId = novelId, isLoading = true)
+        observeWorkflow(novelId)
+        requests.launch(viewModelScope, request) {
+            runCatching {
+                val messages = conversations.load(novelId)
+                val loaded = projects.loadStory(novelId) ?: error("找不到当前小说项目")
+                requests.ensureCurrent(request)
+                val storedWorkflow = workflows.loadOrCreate(novelId)
+                val workflow = NovelWorkflowBootstrap.fromSnapshot(storedWorkflow, loaded.snapshot)
+                if (workflow != storedWorkflow) workflows.save(workflow)
+                messages to workflow
+            }.onSuccess { (messages, workflow) ->
+                requests.ensureCurrent(request)
+                updateRequest(request) {
+                    it.copy(messages = messages, workflow = workflow, routeSummary = workflow.displaySummary(), isLoading = false, isLoaded = true)
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                updateRequest(request) { it.copy(isLoading = false, error = error.message ?: "加载项目会话失败") }
             }
         }
     }
@@ -93,7 +96,7 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
     fun recordWorkspaceCommand(text: String, planSummary: String) {
         val before = _state.value
         val clean = text.trim()
-        if (clean.isBlank() || before.novelId.isBlank()) return
+        if (clean.isBlank() || before.novelId.isBlank() || !before.isLoaded) return
         val user = ProjectConversationMessage(
             role = "user",
             text = clean,
@@ -112,15 +115,16 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
     private fun sendInternal(text: String, transientContext: String) {
         val clean = text.trim()
         val before = _state.value
-        if (clean.isBlank() || before.isBusy || before.novelId.isBlank()) return
+        if (clean.isBlank() || before.isBusy || before.novelId.isBlank() || !before.isLoaded) return
         val novelId = before.novelId
+        val request = requests.begin("reply")
         val userMessage = ProjectConversationMessage(
             role = "user",
             text = clean,
             origin = ProjectConversationOrigin.PROJECT,
         )
         conversations.append(novelId, userMessage)
-        _state.update {
+        updateRequest(request) {
             it.copy(
                 messages = it.messages + userMessage,
                 streamingReply = "",
@@ -129,9 +133,10 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
             )
         }
 
-        viewModelScope.launch {
+        requests.launch(viewModelScope, request) {
             runCatching {
                 val loaded = projects.loadStory(novelId) ?: error("找不到当前小说项目")
+                requests.ensureCurrent(request)
                 val binding = references.summary(novelId)
 
                 // Old projects have confirmed StorySnapshot data but no V7 workflow metadata.
@@ -153,13 +158,14 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                     )
                 )
                 val workflow = workflows.syncRoute(novelId, route)
-                _state.update {
+                updateRequest(request) {
                     it.copy(
                         workflow = workflow,
                         routeSummary = "${route.compactSummary} · ${workflow.compactSummary()}",
                     )
                 }
                 val session = taskRouter.snapshot()
+                requests.ensureCurrent(request)
                 val routedTask = NovelSkillExecutionPlanner.primaryTask(route)
                 val routedGateway = routedTask?.let { session.selection(it).gateway } ?: session.defaultGateway
                 val gateway = ReferenceDnaAwareAiGateway(
@@ -178,19 +184,21 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                         user = clean,
                         messages = before.messages.takeLast(18).map {
                             PromptMessage(if (it.role == "assistant") "assistant" else "user", it.text)
-                        },
+                        } + PromptMessage("user", clean),
                         jsonMode = false,
+                        task = routedTask,
                     ),
-                    onDelta = { partial -> _state.update { it.copy(streamingReply = partial) } },
+                    onDelta = { partial -> updateRequest(request) { it.copy(streamingReply = partial) } },
                 ).trim().ifBlank { "我在。继续按这本书当前已经确认的设定往下聊。" }
             }.onSuccess { reply ->
+                requests.ensureCurrent(request)
                 val assistant = ProjectConversationMessage(
                     role = "assistant",
                     text = reply,
                     origin = ProjectConversationOrigin.PROJECT,
                 )
                 conversations.append(novelId, assistant)
-                _state.update {
+                updateRequest(request) {
                     it.copy(
                         messages = it.messages + assistant,
                         streamingReply = "",
@@ -198,7 +206,8 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
                     )
                 }
             }.onFailure { error ->
-                _state.update {
+                if (error is CancellationException) throw error
+                updateRequest(request) {
                     it.copy(
                         streamingReply = "",
                         isBusy = false,
@@ -211,19 +220,22 @@ class ProjectConversationViewModel(application: Application) : AndroidViewModel(
 
     fun clearError() = _state.update { it.copy(error = null) }
 
+    fun cancelReply() {
+        requests.cancel("reply")
+        _state.update { it.copy(isBusy = false, streamingReply = "", error = null, routeSummary = "已停止本次回复") }
+    }
+
+    private inline fun updateRequest(request: StoryRequestScope.Ticket, transform: (ProjectConversationUiState) -> ProjectConversationUiState) {
+        _state.update { current ->
+            if (requests.isCurrent(request) && current.novelId == request.novelId) transform(current) else current
+        }
+    }
+
     private fun observeWorkflow(novelId: String) {
-        if (observedWorkflowNovelId == novelId && workflowJob?.isActive == true) return
-        workflowJob?.cancel()
-        observedWorkflowNovelId = novelId
-        workflowJob = viewModelScope.launch {
+        val request = requests.begin("workflow")
+        requests.launch(viewModelScope, request) {
             workflows.observe(novelId).collect { workflow ->
-                _state.update { current ->
-                    if (current.novelId != novelId) current
-                    else current.copy(
-                        workflow = workflow,
-                        routeSummary = workflow.displaySummary(),
-                    )
-                }
+                updateRequest(request) { it.copy(workflow = workflow, routeSummary = workflow.displaySummary()) }
             }
         }
     }

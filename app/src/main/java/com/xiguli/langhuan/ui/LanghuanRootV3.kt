@@ -288,6 +288,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         novelId = id,
                         viewModel = writingVm,
                         onClose = { openBook(id) },
+                        onAiSetup = { writingStoryId = id; openAiSetup(RootRouteV3.WRITING) },
                         onEditChapter = { storyId, chapter ->
                             editorStoryId = storyId
                             editorChapter = chapter

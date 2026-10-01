@@ -15,8 +15,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 134
-        versionName = "0.33.11-reader-preview14"
+        versionCode = 135
+        versionName = "0.33.12-reader-preview15"
     }
 
     buildFeatures { compose = true }

@@ -27,6 +27,7 @@ fun WritingWorkspaceV10(
     viewModel: WritingFlowViewModel,
     onClose: () -> Unit,
     onEditChapter: (novelId: String, chapterNumber: Int) -> Unit,
+    onAiSetup: (() -> Unit)? = null,
 ) {
     val flow by viewModel.state.collectAsStateWithLifecycle()
     val healthVm: StoryGraphHealthViewModel = viewModel()
@@ -51,6 +52,7 @@ fun WritingWorkspaceV10(
         viewModel = viewModel,
         onClose = onClose,
         onEditChapter = onEditChapter,
+        onAiSetup = onAiSetup,
         statusAccessory = {
             StoryGraphHealthPillV10(
                 state = health,

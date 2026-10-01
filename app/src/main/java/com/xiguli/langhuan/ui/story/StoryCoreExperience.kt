@@ -50,6 +50,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -79,7 +81,8 @@ fun StoryCoreExperience(
 ) {
     val t = LocalLanghuanUiTokens.current
     val vm: StoryPlayV3ViewModel = viewModel()
-    val state by vm.state.collectAsStateWithLifecycle()
+    val observedState by vm.state.collectAsStateWithLifecycle()
+    val state = observedState.takeIf { it.novelId == book.id } ?: StoryPlayV3UiState(novelId = book.id)
     val listState = rememberLazyListState()
     val anchor = libraryState.readingChapter
         ?: libraryState.chapters.firstOrNull { it.chapterNumber == book.currentChapter }
@@ -178,7 +181,7 @@ fun StoryCoreExperience(
                                         vm.act(book, anchor?.content.orEmpty(), action)
                                     }
                                 },
-                                modifier = Modifier.heightIn(min = 48.dp),
+                                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "发送故事动作" },
                                 enabled = aiReady && !state.busy && input.isNotBlank(),
                                 size = ShadcnButtonSize.ICON,
                                 leadingIcon = Icons.Rounded.Send,
@@ -261,6 +264,7 @@ fun StoryCoreExperience(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = t.foreground)
                         Text("世界正在回应……", Modifier.padding(start = 9.dp), style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                        TextButton(onClick = vm::cancelGeneration) { Text("停止生成") }
                     }
                 }
             }

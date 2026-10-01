@@ -491,6 +491,7 @@ class UniversalAiGateway(
 
     private fun effectiveTemperature(prompt: PromptBundle): Double = when (AiPromptTaskClassifier.classify(prompt)) {
         AiTaskType.FACT_EXTRACTION,
+        AiTaskType.CHARACTER_EXTRACTION,
         AiTaskType.AGENT_EXTRACTION,
         AiTaskType.EDITOR_REVIEW,
         AiTaskType.EXECUTION_AUDIT,

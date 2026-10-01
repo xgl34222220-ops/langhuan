@@ -10,7 +10,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Book entry and individual request identities, including an A -> B -> A navigation.
- * Owned by the ViewModel's main dispatcher, like the UI actions that enter or leave a book.
+ * UI actions run on the main dispatcher; streaming callbacks may read ownership on an IO thread.
  */
 internal class StoryRequestScope {
     data class Ticket(
@@ -27,6 +27,7 @@ internal class StoryRequestScope {
     private val current = mutableMapOf<String, Ticket>()
     private val jobs = mutableMapOf<String, Job>()
 
+    @Synchronized
     fun open(id: String) {
         novelId = id
         session++
@@ -36,13 +37,16 @@ internal class StoryRequestScope {
         previous.forEach(Job::cancel)
     }
 
+    @Synchronized
     fun begin(lane: String, profileId: String? = null): Ticket {
         cancel(lane)
         return Ticket(novelId, session, lane, ++sequence, profileId).also { current[lane] = it }
     }
 
+    @Synchronized
     fun current(lane: String): Ticket? = current[lane]
 
+    @Synchronized
     fun isCurrent(ticket: Ticket): Boolean =
         ticket.novelId == novelId && ticket.session == session && current[ticket.lane] == ticket
 
@@ -51,11 +55,13 @@ internal class StoryRequestScope {
         if (!isCurrent(ticket)) throw CancellationException("Story request is no longer current")
     }
 
+    @Synchronized
     fun cancel(lane: String) {
         current.remove(lane)
         jobs.remove(lane)?.cancel()
     }
 
+    @Synchronized
     fun launch(scope: CoroutineScope, ticket: Ticket, block: suspend () -> Unit) {
         // Attach before execution so even an immediately completing coroutine has one owner.
         val job = scope.launch(start = CoroutineStart.LAZY) {

@@ -27,6 +27,14 @@ enum class AiTaskType(
     EXECUTION_AUDIT("执行审计", "比较滚动计划与实际正文，判断偏航"),
     AUTONOMOUS_PLANNER("自治规划", "未来滚动章节、人物弧、伏笔节奏与局部重规划"),
     FULL_BOOK_EDITOR("全书主编", "跨章节结构疲劳、人物声线、支线和文风巡检"),
+    CHARACTER_EXTRACTION("人物提取", "从已加载原文提取人物卡、对白和可核对证据"),
+    ROLEPLAY("角色回复", "按人物卡、原文知识边界和当前对话扮演角色"),
+}
+
+/** Same fallback order used by TaskModelRouter; a transient settings form is not a saved service. */
+internal fun hasConfiguredDefaultAi(providers: List<StoredAiProvider>): Boolean {
+    val provider = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull() ?: return false
+    return provider.baseUrl.isNotBlank() && provider.model.isNotBlank()
 }
 
 @Serializable
@@ -185,7 +193,7 @@ object ModelCapabilityProfiler {
         if (task in setOf(AiTaskType.PROSE_AUTHOR, AiTaskType.NOVELIZATION, AiTaskType.EDITOR_REWRITE) && !profile.longText) {
             add("未识别为长文本模型，长章可能更容易截断")
         }
-        if (task in setOf(AiTaskType.EDITOR_REVIEW, AiTaskType.FACT_EXTRACTION, AiTaskType.AGENT_EXTRACTION) && !profile.supportsJson) {
+        if (task in setOf(AiTaskType.EDITOR_REVIEW, AiTaskType.FACT_EXTRACTION, AiTaskType.AGENT_EXTRACTION, AiTaskType.CHARACTER_EXTRACTION) && !profile.supportsJson) {
             add("未识别到 JSON/结构化输出能力，将依赖文本 JSON 解析")
         }
         if (task in setOf(AiTaskType.SCENE_DIRECTOR, AiTaskType.EXECUTION_AUDIT, AiTaskType.AUTONOMOUS_PLANNER, AiTaskType.FULL_BOOK_EDITOR) && !profile.reasoning) {
@@ -361,6 +369,7 @@ class TaskDispatchingAiGateway(
 
 object AiPromptTaskClassifier {
     fun classify(prompt: PromptBundle): AiTaskType? {
+        prompt.task?.let { return it }
         val system = prompt.system
         val user = prompt.user
         return when {
