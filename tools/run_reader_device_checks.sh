@@ -4,7 +4,7 @@
 set -euo pipefail
 reader_fixture_url=${1:?controlled source fixture URL required}
 mkdir -p reader-qa/live
-adb logcat -v threadtime 'CreativeWritingV135:I' 'CreativeStoryV135:I' 'AndroidRuntime:E' '*:W' > reader-qa/device-logcat.txt 2>&1 &
+adb logcat -v threadtime 'CreativeWritingV135:I' 'CreativeStoryV135:I' 'EditorAtomicityV136:I' 'AndroidRuntime:E' '*:W' > reader-qa/device-logcat.txt 2>&1 &
 reader_logcat_pid=$!
 (
   while timeout 5s adb get-state >/dev/null 2>&1; do
@@ -30,9 +30,9 @@ reader_cleanup() {
   exit "$reader_exit"
 }
 trap reader_cleanup EXIT
-# Fail early on the full user-visible creation chain before spending time on the aggregate suite.
+# Fail early on the full creation chain, editor reentry and Room fault/cancellation checks.
 # A successful focused check never substitutes for the original full-suite/process gates below.
-gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url" -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.CreativeWritingV135DeviceTest
+gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url" -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.CreativeWritingV135DeviceTest,com.xiguli.langhuan.ui.CreativeEditorEntryV136DeviceTest,com.xiguli.langhuan.data.CreativeEditorAtomicityV136DeviceTest
 mkdir -p reader-qa/creative-focused
 cp -R app/build/reports/androidTests reader-qa/creative-focused/
 gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url"

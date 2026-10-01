@@ -52,7 +52,7 @@ class ChapterEditorStore(context: Context) {
             )
         }
 
-    suspend fun autosave(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory {
+    suspend fun autosave(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory = db.withTransaction {
         val old = chapterStateDao.get(draft.novelId, draft.chapterNumber)?.decodeDraft() ?: draft
         val delta = draft.content.length - old.content.length
         val updated = snapshot.copy(
@@ -62,7 +62,7 @@ class ChapterEditorStore(context: Context) {
             )
         )
         persistCurrent(updated, draft, System.currentTimeMillis())
-        return PersistedStory(updated, draft)
+        PersistedStory(updated, draft)
     }
 
     suspend fun checkpoint(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory {

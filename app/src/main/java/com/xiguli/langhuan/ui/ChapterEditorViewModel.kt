@@ -100,6 +100,19 @@ class ChapterEditorViewModel internal constructor(
     private var pendingLearningSource: AuthorLearningSource = AuthorLearningSource.MANUAL_EDIT
     private var pendingLearningInstruction: String = ""
 
+    /** A new Root editor entry must reload a clean retained draft after external writes.
+     * Ordinary load/recomposition and the advanced editor panel do not call this method.
+     */
+    fun prepareForEntry(novelId: String, chapterNumber: Int) {
+        val current = _state.value
+        if (current.novelId != novelId || !current.ready || current.draft?.chapterNumber != chapterNumber ||
+            current.dirty || current.busy) return
+        autosaveJob?.cancel(); loadJob?.cancel(); closeJob?.cancel()
+        ++editorGeneration
+        closedGeneration = null
+        _state.value = ChapterEditorUiState(novelId = novelId)
+    }
+
     fun load(novelId: String, chapterNumber: Int? = null) {
         if (novelId.isBlank()) return
         val current = _state.value

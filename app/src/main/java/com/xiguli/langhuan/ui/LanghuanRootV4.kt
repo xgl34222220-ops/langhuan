@@ -55,6 +55,7 @@ private enum class RootRouteV4 {
 fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportCoordinatorV1? = null) {
     val studioState by studioVm.state.collectAsStateWithLifecycle()
     val libraryVm: LibraryExperienceViewModel = viewModel()
+    val editorVm: ChapterEditorViewModel = viewModel()
     val libraryState by libraryVm.state.collectAsStateWithLifecycle()
     val localImportVm: LocalBookImportViewModelV1 = viewModel()
     val localImportState by localImportVm.state.collectAsStateWithLifecycle()
@@ -402,6 +403,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 route = RootRouteV4.WRITING
                             },
                             onOpenEditor = { id, chapter ->
+                                editorVm.prepareForEntry(id, chapter)
                                 editorStoryId = id
                                 editorChapter = chapter
                                 returnAfterEditor = RootRouteV4.BOOK
@@ -470,6 +472,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                         onClose = { openBook(id) },
                         onAiSetup = { writingStoryId = id; openAiSetup(RootRouteV4.WRITING) },
                         onEditChapter = { storyId, chapter ->
+                            editorVm.prepareForEntry(storyId, chapter)
                             editorStoryId = storyId
                             editorChapter = chapter
                             returnAfterEditor = RootRouteV4.WRITING
@@ -479,7 +482,6 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                 }
 
                 RootRouteV4.EDITOR -> {
-                    val editorVm: ChapterEditorViewModel = viewModel()
                     val writingVm: WritingFlowViewModel = viewModel()
                     val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
                     ChapterEditorExperience(

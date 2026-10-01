@@ -42,6 +42,7 @@ private enum class RootRouteV3 {
 fun LanghuanRootV3(studioVm: StudioViewModel) {
     val studioState by studioVm.state.collectAsStateWithLifecycle()
     val libraryVm: LibraryExperienceViewModel = viewModel()
+    val editorVm: ChapterEditorViewModel = viewModel()
     val libraryState by libraryVm.state.collectAsStateWithLifecycle()
     val localImportVm: LocalBookImportViewModelV1 = viewModel()
     val localImportState by localImportVm.state.collectAsStateWithLifecycle()
@@ -215,6 +216,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                                 route = RootRouteV3.WRITING
                             },
                             onOpenEditor = { id, chapter ->
+                                editorVm.prepareForEntry(id, chapter)
                                 editorStoryId = id
                                 editorChapter = chapter
                                 returnAfterEditor = RootRouteV3.BOOK
@@ -290,6 +292,7 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                         onClose = { openBook(id) },
                         onAiSetup = { writingStoryId = id; openAiSetup(RootRouteV3.WRITING) },
                         onEditChapter = { storyId, chapter ->
+                            editorVm.prepareForEntry(storyId, chapter)
                             editorStoryId = storyId
                             editorChapter = chapter
                             returnAfterEditor = RootRouteV3.WRITING
@@ -299,7 +302,6 @@ fun LanghuanRootV3(studioVm: StudioViewModel) {
                 }
 
                 RootRouteV3.EDITOR -> {
-                    val editorVm: ChapterEditorViewModel = viewModel()
                     val writingVm: WritingFlowViewModel = viewModel()
                     val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
                     ChapterEditorExperience(
