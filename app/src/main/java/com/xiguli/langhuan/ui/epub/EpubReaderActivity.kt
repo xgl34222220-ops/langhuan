@@ -71,7 +71,12 @@ class EpubReaderActivity : FragmentActivity() {
     private var locatorJob: Job? = null
     private var savedLocator: String? = null
     private var savedDigest: String? = null
+    private val navigationControls = ArrayList<View>()
     private var loaded = false
+        set(value) {
+            field = value
+            navigationControls.forEach { it.isEnabled = value }
+        }
     private var restoreTarget: Locator? = null
     private var restoreJob: Job? = null
     private class AssociationCandidate(val staged: EpubOriginalStore.Staged, val opened: Publication) : java.io.Closeable {
@@ -125,7 +130,7 @@ class EpubReaderActivity : FragmentActivity() {
         header.addView(button("返回") { finish() })
         heading = TextView(this).apply { text = "EPUB 原版"; textSize = 18f; maxLines = 1 }
         header.addView(heading, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(button("目录") { showContents() })
+        header.addView(button("目录") { showContents() }.apply { isEnabled = loaded; navigationControls += this })
         root.addView(header)
         val host = FrameLayout(this)
         host.addView(FrameLayout(this).apply { id = HOST_ID }, FrameLayout.LayoutParams(-1, -1))
@@ -138,8 +143,8 @@ class EpubReaderActivity : FragmentActivity() {
         host.addView(status, FrameLayout.LayoutParams(-1, -1))
         root.addView(host, LinearLayout.LayoutParams(-1, 0, 1f))
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        controls.addView(button("上一页") { if (loaded) navigator?.goBackward(animated = true) })
-        controls.addView(button("下一页") { if (loaded) navigator?.goForward(animated = true) })
+        controls.addView(button("上一页") { if (loaded) navigator?.goBackward(animated = true) }.apply { isEnabled = loaded; navigationControls += this })
+        controls.addView(button("下一页") { if (loaded) navigator?.goForward(animated = true) }.apply { isEnabled = loaded; navigationControls += this })
         controls.addView(button("文字版") {
             setResult(RESULT_TEXT_READER, Intent().putExtra(EXTRA_BOOK_ID, bookId)); finish()
         })

@@ -386,7 +386,19 @@ class EpubOriginalReaderDeviceTest {
     }
     private fun waitForPage(scenario: ActivityScenario<EpubReaderActivity>, file: String) {
         waitUntil { current(scenario)?.href?.toString()?.endsWith(file) == true &&
+            readerAcceptsNavigation(scenario) &&
             evaluate(scenario, "!!(location.pathname.endsWith(${JSONObject.quote(file)}) && window.readium && document.documentElement.getAttribute('data-langhuan-secure-readium') === '3')") == "true" }
+    }
+    private fun readerAcceptsNavigation(scenario: ActivityScenario<EpubReaderActivity>): Boolean {
+        var ready = false
+        scenario.onActivity { activity ->
+            // initialLocator is observable before the first layout. The SDK can accept direct
+            // test calls while the app still blocks navigation behind its restore overlay.
+            val controlsReady = textViews(activity.window.decorView).single { it.text == "下一页" }.isEnabled
+            val status = EpubReaderActivity::class.java.getDeclaredField("status").apply { isAccessible = true }.get(activity) as View
+            ready = controlsReady && status.visibility == View.GONE
+        }
+        return ready
     }
     private fun waitForArt(scenario: ActivityScenario<EpubReaderActivity>) {
         waitForPage(scenario, "one.xhtml")
