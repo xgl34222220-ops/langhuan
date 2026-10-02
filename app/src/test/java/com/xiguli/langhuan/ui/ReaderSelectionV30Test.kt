@@ -52,7 +52,7 @@ class ReaderSelectionV30Test {
         val root = File(System.getProperty("user.dir") ?: ".")
         val screen = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderScreenV30.kt").readText()
         assertTrue(screen.contains("viewConfiguration.longPressTimeoutMillis"))
-        assertTrue(screen.contains("!longPressed && abs(totalX) <= slop"))
+        assertTrue(screen.contains("abs(totalX) <= slop && abs(totalY) <= slop"))
         assertTrue(screen.contains("ReaderSelectionBarV30("))
     }
 }

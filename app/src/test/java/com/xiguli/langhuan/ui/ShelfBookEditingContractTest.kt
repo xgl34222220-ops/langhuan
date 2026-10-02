@@ -14,7 +14,7 @@ class ShelfBookEditingContractTest {
         val shelf = File(root, "src/main/java/com/xiguli/langhuan/ui/shell/ShelfLuoShuFunctionalV1.kt").readText()
         val editor = File(root, "src/main/java/com/xiguli/langhuan/ui/BookEditV5.kt").readText()
 
-        assertTrue(router.contains("ShelfLibraryV5("))
+        assertTrue(router.contains("LanghuanHomeV4("))
         assertTrue(entry.contains("ShelfLuoShuFunctionalV1("))
         assertFalse(entry.contains("ShelfQingmoFunctionalV9("))
         assertFalse(router.contains("ShelfNativeExperienceV4("))
