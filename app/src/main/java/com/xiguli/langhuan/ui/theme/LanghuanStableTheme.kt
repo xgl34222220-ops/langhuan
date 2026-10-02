@@ -23,205 +23,318 @@ import com.xiguli.langhuan.ui.design.LanghuanUiTokens
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
- * Stable Langhuan theme, visually aligned with LuoShu while keeping the dependency-light startup
- * path that has already proven reliable on devices.
+ * 琅嬛全局稳定主题。
  *
- * LuoShu is the mother UI: calm page surfaces, MIUIX-like radii, large page titles, compact rows,
- * and glass reserved for navigation/floating layers. Reader body typography remains independent.
+ * 设计原则：
+ * 1. 应用层保持现代、克制、低饱和，不把“书卷气”简单等同于仿古纸张。
+ * 2. 标题使用系统 Serif，形成出版物/书籍气质；功能正文和控件使用 Sans。
+ * 3. 浅色主题以暖纸白、墨色、青黛为主；深色主题使用暖墨黑而非纯黑。
+ * 4. 阅读器正文主题独立于这里的 MaterialTheme，由 ReaderRenderV30 等模块管理。
+ * 5. 保留 LocalMiuixTokens / LocalLanghuanUiTokens，避免现有页面调用断裂。
  */
+
+/* -------------------------------------------------------------------------- */
+/*                                    Color                                   */
+/* -------------------------------------------------------------------------- */
+
+private val Ink = Color(0xFF22221F)
+private val InkSoft = Color(0xFF5F605A)
+
+private val Paper = Color(0xFFF7F5F0)
+private val PaperSurface = Color(0xFFFCFBF8)
+private val PaperRaised = Color(0xFFFFFFFF)
+
+private val Jade = Color(0xFF456A61)
+private val JadeDeep = Color(0xFF294A42)
+private val JadeSoft = Color(0xFFDDE9E4)
+
+private val Tea = Color(0xFF806A4B)
+private val TeaSoft = Color(0xFFEDE5D8)
+
+private val Bamboo = Color(0xFF647761)
+private val BambooSoft = Color(0xFFE2E8DE)
+
+private val Night = Color(0xFF111310)
+private val NightSurface = Color(0xFF191C18)
+private val NightInk = Color(0xFFE9E8E1)
+private val NightInkSoft = Color(0xFFB9BAB2)
+
 private val LanghuanLightColors = lightColorScheme(
-    primary = Color(0xFF2F7BF6),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFE3EEFF),
-    onPrimaryContainer = Color(0xFF0F4DB8),
-    secondary = Color(0xFF5A6470),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE5EAF0),
-    onSecondaryContainer = Color(0xFF252B32),
-    tertiary = Color(0xFF6E5B87),
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFECDDFA),
-    onTertiaryContainer = Color(0xFF342843),
-    background = Color(0xFFF6F7F9),
-    onBackground = Color(0xFF16181C),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF16181C),
-    surfaceVariant = Color(0xFFE9EDF3),
-    onSurfaceVariant = Color(0xFF7A808A),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFBFCFE),
-    surfaceContainer = Color(0xFFF0F2F5),
-    surfaceContainerHigh = Color(0xFFE9EDF2),
-    surfaceContainerHighest = Color(0xFFE2E7ED),
-    outline = Color(0xFFC8CED6),
-    outlineVariant = Color(0xFFE6E8EC),
-    error = Color(0xFFBA1A1A),
-    onError = Color.White,
+    primary = Jade,
+    onPrimary = Color(0xFFFFFFFF),
+
+    primaryContainer = JadeSoft,
+    onPrimaryContainer = JadeDeep,
+
+    secondary = Tea,
+    onSecondary = Color(0xFFFFFFFF),
+
+    secondaryContainer = TeaSoft,
+    onSecondaryContainer = Color(0xFF493B28),
+
+    tertiary = Bamboo,
+    onTertiary = Color(0xFFFFFFFF),
+
+    tertiaryContainer = BambooSoft,
+    onTertiaryContainer = Color(0xFF354333),
+
+    background = Paper,
+    onBackground = Ink,
+
+    surface = PaperSurface,
+    onSurface = Ink,
+
+    surfaceVariant = Color(0xFFECEAE4),
+    onSurfaceVariant = InkSoft,
+
+    surfaceContainerLowest = PaperRaised,
+    surfaceContainerLow = Color(0xFFFAF8F4),
+    surfaceContainer = Color(0xFFF1EFE9),
+    surfaceContainerHigh = Color(0xFFEAE7E0),
+    surfaceContainerHighest = Color(0xFFE2DED6),
+
+    outline = Color(0xFFAAA9A1),
+    outlineVariant = Color(0xFFDDDAD3),
+
+    error = Color(0xFFB3261E),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFF9DEDC),
+    onErrorContainer = Color(0xFF410E0B),
 )
 
 private val LanghuanDarkColors = darkColorScheme(
-    primary = Color(0xFF5B9CFF),
-    onPrimary = Color(0xFF002C6E),
-    primaryContainer = Color(0xFF1B355E),
-    onPrimaryContainer = Color(0xFFD6E4FF),
-    secondary = Color(0xFFC3CAD2),
-    onSecondary = Color(0xFF2B3036),
-    secondaryContainer = Color(0xFF3A4148),
-    onSecondaryContainer = Color(0xFFE0E6EC),
-    tertiary = Color(0xFFD6BDE9),
-    onTertiary = Color(0xFF3C2C4C),
-    tertiaryContainer = Color(0xFF544162),
-    onTertiaryContainer = Color(0xFFEEDCF8),
-    background = Color(0xFF111214),
-    onBackground = Color(0xFFE5E8EC),
-    surface = Color(0xFF1A1B1E),
-    onSurface = Color(0xFFE5E8EC),
-    surfaceVariant = Color(0xFF292D33),
-    onSurfaceVariant = Color(0xFFB8BEC6),
-    surfaceContainerLowest = Color(0xFF0C0F13),
-    surfaceContainerLow = Color(0xFF15181D),
-    surfaceContainer = Color(0xFF1C2025),
-    surfaceContainerHigh = Color(0xFF24282E),
-    surfaceContainerHighest = Color(0xFF2D3238),
-    outline = Color(0xFF747B84),
-    outlineVariant = Color(0xFF3D434B),
+    primary = Color(0xFFA7CFC2),
+    onPrimary = Color(0xFF12372F),
+
+    primaryContainer = Color(0xFF284C43),
+    onPrimaryContainer = Color(0xFFC2E9DD),
+
+    secondary = Color(0xFFD7BE94),
+    onSecondary = Color(0xFF3C2F1C),
+
+    secondaryContainer = Color(0xFF55462F),
+    onSecondaryContainer = Color(0xFFF1D7AA),
+
+    tertiary = Color(0xFFB8CDB2),
+    onTertiary = Color(0xFF253623),
+
+    tertiaryContainer = Color(0xFF3B4D38),
+    onTertiaryContainer = Color(0xFFD3E7CD),
+
+    background = Night,
+    onBackground = NightInk,
+
+    surface = NightSurface,
+    onSurface = NightInk,
+
+    surfaceVariant = Color(0xFF292D28),
+    onSurfaceVariant = NightInkSoft,
+
+    surfaceContainerLowest = Color(0xFF0C0E0C),
+    surfaceContainerLow = Color(0xFF151815),
+    surfaceContainer = Color(0xFF1B1F1B),
+    surfaceContainerHigh = Color(0xFF222722),
+    surfaceContainerHighest = Color(0xFF2A302A),
+
+    outline = Color(0xFF858880),
+    outlineVariant = Color(0xFF3C403A),
+
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
 )
 
-/** Reader-first geometry: tighter radii so book covers and pages stay the visual focus. */
+/* -------------------------------------------------------------------------- */
+/*                                    Shape                                   */
+/* -------------------------------------------------------------------------- */
+
 private val LanghuanShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(14.dp),
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(26.dp),
+    extraLarge = RoundedCornerShape(28.dp),
 )
 
-private val UiSans = FontFamily.SansSerif
+/* -------------------------------------------------------------------------- */
+/*                                 Typography                                 */
+/* -------------------------------------------------------------------------- */
+
+private val LanghuanSerif = FontFamily.Serif
+private val LanghuanSans = FontFamily.SansSerif
 
 private val LanghuanTypography = Typography(
+    displayLarge = TextStyle(
+        fontFamily = LanghuanSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 34.sp,
+        lineHeight = 43.sp,
+        letterSpacing = (-0.8).sp,
+    ),
+
+    displayMedium = TextStyle(
+        fontFamily = LanghuanSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
+        letterSpacing = (-0.7).sp,
+    ),
+
     displaySmall = TextStyle(
-        fontFamily = UiSans,
+        fontFamily = LanghuanSerif,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 30.sp,
         lineHeight = 38.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-.8).sp,
+        letterSpacing = (-0.6).sp,
     ),
+
     headlineLarge = TextStyle(
-        fontFamily = UiSans,
+        fontFamily = LanghuanSerif,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 28.sp,
         lineHeight = 36.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-.75).sp,
+        letterSpacing = (-0.55).sp,
     ),
-    // Main page title. Mirrors LuoShu's 26/34 top-bar rhythm.
+
     headlineMedium = TextStyle(
-        fontFamily = UiSans,
-        fontSize = 26.sp,
-        lineHeight = 34.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-.7).sp,
+        fontFamily = LanghuanSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        letterSpacing = (-0.35).sp,
     ),
-    // Detail/page-section title.
+
     headlineSmall = TextStyle(
-        fontFamily = UiSans,
+        fontFamily = LanghuanSerif,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp,
-        lineHeight = 28.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-.45).sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-0.2).sp,
     ),
-    // Novel-specific chapter title rhythm stays at the user's 19/24 spec.
+
     titleLarge = TextStyle(
-        fontFamily = UiSans,
-        fontSize = 19.sp,
-        lineHeight = 24.sp,
+        fontFamily = LanghuanSerif,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = .6.sp,
+        fontSize = 19.sp,
+        lineHeight = 26.sp,
+        letterSpacing = 0.15.sp,
     ),
+
     titleMedium = TextStyle(
-        fontFamily = UiSans,
+        fontFamily = LanghuanSans,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 17.sp,
         lineHeight = 24.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = .25.sp,
+        letterSpacing = 0.05.sp,
     ),
+
     titleSmall = TextStyle(
-        fontFamily = UiSans,
+        fontFamily = LanghuanSans,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
         lineHeight = 21.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = .2.sp,
+        letterSpacing = 0.1.sp,
     ),
+
     bodyLarge = TextStyle(
-        fontFamily = UiSans,
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
+        fontFamily = LanghuanSans,
         fontWeight = FontWeight.Normal,
-        letterSpacing = .2.sp,
+        fontSize = 16.sp,
+        lineHeight = 25.sp,
+        letterSpacing = 0.15.sp,
     ),
+
     bodyMedium = TextStyle(
-        fontFamily = UiSans,
-        fontSize = 14.5.sp,
-        lineHeight = 18.sp,
+        fontFamily = LanghuanSans,
         fontWeight = FontWeight.Normal,
-        letterSpacing = .3.sp,
+        fontSize = 14.5.sp,
+        lineHeight = 21.sp,
+        letterSpacing = 0.2.sp,
     ),
+
     bodySmall = TextStyle(
-        fontFamily = UiSans,
+        fontFamily = LanghuanSans,
+        fontWeight = FontWeight.Normal,
         fontSize = 12.5.sp,
         lineHeight = 18.sp,
-        fontWeight = FontWeight.Normal,
-        letterSpacing = .2.sp,
+        letterSpacing = 0.15.sp,
     ),
+
     labelLarge = TextStyle(
-        fontFamily = UiSans,
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = .15.sp,
+        fontFamily = LanghuanSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.1.sp,
     ),
+
     labelMedium = TextStyle(
-        fontFamily = UiSans,
-        fontSize = 12.sp,
-        lineHeight = 17.sp,
+        fontFamily = LanghuanSans,
         fontWeight = FontWeight.Medium,
-        letterSpacing = .15.sp,
+        fontSize = 12.5.sp,
+        lineHeight = 18.sp,
+        letterSpacing = 0.15.sp,
     ),
+
     labelSmall = TextStyle(
-        fontFamily = UiSans,
+        fontFamily = LanghuanSans,
+        fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
         lineHeight = 16.sp,
-        fontWeight = FontWeight.Medium,
-        letterSpacing = .15.sp,
+        letterSpacing = 0.2.sp,
     ),
 )
+
+/* -------------------------------------------------------------------------- */
+/*                                    Theme                                   */
+/* -------------------------------------------------------------------------- */
 
 @Composable
 fun LanghuanStableTheme(
-    // A fixed brand palette keeps shelf, reader menu and creation pages visually consistent;
-    // wallpaper-derived colours made every device look like a different app.
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val darkTheme = isSystemInDarkTheme()
     val context = LocalContext.current
-    val colors = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else {
-        if (dark) LanghuanDarkColors else LanghuanLightColors
+
+    val colors = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            if (darkTheme) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
+        }
+
+        darkTheme -> LanghuanDarkColors
+        else -> LanghuanLightColors
     }
 
-    val success = if (dark) Color(0xFF74D9AD) else Color(0xFF1B8A61)
-    val warning = if (dark) Color(0xFFFFC46B) else Color(0xFFC47700)
-    val page = colors.background
-    val card = if (dark) colors.surfaceContainerLow else colors.surfaceContainerLowest
-    val raised = colors.surface
+    val success = if (darkTheme) {
+        Color(0xFF8DD5AE)
+    } else {
+        Color(0xFF377B58)
+    }
+
+    val warning = if (darkTheme) {
+        Color(0xFFE5BE76)
+    } else {
+        Color(0xFF9A6B24)
+    }
+
+    val pageBackground = colors.background
+    val cardBackground = if (darkTheme) {
+        colors.surfaceContainerLow
+    } else {
+        colors.surfaceContainerLowest
+    }
+    val raisedBackground = colors.surface
 
     val legacyTokens = MiuixTokens(
-        pageBackground = page,
-        cardBackground = card,
-        elevatedCardBackground = raised,
+        pageBackground = pageBackground,
+        cardBackground = cardBackground,
+        elevatedCardBackground = raisedBackground,
         textPrimary = colors.onSurface,
         textSecondary = colors.onSurfaceVariant,
         success = success,
@@ -229,38 +342,70 @@ fun LanghuanStableTheme(
     )
 
     val uiTokens = LanghuanUiTokens(
-        background = page,
+        background = pageBackground,
         foreground = colors.onBackground,
-        card = card,
+
+        card = cardBackground,
         cardForeground = colors.onSurface,
+
         muted = colors.surfaceContainer,
         mutedForeground = colors.onSurfaceVariant,
-        strong = colors.onSurface.copy(alpha = .86f),
-        track = colors.onSurface.copy(alpha = if (dark) .12f else .075f),
+
+        strong = colors.onSurface.copy(
+            alpha = if (darkTheme) 0.92f else 0.88f,
+        ),
+
+        track = colors.onSurface.copy(
+            alpha = if (darkTheme) 0.12f else 0.07f,
+        ),
+
         border = colors.outlineVariant,
+
         input = colors.surfaceContainerHigh,
+
         primary = colors.primary,
         primaryForeground = colors.onPrimary,
+
         accent = colors.primaryContainer,
         accentForeground = colors.onPrimaryContainer,
+
         destructive = colors.error,
         destructiveForeground = colors.onError,
+
         success = success,
-        successForeground = if (dark) Color(0xFF063824) else Color.White,
+        successForeground = if (darkTheme) {
+            Color(0xFF102D20)
+        } else {
+            Color.White
+        },
+
         warning = warning,
-        warningForeground = if (dark) Color(0xFF4A2C00) else Color.White,
-        ring = colors.primary.copy(alpha = .48f),
-        warmSurface = colors.surfaceContainerLow,
-        radiusSm = 10.dp,
-        radiusMd = 14.dp,
+        warningForeground = if (darkTheme) {
+            Color(0xFF352508)
+        } else {
+            Color.White
+        },
+
+        ring = colors.primary.copy(
+            alpha = if (darkTheme) 0.56f else 0.42f,
+        ),
+
+        warmSurface = if (darkTheme) {
+            Color(0xFF211F1A)
+        } else {
+            Color(0xFFF4EFE5)
+        },
+
+        radiusSm = 12.dp,
+        radiusMd = 16.dp,
         radiusLg = 20.dp,
-        radiusXl = 26.dp,
+        radiusXl = 28.dp,
     )
 
     MaterialTheme(
         colorScheme = colors,
-        shapes = LanghuanShapes,
         typography = LanghuanTypography,
+        shapes = LanghuanShapes,
     ) {
         CompositionLocalProvider(
             LocalMiuixTokens provides legacyTokens,
