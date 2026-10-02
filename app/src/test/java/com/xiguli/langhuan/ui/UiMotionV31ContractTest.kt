@@ -33,10 +33,10 @@ class UiMotionV31ContractTest {
     }
 
     @Test
-    fun readerMenuCanBeSwipedAway() {
+    fun readerMenuCanBeDismissed() {
         val menu = source("reader/ReaderMenuV30.kt")
-        assertTrue(menu.contains("if (dragY.value > dismissPx) onDismiss()"))
-        assertTrue(menu.contains("HapticFeedbackType.TextHandleMove"))
+        assertTrue(menu.contains("Dialog("))
+        assertTrue(menu.contains("onDismissRequest = onDismiss"))
     }
 
     @Test

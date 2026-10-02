@@ -9,125 +9,230 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * Reader preferences. Stored in the same `reader_qingmo_v9` file and keys as before, so existing
- * typography, theme and window options (read by [ReaderWindowSessionV27]) carry over.
+ * Reader V30 · 阅读设置状态。
+ *
+ * 与 ReaderScreenV30.kt / ReaderMenuV30.kt / ReaderLayoutEngineV30.kt 保持统一。
+ * 阅读器正文主题与 App 全局浅色 / 深色主题完全独立。
+ *
+ * 默认正文排版：18sp / 1.95 行距 / 首行缩进两个中文字符 / 500 字重。
+ *
+ * 注意（适配核实项）：
+ * - ReaderTurnModeV30 按 ChatGPT 说明「已由 ReaderLayoutEngineV30.kt 定义
+ *   （COVER/SLIDE/SIMULATION/SCROLL/NONE + key + label + of()）」，
+ *   本文件不重复声明，避免 Kotlin Redeclaration。若仓库实际没有该定义，
+ *   适配时使用下面注释中的枚举定义。
+ * - readerThemeKeyV30() 为本文件引用但未定义的顶层函数，需确认他处已存在。
  */
+// --- ReaderTurnModeV30 备选定义（仅当仓库 ReaderLayoutEngineV30.kt 未定义时启用） ---
+// internal enum class ReaderTurnModeV30(val key: String, val label: String) {
+//     COVER("cover", "覆盖"),
+//     SLIDE("page", "平移"),
+//     SIMULATION("simulation", "仿真"),
+//     SCROLL("scroll", "上下滚动"),
+//     NONE("none", "无动画");
+//     companion object {
+//         fun of(key: String?): ReaderTurnModeV30 =
+//             entries.firstOrNull { it.key == key } ?: COVER
+//     }
+// }
+
 @Stable
-internal class ReaderSettingsV30(private val prefs: SharedPreferences) {
-    private fun float(key: String, fallback: Float): Float =
-        runCatching { prefs.getFloat(key, fallback) }.getOrNull()
+internal class ReaderSettingsV30(
+    private val prefs: SharedPreferences,
+) {
+    /* ------------------------- Preference readers ------------------------- */
+    private fun float(key: String, fallback: Float): Float {
+        return runCatching { prefs.getFloat(key, fallback) }.getOrNull()
             ?: runCatching { prefs.getInt(key, fallback.toInt()).toFloat() }.getOrNull()
             ?: fallback
+    }
 
-    private fun bool(key: String, fallback: Boolean): Boolean =
-        runCatching { prefs.getBoolean(key, fallback) }.getOrDefault(fallback)
+    private fun bool(key: String, fallback: Boolean): Boolean {
+        return runCatching { prefs.getBoolean(key, fallback) }.getOrDefault(fallback)
+    }
 
-    private fun string(key: String, fallback: String): String =
-        runCatching { prefs.getString(key, fallback) }.getOrNull() ?: fallback
+    private fun string(key: String, fallback: String): String {
+        return runCatching { prefs.getString(key, fallback) }.getOrNull() ?: fallback
+    }
 
-    private fun weightPref(): Int = runCatching { prefs.getInt("fontWeight", 500) }.getOrNull()
-        ?: when (string("fontWeight", "")) {
-            "light", "thin" -> 400
+    private fun readWeight(): Int {
+        val direct = runCatching { prefs.getInt(KEY_FONT_WEIGHT, DEFAULT_WEIGHT) }.getOrNull()
+        if (direct != null) return direct.coerceIn(100, 900)
+        return when (string(KEY_FONT_WEIGHT, "").lowercase()) {
+            "thin" -> 200
+            "light" -> 300
+            "regular", "normal" -> 400
             "medium" -> 500
-            "semibold" -> 600
-            "bold", "heavy" -> 700
-            else -> 500
+            "semibold", "semi_bold" -> 600
+            "bold" -> 700
+            "heavy", "black" -> 800
+            else -> DEFAULT_WEIGHT
         }
+    }
 
-    private val legacyDefault = !bool("reader_comfort_v26", false) &&
-        readerUsesLegacyDefaultV26(
-            string("preset", "qingmo"),
-            float("font", 18f), float("line", 1.75f),
-            float("paragraph", 3f), float("sidePadding", 20f),
-        )
+    /* ------------------------------ Typography ------------------------------ */
+    var fontSize by mutableFloatStateOf(
+        float(KEY_FONT_SIZE, DEFAULT_FONT).coerceIn(MIN_FONT, MAX_FONT),
+    )
+    var letterSpacing by mutableFloatStateOf(
+        float(KEY_LETTER_SPACING, DEFAULT_LETTER_SPACING)
+            .coerceIn(MIN_LETTER_SPACING, MAX_LETTER_SPACING),
+    )
+    var lineFactor by mutableFloatStateOf(
+        float(KEY_LINE_FACTOR, DEFAULT_LINE).coerceIn(MIN_LINE, MAX_LINE),
+    )
+    var paragraphSpacing by mutableFloatStateOf(
+        float(KEY_PARAGRAPH_SPACING, DEFAULT_PARAGRAPH).coerceIn(MIN_PARAGRAPH, MAX_PARAGRAPH),
+    )
+    var sidePadding by mutableFloatStateOf(
+        float(KEY_SIDE_PADDING, DEFAULT_SIDE).coerceIn(MIN_SIDE, MAX_SIDE),
+    )
+    var indent by mutableStateOf(bool(KEY_INDENT, true))
+    var fontKey by mutableStateOf(
+        string(KEY_FONT, DEFAULT_FONT_KEY).takeIf { it in SUPPORTED_FONT_KEYS }
+            ?: DEFAULT_FONT_KEY,
+    )
+    var weight by mutableIntStateOf(readWeight())
 
-    var fontSize by mutableFloatStateOf(if (legacyDefault) DEFAULT_FONT else float("font", DEFAULT_FONT))
-    var lineFactor by mutableFloatStateOf(if (legacyDefault) DEFAULT_LINE else float("line", DEFAULT_LINE))
-    var paragraphSpacing by mutableFloatStateOf(if (legacyDefault) DEFAULT_PARAGRAPH else float("paragraph", DEFAULT_PARAGRAPH))
-    var sidePadding by mutableFloatStateOf(if (legacyDefault) DEFAULT_SIDE else float("sidePadding", DEFAULT_SIDE))
-    var letterSpacing by mutableFloatStateOf(float("letterSpacing", 0f))
-    var indent by mutableStateOf(bool("indent", true))
-    var fontKey by mutableStateOf(string("fontKey", "sans"))
-    var weight by mutableIntStateOf(weightPref())
-    var theme by mutableStateOf(readerThemeKeyV30(string("theme", "paper")))
-    var dayTheme by mutableStateOf(readerThemeKeyV30(string("dayTheme", "paper")))
-    var turnMode by mutableStateOf(ReaderTurnModeV30.of(string("pageMode", ReaderTurnModeV30.COVER.key)))
-    var lastPagedMode by mutableStateOf(ReaderTurnModeV30.of(string("lastPagedMode", ReaderTurnModeV30.COVER.key)))
-    var volumeTurn by mutableStateOf(bool("volumeTurn", false))
-    var keepScreen by mutableStateOf(bool("keepScreen", false))
-    var showTimeBattery by mutableStateOf(bool("timeBattery", true))
-    var immersive by mutableStateOf(bool("immersive", false))
-    var clickAnimation by mutableStateOf(bool("clickAnimation", true))
-    var fullNext by mutableStateOf(bool("fullNext", false))
-    var lockPortrait by mutableStateOf(bool("lockPortrait", true))
-
-    val night: Boolean get() = theme == "night"
+    /* --------------------------- Reader Theme --------------------------- */
+    var theme by mutableStateOf(
+        readerThemeKeyV30(string(KEY_THEME, DEFAULT_THEME)),
+    )
+    private var dayTheme by mutableStateOf(
+        readerThemeKeyV30(string(KEY_DAY_THEME, DEFAULT_THEME))
+            .takeIf { it != NIGHT_THEME } ?: DEFAULT_THEME,
+    )
+    val night: Boolean get() = theme == NIGHT_THEME
 
     fun toggleNight() {
         if (night) {
-            theme = dayTheme.takeIf { it != "night" } ?: "paper"
+            theme = dayTheme.takeIf { it != NIGHT_THEME } ?: DEFAULT_THEME
         } else {
-            dayTheme = theme
-            theme = "night"
+            if (theme != NIGHT_THEME) dayTheme = theme
+            theme = NIGHT_THEME
         }
     }
 
     fun selectTheme(key: String) {
-        theme = key
-        if (key != "night") dayTheme = key
+        val normalized = readerThemeKeyV30(key)
+        theme = normalized
+        if (normalized != NIGHT_THEME) dayTheme = normalized
     }
+
+    /* ---------------------------- Page Turn ---------------------------- */
+    var turnMode by mutableStateOf(
+        ReaderTurnModeV30.of(string(KEY_PAGE_MODE, ReaderTurnModeV30.COVER.key)),
+    )
+    var lastPagedMode by mutableStateOf(
+        ReaderTurnModeV30.of(string(KEY_LAST_PAGED_MODE, ReaderTurnModeV30.COVER.key))
+            .takeIf { it != ReaderTurnModeV30.SCROLL } ?: ReaderTurnModeV30.COVER,
+    )
 
     fun selectTurnMode(mode: ReaderTurnModeV30) {
         if (mode != ReaderTurnModeV30.SCROLL) lastPagedMode = mode
         turnMode = mode
     }
 
+    var clickAnimation by mutableStateOf(bool(KEY_CLICK_ANIMATION, true))
+    var fullNext by mutableStateOf(bool(KEY_FULL_NEXT, false))
+    var volumeTurn by mutableStateOf(bool(KEY_VOLUME_TURN, false))
+
+    /* ------------------------------- Screen ------------------------------- */
+    var keepScreen by mutableStateOf(bool(KEY_KEEP_SCREEN, false))
+    var showTimeBattery by mutableStateOf(bool(KEY_TIME_BATTERY, true))
+    var immersive by mutableStateOf(bool(KEY_IMMERSIVE, false))
+    var lockPortrait by mutableStateOf(bool(KEY_LOCK_PORTRAIT, true))
+
+    /* ------------------------- Reset Typography ------------------------- */
     fun resetTypography() {
         fontSize = DEFAULT_FONT
+        letterSpacing = DEFAULT_LETTER_SPACING
         lineFactor = DEFAULT_LINE
         paragraphSpacing = DEFAULT_PARAGRAPH
         sidePadding = DEFAULT_SIDE
-        letterSpacing = 0f
         indent = true
-        weight = 500
+        fontKey = DEFAULT_FONT_KEY
+        weight = DEFAULT_WEIGHT
     }
 
-    /** Comparable snapshot; a change triggers exactly one save. */
+    /* ------------------------------ Snapshot ------------------------------ */
     fun snapshot(): List<Any> = listOf(
-        fontSize, lineFactor, paragraphSpacing, sidePadding, letterSpacing, indent, fontKey, weight, theme, dayTheme,
-        turnMode, lastPagedMode, volumeTurn, keepScreen, showTimeBattery, immersive, clickAnimation, fullNext, lockPortrait,
+        theme, dayTheme,
+        fontSize, letterSpacing, lineFactor, paragraphSpacing,
+        sidePadding, indent, fontKey, weight,
+        turnMode, lastPagedMode, clickAnimation, fullNext, volumeTurn,
+        keepScreen, showTimeBattery, immersive, lockPortrait,
     )
 
+    /* -------------------------------- Save -------------------------------- */
     fun save() {
         prefs.edit()
-            .putBoolean("reader_comfort_v26", true)
-            .putFloat("font", fontSize)
-            .putFloat("line", lineFactor)
-            .putFloat("paragraph", paragraphSpacing)
-            .putFloat("sidePadding", sidePadding)
-            .putFloat("letterSpacing", letterSpacing)
-            .putBoolean("indent", indent)
-            .putString("fontKey", fontKey)
-            .putInt("fontWeight", weight)
-            .putString("theme", theme)
-            .putString("dayTheme", dayTheme)
-            .putString("pageMode", turnMode.key)
-            .putString("lastPagedMode", lastPagedMode.key)
-            .putString("preset", "custom")
-            .putBoolean("volumeTurn", volumeTurn)
-            .putBoolean("keepScreen", keepScreen)
-            .putBoolean("timeBattery", showTimeBattery)
-            .putBoolean("immersive", immersive)
-            .putBoolean("clickAnimation", clickAnimation)
-            .putBoolean("fullNext", fullNext)
-            .putBoolean("lockPortrait", lockPortrait)
+            .putBoolean(KEY_COMFORT_MIGRATED, true)
+            .putString(KEY_THEME, theme)
+            .putString(KEY_DAY_THEME, dayTheme)
+            .putFloat(KEY_FONT_SIZE, fontSize)
+            .putFloat(KEY_LETTER_SPACING, letterSpacing)
+            .putFloat(KEY_LINE_FACTOR, lineFactor)
+            .putFloat(KEY_PARAGRAPH_SPACING, paragraphSpacing)
+            .putFloat(KEY_SIDE_PADDING, sidePadding)
+            .putBoolean(KEY_INDENT, indent)
+            .putString(KEY_FONT, fontKey)
+            .putInt(KEY_FONT_WEIGHT, weight)
+            .putString(KEY_PAGE_MODE, turnMode.key)
+            .putString(KEY_LAST_PAGED_MODE, lastPagedMode.key)
+            .putBoolean(KEY_CLICK_ANIMATION, clickAnimation)
+            .putBoolean(KEY_FULL_NEXT, fullNext)
+            .putBoolean(KEY_VOLUME_TURN, volumeTurn)
+            .putBoolean(KEY_KEEP_SCREEN, keepScreen)
+            .putBoolean(KEY_TIME_BATTERY, showTimeBattery)
+            .putBoolean(KEY_IMMERSIVE, immersive)
+            .putBoolean(KEY_LOCK_PORTRAIT, lockPortrait)
+            .putString(KEY_PRESET, "custom")
             .apply()
     }
 
     companion object {
-        const val DEFAULT_FONT = 20f
-        const val DEFAULT_LINE = 1.72f
+        const val DEFAULT_FONT = 18f
+        const val DEFAULT_LINE = 1.95f
         const val DEFAULT_PARAGRAPH = 10f
         const val DEFAULT_SIDE = 22f
+        const val DEFAULT_LETTER_SPACING = 0f
+        const val DEFAULT_WEIGHT = 500
+        const val MIN_FONT = 12f
+        const val MAX_FONT = 34f
+        const val MIN_LINE = 1.20f
+        const val MAX_LINE = 2.40f
+        const val MIN_PARAGRAPH = 0f
+        const val MAX_PARAGRAPH = 28f
+        const val MIN_SIDE = 8f
+        const val MAX_SIDE = 40f
+        const val MIN_LETTER_SPACING = 0f
+        const val MAX_LETTER_SPACING = 0.20f
+        const val DEFAULT_THEME = "paper"
+        const val NIGHT_THEME = "night"
+        const val DEFAULT_FONT_KEY = "sans"
+        val SUPPORTED_FONT_KEYS = setOf("sans", "serif", "mono")
+
+        private const val KEY_COMFORT_MIGRATED = "reader_comfort_v26"
+        private const val KEY_THEME = "theme"
+        private const val KEY_DAY_THEME = "dayTheme"
+        private const val KEY_FONT_SIZE = "font"
+        private const val KEY_LETTER_SPACING = "letterSpacing"
+        private const val KEY_LINE_FACTOR = "line"
+        private const val KEY_PARAGRAPH_SPACING = "paragraph"
+        private const val KEY_SIDE_PADDING = "sidePadding"
+        private const val KEY_INDENT = "indent"
+        private const val KEY_FONT = "fontKey"
+        private const val KEY_FONT_WEIGHT = "fontWeight"
+        private const val KEY_PAGE_MODE = "pageMode"
+        private const val KEY_LAST_PAGED_MODE = "lastPagedMode"
+        private const val KEY_CLICK_ANIMATION = "clickAnimation"
+        private const val KEY_FULL_NEXT = "fullNext"
+        private const val KEY_VOLUME_TURN = "volumeTurn"
+        private const val KEY_KEEP_SCREEN = "keepScreen"
+        private const val KEY_TIME_BATTERY = "timeBattery"
+        private const val KEY_IMMERSIVE = "immersive"
+        private const val KEY_LOCK_PORTRAIT = "lockPortrait"
+        private const val KEY_PRESET = "preset"
     }
 }
