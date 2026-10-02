@@ -226,14 +226,16 @@ class ChapterEditorViewModel internal constructor(
             try {
                 beforePersist()
                 currentCoroutineContext().ensureActive()
-                val written = if (createVersion) store.checkpoint(snapshot, draft) else store.autosave(snapshot, draft)
-                currentCoroutineContext().ensureActive()
+                // Compute learning before the only database transaction. A profile write failure
+                // must roll back the draft, word count and checkpoint together, so a retry still
+                // computes its delta from the last fully persisted chapter.
                 val profiled = AuthorPreferenceEngine.observeEdit(
-                    snapshot = written.snapshot, chapterNumber = written.draft.chapterNumber,
-                    before = baseline, after = written.draft.content, source = learningSource,
+                    snapshot = snapshot, chapterNumber = draft.chapterNumber,
+                    before = baseline, after = draft.content, source = learningSource,
                     instruction = learningInstruction,
                 )
-                val persisted = if (profiled != written.snapshot) store.autosave(profiled, written.draft) else written
+                currentCoroutineContext().ensureActive()
+                val persisted = if (createVersion) store.checkpoint(profiled, draft) else store.autosave(profiled, draft)
                 val versions = if (createVersion) runCatching {
                     store.versions(persisted.draft.novelId, persisted.draft.chapterNumber)
                 }.onFailure { if (it is CancellationException) throw it }.getOrDefault(current.versions) else current.versions

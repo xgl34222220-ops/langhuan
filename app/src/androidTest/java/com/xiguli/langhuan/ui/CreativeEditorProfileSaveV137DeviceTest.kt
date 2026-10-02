@@ -76,6 +76,8 @@ class CreativeEditorProfileSaveV137DeviceTest {
             assertTrue(vm.state.value.snapshot!!.longForm.authorProfile.enabled)
             assertEquals(0, vm.state.value.snapshot!!.longForm.authorProfile.manualEditBatches)
             val before = rows(db, id)
+            val beforeSnapshot = vm.state.value.snapshot!!
+            val beforeVersions = db.chapterVersionDao().forChapter(id, 1)
             val beforeVersion = vm.state.value.draft!!.version
             listOf("INSERT", "UPDATE").forEachIndexed { index, operation ->
                 sql.execSQL("CREATE TRIGGER ${triggers[index]} BEFORE $operation ON story_state " +
@@ -92,6 +94,8 @@ class CreativeEditorProfileSaveV137DeviceTest {
             }
             assertEquals(edited, vm.state.value.draft!!.content)
             assertEquals(0, closed.get())
+            assertEquals(beforeSnapshot, vm.state.value.snapshot)
+            assertEquals(beforeVersion, vm.state.value.draft!!.version)
             val failedStory = requireNotNull(db.storyStateDao().get(id))
             val failedSnapshot = json.decodeFromString(StorySnapshot.serializer(), failedStory.snapshotJson)
             val failedDraft = json.decodeFromString(ChapterDraft.serializer(), failedStory.draftJson)
@@ -117,6 +121,16 @@ class CreativeEditorProfileSaveV137DeviceTest {
             assertEquals(edited, draft.content)
             assertEquals(240, snapshot.novel.currentWords)
             assertEquals(1, snapshot.longForm.authorProfile.manualEditBatches)
+            val signals = snapshot.longForm.authorProfile.recentSignals
+            assertEquals(1, signals.size)
+            assertEquals(edited.length - initial.length, signals.single().deltaChars)
+            val versions = db.chapterVersionDao().forChapter(id, 1)
+            assertEquals(beforeVersions.size + if (checkpoint) 1 else 0, versions.size)
+            assertEquals(beforeVersions, versions.filter { it.version <= beforeVersion })
+            if (checkpoint) {
+                assertEquals(edited, versions.first().content)
+                assertEquals(beforeVersion + 1, versions.first().version)
+            }
             assertEquals(if (checkpoint) beforeVersion + 1 else beforeVersion, draft.version)
             assertEquals(snapshot, vm.state.value.snapshot)
             assertNull(vm.state.value.error)
