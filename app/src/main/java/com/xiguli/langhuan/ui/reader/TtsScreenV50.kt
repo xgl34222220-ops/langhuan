@@ -2767,13 +2767,17 @@ private fun TtsIconButtonV50(
 }
 
 @Composable
-private fun TtsSectionTitleV50(title: String) {
+private fun TtsSectionTitleV50(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
     val t = LocalLanghuanUiTokens.current
     Text(
         text = title,
         style = MaterialTheme.typography.titleSmall,
         color = t.foreground,
         fontWeight = FontWeight.SemiBold,
+        modifier = modifier,
     )
 }
 
@@ -2853,19 +2857,30 @@ private fun TtsTimerChoiceV50(
     title: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusLg)
+    val borderColor = when {
+        destructive -> t.destructive
+        selected -> t.gold
+        else -> t.border
+    }
+    val contentColor = when {
+        destructive -> t.destructive
+        selected -> t.goldForeground
+        else -> t.foreground
+    }
     Box(
         modifier = modifier
             .background(
-                color = if (selected) t.goldContainer else t.card,
+                color = if (selected && !destructive) t.goldContainer else t.card,
                 shape = shape,
             )
             .border(
                 width = 1.dp,
-                color = if (selected) t.gold else t.border,
+                color = borderColor,
                 shape = shape,
             )
             .clickable(onClick = onClick)
@@ -2875,7 +2890,7 @@ private fun TtsTimerChoiceV50(
         Text(
             text = title,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) t.goldForeground else t.foreground,
+            color = contentColor,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
