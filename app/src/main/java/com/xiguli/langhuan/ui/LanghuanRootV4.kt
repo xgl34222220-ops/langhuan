@@ -733,7 +733,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                     if (key.isNotEmpty()) {
                                         recentSearches.remove(key)
                                         recentSearches.add(0, key)
-                                        if (recentSearches.size > 10) recentSearches.removeLast()
+                                        if (recentSearches.size > 10) recentSearches.removeAt(recentSearches.lastIndex)
                                     }
                                     onlineVm.search(q)
                                 },
