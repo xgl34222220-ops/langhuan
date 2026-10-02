@@ -612,7 +612,7 @@ private fun LuoShelfLibraryV1(
                 PaperIconButtonV44(Icons.Rounded.SwapVert, "排序：${sort.label}", { onSort(sort.next()) })
                 PaperIconButtonV44(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, if (searchOpen) "关闭搜索" else "搜索书架", { onSearchOpen(!searchOpen) }, selected = searchOpen)
                 // v3: 批量整理（多选 / 移动 / 删除 / 撤销）。
-                PaperIconButtonV44(Icons.Rounded.PlaylistAddCheck, "批量整理", onBatchOrganize)
+                PaperIconButtonV44(Icons.Rounded.FactCheck, "批量整理", onBatchOrganize)
                 PaperIconButtonV44(Icons.Rounded.Add, "添加书籍", onAdd)
             }
             AnimatedVisibility(searchOpen, enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(160)), exit = shrinkVertically(tween(180)) + fadeOut(tween(120))) {
