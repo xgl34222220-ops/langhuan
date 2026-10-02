@@ -1,40 +1,149 @@
 package com.xiguli.langhuan.ui
 
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items as listItems
+import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DriveFileMove
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.LibraryBooks
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.epub.EpubReaderEntry
+import kotlin.math.roundToInt
 
-private enum class HomeFilterV4(val label: String) { ALL("全部"), CREATED("创作"), LOCAL("本地") }
-private enum class HomeLayoutV4 { GRID, LIST }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+/* -------------------------------------------------------------------------- */
+/*                                  Constants                                 */
+/* -------------------------------------------------------------------------- */
+
+private const val HOME_SHELF_PREFS_V4 = "qingmo_shelf_v9"
+private const val HOME_CUSTOM_SHELVES_V4 = "custom_shelves"
+private const val HOME_CUSTOM_SHELF_ORDER_V4 = "custom_shelf_order_v50"
+private const val HOME_SORT_V4 = "shelf_sort"
+private const val HOME_LAYOUT_V4 = "shelf_layout_v4"
+private const val HOME_TAB_ALL_V4 = "__all__"
+private const val HOME_TAB_WRITING_V4 = "__writing__"
+private const val HOME_TAB_FOLLOWING_V4 = "__following__"
+private const val HOME_TAB_CUSTOM_PREFIX_V4 = "__custom__:"
+private const val HOME_SHELF_SEPARATOR_V4 = ""
+
+
+/* -------------------------------------------------------------------------- */
+/*                                   Model                                    */
+/* -------------------------------------------------------------------------- */
+
+private enum class HomeLayoutV4(val key: String) {
+    GRID("grid"),
+    LIST("list");
+    companion object {
+        fun fromKey(key: String?): HomeLayoutV4 =
+            entries.firstOrNull { it.key == key } ?: LIST
+    }
+}
+
+private data class HomeShelfTabV4(
+    val key: String,
+    val label: String,
+    val count: Int,
+)
+
+private data class HomeContinueReadingV4(
+    val book: ReaderBookUi,
+    val chapterNumber: Int,
+    val chapterTitle: String?,
+)
+
+
+/* -------------------------------------------------------------------------- */
+/*                                    Page                                    */
+/* -------------------------------------------------------------------------- */
+
+@Suppress("UNUSED_PARAMETER")
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LanghuanHomeV4(
     state: LibraryExperienceState,
@@ -47,517 +156,1902 @@ fun LanghuanHomeV4(
     onAiSetup: () -> Unit,
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
+    onOnline: () -> Unit = {},
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var searchVisible by rememberSaveable { mutableStateOf(false) }
-    var filter by rememberSaveable { mutableStateOf(HomeFilterV4.ALL) }
-    var layout by rememberSaveable { mutableStateOf(HomeLayoutV4.GRID) }
-    var actionBook by remember { mutableStateOf<ReaderBookUi?>(null) }
-    var deleteBook by remember { mutableStateOf<ReaderBookUi?>(null) }
-    var toolsOpen by remember { mutableStateOf(false) }
-    var tavernPicker by remember { mutableStateOf(false) }
-    var pageMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val t = LocalLanghuanUiTokens.current
 
-    val books = remember(state.stories, query, filter) {
-        val key = query.trim()
-        state.stories
-            .sortedByDescending { it.updatedAt }
-            .filter { book ->
-                when (filter) {
-                    HomeFilterV4.ALL -> true
-                    HomeFilterV4.CREATED -> book.genre != "导入作品"
-                    HomeFilterV4.LOCAL -> book.genre == "导入作品"
-                }
-            }
-            .filter { book -> key.isBlank() || book.title.contains(key, true) || book.genre.contains(key, true) }
+    val shelfPrefs = remember(context) {
+        context.getSharedPreferences(HOME_SHELF_PREFS_V4, Context.MODE_PRIVATE)
+    }
+    val progressPrefs = remember(context) {
+        context.getSharedPreferences("reader_progress_v1", Context.MODE_PRIVATE)
     }
 
-    val bg = MaterialTheme.colorScheme.background
-    val tint = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .24f)
+    var query by rememberSaveable { mutableStateOf("") }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var organizeOpen by rememberSaveable { mutableStateOf(false) }
+    var activeTab by rememberSaveable { mutableStateOf(HOME_TAB_ALL_V4) }
+    var sortKey by rememberSaveable {
+        mutableStateOf(
+            shelfPrefs.getString(HOME_SORT_V4, LuoShelfSortV33.RECENT_READ.key)
+                ?: LuoShelfSortV33.RECENT_READ.key,
+        )
+    }
+    var layoutKey by rememberSaveable {
+        mutableStateOf(
+            shelfPrefs.getString(HOME_LAYOUT_V4, HomeLayoutV4.LIST.key)
+                ?: HomeLayoutV4.LIST.key,
+        )
+    }
+    var shelfRevision by rememberSaveable { mutableIntStateOf(0) }
+    var addOpen by remember { mutableStateOf(false) }
+    var shelfManagerOpen by remember { mutableStateOf(false) }
+    var batchOrganizerOpen by remember { mutableStateOf(false) }
+    var actionBook by remember { mutableStateOf<ReaderBookUi?>(null) }
+    var deleteBook by remember { mutableStateOf<ReaderBookUi?>(null) }
+    var pendingBatchDeleteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(tint, bg, bg))),
-    ) {
-        if (layout == HomeLayoutV4.GRID) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 0.dp, bottom = 116.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+    val customShelves = remember(shelfRevision) { loadOrderedShelvesV4(shelfPrefs) }
+    val assignments = remember(shelfRevision) { LuoShelfAssignmentsV33.all(shelfPrefs) }
+    val sort = LuoShelfSortV33.of(sortKey)
+    val layout = HomeLayoutV4.fromKey(layoutKey)
+
+    val availableBooks = state.stories.filterNot { it.id in pendingBatchDeleteIds }
+    val writingBooks = availableBooks.filter { isWritingBookV4(it) }
+    val followingBooks = availableBooks.filter { isFollowingBookV4(it) }
+
+    val tabs = buildList {
+        add(HomeShelfTabV4(HOME_TAB_ALL_V4, "全部", availableBooks.size))
+        add(HomeShelfTabV4(HOME_TAB_WRITING_V4, "在写", writingBooks.size))
+        add(HomeShelfTabV4(HOME_TAB_FOLLOWING_V4, "追更", followingBooks.size))
+        customShelves.forEach { shelf ->
+            add(
+                HomeShelfTabV4(
+                    key = customShelfKeyV4(shelf),
+                    label = shelf,
+                    count = assignments.count {
+                        it.value == shelf && availableBooks.any { book -> book.id == it.key }
+                    },
+                ),
+            )
+        }
+    }
+
+    LaunchedEffect(activeTab, customShelves) {
+        val custom = customShelfNameV4(activeTab)
+        if (custom != null && custom !in customShelves) activeTab = HOME_TAB_ALL_V4
+    }
+
+    val tabFiltered = when {
+        activeTab == HOME_TAB_ALL_V4 -> availableBooks
+        activeTab == HOME_TAB_WRITING_V4 -> writingBooks
+        activeTab == HOME_TAB_FOLLOWING_V4 -> followingBooks
+        else -> {
+            val shelf = customShelfNameV4(activeTab)
+            if (shelf == null) availableBooks
+            else availableBooks.filter { assignments[it.id] == shelf }
+        }
+    }
+
+    val searched = remember(tabFiltered, query) {
+        val keyword = query.trim()
+        if (keyword.isBlank()) tabFiltered
+        else tabFiltered.filter {
+            it.title.contains(keyword, ignoreCase = true) ||
+                it.genre.contains(keyword, ignoreCase = true)
+        }
+    }
+
+    val books = remember(searched, sort) {
+        luoSortBooksV33(
+            books = searched,
+            sort = sort,
+            lastRead = { book -> progressPrefs.getLong("last_${book.id}", 0L) },
+        )
+    }
+
+    val continueReading = homeContinueReadingV4(
+        context = context,
+        state = state,
+        books = availableBooks,
+        progressPrefs = progressPrefs,
+    )
+
+    BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
+    BackHandler(enabled = organizeOpen && !searchOpen) { organizeOpen = false }
+
+    Box(modifier = Modifier.fillMaxSize().background(t.background)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = t.space4, end = t.space4, top = t.space3),
             ) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    HomeHeaderV4(
-                        totalBooks = state.stories.size,
-                        query = query,
-                        searchVisible = searchVisible,
-                        filter = filter,
-                        pageMenu = pageMenu,
-                        layout = layout,
-                        onToggleSearch = { searchVisible = !searchVisible },
-                        onQueryChange = { query = it },
-                        onImport = onImportLocal,
-                        onOpenTools = { toolsOpen = true },
-                        onOpenMenu = { pageMenu = true },
-                        onDismissMenu = { pageMenu = false },
-                        onFilter = { filter = it },
-                        onLayout = { layout = it },
+                HomeShelfHeaderV4(
+                    searchOpen = searchOpen,
+                    organizeOpen = organizeOpen,
+                    onSearch = {
+                        searchOpen = !searchOpen
+                        if (!searchOpen) query = ""
+                    },
+                    onOrganize = { organizeOpen = !organizeOpen },
+                    onAdd = { addOpen = true },
+                    onOnline = onOnline,
+                )
+
+                AnimatedVisibility(
+                    visible = searchOpen,
+                    enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { -it / 3 },
+                    exit = fadeOut(tween(120)) + slideOutVertically(tween(140)) { -it / 3 },
+                ) {
+                    HomeShelfSearchV4(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.padding(top = t.space3),
                     )
                 }
-                if (books.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        HomeEmptyV4(query, onImportLocal, onCreate)
-                    }
-                } else {
-                    items(books, key = { it.id }) { book ->
-                        HomeBookGridItemV4(
-                            book = book,
-                            onOpen = { onOpenBook(book.id) },
-                            onMore = { actionBook = book },
-                        )
-                    }
+
+                Spacer(Modifier.height(t.space3))
+
+                HomeShelfTabsV4(
+                    tabs = tabs,
+                    activeTab = activeTab,
+                    onTab = { activeTab = it },
+                    onNewShelf = { shelfManagerOpen = true },
+                )
+
+                AnimatedVisibility(
+                    visible = organizeOpen,
+                    enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { -it / 4 },
+                    exit = fadeOut(tween(120)) + slideOutVertically(tween(140)) { -it / 4 },
+                ) {
+                    HomeShelfOrganizerPanelV4(
+                        sort = sort,
+                        layout = layout,
+                        onSort = {
+                            sortKey = it.key
+                            shelfPrefs.edit().putString(HOME_SORT_V4, it.key).apply()
+                        },
+                        onLayout = {
+                            layoutKey = it.key
+                            shelfPrefs.edit().putString(HOME_LAYOUT_V4, it.key).apply()
+                        },
+                        onBatch = { organizeOpen = false; batchOrganizerOpen = true },
+                        onShelfManager = { organizeOpen = false; shelfManagerOpen = true },
+                        modifier = Modifier.padding(top = t.space3),
+                    )
                 }
+
+                Spacer(Modifier.height(t.space3))
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 116.dp),
-            ) {
-                item {
-                    HomeHeaderV4(
-                        totalBooks = state.stories.size,
-                        query = query,
-                        searchVisible = searchVisible,
-                        filter = filter,
-                        pageMenu = pageMenu,
-                        layout = layout,
-                        onToggleSearch = { searchVisible = !searchVisible },
-                        onQueryChange = { query = it },
-                        onImport = onImportLocal,
-                        onOpenTools = { toolsOpen = true },
-                        onOpenMenu = { pageMenu = true },
-                        onDismissMenu = { pageMenu = false },
-                        onFilter = { filter = it },
-                        onLayout = { layout = it },
-                    )
+
+            when (layout) {
+                HomeLayoutV4.LIST -> {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(
+                            start = t.space4, end = t.space4, bottom = t.space6,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(t.space2),
+                    ) {
+                        if (continueReading != null) {
+                            item(key = "continue-reading") {
+                                HomeContinueReadingV4(
+                                    item = continueReading,
+                                    onOpen = { onOpenBook(continueReading.book.id) },
+                                )
+                                Spacer(Modifier.height(t.space2))
+                            }
+                        }
+                        if (books.isEmpty()) {
+                            item(key = "empty") {
+                                HomeShelfEmptyV4(
+                                    query = query,
+                                    activeTab = activeTab,
+                                    onAdd = { addOpen = true },
+                                )
+                            }
+                        } else {
+                            lazyItems(items = books, key = { it.id }) { book ->
+                                HomeBookListItemV4(
+                                    context = context,
+                                    state = state,
+                                    book = book,
+                                    onOpen = { onOpenBook(book.id) },
+                                    onMore = { actionBook = book },
+                                )
+                            }
+                        }
+                    }
                 }
-                if (books.isEmpty()) item { HomeEmptyV4(query, onImportLocal, onCreate) }
-                listItems(books, key = { it.id }) { book ->
-                    HomeBookListItemV4(book, onOpen = { onOpenBook(book.id) }, onMore = { actionBook = book })
+                HomeLayoutV4.GRID -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(
+                            start = t.space4, end = t.space4, bottom = t.space6,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(t.space3),
+                        verticalArrangement = Arrangement.spacedBy(t.space4),
+                    ) {
+                        if (continueReading != null) {
+                            item(
+                                key = "continue-reading",
+                                span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) },
+                            ) {
+                                Column {
+                                    HomeContinueReadingV4(
+                                        item = continueReading,
+                                        onOpen = { onOpenBook(continueReading.book.id) },
+                                    )
+                                    Spacer(Modifier.height(t.space2))
+                                }
+                            }
+                        }
+                        if (books.isEmpty()) {
+                            item(
+                                key = "empty",
+                                span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) },
+                            ) {
+                                HomeShelfEmptyV4(
+                                    query = query,
+                                    activeTab = activeTab,
+                                    onAdd = { addOpen = true },
+                                )
+                            }
+                        } else {
+                            items(items = books, key = { it.id }) { book ->
+                                HomeBookGridItemV4(
+                                    context = context,
+                                    state = state,
+                                    book = book,
+                                    onOpen = { onOpenBook(book.id) },
+                                    onMore = { actionBook = book },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
 
         if (importState.busy) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = .18f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(26.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = .94f))
-                        .padding(horizontal = 24.dp, vertical = 20.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                        Column(Modifier.padding(start = 14.dp)) {
-                            Text("正在导入", fontWeight = FontWeight.SemiBold)
-                            Text(importState.currentFileName.ifBlank { "正在读取小说…" }, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            }
+            HomeImportOverlayV4(currentFileName = importState.currentFileName)
         }
+    }
 
-        HomeBottomNavV4(
-            modifier = Modifier.align(Alignment.BottomCenter),
-            onCreate = onCreate,
-            onTavern = { tavernPicker = true },
+    LuoShelfBatchOrganizerV50(
+        books = availableBooks,
+        shelves = customShelves,
+        shelfPrefs = shelfPrefs,
+        visible = batchOrganizerOpen,
+        onDismiss = { batchOrganizerOpen = false },
+        onDeleteBooks = { ids ->
+            ids.forEach { onDeleteBook(it) }
+            shelfRevision++
+        },
+        onPendingDeleteChanged = { pendingBatchDeleteIds = it },
+        onMoveCompleted = { _, _ -> shelfRevision++ },
+    )
+
+    if (addOpen) {
+        HomeAddBookDialogV4(
+            onDismiss = { addOpen = false },
+            onImport = { addOpen = false; onImportLocal() },
+            onCreate = { addOpen = false; onCreate() },
+        )
+    }
+
+    if (shelfManagerOpen) {
+        HomeShelfManagerV4(
+            shelves = customShelves,
+            prefs = shelfPrefs,
+            onDismiss = { shelfManagerOpen = false },
+            onChanged = { shelfRevision++ },
         )
     }
 
     actionBook?.let { book ->
-        ModalBottomSheet(onDismissRequest = { actionBook = null }, containerColor = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CoverPreviewV3(book.coverPath, book.title, Modifier.width(54.dp).height(78.dp).clip(RoundedCornerShape(10.dp)))
-                    Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                        Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                        Text(
-                            if (book.genre == "导入作品") "本地书籍" else book.genre,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                HomeSheetRowV4(Icons.Rounded.MenuBook, "打开 / 继续阅读") {
-                    actionBook = null
-                    onOpenBook(book.id)
-                }
-                HomeSheetRowV4(Icons.Rounded.AutoAwesome, "进入酒馆") {
-                    actionBook = null
-                    onOpenTavern(book.id)
-                }
-                HomeSheetRowV4(Icons.Rounded.DeleteOutline, "删除小说", MaterialTheme.colorScheme.error) {
-                    actionBook = null
-                    deleteBook = book
-                }
-                Spacer(Modifier.height(14.dp))
-            }
-        }
-    }
-
-    if (toolsOpen) {
-        ModalBottomSheet(onDismissRequest = { toolsOpen = false }, containerColor = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 4.dp)) {
-                Text("琅嬛工具", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("把设置留在设置里，不再挤占书架。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(12.dp))
-                HomeSheetRowV4(Icons.Rounded.Tune, "AI 服务与模型") { toolsOpen = false; onAiSetup() }
-                HomeSheetRowV4(Icons.Rounded.AutoStories, "写作 Skills") { toolsOpen = false; onSkills() }
-                HomeSheetRowV4(Icons.Rounded.TaskAlt, "运行中心") { toolsOpen = false; onRunCenter() }
-                Spacer(Modifier.height(14.dp))
-            }
-        }
-    }
-
-    if (tavernPicker) {
-        ModalBottomSheet(onDismissRequest = { tavernPicker = false }, containerColor = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 18.dp)) {
-                Text("进入酒馆", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("选择一个世界，直接开始互动。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(10.dp))
-                if (state.stories.isEmpty()) {
-                    Text("还没有小说。先导入一本或创作一本。", modifier = Modifier.padding(vertical = 18.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    state.stories.sortedByDescending { it.updatedAt }.forEach { book ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(18.dp))
-                                .combinedClickable(
-                                    onClick = { tavernPicker = false; onOpenTavern(book.id) },
-                                    onLongClick = { actionBook = book },
-                                )
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CoverPreviewV3(book.coverPath, book.title, Modifier.width(48.dp).height(68.dp).clip(RoundedCornerShape(9.dp)))
-                            Column(Modifier.padding(start = 13.dp).weight(1f)) {
-                                Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    if (book.genre == "导入作品") "本地世界 · 第 ${book.currentChapter} 章" else "${book.genre} · 第 ${book.currentChapter} 章",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-        }
+        HomeBookActionsV4(
+            context = context,
+            book = book,
+            shelf = assignments[book.id],
+            shelves = customShelves,
+            onDismiss = { actionBook = null },
+            onOpen = { actionBook = null; onOpenBook(book.id) },
+            onTavern = { actionBook = null; onOpenTavern(book.id) },
+            onMove = { shelf ->
+                LuoShelfAssignmentsV33.assign(prefs = shelfPrefs, bookId = book.id, shelf = shelf)
+                shelfRevision++
+                actionBook = null
+            },
+            onDelete = { actionBook = null; deleteBook = book },
+        )
     }
 
     deleteBook?.let { book ->
-        AlertDialog(
-            onDismissRequest = { deleteBook = null },
-            shape = RoundedCornerShape(28.dp),
-            title = { Text("删除《${book.title}》？") },
-            text = { Text("会同时删除正文、章节版本、长期记忆和琅嬛保存的本地封面。这个操作不能撤销。") },
-            confirmButton = {
-                Button(
-                    onClick = { deleteBook = null; onDeleteBook(book.id) },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("删除") }
+        HomeDeleteBookDialogV4(
+            book = book,
+            onDismiss = { deleteBook = null },
+            onConfirm = {
+                deleteBook = null
+                LuoShelfAssignmentsV33.forget(prefs = shelfPrefs, bookId = book.id)
+                shelfRevision++
+                onDeleteBook(book.id)
             },
-            dismissButton = { TextButton(onClick = { deleteBook = null }) { Text("取消") } },
         )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/* -------------------------------------------------------------------------- */
+/*                                  Header                                    */
+/* -------------------------------------------------------------------------- */
+
 @Composable
-private fun HomeHeaderV4(
-    totalBooks: Int,
-    query: String,
-    searchVisible: Boolean,
-    filter: HomeFilterV4,
-    pageMenu: Boolean,
-    layout: HomeLayoutV4,
-    onToggleSearch: () -> Unit,
-    onQueryChange: (String) -> Unit,
-    onImport: () -> Unit,
-    onOpenTools: () -> Unit,
-    onOpenMenu: () -> Unit,
-    onDismissMenu: () -> Unit,
-    onFilter: (HomeFilterV4) -> Unit,
-    onLayout: (HomeLayoutV4) -> Unit,
+private fun HomeShelfHeaderV4(
+    searchOpen: Boolean,
+    organizeOpen: Boolean,
+    onSearch: () -> Unit,
+    onOrganize: () -> Unit,
+    onAdd: () -> Unit,
+    onOnline: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 18.dp, bottom = 18.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("琅嬛", fontSize = 34.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    if (totalBooks == 0) "藏书 · 创作 · 故事" else "$totalBooks 本藏书",
-                    modifier = Modifier.padding(top = 2.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            HomeRoundButtonV4(if (searchVisible) Icons.Rounded.Close else Icons.Rounded.Search, "搜索", onToggleSearch)
-            Spacer(Modifier.width(7.dp))
-            HomeRoundButtonV4(Icons.Rounded.Add, "导入", onImport)
-            Spacer(Modifier.width(7.dp))
-            Box {
-                HomeRoundButtonV4(Icons.Rounded.MoreHoriz, "更多", onOpenMenu)
-                DropdownMenu(expanded = pageMenu, onDismissRequest = onDismissMenu) {
-                    DropdownMenuItem(
-                        text = { Text(if (layout == HomeLayoutV4.GRID) "切换为列表" else "切换为网格") },
-                        leadingIcon = { Icon(if (layout == HomeLayoutV4.GRID) Icons.Rounded.ViewAgenda else Icons.Rounded.GridView, null) },
-                        onClick = { onDismissMenu(); onLayout(if (layout == HomeLayoutV4.GRID) HomeLayoutV4.LIST else HomeLayoutV4.GRID) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("设置与工具") },
-                        leadingIcon = { Icon(Icons.Rounded.Tune, null) },
-                        onClick = { onDismissMenu(); onOpenTools() },
-                    )
-                }
-            }
-        }
-
-        if (searchVisible) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .72f))
-                    .border(.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f), RoundedCornerShape(22.dp))
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Search, null, Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    BasicTextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        modifier = Modifier.weight(1f).padding(start = 9.dp),
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        decorationBox = { inner ->
-                            if (query.isBlank()) Text("搜索书名或类型", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            inner()
-                        },
-                    )
-                }
-            }
-        }
-
-        Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            HomeFilterV4.entries.forEach { item ->
-                val selected = filter == item
-                Column(
-                    Modifier.combinedClickable(onClick = { onFilter(item) }, onLongClick = { onFilter(item) }),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        item.label,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Box(
-                        Modifier
-                            .padding(top = 5.dp)
-                            .width(if (selected) 18.dp else 0.dp)
-                            .height(2.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                    )
-                }
-            }
-        }
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "书架",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.headlineLarge,
+            color = t.foreground,
+            fontWeight = FontWeight.SemiBold,
+        )
+        HomeToolbarButtonV4(
+            icon = if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+            contentDescription = if (searchOpen) "关闭搜索" else "搜索书架",
+            selected = searchOpen,
+            onClick = onSearch,
+        )
+        Spacer(Modifier.width(t.space2))
+        HomeToolbarButtonV4(
+            icon = Icons.Rounded.Tune,
+            contentDescription = "整理书架",
+            selected = organizeOpen,
+            onClick = onOrganize,
+        )
+        Spacer(Modifier.width(t.space2))
+        HomeToolbarButtonV4(
+            icon = Icons.Rounded.Explore,
+            contentDescription = "在线书城",
+            onClick = onOnline,
+        )
+        Spacer(Modifier.width(t.space2))
+        HomeToolbarButtonV4(
+            icon = Icons.Rounded.Add,
+            contentDescription = "添加书籍",
+            onClick = onAdd,
+        )
     }
 }
 
 @Composable
-private fun HomeRoundButtonV4(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit) {
+private fun HomeToolbarButtonV4(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier
-            .size(40.dp)
-            .shadow(5.dp, CircleShape, clip = false)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = .82f))
-            .border(.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f), CircleShape)
-            .combinedClickable(onClick = onClick, onLongClick = onClick),
+        modifier = Modifier
+            .size(42.dp)
+            .background(
+                color = if (selected) t.accent else t.card,
+                shape = CircleShape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = CircleShape,
+            )
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, desc, Modifier.size(20.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(20.dp),
+            tint = if (selected) t.accentForeground else t.secondaryForeground,
+        )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+
+/* -------------------------------------------------------------------------- */
+/*                                  Search                                    */
+/* -------------------------------------------------------------------------- */
+
 @Composable
-private fun HomeBookGridItemV4(book: ReaderBookUi, onOpen: () -> Unit, onMore: () -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
+private fun HomeShelfSearchV4(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .background(color = t.input, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .padding(horizontal = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Search,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = t.mutedForeground,
+        )
+        Spacer(Modifier.width(t.space2))
         Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(.68f)
-                .shadow(9.dp, RoundedCornerShape(12.dp), clip = false)
-                .clip(RoundedCornerShape(12.dp))
-                .combinedClickable(onClick = onOpen, onLongClick = onMore),
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            CoverPreviewV3(book.coverPath, book.title, Modifier.fillMaxSize())
+            if (value.isBlank()) {
+                Text(
+                    text = "搜索书名或分类",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = t.mutedForeground,
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = t.foreground),
+                cursorBrush = SolidColor(t.primary),
+            )
+        }
+        if (value.isNotEmpty()) {
             Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(7.dp)
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = .34f))
-                    .combinedClickable(onClick = onMore, onLongClick = onMore),
+                modifier = Modifier.size(32.dp).clickable { onValueChange("") },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.MoreHoriz, "书籍菜单", tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "清空搜索",
+                    modifier = Modifier.size(18.dp),
+                    tint = t.mutedForeground,
+                )
             }
         }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                                   Tabs                                     */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun HomeShelfTabsV4(
+    tabs: List<HomeShelfTabV4>,
+    activeTab: String,
+    onTab: (String) -> Unit,
+    onNewShelf: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(t.space2),
+    ) {
+        tabs.forEach { tab ->
+            HomeShelfTabChipV4(
+                label = tab.label,
+                count = tab.count,
+                selected = activeTab == tab.key,
+                onClick = { onTab(tab.key) },
+            )
+        }
+        HomeNewShelfChipV4(onClick = onNewShelf)
+    }
+}
+
+@Composable
+private fun HomeShelfTabChipV4(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = Modifier
+            .height(38.dp)
+            .background(
+                color = if (selected) t.accent else t.card,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
-            book.title,
-            modifier = Modifier.padding(top = 8.dp),
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) t.accentForeground else t.secondaryForeground,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
+        Spacer(Modifier.width(t.space1))
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) t.primary else t.mutedForeground,
+        )
+    }
+}
+
+@Composable
+private fun HomeNewShelfChipV4(onClick: () -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = Modifier
+            .height(38.dp)
+            .background(color = t.card, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Add,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = t.primary,
+        )
+        Spacer(Modifier.width(t.space1))
+        Text(
+            text = "新建书架",
+            style = MaterialTheme.typography.labelLarge,
+            color = t.primary,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                            Organizer panel                                 */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun HomeShelfOrganizerPanelV4(
+    sort: LuoShelfSortV33,
+    layout: HomeLayoutV4,
+    onSort: (LuoShelfSortV33) -> Unit,
+    onLayout: (HomeLayoutV4) -> Unit,
+    onBatch: () -> Unit,
+    onShelfManager: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusLg)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(color = t.card, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .padding(t.space4),
+    ) {
+        HomeOrganizerSectionTitleV4(text = "排序")
+        Spacer(Modifier.height(t.space2))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(t.space2),
+        ) {
+            LuoShelfSortV33.entries.forEach { item ->
+                HomeOrganizerChoiceV4(
+                    text = item.label,
+                    selected = sort == item,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onSort(item) },
+                )
+            }
+        }
+        Spacer(Modifier.height(t.space4))
+        HomeOrganizerSectionTitleV4(text = "显示")
+        Spacer(Modifier.height(t.space2))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(t.space2),
+        ) {
+            HomeOrganizerChoiceV4(
+                text = "网格",
+                icon = Icons.Rounded.GridView,
+                selected = layout == HomeLayoutV4.GRID,
+                modifier = Modifier.weight(1f),
+                onClick = { onLayout(HomeLayoutV4.GRID) },
+            )
+            HomeOrganizerChoiceV4(
+                text = "列表",
+                icon = Icons.Rounded.ViewAgenda,
+                selected = layout == HomeLayoutV4.LIST,
+                modifier = Modifier.weight(1f),
+                onClick = { onLayout(HomeLayoutV4.LIST) },
+            )
+        }
+        Spacer(Modifier.height(t.space4))
+        HomeOrganizerActionV4(
+            icon = Icons.Rounded.SelectAll,
+            title = "批量整理",
+            subtitle = "多选书籍后一起移动或删除",
+            onClick = onBatch,
+        )
+        Spacer(Modifier.height(t.space2))
+        HomeOrganizerActionV4(
+            icon = Icons.Rounded.FolderOpen,
+            title = "书架管理",
+            subtitle = "新建、重命名和调整书架顺序",
+            onClick = onShelfManager,
+        )
+    }
+}
+
+@Composable
+private fun HomeOrganizerSectionTitleV4(text: String) {
+    val t = LocalLanghuanUiTokens.current
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = t.mutedForeground,
+    )
+}
+
+@Composable
+private fun HomeOrganizerChoiceV4(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = modifier
+            .height(42.dp)
+            .background(
+                color = if (selected) t.accent else t.input,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space2),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = if (selected) t.accentForeground else t.secondaryForeground,
+            )
+            Spacer(Modifier.width(t.space1))
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) t.accentForeground else t.secondaryForeground,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun HomeOrganizerActionV4(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = t.input, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(onClick = onClick)
+            .padding(t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .background(color = t.accent, shape = RoundedCornerShape(t.radiusMd))
+                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                tint = t.accentForeground,
+            )
+        }
+        Spacer(Modifier.width(t.space3))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = t.foreground,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.height(t.space1))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                            Continue Reading                                */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun HomeContinueReadingV4(
+    item: HomeContinueReadingV4,
+    onOpen: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusLg)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = t.goldContainer, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(onClick = onOpen)
+            .padding(t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(color = t.gold, shape = RoundedCornerShape(t.radiusMd)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Bookmark,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                tint = t.card,
+            )
+        }
+        Spacer(Modifier.width(t.space3))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.book.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(t.space1))
+            Text(
+                text = buildString {
+                    append("第 ${item.chapterNumber} 章")
+                    val title = item.chapterTitle?.trim()?.takeIf { it.isNotBlank() }
+                    if (title != null) { append(" · "); append(title) }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = t.goldForeground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(t.space3))
+        Text(
+            text = "继续阅读",
+            style = MaterialTheme.typography.labelLarge,
+            color = t.goldForeground,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              List Item                                     */
+/* -------------------------------------------------------------------------- */
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HomeBookListItemV4(
+    context: Context,
+    state: LibraryExperienceState,
+    book: ReaderBookUi,
+    onOpen: () -> Unit,
+    onMore: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val isEpub = remember(book.id, book.updatedAt) {
+        EpubReaderEntry.isEpub(context, book.id)
+    }
+    val isOnline = isFollowingBookV4(book)
+    val shape = RoundedCornerShape(t.radiusLg)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = t.card, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .combinedClickable(onClick = onOpen, onLongClick = onMore)
+            .padding(t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HomeBookCoverV4(
+            book = book,
+            modifier = Modifier.width(58.dp).height(82.dp),
+        )
+        Spacer(Modifier.width(t.space3))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = book.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(t.space1))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = homeGenreLabelV4(book),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.secondaryForeground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val badge = when {
+                    isOnline -> "在线"
+                    isEpub -> "EPUB"
+                    else -> null
+                }
+                if (badge != null) {
+                    Spacer(Modifier.width(t.space2))
+                    HomeSourceBadgeV4(text = badge, gold = isEpub && !isOnline)
+                }
+            }
+            Spacer(Modifier.height(t.space2))
+            Text(
+                text = homeBookProgressLabelV4(context = context, state = state, book = book),
+                style = MaterialTheme.typography.labelMedium,
+                color = t.mutedForeground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(t.space2))
+        Box(
+            modifier = Modifier.size(38.dp).clickable(onClick = onMore),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.MoreHoriz,
+                contentDescription = "书籍菜单",
+                modifier = Modifier.size(20.dp),
+                tint = t.mutedForeground,
+            )
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                               Grid Item                                    */
+/* -------------------------------------------------------------------------- */
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HomeBookGridItemV4(
+    context: Context,
+    state: LibraryExperienceState,
+    book: ReaderBookUi,
+    onOpen: () -> Unit,
+    onMore: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val isEpub = remember(book.id, book.updatedAt) {
+        EpubReaderEntry.isEpub(context, book.id)
+    }
+    val online = isFollowingBookV4(book)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.70f)
+                .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
+                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
+                .combinedClickable(onClick = onOpen, onLongClick = onMore),
+        ) {
+            CoverPreviewV3(
+                coverPath = book.coverPath,
+                title = book.title,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(t.space2)
+                    .size(30.dp)
+                    .background(color = t.card.copy(alpha = 0.92f), shape = CircleShape)
+                    .border(width = 1.dp, color = t.border, shape = CircleShape)
+                    .clickable(onClick = onMore),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreHoriz,
+                    contentDescription = "书籍菜单",
+                    modifier = Modifier.size(17.dp),
+                    tint = t.secondaryForeground,
+                )
+            }
+        }
+        Spacer(Modifier.height(t.space2))
+        Text(
+            text = book.title,
             style = MaterialTheme.typography.titleSmall,
+            color = t.foreground,
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.height(t.space1))
         Text(
-            "第 ${book.currentChapter} 章",
-            modifier = Modifier.padding(top = 2.dp),
+            text = homeGenreLabelV4(book),
+            style = MaterialTheme.typography.bodySmall,
+            color = t.secondaryForeground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        val badge = when {
+            online -> "在线"
+            isEpub -> "EPUB"
+            else -> null
+        }
+        if (badge != null) {
+            Spacer(Modifier.height(t.space1))
+            HomeSourceBadgeV4(text = badge, gold = isEpub && !online)
+        }
+        Spacer(Modifier.height(t.space1))
+        Text(
+            text = homeBookProgressLabelV4(context = context, state = state, book = book),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = t.mutedForeground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+
+/* -------------------------------------------------------------------------- */
+/*                                 Cover                                      */
+/* -------------------------------------------------------------------------- */
+
 @Composable
-private fun HomeBookListItemV4(book: ReaderBookUi, onOpen: () -> Unit, onMore: () -> Unit) {
+private fun HomeBookCoverV4(
+    book: ReaderBookUi,
+    modifier: Modifier = Modifier,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusSm)
+    Box(
+        modifier = modifier
+            .background(color = t.input, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape),
+    ) {
+        CoverPreviewV3(
+            coverPath = book.coverPath,
+            title = book.title,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Source Badge                                  */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun HomeSourceBadgeV4(
+    text: String,
+    gold: Boolean,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusSm)
     Row(
-        Modifier
-            .fillMaxWidth()
-            .combinedClickable(onClick = onOpen, onLongClick = onMore)
-            .padding(vertical = 10.dp),
+        modifier = Modifier
+            .background(
+                color = if (gold) t.goldContainer else t.accent,
+                shape = shape,
+            )
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .padding(horizontal = t.space2, vertical = t.space1),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CoverPreviewV3(book.coverPath, book.title, Modifier.width(58.dp).height(84.dp).clip(RoundedCornerShape(10.dp)))
-        Column(Modifier.padding(start = 14.dp).weight(1f)) {
-            Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                if (book.genre == "导入作品") "本地书籍" else book.genre,
-                modifier = Modifier.padding(top = 4.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Icon(
+            imageVector = if (gold) Icons.Rounded.MenuBook else Icons.Rounded.Wifi,
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = if (gold) t.goldForeground else t.accentForeground,
+        )
+        Spacer(Modifier.width(t.space1))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (gold) t.goldForeground else t.accentForeground,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                                  Empty                                     */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun HomeShelfEmptyV4(
+    query: String,
+    activeTab: String,
+    onAdd: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = t.space6, horizontal = t.space5),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val shape = RoundedCornerShape(t.radiusLg)
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(color = t.input, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (query.isBlank()) Icons.Rounded.LibraryBooks else Icons.Rounded.SearchOff,
+                contentDescription = null,
+                modifier = Modifier.size(26.dp),
+                tint = t.mutedForeground,
             )
-            Text("读到第 ${book.currentChapter} 章", modifier = Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        HomeRoundButtonV4(Icons.Rounded.MoreHoriz, "书籍菜单", onMore)
+        Spacer(Modifier.height(t.space4))
+        Text(
+            text = when {
+                query.isNotBlank() -> "没有找到这本书"
+                activeTab == HOME_TAB_WRITING_V4 -> "还没有在写的作品"
+                activeTab == HOME_TAB_FOLLOWING_V4 -> "还没有追更中的书"
+                else -> "这个书架还是空的"
+            },
+            style = MaterialTheme.typography.titleMedium,
+            color = t.foreground,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(t.space2))
+        Text(
+            text = if (query.isNotBlank()) "换个书名或分类关键词试试。"
+            else "添加一本书，或者把已有作品移动到这里。",
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+            textAlign = TextAlign.Center,
+        )
+        if (query.isBlank()) {
+            Spacer(Modifier.height(t.space4))
+            HomePrimaryButtonV4(
+                text = "添加书籍",
+                icon = Icons.Rounded.Add,
+                onClick = onAdd,
+            )
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Import Overlay                                */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun HomeImportOverlayV4(currentFileName: String) {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.26f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Row(
+            modifier = Modifier
+                .padding(t.space5)
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                strokeWidth = 2.dp,
+                color = t.primary,
+            )
+            Spacer(Modifier.width(t.space3))
+            Column {
+                Text(
+                    text = "正在导入",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = t.foreground,
+                )
+                Spacer(Modifier.height(t.space1))
+                Text(
+                    text = currentFileName.ifBlank { "正在读取小说…" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.secondaryForeground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Add Dialog                                    */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun HomeAddBookDialogV4(
+    onDismiss: () -> Unit,
+    onImport: () -> Unit,
+    onCreate: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Text(
+                text = "添加书籍",
+                style = MaterialTheme.typography.titleLarge,
+                color = t.foreground,
+            )
+            Spacer(Modifier.height(t.space2))
+            Text(
+                text = "导入已有小说，或者开始创作一本新的。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = t.secondaryForeground,
+            )
+            Spacer(Modifier.height(t.space4))
+            HomeDialogActionV4(
+                icon = Icons.Rounded.FolderOpen,
+                title = "导入本地书籍",
+                subtitle = "TXT · Markdown · EPUB",
+                onClick = onImport,
+            )
+            Spacer(Modifier.height(t.space2))
+            HomeDialogActionV4(
+                icon = Icons.Rounded.AutoAwesome,
+                title = "开始创作",
+                subtitle = "和 AI 一起构思一本新小说",
+                gold = true,
+                onClick = onCreate,
+            )
+            Spacer(Modifier.height(t.space3))
+            HomeSecondaryButtonV4(text = "取消", onClick = onDismiss)
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                             Book Actions                                   */
+/* -------------------------------------------------------------------------- */
+
+// 注意：ChatGPT 原稿中 HomeBookActionsV4 的 onMove 参数重复声明了两次，
+// 适配阶段需删除其中一个，此处存档保留原样以便核对。
+@Composable
+private fun HomeBookActionsV4(
+    context: Context,
+    book: ReaderBookUi,
+    shelf: String?,
+    shelves: List<String>,
+    onDismiss: () -> Unit,
+    onOpen: () -> Unit,
+    onTavern: () -> Unit,
+    onMove: (String?) -> Unit,
+    onDelete: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    var moveOpen by remember { mutableStateOf(false) }
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                HomeBookCoverV4(
+                    book = book,
+                    modifier = Modifier.width(50.dp).height(70.dp),
+                )
+                Spacer(Modifier.width(t.space3))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = book.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = t.foreground,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(t.space1))
+                    Text(
+                        text = shelf?.takeIf { it.isNotBlank() } ?: "全部",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
+            }
+            Spacer(Modifier.height(t.space4))
+            HomeDialogActionV4(
+                icon = Icons.Rounded.MenuBook,
+                title = "打开 / 继续阅读",
+                onClick = onOpen,
+            )
+            Spacer(Modifier.height(t.space2))
+            HomeDialogActionV4(
+                icon = Icons.Rounded.AutoAwesome,
+                title = "进入酒馆",
+                onClick = onTavern,
+            )
+            Spacer(Modifier.height(t.space2))
+            HomeDialogActionV4(
+                icon = Icons.Rounded.DriveFileMove,
+                title = "移动书架",
+                subtitle = shelf ?: "当前未分组",
+                onClick = { moveOpen = true },
+            )
+            Spacer(Modifier.height(t.space2))
+            HomeDialogActionV4(
+                icon = Icons.Rounded.DeleteOutline,
+                title = "删除小说",
+                destructive = true,
+                onClick = onDelete,
+            )
+        }
+    }
+    if (moveOpen) {
+        HomeMoveBookDialogV4(
+            book = book,
+            shelves = shelves,
+            current = shelf,
+            onDismiss = { moveOpen = false },
+            onMove = { moveOpen = false; onMove(it) },
+        )
     }
 }
 
 @Composable
-private fun HomeEmptyV4(query: String, onImport: () -> Unit, onCreate: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(top = 72.dp, bottom = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+private fun HomeDialogActionV4(
+    icon: ImageVector,
+    title: String,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+    destructive: Boolean = false,
+    gold: Boolean = false,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = when {
+                    gold -> t.goldContainer
+                    destructive -> t.destructive.copy(alpha = 0.08f)
+                    else -> t.input
+                },
+                shape = shape,
+            )
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(onClick = onClick)
+            .padding(t.space3),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (query.isBlank()) Icons.Rounded.AutoStories else Icons.Rounded.SearchOff,
-            null,
-            modifier = Modifier.size(44.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f),
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = when {
+                gold -> t.goldForeground
+                destructive -> t.destructive
+                else -> t.secondaryForeground
+            },
         )
-        Text(if (query.isBlank()) "这里还没有书" else "没有找到这本书", modifier = Modifier.padding(top = 15.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        if (query.isBlank()) {
-            Text("导入一本开始读，或者直接和 AI 聊出一本新的。", modifier = Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextButton(onClick = onImport) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("导入") }
-                Button(onClick = onCreate, shape = RoundedCornerShape(18.dp)) { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(6.dp)); Text("开始创作") }
+        Spacer(Modifier.width(t.space3))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = when {
+                    destructive -> t.destructive
+                    gold -> t.goldForeground
+                    else -> t.foreground
+                },
+                fontWeight = FontWeight.Medium,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(Modifier.height(t.space1))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun HomeBottomNavV4(modifier: Modifier = Modifier, onCreate: () -> Unit, onTavern: () -> Unit) {
-    val shape = RoundedCornerShape(31.dp)
-    Box(
-        modifier
-            .navigationBarsPadding()
-            .padding(horizontal = 28.dp, vertical = 9.dp)
-            .shadow(16.dp, shape, clip = false)
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surface.copy(alpha = .95f),
-                        MaterialTheme.colorScheme.surface.copy(alpha = .82f),
-                    )
-                )
-            )
-            .border(.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .62f), shape)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
-            HomeNavItemV4(Icons.Rounded.AutoStories, "书架", true, {})
-            HomeNavItemV4(Icons.Rounded.EditNote, "创作", false, onCreate)
-            HomeNavItemV4(Icons.Rounded.Forum, "酒馆", false, onTavern)
-        }
-    }
-}
-
-@Composable
-private fun HomeNavItemV4(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun HomePrimaryButtonV4(
+    text: String,
+    onClick: () -> Unit,
+    icon: ImageVector? = null,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
     Row(
-        Modifier
-            .clip(RoundedCornerShape(22.dp))
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f) else Color.Transparent)
-            .combinedClickable(onClick = onClick, onLongClick = onClick)
-            .padding(horizontal = 15.dp, vertical = 9.dp),
+        modifier = Modifier
+            .height(46.dp)
+            .background(color = t.primary, shape = shape)
+            .border(width = 1.dp, color = t.primary, shape = shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space4),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, label, Modifier.size(19.dp), tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-        if (selected) {
-            Spacer(Modifier.width(7.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = t.card,
+            )
+            Spacer(Modifier.width(t.space2))
         }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = t.card,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
 @Composable
-private fun HomeSheetRowV4(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    tint: Color = MaterialTheme.colorScheme.onSurface,
+private fun HomeSecondaryButtonV4(
+    text: String,
     onClick: () -> Unit,
 ) {
-    Row(
-        Modifier
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Box(
+        modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 13.dp),
+            .height(46.dp)
+            .background(color = t.card, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = t.secondaryForeground,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun HomeMoveBookDialogV4(
+    book: ReaderBookUi,
+    shelves: List<String>,
+    current: String?,
+    onDismiss: () -> Unit,
+    onMove: (String?) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Text(
+                text = "移动《${book.title}》",
+                style = MaterialTheme.typography.titleLarge,
+                color = t.foreground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(t.space3))
+            HomeMoveTargetV4(
+                label = "全部（不分组）",
+                selected = current.isNullOrBlank(),
+                onClick = { onMove(null) },
+            )
+            Spacer(Modifier.height(t.space2))
+            shelves.forEach { shelf ->
+                HomeMoveTargetV4(
+                    label = shelf,
+                    selected = current == shelf,
+                    onClick = { onMove(shelf) },
+                )
+                Spacer(Modifier.height(t.space2))
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeMoveTargetV4(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .background(
+                color = if (selected) t.accent else t.card,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .56f)),
-            contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, Modifier.size(19.dp), tint = tint) }
-        Text(title, modifier = Modifier.padding(start = 12.dp).weight(1f), fontWeight = FontWeight.Medium, color = tint)
-        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .6f))
+        Icon(
+            imageVector = Icons.Rounded.Folder,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = if (selected) t.accentForeground else t.secondaryForeground,
+        )
+        Spacer(Modifier.width(t.space3))
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) t.foreground else t.secondaryForeground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = t.primary,
+            )
+        }
     }
+}
+
+@Composable
+private fun HomeDeleteBookDialogV4(
+    book: ReaderBookUi,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Text(
+                text = "删除《${book.title}》？",
+                style = MaterialTheme.typography.titleLarge,
+                color = t.foreground,
+            )
+            Spacer(Modifier.height(t.space2))
+            Text(
+                text = "将移除正文、章节版本、长期记忆与本地封面，此操作不可恢复。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = t.secondaryForeground,
+            )
+            Spacer(Modifier.height(t.space4))
+            Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    HomeSecondaryButtonV4(text = "取消", onClick = onDismiss)
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    HomeDestructiveButtonV4(text = "删除", onClick = onConfirm)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeDestructiveButtonV4(
+    text: String,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .background(color = t.destructive, shape = shape)
+            .border(width = 1.dp, color = t.destructive, shape = shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = t.destructiveForeground,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun HomeShelfManagerV4(
+    shelves: List<String>,
+    prefs: SharedPreferences,
+    onDismiss: () -> Unit,
+    onChanged: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    var items by remember(shelves) { mutableStateOf(shelves) }
+    var newName by remember { mutableStateOf("") }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+
+    fun persist(next: List<String>) {
+        saveOrderedShelvesV4(prefs, next)
+        items = next
+        onChanged()
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Text(
+                text = "书架管理",
+                style = MaterialTheme.typography.titleLarge,
+                color = t.foreground,
+            )
+            Spacer(Modifier.height(t.space3))
+            items.forEachIndexed { index, shelf ->
+                if (renaming == shelf) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BasicTextField(
+                            value = renameText,
+                            onValueChange = { renameText = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
+                                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
+                                .padding(horizontal = t.space3, vertical = t.space2),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = t.foreground),
+                            cursorBrush = SolidColor(t.primary),
+                        )
+                        Spacer(Modifier.width(t.space2))
+                        HomeMiniActionV4(text = "确定", enabled = renameText.isNotBlank()) {
+                            renameShelfV4(prefs, items, shelf, renameText)
+                            persist(items.map { if (it == shelf) renameText.trim() else it })
+                            renaming = null
+                        }
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = shelf,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = t.foreground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (index > 0) {
+                            HomeMiniActionV4(text = "上移", enabled = true) {
+                                persist(items.toMutableList().also {
+                                    it.removeAt(index); it.add(index - 1, shelf)
+                                })
+                            }
+                            Spacer(Modifier.width(t.space1))
+                        }
+                        HomeMiniActionV4(text = "重命名", enabled = true) {
+                            renaming = shelf; renameText = shelf
+                        }
+                        Spacer(Modifier.width(t.space1))
+                        HomeMiniActionV4(text = "删除", enabled = true, destructive = true) {
+                            LuoShelfAssignmentsV33.removeShelf(prefs, shelf)
+                            persist(items.filterNot { it == shelf })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(t.space2))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
+                        .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
+                        .padding(horizontal = t.space3, vertical = t.space2),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = t.foreground),
+                    cursorBrush = SolidColor(t.primary),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (newName.isBlank()) {
+                                Text(
+                                    text = "新建书架名称",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = t.mutedForeground,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                )
+                Spacer(Modifier.width(t.space2))
+                HomeMiniActionV4(text = "添加", enabled = newName.isNotBlank()) {
+                    val name = newName.trim()
+                    if (name.isNotBlank() && name !in items) persist(items + name)
+                    newName = ""
+                }
+            }
+            Spacer(Modifier.height(t.space3))
+            HomeSecondaryButtonV4(text = "完成", onClick = onDismiss)
+        }
+    }
+}
+
+@Composable
+private fun HomeMiniActionV4(
+    text: String,
+    enabled: Boolean,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusSm)
+    Text(
+        text = text,
+        modifier = Modifier
+            .background(color = t.input, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = t.space2, vertical = t.space1),
+        style = MaterialTheme.typography.labelMedium,
+        color = if (!enabled) {
+            t.mutedForeground.copy(alpha = 0.4f)
+        } else if (destructive) {
+            t.destructive
+        } else {
+            t.secondaryForeground
+        },
+    )
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Shelf Storage                                 */
+/* -------------------------------------------------------------------------- */
+
+private fun loadOrderedShelvesV4(prefs: SharedPreferences): List<String> {
+    val set = prefs.getStringSet(HOME_CUSTOM_SHELVES_V4, emptySet())
+        ?.map { it.trim() }
+        ?.filter { it.isNotBlank() }
+        ?.distinct()
+        .orEmpty()
+    if (set.isEmpty()) return emptyList()
+    val stored = prefs.getString(HOME_CUSTOM_SHELF_ORDER_V4, "")
+        .orEmpty()
+        .split(HOME_SHELF_SEPARATOR_V4)
+        .map { it.trim() }
+        .filter { it.isNotBlank() && it in set }
+        .distinct()
+    return buildList {
+        addAll(stored)
+        addAll(set.filterNot { it in stored }.sorted())
+    }
+}
+
+private fun saveOrderedShelvesV4(prefs: SharedPreferences, shelves: List<String>) {
+    val normalized = shelves.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    prefs.edit()
+        .putStringSet(HOME_CUSTOM_SHELVES_V4, normalized.toSet())
+        .putString(HOME_CUSTOM_SHELF_ORDER_V4, normalized.joinToString(HOME_SHELF_SEPARATOR_V4))
+        .apply()
+}
+
+private fun renameShelfV4(
+    prefs: SharedPreferences,
+    shelves: List<String>,
+    oldName: String,
+    newName: String,
+) {
+    val normalized = newName.trim()
+    if (normalized.isBlank() || normalized == oldName) return
+    val assignments = LuoShelfAssignmentsV33.all(prefs)
+    assignments.filterValues { it == oldName }.keys.forEach { bookId ->
+        LuoShelfAssignmentsV33.assign(prefs = prefs, bookId = bookId, shelf = normalized)
+    }
+    saveOrderedShelvesV4(
+        prefs = prefs,
+        shelves = shelves.map { if (it == oldName) normalized else it },
+    )
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                               Data Helpers                                 */
+/* -------------------------------------------------------------------------- */
+
+private fun isFollowingBookV4(book: ReaderBookUi): Boolean =
+    book.sourceId.isNotBlank() || book.sourceBookUrl.isNotBlank()
+
+private fun isWritingBookV4(book: ReaderBookUi): Boolean =
+    book.genre != "导入作品" && !isFollowingBookV4(book)
+
+private fun customShelfKeyV4(shelf: String): String = HOME_TAB_CUSTOM_PREFIX_V4 + shelf
+
+private fun customShelfNameV4(key: String): String? =
+    key.takeIf { it.startsWith(HOME_TAB_CUSTOM_PREFIX_V4) }
+        ?.removePrefix(HOME_TAB_CUSTOM_PREFIX_V4)
+        ?.takeIf { it.isNotBlank() }
+
+private fun homeGenreLabelV4(book: ReaderBookUi): String = when {
+    book.genre.isBlank() -> "未分类"
+    book.genre == "导入作品" -> "本地小说"
+    else -> book.genre
+}
+
+private fun homeBookProgressLabelV4(
+    context: Context,
+    state: LibraryExperienceState,
+    book: ReaderBookUi,
+): String {
+    if (isWritingBookV4(book)) {
+        return if (book.currentChapter > 0) "写到第 ${book.currentChapter} 章" else "尚未开始写作"
+    }
+    val progress = ReaderProgressStoreV11.load(
+        context = context,
+        bookId = book.id,
+        fallbackChapter = book.currentChapter.coerceAtLeast(1),
+    )
+    if (progress.updatedAt <= 0L) {
+        return if (isFollowingBookV4(book) && book.currentChapter > 0) {
+            "更新 ${book.currentChapter} 章"
+        } else {
+            "未读"
+        }
+    }
+    if (state.openedBook?.id == book.id && state.chapters.isNotEmpty()) {
+        val ordered = state.chapters.sortedBy { it.chapterNumber }
+        val index = ordered.indexOfFirst { it.chapterNumber == progress.chapterNumber }
+        if (index >= 0) {
+            val raw = (index.toFloat() + progress.positionFraction) / ordered.size.toFloat()
+            val percent = (raw.coerceIn(0f, 1f) * 100f).roundToInt()
+            if (index == ordered.lastIndex && progress.positionFraction >= 0.995f) {
+                return "已读完"
+            }
+            if (percent > 0) return "已读 $percent%"
+        }
+    }
+    return "读到第 ${progress.chapterNumber} 章"
+}
+
+private fun homeContinueReadingV4(
+    context: Context,
+    state: LibraryExperienceState,
+    books: List<ReaderBookUi>,
+    progressPrefs: SharedPreferences,
+): HomeContinueReadingV4? {
+    val recent = books
+        .map { it to progressPrefs.getLong("last_${it.id}", 0L) }
+        .filter { it.second > 0L }
+        .maxByOrNull { it.second }
+        ?.first ?: return null
+    val progress = ReaderProgressStoreV11.load(
+        context = context,
+        bookId = recent.id,
+        fallbackChapter = recent.currentChapter.coerceAtLeast(1),
+    )
+    val title = if (state.openedBook?.id == recent.id) {
+        state.chapters
+            .firstOrNull { it.chapterNumber == progress.chapterNumber }
+            ?.title
+            ?.takeIf { it.isNotBlank() }
+    } else {
+        null
+    }
+    return HomeContinueReadingV4(
+        book = recent,
+        chapterNumber = progress.chapterNumber,
+        chapterTitle = title,
+    )
 }

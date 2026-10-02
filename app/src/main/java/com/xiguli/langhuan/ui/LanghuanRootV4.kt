@@ -28,11 +28,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import com.xiguli.langhuan.ui.online.BookSourceJsonV36
+import com.xiguli.langhuan.ui.online.BookSourceV36
+import com.xiguli.langhuan.ui.online.sourceDiscoveriesV41
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.engine.ProjectConversationStore
+import com.xiguli.langhuan.LanghuanApplication
 
 private enum class RootRouteV4 {
     SHELF,
@@ -350,40 +356,21 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
           Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             when (currentRoute) {
                 RootRouteV4.SHELF -> {
-                    ShelfLibraryV5(
+                    LanghuanHomeV4(
                         state = libraryState,
                         importState = localImportState,
-                        openingBookId = pendingBookId,
                         onOpenBook = ::openBook,
-                        onOpenTavern = ::openTavern,
                         onImportLocal = { localBookLauncher.launch(arrayOf("*/*")) },
                         onDeleteBook = libraryVm::deleteBook,
                         onCreate = {
                             if (studioState.provider.ready) route = RootRouteV4.CREATION
                             else openAiSetup(RootRouteV4.CREATION)
                         },
+                        onOpenTavern = ::openTavern,
                         onAiSetup = { openAiSetup(RootRouteV4.SHELF) },
                         onRunCenter = { route = RootRouteV4.RUN_CENTER },
                         onSkills = { openSkills(RootRouteV4.SHELF) },
-                        onCreateBlank = { title, genre -> libraryVm.createBlankStory(title, genre) },
-                        onExport = ::exportBook,
                         onOnline = { route = RootRouteV4.ONLINE },
-                        onlineContent = { manageSources ->
-                            OnlineBooksPageV36(
-                                viewModel = onlineVm,
-                                onBack = {},
-                                onOpenCreated = { id -> pendingOnlineOpen = id },
-                                embedded = true,
-                                startWithSources = manageSources,
-                                onConfigureAi = { openAiSetup(RootRouteV4.SHELF) },
-                            )
-                        },
-                        onDownloadBook = { id -> onlineVm.downloadBook(id) { result -> toast = result to result.contains("停止") } },
-                        onCheckUpdate = { id ->
-                            onlineVm.checkUpdate(id) { result ->
-                                toast = result to result.contains("失败")
-                            }
-                        },
                     )
                 }
 
@@ -521,6 +508,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                 RootRouteV4.RUN_CENTER -> {
                     val runCenterVm: RunCenterViewModel = viewModel()
                     val runCenterState by runCenterVm.state.collectAsStateWithLifecycle()
+                    val appContext2 = LocalContext.current.applicationContext as LanghuanApplication
+                    val runtimeState by appContext2.chapterRunRuntime.state.collectAsStateWithLifecycle()
                     LaunchedEffect(runCenterState.openRequest?.token) {
                         runCenterState.openRequest?.let { request ->
                             runCenterVm.consumeOpenRequest()
@@ -530,9 +519,14 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                             route = RootRouteV4.WRITING
                         }
                     }
-                    RunCenterPage(
-                        viewModel = runCenterVm,
-                        onClose = { route = if (libraryState.openedBook != null) RootRouteV4.BOOK else RootRouteV4.SHELF },
+                    RunCenterScreenV50(
+                        state = runCenterState,
+                        runtime = runtimeState,
+                        onBack = { route = if (libraryState.openedBook != null) RootRouteV4.BOOK else RootRouteV4.SHELF },
+                        onOpenTask = runCenterVm::open,
+                        onRetryTask = runCenterVm::open,
+                        onCancelTask = runCenterVm::abandon,
+                        onCancelCurrent = { appContext2.chapterRunRuntime.stopCurrentGeneration() },
                     )
                 }
 
@@ -568,14 +562,205 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                 }
 
                 RootRouteV4.ONLINE -> {
-                    OnlineBooksPageV36(
-                        viewModel = onlineVm,
-                        onBack = { route = RootRouteV4.SHELF },
-                        onOpenCreated = { id ->
-                            route = RootRouteV4.SHELF
-                            pendingOnlineOpen = id
-                        },
-                    )
+                    var onlineSub by rememberSaveable { mutableStateOf("main") }
+                    var browseSourceId by rememberSaveable { mutableStateOf<String?>(null) }
+                    var discoverySourceId by rememberSaveable { mutableStateOf<String?>(null) }
+                    var onlineQuery by rememberSaveable { mutableStateOf("") }
+                    val recentSearches = remember { mutableStateListOf<String>() }
+                    var aiSiteUrl by rememberSaveable { mutableStateOf("") }
+                    var aiTestBook by rememberSaveable { mutableStateOf("") }
+                    var importDialogOpen by remember { mutableStateOf(false) }
+                    var importText by remember { mutableStateOf("") }
+                    val clipboard = LocalClipboardManager.current
+                    val importFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        if (uri != null) {
+                            onlineVm.importFromFile(uri)
+                            importDialogOpen = false
+                        }
+                    }
+
+                    // 书籍详情"加入书架/开始阅读"后的建书完成流转（替代旧 onOpenCreated 回调）
+                    LaunchedEffect(onlineState.createdStoryId) {
+                        val id = onlineState.createdStoryId ?: return@LaunchedEffect
+                        onlineVm.consumeCreated()
+                        route = RootRouteV4.SHELF
+                        pendingOnlineOpen = id
+                    }
+
+                    val browseSource = browseSourceId?.let { id -> onlineState.sources.firstOrNull { it.id == id } }
+                    val discoverySource = discoverySourceId?.let { id -> onlineState.sources.firstOrNull { it.id == id } }
+
+                    // 书源规则编辑弹窗（旧页同款能力，走 VM 已有 begin/edit/cancel API）
+                    if (onlineState.sourceEditId != null) {
+                        val editId = onlineState.sourceEditId!!
+                        AlertDialog(
+                            onDismissRequest = onlineVm::cancelSourceEdit,
+                            title = { Text("编辑书源规则") },
+                            text = {
+                                Column {
+                                    TextField(
+                                        value = onlineState.sourceEditDraft,
+                                        onValueChange = onlineVm::updateSourceEditDraft,
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
+                                    )
+                                    onlineState.sourceEditError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = { onlineVm.editSource(editId, onlineState.sourceEditDraft) },
+                                    enabled = !onlineState.sourceEditSaving,
+                                ) { Text(if (onlineState.sourceEditSaving) "校验中…" else "保存规则") }
+                            },
+                            dismissButton = { TextButton(onClick = onlineVm::cancelSourceEdit) { Text("取消") } },
+                        )
+                    }
+
+                    if (importDialogOpen) {
+                        AlertDialog(
+                            onDismissRequest = { importDialogOpen = false },
+                            title = { Text("导入书源") },
+                            text = {
+                                Column {
+                                    Text("粘贴书源 JSON，或输入书源网址。")
+                                    Spacer(Modifier.height(8.dp))
+                                    TextField(
+                                        value = importText,
+                                        onValueChange = { importText = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        placeholder = { Text("JSON 或 https://…") },
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    val t = importText.trim()
+                                    if (t.startsWith("http")) onlineVm.importFromUrl(t) else onlineVm.importSources(t)
+                                    importText = ""
+                                    importDialogOpen = false
+                                }) { Text("导入") }
+                            },
+                            dismissButton = {
+                                Row {
+                                    TextButton(onClick = { importFileLauncher.launch(arrayOf("*/*")) }) { Text("选文件") }
+                                    TextButton(onClick = { importDialogOpen = false }) { Text("取消") }
+                                }
+                            },
+                        )
+                    }
+
+                    when {
+                        browseSource != null -> {
+                            BookSourceBrowseScreenV50(
+                                source = browseSource,
+                                discoveries = sourceDiscoveriesV41(browseSource),
+                                previewBooks = emptyList(),
+                                onBack = { browseSourceId = null },
+                                onEditRules = { onlineVm.beginSourceEdit(browseSource.id) },
+                                onEnabledChange = { onlineVm.toggleSource(browseSource.id) },
+                                onOpenDiscovery = { section ->
+                                    discoverySourceId = browseSource.id
+                                    onlineVm.discover(section)
+                                },
+                                onOpenBook = { book ->
+                                    onlineVm.openDetail(book)
+                                    browseSourceId = null
+                                },
+                                onCopySourceJson = {
+                                    clipboard.setText(AnnotatedString(BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), browseSource)))
+                                    toast = "书源 JSON 已复制" to false
+                                },
+                                onDeleteSource = {
+                                    onlineVm.deleteSource(browseSource.id)
+                                    browseSourceId = null
+                                },
+                            )
+                        }
+                        discoverySource != null -> {
+                            BookSourceDiscoveryScreenV50(
+                                source = discoverySource,
+                                sections = sourceDiscoveriesV41(discoverySource),
+                                selectedSection = onlineState.discoverySection,
+                                books = onlineState.results,
+                                loading = onlineState.searching,
+                                hasMore = onlineState.discoveryHasMore,
+                                pageError = onlineState.discoveryPageError,
+                                onBack = { discoverySourceId = null },
+                                onEditRules = { onlineVm.beginSourceEdit(discoverySource.id) },
+                                onEnabledChange = { onlineVm.toggleSource(discoverySource.id) },
+                                onSelectSection = onlineVm::discover,
+                                onOpenBook = { book ->
+                                    onlineVm.openDetail(book)
+                                    discoverySourceId = null
+                                },
+                                onLoadMore = onlineVm::loadMoreDiscovery,
+                                onStop = onlineVm::stopSearch,
+                            )
+                        }
+                        onlineSub == "manage" -> {
+                            BookSourceManageScreenV50(
+                                sources = onlineState.sources,
+                                sourceStorageError = onlineState.sourceStorageError,
+                                onBack = { onlineSub = "main" },
+                                onOpenSource = { browseSourceId = it.id },
+                                onToggleSource = onlineVm::toggleSource,
+                                onImportSource = { importDialogOpen = true },
+                                onAiGenerateSource = { onlineSub = "ai" },
+                            )
+                        }
+                        onlineSub == "ai" -> {
+                            AiBookSourceScreenV50(
+                                state = onlineState,
+                                siteUrl = aiSiteUrl,
+                                testBookName = aiTestBook,
+                                onBack = { onlineSub = "manage" },
+                                onSiteUrlChange = { aiSiteUrl = it },
+                                onTestBookNameChange = { aiTestBook = it },
+                                onConfigureAi = { openAiSetup(RootRouteV4.ONLINE) },
+                                onStart = { url, keyword -> onlineVm.buildWithAi(url, keyword) },
+                                onCancel = onlineVm::cancelAi,
+                                onSave = { onlineVm.saveAiSource() },
+                            )
+                        }
+                        else -> {
+                            OnlineBooksScreenV50(
+                                state = onlineState,
+                                query = onlineQuery,
+                                recentSearches = recentSearches,
+                                onBack = { route = RootRouteV4.SHELF },
+                                onManageSources = { onlineSub = "manage" },
+                                onQueryChange = { onlineQuery = it },
+                                onSearch = { q ->
+                                    onlineQuery = q
+                                    val key = q.trim()
+                                    if (key.isNotEmpty()) {
+                                        recentSearches.remove(key)
+                                        recentSearches.add(0, key)
+                                        if (recentSearches.size > 10) recentSearches.removeLast()
+                                    }
+                                    onlineVm.search(q)
+                                },
+                                onStopSearch = onlineVm::stopSearch,
+                                onRecentSearch = { q ->
+                                    onlineQuery = q
+                                    onlineVm.search(q)
+                                },
+                                onClearRecentSearches = { recentSearches.clear() },
+                                onDiscover = onlineVm::discover,
+                                onLoadMore = onlineVm::loadMoreDiscovery,
+                                onOpenBook = onlineVm::openDetail,
+                                onCloseDetail = onlineVm::closeDetail,
+                                onViewSource = { id -> browseSourceId = id },
+                                onAddToShelf = onlineVm::addToShelf,
+                                onRead = onlineVm::readAddedBook,
+                                onDownload = onlineVm::downloadDetail,
+                                onCancelDownload = onlineVm::cancelDownload,
+                                onChapterClick = { chapter ->
+                                    toast = "「${chapter.title}」先加入书架后再阅读" to false
+                                },
+                            )
+                        }
+                    }
                 }
 
                 RootRouteV4.SKILLS -> {

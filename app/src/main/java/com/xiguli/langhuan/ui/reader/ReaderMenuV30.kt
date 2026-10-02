@@ -1,39 +1,17 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
-import androidx.compose.material.icons.rounded.BarChart
-import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
-import androidx.compose.animation.core.Animatable
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,101 +24,104 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FormatLineSpacing
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.ScreenLockPortrait
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SwapVert
-import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material.icons.rounded.TextFields
-import androidx.compose.material.icons.rounded.TheaterComedy
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.ViewCarousel
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.xiguli.langhuan.domain.ChapterDraft
-import com.xiguli.langhuan.ui.design.rememberLanghuanCoverV30
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private data class ReaderMenuActionV30(
-    val label: String,
-    val icon: ImageVector,
-    val selected: Boolean = false,
-    val onClick: () -> Unit,
+
+/* -------------------------------------------------------------------------- */
+/*                                  Models                                    */
+/* -------------------------------------------------------------------------- */
+
+private data class ReaderSearchHitV30(
+    val chapterIndex: Int,
+    val title: String,
+    val offset: Int,
+    val preview: String,
 )
+
+private enum class ReaderDirectoryModeV30 { CHAPTERS, BOOKMARKS }
+
+
+/* -------------------------------------------------------------------------- */
+/*                                Main Menu                                   */
+/* -------------------------------------------------------------------------- */
 
 @Composable
 internal fun ReaderMenuV30(
@@ -165,406 +146,305 @@ internal fun ReaderMenuV30(
     onEdit: () -> Unit,
     onWriting: () -> Unit,
     onStory: () -> Unit,
-    bookmarkedChapters: Set<Int> = emptySet(),
-    onRenameChapter: (Int, String) -> Unit = { _, _ -> },
-    onAppendChapter: () -> Unit = {},
-    onDeleteLastChapter: () -> Unit = {},
-    listening: Boolean = false,
-    onListen: () -> Unit = {},
-    bookmarkError: String? = null,
-    legacyBookmarkedChapters: Set<Int> = emptySet(),
-    legacyBookmarkError: String? = null,
-    onRestoreLegacyBookmark: (Int) -> Unit = {},
-    onRefreshCatalogue: () -> Unit = {},
-    refreshingCatalogue: Boolean = false,
-    catalogueMessage: String? = null,
+    bookmarkedChapters: Set<Int>,
+    bookmarkError: String?,
+    legacyBookmarkedChapters: Set<Int>,
+    legacyBookmarkError: String?,
+    onRestoreLegacyBookmark: (Int) -> Unit,
+    listening: Boolean,
+    onListen: () -> Unit,
+    onRenameChapter: (Int, String) -> Unit,
+    onAppendChapter: () -> Unit,
+    onDeleteLastChapter: () -> Unit,
+    onRefreshCatalogue: () -> Unit,
+    refreshingCatalogue: Boolean,
+    catalogueMessage: String?,
 ) {
-    Box(Modifier.fillMaxSize()) {
-        AnimatedVisibility(visible = visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(200))) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = if (theme.dark) .34f else .10f))
-                    .pointerInput(Unit) { detectTapGestures { onDismiss() } },
-            )
-        }
-        AnimatedVisibility(
-            visible = visible,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            enter = slideInVertically(spring(dampingRatio = .88f, stiffness = Spring.StiffnessMediumLow)) { it } + fadeIn(tween(160)),
-            exit = slideOutVertically(tween(220)) { it } + fadeOut(tween(180)),
+    if (!visible) return
+    val t = LocalLanghuanUiTokens.current
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.30f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onDismiss,
+                ),
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            // Drag the handle strip down to dismiss; a short drag springs back.
-            val dragY = remember { Animatable(0f) }
-            val dragScope = rememberCoroutineScope()
-            val dismissPx = with(LocalDensity.current) { 96.dp.toPx() }
-            LaunchedEffect(visible) { if (visible) dragY.snapTo(0f) }
-            Surface(
+            val panelShape = RoundedCornerShape(t.radiusXl)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = t.space3, bottom = t.space2)
+                    .navigationBarsPadding()
                     .imePadding()
-                    .offset { IntOffset(0, dragY.value.roundToInt()) },
-                color = theme.sheet,
-                shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
-                shadowElevation = 16.dp,
+                    .heightIn(max = maxHeight)
+                    .background(color = t.background, shape = panelShape)
+                    .border(width = 1.dp, color = t.border, shape = panelShape)
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = {},
+                    ),
             ) {
-                Column(Modifier.navigationBarsPadding()) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(18.dp)
-                            .pointerInput(Unit) {
-                                detectVerticalDragGestures(
-                                    onDragEnd = {
-                                        dragScope.launch {
-                                            if (dragY.value > dismissPx) onDismiss()
-                                            else dragY.animateTo(0f, spring(dampingRatio = .8f, stiffness = Spring.StiffnessMedium))
-                                        }
-                                    },
-                                    onDragCancel = { dragScope.launch { dragY.animateTo(0f) } },
-                                ) { change, amount ->
-                                    change.consume()
-                                    dragScope.launch { dragY.snapTo((dragY.value + amount).coerceAtLeast(0f)) }
+                ReaderMenuHandleV30()
+
+                // 三个主操作固定在菜单顶部。
+                // 注意：当前仓库 ReaderBookmarkStoreV49 的持久层仍然是
+                // chapterNumber 级书签。ReaderMenu 只消费 Screen 提供的
+                // onToggleBookmark，不额外虚构新的 page bookmark API。
+                ReaderMenuPrimaryActionsV30(
+                    bookmarked = bookmarked,
+                    night = settings.night,
+                    onBack = onBack,
+                    onBookmark = onToggleBookmark,
+                    onNight = { settings.toggleNight() },
+                )
+
+                ReaderMenuDividerV30()
+
+                AnimatedContent(
+                    targetState = panel to tab,
+                    transitionSpec = {
+                        val oldPanel = initialState.first
+                        val newPanel = targetState.first
+                        val transition = when {
+                            oldPanel == ReaderMenuPanelV30.MAIN &&
+                                newPanel != ReaderMenuPanelV30.MAIN -> {
+                                (slideInHorizontally(tween(210)) { it / 4 } +
+                                    fadeIn(tween(160))) togetherWith
+                                    (slideOutHorizontally(tween(180)) { -it / 5 } +
+                                        fadeOut(tween(120)))
+                            }
+                            oldPanel != ReaderMenuPanelV30.MAIN &&
+                                newPanel == ReaderMenuPanelV30.MAIN -> {
+                                (slideInHorizontally(tween(210)) { -it / 4 } +
+                                    fadeIn(tween(160))) togetherWith
+                                    (slideOutHorizontally(tween(180)) { it / 5 } +
+                                        fadeOut(tween(120)))
+                            }
+                            else -> fadeIn(tween(150)) togetherWith fadeOut(tween(110))
+                        }
+                        transition using SizeTransform(clip = false)
+                    },
+                    label = "readerMenuV3",
+                ) { (currentPanel, currentTab) ->
+                    when (currentPanel) {
+                        ReaderMenuPanelV30.MAIN -> {
+                            when (currentTab) {
+                                ReaderMenuTabV30.DETAILS -> {
+                                    ReaderDetailsTabV30(
+                                        book = book,
+                                        chapters = chapters,
+                                        chapterIndex = chapterIndex,
+                                        pageIndex = pageIndex,
+                                        pageCount = pageCount,
+                                        settings = settings,
+                                        theme = theme,
+                                        onPageFraction = onPageFraction,
+                                        onThemePanel = {
+                                            onPanel(ReaderMenuPanelV30.THEME)
+                                        },
+                                        onSizePanel = {
+                                            onPanel(ReaderMenuPanelV30.SIZE)
+                                        },
+                                    )
                                 }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(width = 36.dp, height = 4.dp)
-                                .clip(CircleShape)
-                                .background(theme.sheetMuted.copy(alpha = .35f)),
-                        )
-                    }
-                    AnimatedContent(
-                        targetState = panel to tab,
-                        transitionSpec = {
-                            val (fromPanel, _) = initialState
-                            val (toPanel, _) = targetState
-                            val base = when {
-                                fromPanel == ReaderMenuPanelV30.MAIN && toPanel != ReaderMenuPanelV30.MAIN ->
-                                    (slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(200))) togetherWith
-                                        (slideOutHorizontally(tween(220)) { -it / 4 } + fadeOut(tween(140)))
-                                fromPanel != ReaderMenuPanelV30.MAIN && toPanel == ReaderMenuPanelV30.MAIN ->
-                                    (slideInHorizontally(tween(260)) { -it / 3 } + fadeIn(tween(200))) togetherWith
-                                        (slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(140)))
-                                else -> fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                                ReaderMenuTabV30.DIRECTORY -> {
+                                    ReaderDirectoryTabV30(
+                                        book = book,
+                                        chapters = chapters,
+                                        chapterIndex = chapterIndex,
+                                        bookmarkedChapters = bookmarkedChapters,
+                                        bookmarkError = bookmarkError,
+                                        legacyBookmarkedChapters = legacyBookmarkedChapters,
+                                        legacyBookmarkError = legacyBookmarkError,
+                                        onRestoreLegacyBookmark = onRestoreLegacyBookmark,
+                                        onJumpChapter = onJumpChapter,
+                                        onRefreshCatalogue = onRefreshCatalogue,
+                                        refreshingCatalogue = refreshingCatalogue,
+                                        catalogueMessage = catalogueMessage,
+                                    )
+                                }
+                                ReaderMenuTabV30.MORE -> {
+                                    ReaderMoreTabV30(
+                                        book = book,
+                                        chapters = chapters,
+                                        chapterIndex = chapterIndex,
+                                        settings = settings,
+                                        listening = listening,
+                                        onListen = onListen,
+                                        onPanel = onPanel,
+                                        onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) },
+                                        onEdit = onEdit,
+                                        onWriting = onWriting,
+                                        onStory = onStory,
+                                        onRenameChapter = onRenameChapter,
+                                        onAppendChapter = onAppendChapter,
+                                        onDeleteLastChapter = onDeleteLastChapter,
+                                    )
+                                }
                             }
-                            base using SizeTransform(clip = false) { _, _ -> spring(stiffness = Spring.StiffnessMediumLow) }
-                        },
-                        label = "readerMenuV30",
-                    ) { (currentPanel, currentTab) ->
-                        when (currentPanel) {
-                            ReaderMenuPanelV30.MAIN -> when (currentTab) {
-                                ReaderMenuTabV30.DETAILS -> ReaderDetailsTabV30(
-                                    book, chapters, chapterIndex, pageIndex, pageCount, theme, bookmarked, settings,
-                                    onBack, onToggleBookmark, onJumpChapter, onPageFraction, onEdit, onWriting, onStory,
-                                )
-                                ReaderMenuTabV30.DIRECTORY -> ReaderDirectoryTabV30(
-                                    book, chapters, chapterIndex, theme, bookmarked, settings, onBack, onToggleBookmark, onJumpChapter,
-                                    bookmarkedChapters, onRenameChapter, onAppendChapter, onDeleteLastChapter,
-                                    bookmarkError, legacyBookmarkedChapters, legacyBookmarkError, onRestoreLegacyBookmark,
-                                    onRefreshCatalogue, refreshingCatalogue, catalogueMessage,
-                                )
-                                ReaderMenuTabV30.MORE -> ReaderMoreTabV30(settings, theme, onPanel, onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) }, listening = listening, onListen = onListen)
-                            }
-                            ReaderMenuPanelV30.THEME -> ReaderThemePanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
-                            ReaderMenuPanelV30.FONT -> ReaderFontPanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
-                            ReaderMenuPanelV30.SIZE -> ReaderSizePanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
-                            ReaderMenuPanelV30.SPACING -> ReaderSpacingPanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
-                            ReaderMenuPanelV30.TURN -> ReaderTurnPanelV30(settings, theme) { onPanel(ReaderMenuPanelV30.MAIN) }
-                            ReaderMenuPanelV30.SEARCH -> ReaderSearchPanelV30(chapters, theme, onJumpChapter) { onPanel(ReaderMenuPanelV30.MAIN) }
-                            ReaderMenuPanelV30.STATS -> ReaderStatsPanelV35(theme) { onPanel(ReaderMenuPanelV30.MAIN) }
+                        }
+                        ReaderMenuPanelV30.THEME -> {
+                            ReaderThemePanelV30(
+                                settings = settings,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.FONT -> {
+                            ReaderFontPanelV30(
+                                settings = settings,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.SIZE -> {
+                            ReaderSizePanelV30(
+                                settings = settings,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.SPACING -> {
+                            ReaderSpacingPanelV30(
+                                settings = settings,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.TURN -> {
+                            ReaderTurnPanelV30(
+                                settings = settings,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.SEARCH -> {
+                            ReaderSearchPanelV30(
+                                chapters = chapters,
+                                onJumpChapter = onJumpChapter,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.STATS -> {
+                            ReaderStatsPanelV30(
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
                         }
                     }
-                    AnimatedVisibility(visible = panel == ReaderMenuPanelV30.MAIN) {
-                        ReaderMenuTabsV30(tab, theme, onTab)
-                    }
+                }
+
+                if (panel == ReaderMenuPanelV30.MAIN) {
+                    ReaderMenuDividerV30()
+                    ReaderMenuTabsV30(tab = tab, onTab = onTab)
                 }
             }
         }
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Tabs
-// ---------------------------------------------------------------------------------------------
+
+/* -------------------------------------------------------------------------- */
+/*                             Top Primary Actions                            */
+/* -------------------------------------------------------------------------- */
 
 @Composable
-private fun ReaderMenuTabsV30(tab: ReaderMenuTabV30, theme: ReaderThemeV30, onTab: (ReaderMenuTabV30) -> Unit) {
-    Column {
-        Box(Modifier.fillMaxWidth().height(0.6.dp).background(theme.sheetDivider))
-        Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-            listOf(ReaderMenuTabV30.DETAILS to "详情", ReaderMenuTabV30.DIRECTORY to "目录", ReaderMenuTabV30.MORE to "更多").forEach { (item, label) ->
-                val selected = item == tab
-                val color by animateColorAsState(if (selected) theme.accent else theme.sheetMuted, tween(180), label = "tabColor")
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onTab(item) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(label, color = color, fontSize = 15.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderSheetHeaderV30(
-    title: String,
-    theme: ReaderThemeV30,
+private fun ReaderMenuPrimaryActionsV30(
     bookmarked: Boolean,
-    settings: ReaderSettingsV30,
+    night: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
+    onNight: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 6.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ChevronLeft, "返回书架", tint = theme.sheetText) }
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space3, bottom = t.space3),
+        horizontalArrangement = Arrangement.spacedBy(t.space2),
+    ) {
+        ReaderPrimaryActionV30(
+            icon = Icons.Rounded.ArrowBack,
+            label = "返回书架",
+            modifier = Modifier.weight(1f),
+            onClick = onBack,
+        )
+        ReaderPrimaryActionV30(
+            icon = if (bookmarked) Icons.Outlined.Bookmark
+            else Icons.Outlined.BookmarkBorder,
+            label = if (bookmarked) "已加书签" else "这一页加书签",
+            selected = bookmarked,
+            gold = bookmarked,
+            modifier = Modifier.weight(1f),
+            onClick = onBookmark,
+        )
+        ReaderPrimaryActionV30(
+            icon = if (night) Icons.Rounded.LightMode else Icons.Outlined.DarkMode,
+            label = if (night) "切换日间" else "切换夜间",
+            selected = night,
+            modifier = Modifier.weight(1f),
+            onClick = onNight,
+        )
+    }
+}
+
+@Composable
+private fun ReaderPrimaryActionV30(
+    icon: ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    gold: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    val background = when {
+        gold -> t.goldContainer
+        selected -> t.accent
+        else -> t.card
+    }
+    val foreground = when {
+        gold -> t.goldForeground
+        selected -> t.accentForeground
+        else -> t.secondaryForeground
+    }
+    Column(
+        modifier = modifier
+            .height(72.dp)
+            .background(color = background, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space2, vertical = t.space2),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(20.dp),
+            tint = foreground,
+        )
+        Spacer(Modifier.height(t.space1))
         Text(
-            title,
-            Modifier.weight(1f),
-            color = theme.sheetText,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = foreground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onClick = onBookmark) {
-            Icon(
-                if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                if (bookmarked) "取消本章书签" else "添加本章书签",
-                tint = if (bookmarked) theme.accent else theme.sheetText,
-            )
-        }
-        IconButton(onClick = { settings.toggleNight() }) {
-            Icon(if (settings.night) Icons.Rounded.LightMode else Icons.Outlined.DarkMode, "日夜切换", tint = theme.sheetText)
-        }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ReaderDirectoryTabV30(
-    book: ReaderBookUi,
-    chapters: List<ChapterDraft>,
-    chapterIndex: Int,
-    theme: ReaderThemeV30,
-    bookmarked: Boolean,
-    settings: ReaderSettingsV30,
-    onBack: () -> Unit,
-    onBookmark: () -> Unit,
-    onJumpChapter: (Int, Int) -> Unit,
-    bookmarkedChapters: Set<Int> = emptySet(),
-    onRenameChapter: (Int, String) -> Unit = { _, _ -> },
-    onAppendChapter: () -> Unit = {},
-    onDeleteLastChapter: () -> Unit = {},
-    bookmarkError: String? = null,
-    legacyBookmarkedChapters: Set<Int> = emptySet(),
-    legacyBookmarkError: String? = null,
-    onRestoreLegacyBookmark: (Int) -> Unit = {},
-    onRefreshCatalogue: () -> Unit = {},
-    refreshingCatalogue: Boolean = false,
-    catalogueMessage: String? = null,
-) {
-    val height = (LocalConfiguration.current.screenHeightDp * .46f).dp
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (chapterIndex - 3).coerceAtLeast(0))
-    val scope = rememberCoroutineScope()
-    var showBookmarks by remember { mutableStateOf(false) }
-    var showLegacyBookmarks by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<ChapterDraft?>(null) }
-    Column {
-        ReaderSheetHeaderV30(book.title, theme, bookmarked, settings, onBack, onBookmark)
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            ReaderSegmentV30("目录 ${chapters.size}", !showBookmarks, theme) { showBookmarks = false }
-            Spacer(Modifier.width(8.dp))
-            ReaderSegmentV30(if (bookmarkError == null) "书签 ${bookmarkedChapters.size}" else "书签", showBookmarks, theme) { showBookmarks = true }
-            Spacer(Modifier.weight(1f))
-            if (showBookmarks && (legacyBookmarkedChapters.isNotEmpty() || legacyBookmarkError != null)) {
-                TextButton(onClick = { showLegacyBookmarks = true }) { Text("旧版暂存", color = theme.accent, fontSize = 12.sp) }
-            }
-            if (!showBookmarks) {
-                Text(
-                    "+ 新章",
-                    Modifier.clip(CircleShape).clickable { onAppendChapter() }.padding(horizontal = 10.dp, vertical = 5.dp),
-                    color = theme.accent,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        }
-        if (book.sourceId.isNotBlank() && !showBookmarks) {
-            val gap = remember(chapters) { catalogueMiddleGapV53(chapters.map { it.title }) }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(gap?.let { "发现缺章：第 ${it.first} 章后跳到第 ${it.second} 章" } ?: "在线目录，可重新核对章节", Modifier.weight(1f), color = theme.sheetMuted, fontSize = 12.sp)
-                TextButton(onClick = onRefreshCatalogue, enabled = !refreshingCatalogue) {
-                    Text(if (refreshingCatalogue) "正在核对…" else "刷新目录", color = theme.accent, fontSize = 12.sp)
-                }
-            }
-            catalogueMessage?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = theme.sheetMuted, fontSize = 12.sp) }
-        }
-        if (showBookmarks) {
-            bookmarkError?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = theme.accent, fontSize = 12.sp) }
-            val marked = chapters.withIndex().filter { it.value.chapterNumber in bookmarkedChapters }
-            Box(Modifier.fillMaxWidth().height(height)) {
-                if (marked.isEmpty()) {
-                    Text(
-                        "还没有书签。阅读时点顶部书签图标，或长按段落选「书签」。",
-                        Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
-                        color = theme.sheetMuted,
-                        fontSize = 13.sp,
-                    )
-                } else {
-                    LazyColumn(contentPadding = PaddingValues(bottom = 8.dp)) {
-                        itemsIndexed(marked, key = { _, item -> "bm-" + item.value.id }) { _, entry ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { onJumpChapter(entry.index, 0) }.padding(horizontal = 20.dp, vertical = 13.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Outlined.Bookmark, null, Modifier.size(16.dp), tint = theme.accent)
-                                Text(
-                                    readerDisplayChapterTitleV13(entry.value.title, entry.value.chapterNumber),
-                                    Modifier.padding(start = 10.dp).weight(1f),
-                                    color = theme.sheetText,
-                                    fontSize = 15.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-        Box(Modifier.fillMaxWidth().height(height)) {
-            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 8.dp)) {
-                itemsIndexed(chapters, key = { _, item -> item.id }) { index, item ->
-                    val current = index == chapterIndex
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            // Long press: rename (and delete, for the last chapter).
-                            .combinedClickable(onLongClick = { editing = item }) { onJumpChapter(index, 0) }
-                            .padding(start = 20.dp, end = 32.dp, top = 13.dp, bottom = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            readerDisplayChapterTitleV13(item.title, item.chapterNumber),
-                            Modifier.weight(1f),
-                            color = if (current) theme.accent else theme.sheetText,
-                            fontSize = 15.sp,
-                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (current) Text("当前", color = theme.accent, fontSize = 11.sp)
-                    }
-                }
-            }
-            if (chapters.size > 24) {
-                // Fast scroller: drag the pill to jump through long books.
-                var trackSize by remember { mutableStateOf(IntSize.Zero) }
-                val density = LocalDensity.current
-                val first = listState.firstVisibleItemIndex
-                val fraction = if (chapters.size <= 1) 0f else first.toFloat() / (chapters.size - 1).toFloat()
-                val thumbHeight = 34.dp
-                Box(
-                    Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(28.dp)
-                        .onSizeChanged { trackSize = it }
-                        .pointerInput(chapters.size) {
-                            detectVerticalDragGestures { change, _ ->
-                                change.consume()
-                                val f = (change.position.y / size.height.toFloat()).coerceIn(0f, 1f)
-                                scope.launch { listState.scrollToItem((f * (chapters.size - 1)).roundToInt()) }
-                            }
-                        },
-                ) {
-                    val travel = with(density) { (trackSize.height.toDp() - thumbHeight).coerceAtLeast(0.dp) }
-                    Box(
-                        Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(y = travel * fraction.coerceIn(0f, 1f))
-                            .size(width = 5.dp, height = thumbHeight)
-                            .clip(CircleShape)
-                            .background(theme.accent),
-                    )
-                }
-            }
-        }
-        }
-    }
-    if (showLegacyBookmarks) {
-        val candidates = remember(chapters, legacyBookmarkedChapters) { chapters.filter { it.chapterNumber in legacyBookmarkedChapters } }
-        val unmatched = (legacyBookmarkedChapters.size - candidates.map { it.chapterNumber }.toSet().size).coerceAtLeast(0)
-        AlertDialog(
-            onDismissRequest = { showLegacyBookmarks = false },
-            title = { Text("旧版书签暂存") },
-            containerColor = theme.sheet,
-            titleContentColor = theme.sheetText,
-            textContentColor = theme.sheetText,
-            text = {
-                Column {
-                    Text("旧版只记录了章节号，没有书籍归属。请核对下列本书章节，再逐条归入「${book.title}」。原始暂存会保留。")
-                    legacyBookmarkError?.let { Text(it, Modifier.padding(top = 8.dp), color = theme.accent) }
-                    bookmarkError?.let { Text(it, Modifier.padding(top = 8.dp), color = theme.accent) }
-                    if (unmatched > 0) Text("另有 $unmatched 条超出本书目录，仍保留在暂存中。", Modifier.padding(top = 8.dp), fontSize = 12.sp)
-                    LazyColumn(Modifier.fillMaxWidth().padding(top = 8.dp).height((candidates.size.coerceAtMost(5) * 52).dp)) {
-                        itemsIndexed(candidates, key = { _, chapter -> chapter.id }) { _, chapter ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber), Modifier.weight(1f), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                val restored = chapter.chapterNumber in bookmarkedChapters
-                                TextButton(onClick = { onRestoreLegacyBookmark(chapter.chapterNumber) }, enabled = !restored) {
-                                    Text(if (restored) "已归入" else "归入本书", color = if (restored) theme.sheetMuted else theme.accent)
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showLegacyBookmarks = false }) { Text("关闭", color = theme.accent) } },
-        )
-    }
-    editing?.let { chapter ->
-        var title by remember(chapter.id) { mutableStateOf(chapter.title) }
-        val isLast = chapter.id == chapters.lastOrNull()?.id && chapters.size > 1
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text(readerDisplayChapterTitleV13(chapter.title, chapter.readingOrder)) },
-            text = {
-                Column {
-                    OutlinedTextField(title, { title = it.take(40) }, label = { Text("章节标题") }, singleLine = true)
-                    if (isLast) {
-                        Text(
-                            "删除这一章",
-                            Modifier.padding(top = 14.dp).clip(CircleShape).clickable { editing = null; onDeleteLastChapter() }.padding(vertical = 6.dp),
-                            color = Color(0xFFE5484D),
-                            fontSize = 14.sp,
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { editing = null; onRenameChapter(chapter.chapterNumber, title) }) { Text("保存") } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } },
-        )
-    }
-}
 
-@Composable
-private fun ReaderSegmentV30(label: String, selected: Boolean, theme: ReaderThemeV30, onClick: () -> Unit) {
-    val bg by animateColorAsState(if (selected) theme.accent.copy(alpha = .14f) else Color.Transparent, tween(180), label = "segBg")
-    Text(
-        label,
-        Modifier.clip(CircleShape).background(bg).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 5.dp),
-        color = if (selected) theme.accent else theme.sheetMuted,
-        fontSize = 13.sp,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-    )
-}
+/* -------------------------------------------------------------------------- */
+/*                                 Details                                    */
+/* -------------------------------------------------------------------------- */
 
 @Composable
 private fun ReaderDetailsTabV30(
@@ -573,459 +453,1560 @@ private fun ReaderDetailsTabV30(
     chapterIndex: Int,
     pageIndex: Int,
     pageCount: Int,
-    theme: ReaderThemeV30,
-    bookmarked: Boolean,
     settings: ReaderSettingsV30,
-    onBack: () -> Unit,
-    onBookmark: () -> Unit,
-    onJumpChapter: (Int, Int) -> Unit,
+    theme: ReaderThemeV30,
     onPageFraction: (Float) -> Unit,
-    onEdit: () -> Unit,
-    onWriting: () -> Unit,
-    onStory: () -> Unit,
+    onThemePanel: () -> Unit,
+    onSizePanel: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     val chapter = chapters.getOrNull(chapterIndex)
-    val incomplete = remember(book.sourceId, chapters) { book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }) != null }
-    val bookProgress = if (chapters.isEmpty()) 0f else
-        ((chapterIndex + if (pageCount > 0) (pageIndex + 1f) / pageCount else 0f) / chapters.size).coerceIn(0f, 1f)
-    val cover = rememberLanghuanCoverV30(book.coverPath, 220)
-    Column {
-        ReaderSheetHeaderV30(book.title, theme, bookmarked, settings, onBack, onBookmark)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .width(54.dp)
-                    .aspectRatio(.72f)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(theme.sheetTile),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (cover != null) Image(cover, book.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                else Text(book.title.take(2), color = theme.sheetMuted, fontSize = 13.sp)
-            }
-            Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                Text(
-                    chapter?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) } ?: book.title,
-                    color = theme.sheetText,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    if (incomplete) "当前第 ${chapterIndex + 1} 条 · 仅存 ${chapters.size} 条目录"
-                    else "第 ${chapterIndex + 1} / ${chapters.size} 章 · 本章 ${pageIndex + 1}/${pageCount.coerceAtLeast(1)} 页",
-                    Modifier.padding(top = 4.dp),
-                    color = theme.sheetMuted,
-                    fontSize = 12.sp,
-                )
-                Text(
-                    if (incomplete) "目录待补全，暂不能计算全书进度" else String.format(Locale.US, "全书已读 %.1f%%", bookProgress * 100f),
-                    Modifier.padding(top = 2.dp),
-                    color = theme.accent,
-                    fontSize = 12.sp,
-                )
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            ReaderTextButtonV30("上一章", theme, enabled = chapterIndex > 0) { onJumpChapter(chapterIndex - 1, 0) }
-            var dragging by remember { mutableStateOf<Float?>(null) }
-            val shown = dragging ?: if (pageCount <= 1) 0f else pageIndex.toFloat() / (pageCount - 1)
-            Slider(
-                value = shown,
-                onValueChange = { dragging = it },
-                onValueChangeFinished = {
-                    dragging?.let(onPageFraction)
-                    dragging = null
-                },
-                modifier = Modifier.weight(1f),
-                colors = readerSliderColorsV30(theme),
+    val fraction = when {
+        pageCount <= 1 -> 0f
+        else -> pageIndex.toFloat().div(pageCount - 1f).coerceIn(0f, 1f)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.58f).dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = t.space4, vertical = t.space3),
+    ) {
+        ReaderSectionTitleV30(title = "当前阅读")
+        Spacer(Modifier.height(t.space2))
+        ReaderBookInfoCardV30(
+            book = book, chapter = chapter,
+            pageIndex = pageIndex, pageCount = pageCount,
+        )
+        if (pageCount > 1) {
+            Spacer(Modifier.height(t.space3))
+            Text(
+                text = "本章位置",
+                style = MaterialTheme.typography.labelMedium,
+                color = t.mutedForeground,
             )
-            ReaderTextButtonV30("下一章", theme, enabled = chapterIndex < chapters.lastIndex) { onJumpChapter(chapterIndex + 1, 0) }
+            Slider(
+                value = fraction,
+                onValueChange = onPageFraction,
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = t.primary,
+                    activeTrackColor = t.primary,
+                    inactiveTrackColor = t.border,
+                    activeTickColor = Color.Transparent,
+                    inactiveTickColor = Color.Transparent,
+                ),
+            )
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-            listOf(
-                ReaderMenuActionV30("编辑本章", Icons.Rounded.Edit, onClick = onEdit),
-                ReaderMenuActionV30("AI 创作", Icons.Rounded.AutoAwesome, onClick = onWriting),
-                ReaderMenuActionV30("进入故事", Icons.Rounded.TheaterComedy, onClick = onStory),
-                ReaderMenuActionV30(if (bookmarked) "已加书签" else "加书签", Icons.Outlined.BookmarkBorder, bookmarked, onBookmark),
-            ).forEach { action ->
-                Box(Modifier.weight(1f)) { ReaderActionTileV30(action, theme) }
+        Spacer(Modifier.height(t.space5))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ReaderSectionTitleV30(title = "阅读主题", modifier = Modifier.weight(1f))
+            ReaderInlineTextActionV30(text = "全部设置", onClick = onThemePanel)
+        }
+        Spacer(Modifier.height(t.space3))
+        ReaderThemeGridV30(settings = settings, compact = true)
+        Spacer(Modifier.height(t.space5))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ReaderSectionTitleV30(title = "字号", modifier = Modifier.weight(1f))
+            ReaderInlineTextActionV30(text = "更多", onClick = onSizePanel)
+        }
+        Spacer(Modifier.height(t.space3))
+        ReaderFontSizeStepperV30(settings = settings)
+        Spacer(Modifier.height(t.space4))
+        Text(
+            text = "当前正文主题：${readerThemeDisplayNameV30(theme.key)} · " +
+                "${settings.fontSize.roundToInt()}sp",
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                                Book Info                                   */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderBookInfoCardV30(
+    book: ReaderBookUi,
+    chapter: ChapterDraft?,
+    pageIndex: Int,
+    pageCount: Int,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusLg)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = t.card, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .padding(t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(50.dp)
+                .height(68.dp)
+                .background(color = t.input, shape = RoundedCornerShape(t.radiusSm))
+                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusSm)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.AutoStories,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = t.primary,
+            )
+        }
+        Spacer(Modifier.width(t.space3))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = book.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(t.space1))
+            Text(
+                text = chapter?.let {
+                    readerDisplayChapterTitleV13(it.title, it.chapterNumber)
+                } ?: "暂无章节",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.secondaryForeground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(t.space1))
+            Text(
+                text = buildString {
+                    if (book.genre.isNotBlank() && book.genre != "导入作品") {
+                        append(book.genre)
+                        append(" · ")
+                    }
+                    if (pageCount > 0) {
+                        append("本章 ${pageIndex + 1} / $pageCount 页")
+                    } else {
+                        append("正在排版")
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = t.mutedForeground,
+            )
+        }
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Directory                                    */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderDirectoryTabV30(
+    book: ReaderBookUi,
+    chapters: List<ChapterDraft>,
+    chapterIndex: Int,
+    bookmarkedChapters: Set<Int>,
+    bookmarkError: String?,
+    legacyBookmarkedChapters: Set<Int>,
+    legacyBookmarkError: String?,
+    onRestoreLegacyBookmark: (Int) -> Unit,
+    onJumpChapter: (Int, Int) -> Unit,
+    onRefreshCatalogue: () -> Unit,
+    refreshingCatalogue: Boolean,
+    catalogueMessage: String?,
+) {
+    val t = LocalLanghuanUiTokens.current
+    var mode by rememberSaveable { mutableStateOf(ReaderDirectoryModeV30.CHAPTERS) }
+    var legacy by rememberSaveable { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = t.space4, vertical = t.space2),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ReaderDirectorySegmentV30(
+                text = "目录 ${chapters.size}",
+                selected = mode == ReaderDirectoryModeV30.CHAPTERS,
+                onClick = {
+                    mode = ReaderDirectoryModeV30.CHAPTERS
+                    legacy = false
+                },
+            )
+            Spacer(Modifier.width(t.space2))
+            ReaderDirectorySegmentV30(
+                text = "书签 ${bookmarkedChapters.size}",
+                selected = mode == ReaderDirectoryModeV30.BOOKMARKS && !legacy,
+                onClick = {
+                    mode = ReaderDirectoryModeV30.BOOKMARKS
+                    legacy = false
+                },
+            )
+            if (legacyBookmarkedChapters.isNotEmpty() || legacyBookmarkError != null) {
+                Spacer(Modifier.width(t.space2))
+                ReaderDirectorySegmentV30(
+                    text = "旧版",
+                    selected = legacy,
+                    onClick = {
+                        mode = ReaderDirectoryModeV30.BOOKMARKS
+                        legacy = true
+                    },
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (book.sourceId.isNotBlank()) {
+                ReaderSmallIconActionV30(
+                    icon = Icons.Rounded.AutoStories,
+                    contentDescription = "刷新目录",
+                    loading = refreshingCatalogue,
+                    onClick = onRefreshCatalogue,
+                )
+            }
+        }
+
+        bookmarkError?.let { ReaderInlineErrorV30(it) }
+        legacyBookmarkError?.takeIf { legacy }?.let { ReaderInlineErrorV30(it) }
+        catalogueMessage?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                modifier = Modifier.padding(horizontal = t.space4, vertical = t.space1),
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
+        }
+
+        when {
+            mode == ReaderDirectoryModeV30.CHAPTERS -> {
+                ReaderChapterListV30(
+                    chapters = chapters,
+                    chapterIndex = chapterIndex,
+                    bookmarkedChapters = bookmarkedChapters,
+                    onJumpChapter = onJumpChapter,
+                )
+            }
+            legacy -> {
+                ReaderLegacyBookmarkListV30(
+                    chapters = chapters,
+                    bookmarks = legacyBookmarkedChapters,
+                    onRestore = onRestoreLegacyBookmark,
+                    onJumpChapter = onJumpChapter,
+                )
+            }
+            else -> {
+                ReaderBookmarkListV30(
+                    chapters = chapters,
+                    bookmarks = bookmarkedChapters,
+                    onJumpChapter = onJumpChapter,
+                )
             }
         }
     }
 }
+
+@Composable
+private fun ReaderChapterListV30(
+    chapters: List<ChapterDraft>,
+    chapterIndex: Int,
+    bookmarkedChapters: Set<Int>,
+    onJumpChapter: (Int, Int) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    if (chapters.isEmpty()) {
+        ReaderMenuEmptyV30(title = "暂无章节", description = "这本书还没有可阅读的章节。")
+        return
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+        contentPadding = PaddingValues(
+            start = t.space3, end = t.space3, bottom = t.space3,
+        ),
+    ) {
+        items(items = chapters, key = { it.id }) { chapter ->
+            val index = chapters.indexOf(chapter)
+            val current = index == chapterIndex
+            val marked = chapter.chapterNumber in bookmarkedChapters
+            ReaderChapterRowV30(
+                chapter = chapter,
+                current = current,
+                bookmarked = marked,
+                onClick = { onJumpChapter(index, 0) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderBookmarkListV30(
+    chapters: List<ChapterDraft>,
+    bookmarks: Set<Int>,
+    onJumpChapter: (Int, Int) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val rows = chapters.filter { it.chapterNumber in bookmarks }
+    if (rows.isEmpty()) {
+        ReaderMenuEmptyV30(
+            title = "还没有书签",
+            description = "在阅读菜单顶部点击「这一页加书签」后，会显示在这里。",
+        )
+        return
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+        contentPadding = PaddingValues(
+            start = t.space3, end = t.space3, bottom = t.space3,
+        ),
+    ) {
+        items(items = rows, key = { "bookmark-${it.id}" }) { chapter ->
+            val index = chapters.indexOf(chapter)
+            ReaderChapterRowV30(
+                chapter = chapter,
+                current = false,
+                bookmarked = true,
+                onClick = { onJumpChapter(index, 0) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderLegacyBookmarkListV30(
+    chapters: List<ChapterDraft>,
+    bookmarks: Set<Int>,
+    onRestore: (Int) -> Unit,
+    onJumpChapter: (Int, Int) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val rows = chapters.filter { it.chapterNumber in bookmarks }
+    if (rows.isEmpty()) {
+        ReaderMenuEmptyV30(
+            title = "没有可恢复的旧版书签",
+            description = "旧版暂存不会自动归入本书，以免把不同书籍的章节混在一起。",
+        )
+        return
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+        contentPadding = PaddingValues(
+            start = t.space3, end = t.space3, bottom = t.space3,
+        ),
+    ) {
+        items(items = rows, key = { "legacy-${it.id}" }) { chapter ->
+            val index = chapters.indexOf(chapter)
+            val shape = RoundedCornerShape(t.radiusMd)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = t.space1)
+                    .background(color = t.card, shape = shape)
+                    .border(width = 1.dp, color = t.border, shape = shape)
+                    .padding(t.space3),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f).clickable {
+                        onJumpChapter(index, 0)
+                    },
+                ) {
+                    Text(
+                        text = readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = t.foreground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "旧版暂存",
+                        modifier = Modifier.padding(top = t.space1),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
+                ReaderInlineTextActionV30(
+                    text = "归入本书",
+                    onClick = { onRestore(chapter.chapterNumber) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderChapterRowV30(
+    chapter: ChapterDraft,
+    current: Boolean,
+    bookmarked: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = t.space1)
+            .background(
+                color = if (current) t.accent else Color.Transparent,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (current) t.primary else Color.Transparent,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space3, vertical = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (current) t.accentForeground else t.foreground,
+                fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (current) {
+                Text(
+                    text = "正在阅读",
+                    modifier = Modifier.padding(top = t.space1),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = t.primary,
+                )
+            }
+        }
+        if (bookmarked) {
+            Icon(
+                imageVector = Icons.Outlined.Bookmark,
+                contentDescription = "已加书签",
+                modifier = Modifier.size(18.dp),
+                tint = t.gold,
+            )
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                                  More                                      */
+/* -------------------------------------------------------------------------- */
 
 @Composable
 private fun ReaderMoreTabV30(
+    book: ReaderBookUi,
+    chapters: List<ChapterDraft>,
+    chapterIndex: Int,
     settings: ReaderSettingsV30,
-    theme: ReaderThemeV30,
+    listening: Boolean,
+    onListen: () -> Unit,
     onPanel: (ReaderMenuPanelV30) -> Unit,
     onLocate: () -> Unit,
-    listening: Boolean = false,
-    onListen: () -> Unit = {},
+    onEdit: () -> Unit,
+    onWriting: () -> Unit,
+    onStory: () -> Unit,
+    onRenameChapter: (Int, String) -> Unit,
+    onAppendChapter: () -> Unit,
+    onDeleteLastChapter: () -> Unit,
 ) {
-    val mode = settings.turnMode
-    val actions = listOf(
-        ReaderMenuActionV30(if (listening) "停止听书" else "听书", Icons.Rounded.Headphones, listening, onListen),
-        ReaderMenuActionV30("阅读统计", Icons.Rounded.BarChart) { onPanel(ReaderMenuPanelV30.STATS) },
-        ReaderMenuActionV30("主题", Icons.Rounded.Palette) { onPanel(ReaderMenuPanelV30.THEME) },
-        ReaderMenuActionV30("字体", Icons.Rounded.TextFields) { onPanel(ReaderMenuPanelV30.FONT) },
-        ReaderMenuActionV30("字号", Icons.Rounded.FormatSize) { onPanel(ReaderMenuPanelV30.SIZE) },
-        ReaderMenuActionV30("行距", Icons.Rounded.FormatLineSpacing) { onPanel(ReaderMenuPanelV30.SPACING) },
-        ReaderMenuActionV30("翻页·${if (mode == ReaderTurnModeV30.SCROLL) settings.lastPagedMode.label else mode.label}", Icons.Rounded.Swipe) { onPanel(ReaderMenuPanelV30.TURN) },
-        ReaderMenuActionV30("上下滚动", Icons.Rounded.SwapVert, mode == ReaderTurnModeV30.SCROLL) {
-            settings.selectTurnMode(if (mode == ReaderTurnModeV30.SCROLL) settings.lastPagedMode else ReaderTurnModeV30.SCROLL)
-        },
-        ReaderMenuActionV30("仿真翻页", Icons.Rounded.AutoStories, mode == ReaderTurnModeV30.SIMULATION) {
-            settings.selectTurnMode(if (mode == ReaderTurnModeV30.SIMULATION) ReaderTurnModeV30.COVER else ReaderTurnModeV30.SIMULATION)
-        },
-        ReaderMenuActionV30("全文搜索", Icons.Rounded.Search) { onPanel(ReaderMenuPanelV30.SEARCH) },
-        ReaderMenuActionV30("音量键翻页", Icons.Rounded.VolumeUp, settings.volumeTurn) { settings.volumeTurn = !settings.volumeTurn },
-        ReaderMenuActionV30("屏幕常亮", Icons.Rounded.LightMode, settings.keepScreen) { settings.keepScreen = !settings.keepScreen },
-        ReaderMenuActionV30("时间电量", Icons.Rounded.Schedule, settings.showTimeBattery) { settings.showTimeBattery = !settings.showTimeBattery },
-        ReaderMenuActionV30("沉浸式", Icons.Rounded.Fullscreen, settings.immersive) { settings.immersive = !settings.immersive },
-        ReaderMenuActionV30("点击动画", Icons.Rounded.TouchApp, settings.clickAnimation) { settings.clickAnimation = !settings.clickAnimation },
-        ReaderMenuActionV30("全屏下一页", Icons.Rounded.SkipNext, settings.fullNext) { settings.fullNext = !settings.fullNext },
-        ReaderMenuActionV30("定位", Icons.Rounded.MyLocation, onClick = onLocate),
-        ReaderMenuActionV30("锁定竖屏", Icons.Rounded.ScreenLockPortrait, settings.lockPortrait) { settings.lockPortrait = !settings.lockPortrait },
-    )
+    val t = LocalLanghuanUiTokens.current
+    val currentChapter = chapters.getOrNull(chapterIndex)
+    var renameOpen by remember { mutableStateOf(false) }
+    var deleteOpen by remember { mutableStateOf(false) }
+
     Column(
-        Modifier
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * .5f).dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.58f).dp)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = t.space4, vertical = t.space3),
     ) {
-        actions.chunked(4).forEach { row ->
-            Row(Modifier.fillMaxWidth()) {
-                row.forEach { action -> Box(Modifier.weight(1f)) { ReaderActionTileV30(action, theme) } }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Settings panels
-// ---------------------------------------------------------------------------------------------
-
-@Composable
-private fun ReaderPanelHeaderV30(title: String, theme: ReaderThemeV30, onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回", tint = theme.sheetText) }
-        Text(title, Modifier.weight(1f), color = theme.sheetText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        trailing()
-    }
-}
-
-@Composable
-private fun ReaderThemePanelV30(settings: ReaderSettingsV30, theme: ReaderThemeV30, onBack: () -> Unit) {
-    Column(Modifier.padding(bottom = 16.dp)) {
-        ReaderPanelHeaderV30("阅读主题", theme, onBack)
-        READER_THEMES_V30.chunked(4).forEach { row ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { option ->
-                    val selected = option.key == settings.theme
-                    val scale by animateFloatAsState(if (selected) 1f else .96f, spring(stiffness = Spring.StiffnessMedium), label = "themeScale")
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .graphicsLayer { scaleX = scale; scaleY = scale }
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { settings.selectTheme(option.key) },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(.82f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(option.page)
-                                .border(
-                                    BorderStroke(if (selected) 2.dp else 0.8.dp, if (selected) theme.accent else theme.sheetDivider),
-                                    RoundedCornerShape(12.dp),
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("文", color = option.text, fontSize = 22.sp, fontWeight = FontWeight.Medium)
-                            if (selected) {
-                                Box(
-                                    Modifier
-                                        .align(Alignment.TopStart)
-                                        .padding(6.dp)
-                                        .size(18.dp)
-                                        .clip(CircleShape)
-                                        .background(theme.accent),
-                                    contentAlignment = Alignment.Center,
-                                ) { Icon(Icons.Rounded.Check, null, Modifier.size(12.dp), tint = Color.White) }
-                            }
-                        }
-                        Text(option.name, Modifier.padding(top = 6.dp), color = if (selected) theme.accent else theme.sheetMuted, fontSize = 12.sp)
-                    }
-                }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderFontPanelV30(settings: ReaderSettingsV30, theme: ReaderThemeV30, onBack: () -> Unit) {
-    Column(Modifier.padding(bottom = 16.dp)) {
-        ReaderPanelHeaderV30("字体", theme, onBack)
-        listOf(
-            Triple("sans", "系统黑体", FontFamily.SansSerif),
-            Triple("serif", "系统宋体", FontFamily.Serif),
-            Triple("mono", "等宽字体", FontFamily.Monospace),
-        ).forEach { (key, name, family) ->
-            val selected = settings.fontKey == key
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { settings.fontKey = key }
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(name, color = if (selected) theme.accent else theme.sheetText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                    Text("琅嬛福地，书香一卷", Modifier.padding(top = 3.dp), color = theme.sheetMuted, fontSize = 14.sp, fontFamily = family)
-                }
-                if (selected) Icon(Icons.Rounded.Check, null, tint = theme.accent)
-            }
-        }
-        Text("字重", Modifier.padding(start = 20.dp, top = 8.dp, bottom = 8.dp), color = theme.sheetMuted, fontSize = 12.sp)
-        ReaderSegmentedV30(
-            options = listOf(400 to "常规", 500 to "中等", 600 to "中粗", 700 to "粗体"),
-            selected = settings.weight,
-            theme = theme,
-            onSelect = { settings.weight = it },
-        )
-    }
-}
-
-@Composable
-private fun ReaderSizePanelV30(settings: ReaderSettingsV30, theme: ReaderThemeV30, onBack: () -> Unit) {
-    Column(Modifier.padding(bottom = 16.dp)) {
-        ReaderPanelHeaderV30("字号", theme, onBack) {
-            ReaderTextButtonV30("默认", theme) { settings.fontSize = ReaderSettingsV30.DEFAULT_FONT }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            ReaderStepButtonV30("A-", theme) { settings.fontSize = (settings.fontSize - 1f).coerceAtLeast(12f) }
-            Text(
-                "${settings.fontSize.roundToInt()}",
-                Modifier.weight(1f),
-                color = theme.sheetText,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
+        ReaderSectionTitleV30(title = "常用")
+        Spacer(Modifier.height(t.space3))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(t.space2),
+        ) {
+            ReaderActionTileV30(
+                icon = Icons.Rounded.Headphones,
+                label = if (listening) "停止听书" else "听书",
+                selected = listening,
+                modifier = Modifier.weight(1f),
+                onClick = onListen,
             )
-            ReaderStepButtonV30("A+", theme) { settings.fontSize = (settings.fontSize + 1f).coerceAtMost(34f) }
+            ReaderActionTileV30(
+                icon = Icons.Rounded.BarChart,
+                label = "阅读统计",
+                modifier = Modifier.weight(1f),
+                onClick = { onPanel(ReaderMenuPanelV30.STATS) },
+            )
+            ReaderActionTileV30(
+                icon = Icons.Rounded.Search,
+                label = "全文搜索",
+                modifier = Modifier.weight(1f),
+                onClick = { onPanel(ReaderMenuPanelV30.SEARCH) },
+            )
+            ReaderActionTileV30(
+                icon = Icons.Rounded.MyLocation,
+                label = "定位",
+                modifier = Modifier.weight(1f),
+                onClick = onLocate,
+            )
         }
-        ReaderSliderRowV30("字号", "${settings.fontSize.roundToInt()}", settings.fontSize, 12f..34f, 1f, theme) { settings.fontSize = it }
-        ReaderSliderRowV30("字距", String.format(Locale.US, "%.2f", settings.letterSpacing), settings.letterSpacing, 0f..0.2f, .01f, theme) { settings.letterSpacing = it }
+        Spacer(Modifier.height(t.space5))
+        ReaderSectionTitleV30(title = "排版与翻页")
+        Spacer(Modifier.height(t.space2))
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.TextFields,
+            title = "字体",
+            value = readerFontLabelV30(settings.fontKey),
+            onClick = { onPanel(ReaderMenuPanelV30.FONT) },
+        )
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.FormatLineSpacing,
+            title = "行距与排版",
+            value = String.format(Locale.US, "%.2f", settings.lineFactor),
+            onClick = { onPanel(ReaderMenuPanelV30.SPACING) },
+        )
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.ViewCarousel,
+            title = "翻页方式",
+            value = settings.turnMode.label,
+            onClick = { onPanel(ReaderMenuPanelV30.TURN) },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.SwapVert,
+            title = "上下滚动",
+            description = "连续纵向阅读正文",
+            checked = settings.turnMode == ReaderTurnModeV30.SCROLL,
+            onCheckedChange = { checked ->
+                if (checked) settings.selectTurnMode(ReaderTurnModeV30.SCROLL)
+                else settings.selectTurnMode(settings.lastPagedMode)
+            },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.AutoStories,
+            title = "仿真翻页",
+            description = "模拟纸张翻页效果",
+            checked = settings.turnMode == ReaderTurnModeV30.SIMULATION,
+            onCheckedChange = { checked ->
+                settings.selectTurnMode(
+                    if (checked) ReaderTurnModeV30.SIMULATION else ReaderTurnModeV30.COVER,
+                )
+            },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.TouchApp,
+            title = "点击动画",
+            description = "点击翻页时播放过渡动画",
+            checked = settings.clickAnimation,
+            onCheckedChange = { settings.clickAnimation = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.Fullscreen,
+            title = "全屏下一页",
+            description = "除中间区域外点击均向后翻页",
+            checked = settings.fullNext,
+            onCheckedChange = { settings.fullNext = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.VolumeUp,
+            title = "音量键翻页",
+            description = "音量加减键控制上一页与下一页",
+            checked = settings.volumeTurn,
+            onCheckedChange = { settings.volumeTurn = it },
+        )
+        Spacer(Modifier.height(t.space5))
+        ReaderSectionTitleV30(title = "屏幕")
+        Spacer(Modifier.height(t.space2))
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.WbSunny,
+            title = "屏幕常亮",
+            description = "阅读时阻止屏幕自动熄灭",
+            checked = settings.keepScreen,
+            onCheckedChange = { settings.keepScreen = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.Visibility,
+            title = "时间电量",
+            description = "页脚显示当前时间与电量",
+            checked = settings.showTimeBattery,
+            onCheckedChange = { settings.showTimeBattery = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.Fullscreen,
+            title = "沉浸式",
+            description = "隐藏系统栏，扩大正文阅读区域",
+            checked = settings.immersive,
+            onCheckedChange = { settings.immersive = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.ScreenLockPortrait,
+            title = "锁定竖屏",
+            description = "阅读期间保持竖屏方向",
+            checked = settings.lockPortrait,
+            onCheckedChange = { settings.lockPortrait = it },
+        )
+        Spacer(Modifier.height(t.space5))
+        ReaderSectionTitleV30(title = "书籍与章节")
+        Spacer(Modifier.height(t.space2))
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.Edit,
+            title = "编辑当前章节",
+            value = currentChapter?.let { "第 ${it.chapterNumber} 章" } ?: "",
+            enabled = currentChapter != null,
+            onClick = onEdit,
+        )
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.AutoAwesome,
+            title = "AI 创作",
+            value = "规划、改写或续写",
+            onClick = onWriting,
+        )
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.MenuBook,
+            title = "故事模式",
+            value = "进入世界互动",
+            onClick = onStory,
+        )
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.Edit,
+            title = "重命名当前章节",
+            value = currentChapter?.title.orEmpty(),
+            enabled = currentChapter != null,
+            onClick = { renameOpen = true },
+        )
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.Add,
+            title = "新增章节",
+            value = "添加到章节末尾",
+            onClick = onAppendChapter,
+        )
+        ReaderSettingsNavigationRowV30(
+            icon = Icons.Rounded.DeleteOutline,
+            title = "删除最后一章",
+            value = chapters.lastOrNull()?.let { "第 ${it.chapterNumber} 章" }.orEmpty(),
+            destructive = true,
+            enabled = chapters.isNotEmpty(),
+            onClick = { deleteOpen = true },
+        )
+        Spacer(Modifier.height(t.space3))
+        Text(
+            text = "《${book.title}》 · 共 ${chapters.size} 章",
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+        )
+    }
+
+    if (renameOpen && currentChapter != null) {
+        ReaderRenameChapterDialogV30(
+            chapter = currentChapter,
+            onDismiss = { renameOpen = false },
+            onConfirm = { title ->
+                renameOpen = false
+                onRenameChapter(currentChapter.chapterNumber, title)
+            },
+        )
+    }
+    if (deleteOpen) {
+        ReaderDeleteLastChapterDialogV30(
+            chapter = chapters.lastOrNull(),
+            onDismiss = { deleteOpen = false },
+            onConfirm = {
+                deleteOpen = false
+                onDeleteLastChapter()
+            },
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Theme Panel                                   */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderThemePanelV30(
+    settings: ReaderSettingsV30,
+    onBack: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space4, bottom = t.space4),
+    ) {
+        ReaderPanelHeaderV30(title = "阅读主题", onBack = onBack)
+        Text(
+            text = "正文主题独立于琅嬛 App 的浅色 / 深色主题。",
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+        )
+        Spacer(Modifier.height(t.space4))
+        ReaderThemeGridV30(settings = settings, compact = false)
     }
 }
 
 @Composable
-private fun ReaderSpacingPanelV30(settings: ReaderSettingsV30, theme: ReaderThemeV30, onBack: () -> Unit) {
-    Column(Modifier.padding(bottom = 16.dp)) {
-        ReaderPanelHeaderV30("排版", theme, onBack) {
-            ReaderTextButtonV30("恢复默认", theme) { settings.resetTypography() }
-        }
-        val presets = listOf(
-            Triple("紧凑", 1.5f, 6f to 16f),
-            Triple("标准", ReaderSettingsV30.DEFAULT_LINE, ReaderSettingsV30.DEFAULT_PARAGRAPH to ReaderSettingsV30.DEFAULT_SIDE),
-            Triple("舒适", 1.9f, 14f to 24f),
-            Triple("宽松", 2.1f, 18f to 28f),
-        )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            presets.forEach { (name, line, rest) ->
-                val selected = abs2(settings.lineFactor - line) < .01f && abs2(settings.paragraphSpacing - rest.first) < .5f && abs2(settings.sidePadding - rest.second) < .5f
-                ReaderChipV30(name, selected, theme, Modifier.weight(1f)) {
-                    settings.lineFactor = line
-                    settings.paragraphSpacing = rest.first
-                    settings.sidePadding = rest.second
-                }
+private fun ReaderThemeGridV30(
+    settings: ReaderSettingsV30,
+    compact: Boolean,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val orderedKeys = listOf(
+        "paper", "sheep", "tea", "green", "langhuan", "pink", "white", "night",
+    )
+    val options = orderedKeys.mapNotNull { key ->
+        READER_THEMES_V30.firstOrNull { it.key == key }
+    }
+    options.chunked(4).forEachIndexed { rowIndex, row ->
+        if (rowIndex > 0) Spacer(Modifier.height(t.space2))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(t.space2),
+        ) {
+            row.forEach { option ->
+                ReaderThemeOptionV30(
+                    option = option,
+                    label = readerThemeDisplayNameV30(option.key),
+                    selected = settings.theme == option.key,
+                    compact = compact,
+                    modifier = Modifier.weight(1f),
+                    onClick = { settings.selectTheme(option.key) },
+                )
             }
-        }
-        ReaderSliderRowV30("行距", String.format(Locale.US, "%.2f", settings.lineFactor), settings.lineFactor, 1.2f..2.4f, .05f, theme) { settings.lineFactor = it }
-        ReaderSliderRowV30("段距", "${settings.paragraphSpacing.roundToInt()}", settings.paragraphSpacing, 0f..28f, 1f, theme) { settings.paragraphSpacing = it }
-        ReaderSliderRowV30("页边距", "${settings.sidePadding.roundToInt()}", settings.sidePadding, 8f..40f, 1f, theme) { settings.sidePadding = it }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("首行缩进", Modifier.weight(1f), color = theme.sheetText, fontSize = 14.sp)
-            Switch(checked = settings.indent, onCheckedChange = { settings.indent = it }, colors = readerSwitchColorsV30(theme))
+            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
         }
     }
 }
 
-private fun abs2(value: Float): Float = if (value < 0f) -value else value
-
 @Composable
-private fun ReaderTurnPanelV30(settings: ReaderSettingsV30, theme: ReaderThemeV30, onBack: () -> Unit) {
-    Column(Modifier.padding(bottom = 16.dp)) {
-        ReaderPanelHeaderV30("翻页方式", theme, onBack)
-        val options = listOf(
-            ReaderTurnModeV30.COVER to Icons.Rounded.Layers,
-            ReaderTurnModeV30.SLIDE to Icons.Rounded.ViewCarousel,
-            ReaderTurnModeV30.SIMULATION to Icons.Rounded.AutoStories,
-            ReaderTurnModeV30.SCROLL to Icons.Rounded.SwapVert,
-            ReaderTurnModeV30.NONE to Icons.Rounded.Block,
-        )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            options.forEach { (option, icon) ->
-                Box(Modifier.weight(1f)) {
-                    ReaderActionTileV30(
-                        ReaderMenuActionV30(option.label, icon, settings.turnMode == option) { settings.selectTurnMode(option) },
-                        theme,
+private fun ReaderThemeOptionV30(
+    option: ReaderThemeV30,
+    label: String,
+    selected: Boolean,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val shape = RoundedCornerShape(t.radiusMd)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(if (compact) 1.18f else 0.94f)
+                .background(color = option.page, shape = shape)
+                .border(
+                    width = 1.dp,
+                    color = if (selected) t.primary else t.border,
+                    shape = shape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "文",
+                color = option.text,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(t.space1)
+                        .size(20.dp)
+                        .background(color = t.primary, shape = CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = "已选择",
+                        modifier = Modifier.size(13.dp),
+                        tint = t.card,
                     )
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("点击翻页动画", color = theme.sheetText, fontSize = 14.sp)
-                Text("关闭后点击左右两侧立即换页", color = theme.sheetMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(t.space1))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) t.primary else t.secondaryForeground,
+            maxLines = 1,
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                               Font Panel                                   */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderFontPanelV30(
+    settings: ReaderSettingsV30,
+    onBack: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space4, bottom = t.space4),
+    ) {
+        ReaderPanelHeaderV30(title = "字体", onBack = onBack)
+        val fonts = listOf(
+            Triple("sans", "系统黑体", FontFamily.SansSerif),
+            Triple("serif", "系统宋体", FontFamily.Serif),
+            Triple("mono", "等宽字体", FontFamily.Monospace),
+        )
+        fonts.forEach { (key, label, family) ->
+            val selected = settings.fontKey == key
+            val shape = RoundedCornerShape(t.radiusMd)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = t.space2)
+                    .background(
+                        color = if (selected) t.accent else t.card,
+                        shape = shape,
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) t.primary else t.border,
+                        shape = shape,
+                    )
+                    .clickable { settings.fontKey = key }
+                    .padding(t.space3),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = t.foreground,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "琅嬛福地，书香一卷",
+                        modifier = Modifier.padding(top = t.space1),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = t.secondaryForeground,
+                        fontFamily = family,
+                    )
+                }
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = t.primary,
+                    )
+                }
             }
-            Switch(checked = settings.clickAnimation, onCheckedChange = { settings.clickAnimation = it }, colors = readerSwitchColorsV30(theme))
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("全屏点击下一页", color = theme.sheetText, fontSize = 14.sp)
-                Text("除中间区域外，点哪里都向后翻", color = theme.sheetMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(t.space3))
+        ReaderSectionTitleV30(title = "字重")
+        Spacer(Modifier.height(t.space2))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(t.space2),
+        ) {
+            listOf(
+                400 to "常规", 500 to "中等", 600 to "中粗", 700 to "粗体",
+            ).forEach { (value, label) ->
+                ReaderChoiceChipV30(
+                    text = label,
+                    selected = settings.weight == value,
+                    modifier = Modifier.weight(1f),
+                    onClick = { settings.weight = value },
+                )
             }
-            Switch(checked = settings.fullNext, onCheckedChange = { settings.fullNext = it }, colors = readerSwitchColorsV30(theme))
         }
     }
 }
 
-private data class ReaderSearchHitV30(val chapterIndex: Int, val title: String, val offset: Int, val preview: String)
+
+/* -------------------------------------------------------------------------- */
+/*                               Size Panel                                   */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderSizePanelV30(
+    settings: ReaderSettingsV30,
+    onBack: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space4, bottom = t.space4),
+    ) {
+        ReaderPanelHeaderV30(
+            title = "字号",
+            onBack = onBack,
+            action = {
+                ReaderInlineTextActionV30(
+                    text = "默认",
+                    onClick = { settings.fontSize = ReaderSettingsV30.DEFAULT_FONT },
+                )
+            },
+        )
+        ReaderFontSizeStepperV30(settings = settings)
+        Spacer(Modifier.height(t.space4))
+        ReaderSliderRowV30(
+            label = "字号",
+            valueLabel = "${settings.fontSize.roundToInt()}sp",
+            value = settings.fontSize,
+            range = 12f..34f,
+            step = 1f,
+            onValue = { settings.fontSize = it },
+        )
+        ReaderSliderRowV30(
+            label = "字距",
+            valueLabel = String.format(Locale.US, "%.2f", settings.letterSpacing),
+            value = settings.letterSpacing,
+            range = 0f..0.20f,
+            step = 0.01f,
+            onValue = { settings.letterSpacing = it },
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                             Spacing Panel                                  */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderSpacingPanelV30(
+    settings: ReaderSettingsV30,
+    onBack: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space4, bottom = t.space4),
+    ) {
+        ReaderPanelHeaderV30(
+            title = "行距与排版",
+            onBack = onBack,
+            action = {
+                ReaderInlineTextActionV30(
+                    text = "恢复默认",
+                    onClick = { settings.resetTypography() },
+                )
+            },
+        )
+        Text(
+            text = "行距",
+            style = MaterialTheme.typography.labelMedium,
+            color = t.mutedForeground,
+        )
+        Spacer(Modifier.height(t.space2))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(t.space2),
+        ) {
+            listOf(
+                1.65f to "紧凑", 1.80f to "标准", 1.95f to "舒适", 2.10f to "宽松",
+            ).forEach { (value, label) ->
+                ReaderChoiceChipV30(
+                    text = label,
+                    selected = kotlin.math.abs(settings.lineFactor - value) < 0.02f,
+                    modifier = Modifier.weight(1f),
+                    onClick = { settings.lineFactor = value },
+                )
+            }
+        }
+        Spacer(Modifier.height(t.space3))
+        ReaderSliderRowV30(
+            label = "行距",
+            valueLabel = String.format(Locale.US, "%.2f", settings.lineFactor),
+            value = settings.lineFactor,
+            range = 1.20f..2.40f,
+            step = 0.05f,
+            onValue = { settings.lineFactor = it },
+        )
+        ReaderSliderRowV30(
+            label = "段距",
+            valueLabel = "${settings.paragraphSpacing.roundToInt()}",
+            value = settings.paragraphSpacing,
+            range = 0f..28f,
+            step = 1f,
+            onValue = { settings.paragraphSpacing = it },
+        )
+        ReaderSliderRowV30(
+            label = "页边距",
+            valueLabel = "${settings.sidePadding.roundToInt()}",
+            value = settings.sidePadding,
+            range = 8f..40f,
+            step = 1f,
+            onValue = { settings.sidePadding = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.FormatSize,
+            title = "首行缩进",
+            description = "段落首行缩进两个中文字符",
+            checked = settings.indent,
+            onCheckedChange = { settings.indent = it },
+        )
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Turn Panel                                    */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderTurnPanelV30(
+    settings: ReaderSettingsV30,
+    onBack: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space4, bottom = t.space4),
+    ) {
+        ReaderPanelHeaderV30(title = "翻页方式", onBack = onBack)
+        val options = listOf(
+            Triple(ReaderTurnModeV30.COVER, "覆盖", Icons.Rounded.Layers),
+            Triple(ReaderTurnModeV30.SLIDE, "平移", Icons.Rounded.ViewCarousel),
+            Triple(ReaderTurnModeV30.SIMULATION, "仿真", Icons.Rounded.AutoStories),
+            Triple(ReaderTurnModeV30.SCROLL, "上下滚动", Icons.Rounded.SwapVert),
+            Triple(ReaderTurnModeV30.NONE, "无动画", Icons.Rounded.Block),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
+            options.chunked(3).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(t.space2),
+                ) {
+                    row.forEach { (option, label, icon) ->
+                        ReaderActionTileV30(
+                            icon = icon,
+                            label = label,
+                            selected = settings.turnMode == option,
+                            modifier = Modifier.weight(1f),
+                            onClick = { settings.selectTurnMode(option) },
+                        )
+                    }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+        Spacer(Modifier.height(t.space4))
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.TouchApp,
+            title = "点击动画",
+            description = "关闭后点击左右区域立即换页",
+            checked = settings.clickAnimation,
+            onCheckedChange = { settings.clickAnimation = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.Fullscreen,
+            title = "全屏下一页",
+            description = "除中间菜单区外点击均向后翻页",
+            checked = settings.fullNext,
+            onCheckedChange = { settings.fullNext = it },
+        )
+        ReaderSwitchRowV30(
+            icon = Icons.Rounded.VolumeUp,
+            title = "音量键翻页",
+            description = "音量加减键控制阅读位置",
+            checked = settings.volumeTurn,
+            onCheckedChange = { settings.volumeTurn = it },
+        )
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Search Panel                                  */
+/* -------------------------------------------------------------------------- */
 
 @Composable
 private fun ReaderSearchPanelV30(
     chapters: List<ChapterDraft>,
-    theme: ReaderThemeV30,
     onJumpChapter: (Int, Int) -> Unit,
     onBack: () -> Unit,
 ) {
+    val t = LocalLanghuanUiTokens.current
     var query by rememberSaveable { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<ReaderSearchHitV30>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
+
     LaunchedEffect(query, chapters) {
-        val q = query.trim()
-        if (q.isEmpty()) {
+        val keyword = query.trim()
+        if (keyword.isBlank()) {
             hits = emptyList()
+            searching = false
             return@LaunchedEffect
         }
-        delay(260)
+        delay(220)
         searching = true
         hits = withContext(Dispatchers.Default) {
-            val found = ArrayList<ReaderSearchHitV30>()
+            val result = ArrayList<ReaderSearchHitV30>()
             for ((index, chapter) in chapters.withIndex()) {
-                val body = readerNormalizeBodyV14(readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content))
-                var at = body.indexOf(q, ignoreCase = true)
-                var perChapter = 0
-                while (at >= 0 && perChapter < 3 && found.size < 80) {
-                    val start = (at - 16).coerceAtLeast(0)
-                    val end = (at + q.length + 30).coerceAtMost(body.length)
-                    found += ReaderSearchHitV30(
-                        index,
-                        readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
-                        at,
-                        body.substring(start, end).replace(Regex("\\s+"), " "),
+                val body = readerNormalizeBodyV14(
+                    readerBodyWithoutDuplicateHeadingV13(chapter.title, chapter.content),
+                )
+                var offset = body.indexOf(keyword, ignoreCase = true)
+                var chapterHits = 0
+                while (offset >= 0 && chapterHits < 4 && result.size < 100) {
+                    val start = (offset - 20).coerceAtLeast(0)
+                    val end = (offset + keyword.length + 40).coerceAtMost(body.length)
+                    result += ReaderSearchHitV30(
+                        chapterIndex = index,
+                        title = readerDisplayChapterTitleV13(
+                            chapter.title, chapter.chapterNumber,
+                        ),
+                        offset = offset,
+                        preview = body.substring(start, end)
+                            .replace(Regex("\\s+"), " "),
                     )
-                    perChapter++
-                    at = body.indexOf(q, at + q.length, ignoreCase = true)
+                    chapterHits++
+                    offset = body.indexOf(
+                        string = keyword,
+                        startIndex = (offset + keyword.length).coerceAtMost(body.length),
+                        ignoreCase = true,
+                    )
                 }
-                if (found.size >= 80) break
+                if (result.size >= 100) break
             }
-            found
+            result
         }
         searching = false
     }
-    Column(Modifier.padding(bottom = 10.dp)) {
-        ReaderPanelHeaderV30("全文搜索", theme, onBack)
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            singleLine = true,
-            placeholder = { Text("搜索整本书", color = theme.sheetMuted) },
-            leadingIcon = { Icon(Icons.Rounded.Search, null, tint = theme.sheetMuted) },
-            trailingIcon = {
-                if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "清除", tint = theme.sheetMuted) }
-            },
-            shape = RoundedCornerShape(14.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = theme.accent,
-                unfocusedBorderColor = theme.sheetDivider,
-                focusedTextColor = theme.sheetText,
-                unfocusedTextColor = theme.sheetText,
-                cursorColor = theme.accent,
-            ),
-        )
-        Text(
-            when {
-                query.isBlank() -> "输入关键词，结果会直接定位到原文位置"
-                searching -> "正在搜索…"
-                else -> "找到 ${hits.size} 处" + if (hits.size >= 80) "（仅显示前 80 处）" else ""
-            },
-            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            color = theme.sheetMuted,
-            fontSize = 12.sp,
-        )
-        LazyColumn(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .38f).dp)) {
-            items(hits, key = { "${it.chapterIndex}:${it.offset}" }) { hit ->
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onJumpChapter(hit.chapterIndex, hit.offset) }
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space4, bottom = t.space4),
+    ) {
+        ReaderPanelHeaderV30(title = "全文搜索", onBack = onBack)
+        val fieldShape = RoundedCornerShape(t.radiusMd)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(color = t.input, shape = fieldShape)
+                .border(width = 1.dp, color = t.border, shape = fieldShape)
+                .padding(horizontal = t.space3),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                tint = t.mutedForeground,
+            )
+            Spacer(Modifier.width(t.space2))
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (query.isBlank()) {
+                    Text(
+                        text = "搜索整本书",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = t.mutedForeground,
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = t.foreground,
+                    ),
+                    cursorBrush = SolidColor(t.primary),
+                )
+            }
+            if (query.isNotEmpty()) {
+                Box(
+                    modifier = Modifier.size(32.dp).clickable { query = "" },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(hit.title, color = theme.accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(hit.preview, Modifier.padding(top = 3.dp), color = theme.sheetText, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "清除",
+                        modifier = Modifier.size(18.dp),
+                        tint = t.mutedForeground,
+                    )
+                }
+            }
+        }
+        Text(
+            text = when {
+                query.isBlank() -> "输入关键词，点击结果会定位到原文位置。"
+                searching -> "正在搜索…"
+                hits.size >= 100 -> "找到至少 100 处，仅显示前 100 处"
+                else -> "找到 ${hits.size} 处"
+            },
+            modifier = Modifier.padding(vertical = t.space2),
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+        )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.42f).dp),
+            verticalArrangement = Arrangement.spacedBy(t.space2),
+        ) {
+            items(items = hits, key = { "${it.chapterIndex}:${it.offset}" }) { hit ->
+                val shape = RoundedCornerShape(t.radiusMd)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(color = t.card, shape = shape)
+                        .border(width = 1.dp, color = t.border, shape = shape)
+                        .clickable { onJumpChapter(hit.chapterIndex, hit.offset) }
+                        .padding(t.space3),
+                ) {
+                    Text(
+                        text = hit.title,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = t.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(t.space1))
+                    Text(
+                        text = hit.preview,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = t.foreground,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Small building blocks
-// ---------------------------------------------------------------------------------------------
+
+/* -------------------------------------------------------------------------- */
+/*                               Stats Panel                                  */
+/* -------------------------------------------------------------------------- */
 
 @Composable
-private fun ReaderActionTileV30(action: ReaderMenuActionV30, theme: ReaderThemeV30) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) .9f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "tileScale")
-    val tint by animateColorAsState(if (action.selected) theme.accent else theme.sheetText, tween(180), label = "tileTint")
-    val haptics = LocalHapticFeedback.current
-    // Toggles pop when they switch on, so the state change is felt as well as seen.
-    val pop = remember { Animatable(1f) }
-    var wasSelected by remember { mutableStateOf(action.selected) }
-    LaunchedEffect(action.selected) {
-        if (action.selected && !wasSelected) {
-            pop.snapTo(.82f)
-            pop.animateTo(1f, spring(dampingRatio = .45f, stiffness = Spring.StiffnessMedium))
-        }
-        wasSelected = action.selected
-    }
+private fun ReaderStatsPanelV30(
+    onBack: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
     Column(
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource = interaction, indication = null) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                action.onClick()
-            }
-            .padding(vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.62f).dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = t.space4, bottom = t.space4),
     ) {
-        Icon(action.icon, action.label, Modifier.size(24.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }, tint = tint)
+        ReaderPanelHeaderV30(title = "阅读统计", onBack = onBack)
+        ReaderDailyGoalPanelV50()
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                               Rename Dialog                                */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderRenameChapterDialogV30(
+    chapter: ChapterDraft,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    var value by remember(chapter.id) { mutableStateOf(chapter.title) }
+    val valid = value.trim().isNotBlank()
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Text(
+                text = "重命名章节",
+                style = MaterialTheme.typography.titleLarge,
+                color = t.foreground,
+            )
+            Spacer(Modifier.height(t.space3))
+            val inputShape = RoundedCornerShape(t.radiusMd)
+            BasicTextField(
+                value = value,
+                onValueChange = { value = it.take(80) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .background(color = t.input, shape = inputShape)
+                    .border(width = 1.dp, color = t.border, shape = inputShape)
+                    .padding(horizontal = t.space3),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = t.foreground),
+                cursorBrush = SolidColor(t.primary),
+                decorationBox = { inner ->
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (value.isBlank()) {
+                            Text(text = "章节标题", color = t.mutedForeground)
+                        }
+                        inner()
+                    }
+                },
+            )
+            Spacer(Modifier.height(t.space4))
+            ReaderDialogButtonsV30(
+                confirmText = "保存",
+                confirmEnabled = valid,
+                onDismiss = onDismiss,
+                onConfirm = { onConfirm(value.trim()) },
+            )
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                             Delete Dialog                                  */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderDeleteLastChapterDialogV30(
+    chapter: ChapterDraft?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Text(
+                text = "删除最后一章？",
+                style = MaterialTheme.typography.titleLarge,
+                color = t.foreground,
+            )
+            Spacer(Modifier.height(t.space2))
+            Text(
+                text = chapter?.let {
+                    "将删除「${
+                        readerDisplayChapterTitleV13(it.title, it.chapterNumber)
+                    }」。"
+                } ?: "当前没有可删除的章节。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = t.secondaryForeground,
+            )
+            Spacer(Modifier.height(t.space4))
+            ReaderDialogButtonsV30(
+                confirmText = "删除",
+                destructive = true,
+                confirmEnabled = chapter != null,
+                onDismiss = onDismiss,
+                onConfirm = onConfirm,
+            )
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Bottom Tabs                                   */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderMenuTabsV30(
+    tab: ReaderMenuTabV30,
+    onTab: (ReaderMenuTabV30) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .padding(horizontal = t.space3, vertical = t.space1),
+        horizontalArrangement = Arrangement.spacedBy(t.space1),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(
+            ReaderMenuTabV30.DETAILS to "详情",
+            ReaderMenuTabV30.DIRECTORY to "目录",
+            ReaderMenuTabV30.MORE to "更多",
+        ).forEach { (item, label) ->
+            val selected = tab == item
+            val shape = RoundedCornerShape(t.radiusMd)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(
+                        color = if (selected) t.accent else Color.Transparent,
+                        shape = shape,
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) t.border else Color.Transparent,
+                        shape = shape,
+                    )
+                    .clickable { onTab(item) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) t.accentForeground else t.mutedForeground,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                           Common Components                                */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ReaderMenuHandleV30() {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier.fillMaxWidth().height(18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(36.dp)
+                .height(4.dp)
+                .background(color = t.border, shape = CircleShape),
+        )
+    }
+}
+
+@Composable
+private fun ReaderMenuDividerV30() {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier.fillMaxWidth().height(1.dp).background(t.border),
+    )
+}
+
+@Composable
+private fun ReaderSectionTitleV30(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Text(
+        text = title,
+        modifier = modifier,
+        style = MaterialTheme.typography.titleMedium,
+        color = t.foreground,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
+private fun ReaderPanelHeaderV30(
+    title: String,
+    onBack: () -> Unit,
+    action: (@Composable () -> Unit)? = null,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(40.dp).clickable(onClick = onBack),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.ChevronLeft,
+                contentDescription = "返回",
+                modifier = Modifier.size(22.dp),
+                tint = t.secondaryForeground,
+            )
+        }
         Text(
-            action.label,
-            Modifier.padding(top = 6.dp),
-            color = if (action.selected) theme.accent else theme.sheetMuted,
-            fontSize = 11.sp,
+            text = title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleLarge,
+            color = t.foreground,
+            fontWeight = FontWeight.SemiBold,
+        )
+        action?.invoke()
+    }
+}
+
+@Composable
+private fun ReaderActionTileV30(
+    icon: ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Column(
+        modifier = modifier
+            .height(74.dp)
+            .background(
+                color = if (selected) t.accent else t.card,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(t.space2),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(22.dp),
+            tint = if (selected) t.primary else t.secondaryForeground,
+        )
+        Spacer(Modifier.height(t.space1))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) t.accentForeground else t.secondaryForeground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1033,72 +2014,251 @@ private fun ReaderActionTileV30(action: ReaderMenuActionV30, theme: ReaderThemeV
 }
 
 @Composable
-private fun ReaderTextButtonV30(label: String, theme: ReaderThemeV30, enabled: Boolean = true, onClick: () -> Unit) {
-    Text(
-        label,
-        Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        color = if (enabled) theme.sheetText else theme.sheetMuted.copy(alpha = .5f),
-        fontSize = 14.sp,
-    )
-}
-
-@Composable
-private fun ReaderStepButtonV30(label: String, theme: ReaderThemeV30, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(width = 64.dp, height = 40.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(theme.sheetTile)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = theme.sheetText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun ReaderChipV30(label: String, selected: Boolean, theme: ReaderThemeV30, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val bg by animateColorAsState(if (selected) theme.accent.copy(alpha = .12f) else theme.sheetTile, tween(180), label = "chipBg")
-    Box(
-        modifier
-            .height(36.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(bg)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = if (selected) theme.accent else theme.sheetText, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-    }
-}
-
-@Composable
-private fun ReaderSegmentedV30(options: List<Pair<Int, String>>, selected: Int, theme: ReaderThemeV30, onSelect: (Int) -> Unit) {
+private fun ReaderFontSizeStepperV30(settings: ReaderSettingsV30) {
+    val t = LocalLanghuanUiTokens.current
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(theme.sheetTile)
-            .padding(3.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(t.space2),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        options.forEach { (value, label) ->
-            val active = value == selected
-            val bg by animateColorAsState(if (active) theme.sheet else Color.Transparent, tween(180), label = "segBg")
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(34.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(bg)
-                    .clickable { onSelect(value) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, color = if (active) theme.accent else theme.sheetText, fontSize = 13.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
-            }
+        ReaderStepperButtonV30(
+            text = "A−",
+            enabled = settings.fontSize > 12f,
+            modifier = Modifier.weight(1f),
+            onClick = {
+                settings.fontSize = (settings.fontSize - 1f).coerceAtLeast(12f)
+            },
+        )
+        val shape = RoundedCornerShape(t.radiusMd)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(46.dp)
+                .background(color = t.input, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "${settings.fontSize.roundToInt()}sp",
+                style = MaterialTheme.typography.titleMedium,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
+        ReaderStepperButtonV30(
+            text = "A+",
+            enabled = settings.fontSize < 34f,
+            modifier = Modifier.weight(1f),
+            onClick = {
+                settings.fontSize = (settings.fontSize + 1f).coerceAtMost(34f)
+            },
+        )
+    }
+}
+
+@Composable
+private fun ReaderStepperButtonV30(
+    text: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Box(
+        modifier = modifier
+            .height(46.dp)
+            .background(color = t.card, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) t.primary else t.mutedForeground.copy(alpha = 0.4f),
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun ReaderSettingsNavigationRowV30(
+    icon: ImageVector,
+    title: String,
+    value: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    destructive: Boolean = false,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(
+                    color = if (destructive) t.destructive.copy(alpha = 0.08f)
+                    else t.input,
+                    shape = RoundedCornerShape(t.radiusSm),
+                )
+                .border(
+                    width = 1.dp, color = t.border,
+                    shape = RoundedCornerShape(t.radiusSm),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (destructive) t.destructive else t.secondaryForeground,
+            )
+        }
+        Spacer(Modifier.width(t.space3))
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+            color = when {
+                !enabled -> t.mutedForeground.copy(alpha = 0.45f)
+                destructive -> t.destructive
+                else -> t.foreground
+            },
+        )
+        if (value.isNotBlank()) {
+            Text(
+                text = value,
+                modifier = Modifier.width(112.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderSwitchRowV30(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(
+                    color = if (checked) t.accent else t.input,
+                    shape = RoundedCornerShape(t.radiusSm),
+                )
+                .border(
+                    width = 1.dp, color = t.border,
+                    shape = RoundedCornerShape(t.radiusSm),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (checked) t.primary else t.secondaryForeground,
+            )
+        }
+        Spacer(Modifier.width(t.space3))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = t.foreground,
+            )
+            Text(
+                text = description,
+                modifier = Modifier.padding(top = t.space1),
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
+        }
+        ReaderSwitchV30(checked = checked)
+    }
+}
+
+@Composable
+private fun ReaderSwitchV30(checked: Boolean) {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier
+            .width(44.dp)
+            .height(24.dp)
+            .background(
+                color = if (checked) t.primary else t.input,
+                shape = CircleShape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (checked) t.primary else t.border,
+                shape = CircleShape,
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(x = if (checked) 20.dp else 2.dp, y = 2.dp)
+                .size(20.dp)
+                .background(
+                    color = if (checked) t.card else t.mutedForeground,
+                    shape = CircleShape,
+                ),
+        )
+    }
+}
+
+@Composable
+private fun ReaderChoiceChipV30(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Box(
+        modifier = modifier
+            .height(40.dp)
+            .background(
+                color = if (selected) t.accent else t.card,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) t.accentForeground else t.secondaryForeground,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1109,37 +2269,245 @@ private fun ReaderSliderRowV30(
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     step: Float,
-    theme: ReaderThemeV30,
     onValue: (Float) -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(52.dp), color = theme.sheetText, fontSize = 14.sp)
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.width(54.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = t.secondaryForeground,
+        )
         Slider(
             value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = { raw -> onValue(((raw / step).roundToInt() * step).coerceIn(range.start, range.endInclusive)) },
+            onValueChange = { raw ->
+                val rounded = (raw / step).roundToInt() * step
+                onValue(rounded.coerceIn(range.start, range.endInclusive))
+            },
             valueRange = range,
             modifier = Modifier.weight(1f),
-            colors = readerSliderColorsV30(theme),
+            colors = SliderDefaults.colors(
+                thumbColor = t.primary,
+                activeTrackColor = t.primary,
+                inactiveTrackColor = t.border,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
         )
-        Text(valueLabel, Modifier.width(44.dp), color = theme.sheetMuted, fontSize = 13.sp, textAlign = TextAlign.End)
+        Text(
+            text = valueLabel,
+            modifier = Modifier.width(58.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = t.mutedForeground,
+            textAlign = TextAlign.End,
+        )
     }
 }
 
 @Composable
-private fun readerSliderColorsV30(theme: ReaderThemeV30) = SliderDefaults.colors(
-    thumbColor = theme.accent,
-    activeTrackColor = theme.accent,
-    inactiveTrackColor = theme.sheetDivider,
-    activeTickColor = Color.Transparent,
-    inactiveTickColor = Color.Transparent,
-)
+private fun ReaderDirectorySegmentV30(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusSm)
+    Box(
+        modifier = Modifier
+            .height(34.dp)
+            .background(
+                color = if (selected) t.accent else t.card,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space2),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) t.accentForeground else t.secondaryForeground,
+        )
+    }
+}
 
 @Composable
-private fun readerSwitchColorsV30(theme: ReaderThemeV30) = SwitchDefaults.colors(
-    checkedThumbColor = Color.White,
-    checkedTrackColor = theme.accent,
-    checkedBorderColor = theme.accent,
-    uncheckedThumbColor = theme.sheetMuted,
-    uncheckedTrackColor = theme.sheetTile,
-    uncheckedBorderColor = theme.sheetDivider,
-)
+private fun ReaderSmallIconActionV30(
+    icon: ImageVector,
+    contentDescription: String,
+    loading: Boolean,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier.size(36.dp).clickable(enabled = !loading, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                color = t.primary,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(19.dp),
+                tint = t.secondaryForeground,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderInlineTextActionV30(
+    text: String,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Text(
+        text = text,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space2, vertical = t.space1),
+        style = MaterialTheme.typography.labelMedium,
+        color = t.primary,
+        fontWeight = FontWeight.Medium,
+    )
+}
+
+@Composable
+private fun ReaderInlineErrorV30(text: String) {
+    val t = LocalLanghuanUiTokens.current
+    Text(
+        text = text,
+        modifier = Modifier.padding(horizontal = t.space4, vertical = t.space1),
+        style = MaterialTheme.typography.bodySmall,
+        color = t.destructive,
+    )
+}
+
+@Composable
+private fun ReaderMenuEmptyV30(
+    title: String,
+    description: String,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = t.space5, vertical = t.space6),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.AutoStories,
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+            tint = t.mutedForeground,
+        )
+        Spacer(Modifier.height(t.space3))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = t.foreground,
+        )
+        Spacer(Modifier.height(t.space2))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun ReaderDialogButtonsV30(
+    confirmText: String,
+    confirmEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    destructive: Boolean = false,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(t.space2),
+    ) {
+        val cancelShape = RoundedCornerShape(t.radiusMd)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .background(color = t.card, shape = cancelShape)
+                .border(width = 1.dp, color = t.border, shape = cancelShape)
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "取消",
+                style = MaterialTheme.typography.labelLarge,
+                color = t.secondaryForeground,
+            )
+        }
+        val confirmShape = RoundedCornerShape(t.radiusMd)
+        val confirmBackground = if (destructive) t.destructive else t.primary
+        val confirmForeground = if (destructive) t.destructiveForeground else t.card
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .background(
+                    color = confirmBackground.copy(alpha = if (confirmEnabled) 1f else 0.42f),
+                    shape = confirmShape,
+                )
+                .border(
+                    width = 1.dp,
+                    color = confirmBackground.copy(alpha = if (confirmEnabled) 1f else 0.42f),
+                    shape = confirmShape,
+                )
+                .clickable(enabled = confirmEnabled, onClick = onConfirm),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = confirmText,
+                style = MaterialTheme.typography.labelLarge,
+                color = confirmForeground.copy(alpha = if (confirmEnabled) 1f else 0.65f),
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                                  Helpers                                   */
+/* -------------------------------------------------------------------------- */
+
+private fun readerThemeDisplayNameV30(key: String): String = when (key) {
+    "paper" -> "纸白"
+    "sheep" -> "暖纸"
+    "tea" -> "茶纸"
+    "green" -> "青叶"
+    "langhuan" -> "雾蓝"
+    "pink" -> "樱粉"
+    "white" -> "纯白"
+    "night" -> "夜间"
+    else -> "纸白"
+}
+
+private fun readerFontLabelV30(key: String): String = when (key) {
+    "serif" -> "系统宋体"
+    "mono" -> "等宽字体"
+    else -> "系统黑体"
+}
