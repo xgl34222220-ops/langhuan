@@ -434,7 +434,9 @@ class GenerationPipeline(
         null
     } catch (cancelled: CancellationException) {
         throw cancelled
-    } catch (_: Throwable) {
+    } catch (error: Throwable) {
+        // Streaming adapters may wrap callback errors. Disk failures are not optional model failures.
+        if (generateSequence(error) { it.cause }.any { it is ChapterRunCheckpointWriteException }) throw error
         null
     }
 

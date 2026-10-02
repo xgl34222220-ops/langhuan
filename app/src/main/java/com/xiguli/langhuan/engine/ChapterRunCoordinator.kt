@@ -294,6 +294,21 @@ class ChapterRunCoordinator(
         }
 
         val warnings = mutableListOf<String>()
+        fun finish(detail: String) {
+            if (warnings.isNotEmpty()) {
+                // Keep successful stages and paid outputs; the next commit retries only unfinished work.
+                durable = durable.copy(
+                    phase = DurableRunPhase.COMMITTING,
+                    note = "正文已保存，后处理未完成：${warnings.joinToString("；")}",
+                )
+                checkpointStore.save(durable)
+                return
+            }
+            mark(RunStage.COMPLETE, RunStatus.SUCCESS, detail)
+            durable = durable.copy(phase = DurableRunPhase.COMPLETE)
+            checkpointStore.save(durable)
+            checkpointStore.clear(snapshot.novel.id, draft.chapterNumber)
+        }
         var fullBookAuditScore: Int? = working.snapshot.longForm.editorReport.score.takeIf { completed(RunStage.FULL_BOOK_AUDIT) }
         var executionScore: Int? = durable.executionRecord?.completionScore
         var reviewOutcome: ChapterRunReviewOutcome? = null
@@ -321,10 +336,7 @@ class ChapterRunCoordinator(
             if (!completed(RunStage.EXECUTION_AUDIT)) mark(RunStage.EXECUTION_AUDIT, RunStatus.SKIPPED, "未配置 AI 服务")
             if (!completed(RunStage.CANDIDATE)) mark(RunStage.CANDIDATE, RunStatus.SKIPPED, "未配置 AI 服务，可稍后手动复盘")
             if (!completed(RunStage.AUTONOMOUS_REPLAN)) mark(RunStage.AUTONOMOUS_REPLAN, RunStatus.SKIPPED, "未配置 AI 服务")
-            mark(RunStage.COMPLETE, RunStatus.SUCCESS, "正文已保存；需要 AI 的后处理阶段安全跳过")
-            durable = durable.copy(phase = DurableRunPhase.COMPLETE)
-            checkpointStore.save(durable)
-            checkpointStore.clear(snapshot.novel.id, draft.chapterNumber)
+            finish("正文已保存；需要 AI 的后处理阶段安全跳过")
             return ChapterRunCommitOutcome(working, fullBookAuditScore = fullBookAuditScore, warnings = warnings)
         }
 
@@ -410,10 +422,7 @@ class ChapterRunCoordinator(
             mark(RunStage.AUTONOMOUS_REPLAN, RunStatus.SUCCESS, "自治重规划阶段已完成；未重复模型调用")
         }
 
-        mark(RunStage.COMPLETE, RunStatus.SUCCESS, "统一可恢复章节 Run 已结束")
-        durable = durable.copy(phase = DurableRunPhase.COMPLETE)
-        checkpointStore.save(durable)
-        checkpointStore.clear(snapshot.novel.id, draft.chapterNumber)
+        finish("统一可恢复章节 Run 已结束")
         return ChapterRunCommitOutcome(
             persisted = working,
             review = reviewOutcome?.review ?: durable.agentReview,

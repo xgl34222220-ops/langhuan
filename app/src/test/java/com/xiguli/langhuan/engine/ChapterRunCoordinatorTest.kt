@@ -11,6 +11,7 @@ import com.xiguli.langhuan.domain.OutlineLevel
 import com.xiguli.langhuan.domain.OutlineNode
 import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.domain.StorySnapshot
+import com.xiguli.langhuan.domain.StateChange
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -111,6 +112,83 @@ class ChapterRunCoordinatorTest {
         assertNull(checkpoints.load(reviewedDraft.novelId, reviewedDraft.chapterNumber))
     }
 
+    @Test
+    fun `commit retains Candidate failure and retries only unfinished persistence`() = runBlocking {
+        val store = FakeStore(snapshot(), draft()).apply { failSaveAt = 3 }
+        val checkpoints = MemoryCheckpointStore()
+        val gateway = StreamingGateway(includeCandidate = true)
+        val coordinator = ChapterRunCoordinator(store, checkpoints)
+        val result = GenerationResult(GeneratedChapter("门外的人", PROSE, "摘要"), emptyList())
+        val events = mutableListOf<RunEvent>()
+
+        val first = coordinator.commit(store.snapshot, store.draft, result, gateway, events::add)
+
+        assertEquals(1, first.warnings.size)
+        val durable = checkpoints.load(store.snapshot.novel.id, store.draft.chapterNumber)
+        assertNotNull("Unfinished Candidate persistence must remain recoverable", durable)
+        assertEquals(DurableRunPhase.COMMITTING, durable?.phase)
+        assertNotNull(durable?.agentReview)
+        assertTrue(RunStage.SAVE.name in durable!!.completedStages)
+        assertTrue(RunStage.CANDIDATE.name !in durable.completedStages)
+        assertTrue(events.none { it.stage == RunStage.COMPLETE && it.status == RunStatus.SUCCESS })
+        assertEquals(RunResumePolicy.RESUME_POST_COMMIT, coordinator.recover(store.snapshot, store.draft)?.policy)
+        val modelCalls = gateway.generateCalls
+        val saveCalls = store.saveCalls
+        val savedVersion = store.draft.version
+
+        val second = ChapterRunCoordinator(store, checkpoints).commit(store.snapshot, store.draft, result, gateway)
+
+        assertTrue(second.warnings.isEmpty())
+        assertTrue(second.stagedCount > 0)
+        assertEquals(1, store.commitCalls)
+        assertEquals(savedVersion, second.persisted.draft.version)
+        assertEquals(modelCalls, gateway.generateCalls)
+        assertEquals(saveCalls + 1, store.saveCalls)
+        assertNull(checkpoints.load(store.snapshot.novel.id, store.draft.chapterNumber))
+    }
+
+    @Test
+    fun `no AI commit retains failed local audit for a persistence only retry`() = runBlocking {
+        val store = FakeStore(snapshot(), draft()).apply { failNextSave = true }
+        val checkpoints = MemoryCheckpointStore()
+        val coordinator = ChapterRunCoordinator(store, checkpoints)
+        val result = GenerationResult(GeneratedChapter("门外的人", PROSE, "摘要"), emptyList())
+
+        val first = coordinator.commit(store.snapshot, store.draft, result, gateway = null)
+        assertEquals(1, first.warnings.size)
+        assertEquals(DurableRunPhase.COMMITTING, checkpoints.list().single().phase)
+        val second = coordinator.commit(store.snapshot, store.draft, result, gateway = null)
+        assertTrue(second.warnings.isEmpty())
+        assertEquals(1, store.commitCalls)
+        assertEquals(2, store.saveCalls)
+        assertTrue(checkpoints.list().isEmpty())
+    }
+
+    @Test
+    fun `all post commit persistence failures resume without repeating saved work or paid calls`() = runBlocking {
+        for ((index, stage) in listOf(RunStage.FULL_BOOK_AUDIT, RunStage.EXECUTION_AUDIT, RunStage.CANDIDATE, RunStage.AUTONOMOUS_REPLAN).withIndex()) {
+            val store = FakeStore(snapshot(), draft()).apply { failSaveAt = index + 1 }
+            val checkpoints = MemoryCheckpointStore()
+            val gateway = StreamingGateway()
+            val result = GenerationResult(GeneratedChapter("门外的人", PROSE, "摘要"), emptyList())
+            val first = ChapterRunCoordinator(store, checkpoints).commit(store.snapshot, store.draft, result, gateway)
+            assertEquals(stage.name, 1, first.warnings.size)
+            val durable = checkpoints.list().single()
+            assertTrue(stage.name, stage.name !in durable.completedStages)
+            val calls = gateway.generateCalls
+            val saves = store.saveCalls
+
+            val second = ChapterRunCoordinator(store, checkpoints).commit(store.snapshot, store.draft, result, gateway)
+
+            assertTrue(stage.name, second.warnings.isEmpty())
+            assertEquals(stage.name, 1, store.commitCalls)
+            assertEquals(stage.name, 2, second.persisted.draft.version)
+            assertEquals(stage.name, calls, gateway.generateCalls)
+            assertEquals(stage.name, saves + 1, store.saveCalls)
+            assertTrue(stage.name, checkpoints.list().isEmpty())
+        }
+    }
+
     private class MemoryCheckpointStore : ChapterRunCheckpointStore {
         private val values = mutableMapOf<String, ChapterRunCheckpoint>()
 
@@ -137,6 +215,7 @@ class ChapterRunCoordinatorTest {
         var saveCalls = 0
         var lastQuery = ""
         var failNextSave = false
+        var failSaveAt = 0
 
         override suspend fun retrieveRelevantContext(
             novelId: String,
@@ -174,7 +253,7 @@ class ChapterRunCoordinatorTest {
 
         override suspend fun saveStructure(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory {
             saveCalls++
-            if (failNextSave) {
+            if (failNextSave || saveCalls == failSaveAt) {
                 failNextSave = false
                 error("模拟 Candidate 落库失败")
             }
@@ -187,7 +266,7 @@ class ChapterRunCoordinatorTest {
         override suspend fun loadStory(novelId: String): PersistedStory = PersistedStory(snapshot, draft)
     }
 
-    private class StreamingGateway : AiGateway {
+    private class StreamingGateway(private val includeCandidate: Boolean = false) : AiGateway {
         var streamingCalls = 0
         var generateCalls = 0
 
@@ -210,6 +289,9 @@ class ChapterRunCoordinatorTest {
                     title = "门外的人",
                     content = "",
                     summary = "周衍确认门外来客身份存在矛盾，没有开门。",
+                    stateChanges = if (includeCandidate) listOf(
+                        StateChange("周衍", "CHARACTER_EMOTION", "警惕", "困惑", "照片背面的日期让他停了几秒"),
+                    ) else emptyList(),
                 )
             }
         }

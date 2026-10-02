@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [main, test/reader-edition-20260930]
+    branches: [main, test/reader-edition-20260930, test/checkpoint-recovery-20261002]
   pull_request:
     branches: [main]
   workflow_dispatch:

@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.engine
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.xiguli.langhuan.domain.AutonomousStoryPlan
 import com.xiguli.langhuan.domain.ChapterExecutionRecord
 import com.xiguli.langhuan.domain.GenerationResult
@@ -123,10 +124,11 @@ object NoopChapterRunCheckpointStore : ChapterRunCheckpointStore {
 }
 
 /** Small durable checkpoint file backed by app-private SharedPreferences; not part of project Canon. */
-class PersistentChapterRunCheckpointStore(context: Context) : ChapterRunCheckpointStore {
-    private val prefs = context.applicationContext.getSharedPreferences(
-        "langhuan_chapter_run_checkpoints",
-        Context.MODE_PRIVATE,
+class PersistentChapterRunCheckpointStore internal constructor(
+    private val prefs: SharedPreferences,
+) : ChapterRunCheckpointStore {
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences("langhuan_chapter_run_checkpoints", Context.MODE_PRIVATE)
     )
     private val json = Json {
         ignoreUnknownKeys = true
@@ -156,21 +158,31 @@ class PersistentChapterRunCheckpointStore(context: Context) : ChapterRunCheckpoi
             updatedAt = System.currentTimeMillis(),
         )
         // commit(), not apply(): a checkpoint must be durable before the next paid/side-effect stage starts.
-        prefs.edit().putString(
+        val committed = prefs.edit().putString(
             key(safe.novelId, safe.chapterNumber),
             json.encodeToString(ChapterRunCheckpoint.serializer(), safe),
         ).commit()
+        if (!committed) throw ChapterRunCheckpointWriteException("保存")
     }
 
     override fun clear(novelId: String, chapterNumber: Int) {
-        prefs.edit().remove(key(novelId, chapterNumber)).commit()
+        remove(key(novelId, chapterNumber))
     }
 
     private fun decode(raw: String, storageKey: String): ChapterRunCheckpoint? {
         return runCatching { json.decodeFromString(ChapterRunCheckpoint.serializer(), raw) }
-            .onFailure { prefs.edit().remove(storageKey).commit() }
+            .onFailure { remove(storageKey) }
             .getOrNull()
+    }
+
+    private fun remove(storageKey: String) {
+        if (!prefs.edit().remove(storageKey).commit()) throw ChapterRunCheckpointWriteException("清理")
     }
 
     private fun key(novelId: String, chapterNumber: Int) = "$novelId:$chapterNumber"
 }
+
+/** A missing durability acknowledgement must stop the run before another paid call or side effect. */
+internal class ChapterRunCheckpointWriteException(operation: String) : IllegalStateException(
+    "章节断点${operation}未能确认写入磁盘，已停止执行；请检查可用存储空间后重试。"
+)
