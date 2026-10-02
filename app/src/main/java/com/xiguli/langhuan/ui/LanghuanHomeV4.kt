@@ -1104,7 +1104,7 @@ private fun HomeBookGridItemV4(
                 .combinedClickable(onClick = onOpen, onLongClick = onMore),
         ) {
             CoverPreviewV3(
-                coverPath = book.coverPath,
+                path = book.coverPath,
                 title = book.title,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -1181,7 +1181,7 @@ private fun HomeBookCoverV4(
             .border(width = 1.dp, color = t.border, shape = shape),
     ) {
         CoverPreviewV3(
-            coverPath = book.coverPath,
+            path = book.coverPath,
             title = book.title,
             modifier = Modifier.fillMaxSize(),
         )

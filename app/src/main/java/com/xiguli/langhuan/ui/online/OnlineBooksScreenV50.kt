@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -621,7 +622,7 @@ private fun OnlineDiscoveryEntryV50(
 }
 
 @Composable
-private fun OnlineDiscoveryCardV50(
+private fun RowScope.OnlineDiscoveryCardV50(
     group: OnlineDiscoveryGroupV50,
     selected: Boolean,
     onClick: () -> Unit,
@@ -790,8 +791,8 @@ private fun OnlineBookResultRowV50(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OnlineCoverV50(
-            coverUrl = book.coverUrl,
-            contentDescription = book.title,
+            coverUrl = book.cover,
+            contentDescription = book.name,
             modifier = Modifier
                 .width(52.dp)
                 .aspectRatio(3f / 4f),
@@ -799,7 +800,7 @@ private fun OnlineBookResultRowV50(
         Spacer(Modifier.width(t.space3))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = book.title,
+                text = book.name,
                 style = MaterialTheme.typography.titleSmall,
                 color = t.foreground,
                 fontWeight = FontWeight.SemiBold,
@@ -832,9 +833,9 @@ private fun OnlineBookResultRowV50(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (book.description.isNotBlank()) {
+            if (book.intro.isNotBlank()) {
                 Text(
-                    text = book.description,
+                    text = book.intro,
                     modifier = Modifier.padding(top = t.space1),
                     style = MaterialTheme.typography.bodySmall,
                     color = t.mutedForeground,
@@ -1112,11 +1113,11 @@ internal fun OnlineBookDetailScreenV50(
                 OnlineDetailHeroV50(book = book, loading = loading)
             }
 
-            if (book.description.isNotBlank()) {
+            if (book.intro.isNotBlank()) {
                 item(key = "detail-intro") {
                     OnlineDetailSectionV50(title = "简介") {
                         Text(
-                            text = book.description,
+                            text = book.intro,
                             style = MaterialTheme.typography.bodyMedium,
                             color = t.foreground,
                         )
@@ -1196,8 +1197,8 @@ private fun OnlineDetailHeroV50(
     val t = LocalLanghuanUiTokens.current
     Row(modifier = Modifier.fillMaxWidth()) {
         OnlineCoverV50(
-            coverUrl = book.coverUrl,
-            contentDescription = book.title,
+            coverUrl = book.cover,
+            contentDescription = book.name,
             modifier = Modifier
                 .width(110.dp)
                 .aspectRatio(3f / 4f),
@@ -1205,7 +1206,7 @@ private fun OnlineDetailHeroV50(
         Spacer(Modifier.width(t.space4))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = book.title,
+                text = book.name,
                 style = MaterialTheme.typography.headlineSmall,
                 color = t.foreground,
                 fontWeight = FontWeight.Bold,
@@ -1342,7 +1343,7 @@ private fun OnlineDownloadProgressV50(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "下载中 ${download.progress}%",
+                text = "下载中 ${if (download.total > 0) download.done * 100 / download.total else 0}%",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.labelMedium,
                 color = t.foreground,
@@ -1354,7 +1355,7 @@ private fun OnlineDownloadProgressV50(
             )
         }
         LinearProgressIndicator(
-            progress = download.progress / 100f,
+            progress = { if (download.total > 0) download.done.toFloat() / download.total else 0f },
             modifier = Modifier.fillMaxWidth(),
             color = t.primary,
         )

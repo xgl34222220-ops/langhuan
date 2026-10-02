@@ -535,7 +535,7 @@ class EpubReaderActivity : FragmentActivity() {
         loaded = false
         tocState = opened.tableOfContents.ifEmpty { opened.readingOrder }
         readerUiState = readerUiState.copy(
-            publicationTitle = opened.metadata.title,
+            publicationTitle = opened.metadata.title.orEmpty(),
             chapterIndex = 0,
             chapterTitle = firstReadableTitle(opened),
             pageIndex = 0,
@@ -719,7 +719,7 @@ class EpubReaderActivity : FragmentActivity() {
             pageIndex < pageCount - 1
 
         readerUiState = readerUiState.copy(
-            publicationTitle = opened.metadata.title,
+            publicationTitle = opened.metadata.title.orEmpty(),
             chapterIndex = resourceIndex,
             chapterTitle = chapterTitle,
             pageIndex = pageIndex,

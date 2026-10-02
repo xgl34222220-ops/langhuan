@@ -3,7 +3,7 @@ package com.xiguli.langhuan.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -544,7 +544,7 @@ private fun ShelfManageCustomCardV50(
                 index,
                 shelfCount,
             ) {
-                detectVerticalDragGesturesAfterLongPress(
+                detectDragGesturesAfterLongPress(
                     onDragStart = {
                         dragDistance =
                             0f
@@ -575,11 +575,10 @@ private fun ShelfManageCustomCardV50(
                         dragDistance =
                             0f
                     },
-                    onVerticalDrag = {
-                        _,
+                    onDrag = { _,
                         dragAmount ->
                         dragDistance +=
-                            dragAmount
+                            dragAmount.y
                     },
                 )
             }

@@ -518,3 +518,9 @@ private fun ChapterEditorIconV50(
         )
     }
 }
+
+private val ChapterDraft.chapterLabel: String
+    get() = "第${chapterNumber}章"
+
+private val ChapterDraft.wordCount: Int
+    get() = content.length

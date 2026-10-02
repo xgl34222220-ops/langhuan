@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.xiguli.langhuan.data.NewStoryRequest
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 
@@ -610,3 +611,21 @@ private fun NewBookIconButtonV50(
         )
     }
 }
+
+internal data class NewBookChatMessageV50(
+    val id: String,
+    val text: String,
+    val user: Boolean,
+)
+
+internal data class NewBookConceptUiState(
+    val progressLabel: String = "",
+    val messages: List<NewBookChatMessageV50> = emptyList(),
+    val proposal: NewStoryRequest? = null,
+    val protagonist: String = "",
+    val coreMystery: String = "",
+    val canGenerate: Boolean = false,
+    val canReorganize: Boolean = false,
+    val input: String = "",
+    val inputEnabled: Boolean = true,
+)

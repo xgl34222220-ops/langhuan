@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.xiguli.langhuan.domain.ScenePlan
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 
@@ -103,7 +104,7 @@ internal fun ChapterWorkbenchScreenV50(
 
             items(
                 items = state.scenes,
-                key = { it.id },
+                key = { it.order },
             ) { scene ->
                 ChapterSceneCardV50(
                     scene = scene,
@@ -347,7 +348,7 @@ private fun ChapterSceneCardV50(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "${scene.index}",
+                text = "${scene.order}",
                 modifier = Modifier
                     .background(
                         color = t.accent,
@@ -370,7 +371,7 @@ private fun ChapterSceneCardV50(
             Spacer(Modifier.width(t.space2))
 
             Text(
-                text = scene.title,
+                text = "${scene.viewpoint} · ${scene.location}",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleSmall,
                 color = t.foreground,
@@ -402,7 +403,7 @@ private fun ChapterSceneCardV50(
         Spacer(Modifier.height(t.space2))
 
         Text(
-            text = scene.summary,
+            text = scene.purpose,
             style = MaterialTheme.typography.bodyMedium,
             color = t.secondaryForeground,
         )
@@ -646,3 +647,19 @@ private fun ChapterHeaderActionV50(
         fontWeight = FontWeight.Medium,
     )
 }
+
+internal data class ChapterWorkbenchUiState(
+    val bookTitle: String = "",
+    val chapterLabel: String = "",
+    val steps: List<String> = emptyList(),
+    val currentStepIndex: Int = 0,
+    val chapterNumber: Int = 0,
+    val taskTitle: String = "",
+    val taskObjective: String = "",
+    val scenes: List<ScenePlan> = emptyList(),
+    val generatedText: String = "",
+    val generating: Boolean = false,
+    val canGenerate: Boolean = false,
+    val input: String = "",
+    val inputEnabled: Boolean = true,
+)

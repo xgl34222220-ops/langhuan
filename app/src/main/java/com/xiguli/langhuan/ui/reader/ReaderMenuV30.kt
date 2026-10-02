@@ -183,7 +183,7 @@ internal fun ReaderMenuV30(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = t.space3, bottom = t.space2)
+                    .padding(horizontal = t.space3).padding(bottom = t.space2)
                     .navigationBarsPadding()
                     .imePadding()
                     .heightIn(max = maxHeight)
@@ -365,7 +365,7 @@ private fun ReaderMenuPrimaryActionsV30(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space3, bottom = t.space3),
+            .padding(horizontal = t.space3).padding(bottom = t.space3),
         horizontalArrangement = Arrangement.spacedBy(t.space2),
     ) {
         ReaderPrimaryActionV30(
@@ -1148,7 +1148,7 @@ private fun ReaderThemePanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "阅读主题", onBack = onBack)
         Text(
@@ -1269,7 +1269,7 @@ private fun ReaderFontPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "字体", onBack = onBack)
         val fonts = listOf(
@@ -1356,7 +1356,7 @@ private fun ReaderSizePanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(
             title = "字号",
@@ -1403,7 +1403,7 @@ private fun ReaderSpacingPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(
             title = "行距与排版",
@@ -1484,7 +1484,7 @@ private fun ReaderTurnPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "翻页方式", onBack = onBack)
         val options = listOf(
@@ -1600,7 +1600,7 @@ private fun ReaderSearchPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "全文搜索", onBack = onBack)
         val fieldShape = RoundedCornerShape(t.radiusMd)
@@ -1719,7 +1719,7 @@ private fun ReaderStatsPanelV30(
             .fillMaxWidth()
             .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.62f).dp)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = t.space4, bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "阅读统计", onBack = onBack)
         ReaderDailyGoalPanelV50()

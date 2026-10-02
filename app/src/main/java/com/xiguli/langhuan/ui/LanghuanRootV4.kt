@@ -31,9 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import com.xiguli.langhuan.ui.online.BookSourceJsonV36
-import com.xiguli.langhuan.ui.online.BookSourceV36
-import com.xiguli.langhuan.ui.online.sourceDiscoveriesV41
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel

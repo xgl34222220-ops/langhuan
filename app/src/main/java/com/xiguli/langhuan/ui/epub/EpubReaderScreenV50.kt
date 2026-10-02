@@ -186,6 +186,8 @@ internal fun EpubReaderScreenV50(
                             .align(Alignment.BottomCenter)
                             .padding(
                                 horizontal = t.space4,
+                            )
+                            .padding(
                                 bottom = t.space3,
                             ),
                         onNote = { noteSelection = selection },

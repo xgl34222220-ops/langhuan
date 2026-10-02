@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1890,7 +1891,7 @@ private fun TtsSleepTimerPanelV50(
                 customMinutes =
                     customMinutes,
                 customRemainingMillis =
-                    customSleepTimerRemainingMillis,
+                    customRemainingMillis,
             ),
         onDismiss =
             onDismiss,
@@ -2536,7 +2537,7 @@ private fun TtsNavigationCardV50(
         ) {
             Icon(
                 imageVector =
-                    icons.Rounded.ChevronRight,
+                    Icons.Rounded.ChevronRight,
                 contentDescription =
                     null,
                 modifier =
@@ -2694,4 +2695,226 @@ private fun TtsDividerV50() {
         thickness =
             1.dp,
     )
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                     Missing helpers (recovered for landing)                */
+/* -------------------------------------------------------------------------- */
+
+private fun ttsRateOptionsV50(): List<Float> =
+    listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+
+private fun ttsRateLabelV50(rate: Float): String {
+    val text = if (rate == rate.toInt().toFloat()) rate.toInt().toString() else rate.toString()
+    return "${text}x"
+}
+
+private fun ttsRateEqualsV50(a: Float, b: Float): Boolean =
+    kotlin.math.abs(a - b) < 0.001f
+
+private fun ttsTimerCompactLabelV50(
+    option: ReaderTtsSleepOptionV50,
+    remainingMillis: Long,
+    customMinutes: Int?,
+    customRemainingMillis: Long,
+): String = when {
+    customMinutes != null -> "${customMinutes}分"
+    option == ReaderTtsSleepOptionV50.OFF -> "定时"
+    option == ReaderTtsSleepOptionV50.END_OF_CHAPTER -> "本章止"
+    remainingMillis > 0 -> "${remainingMillis / 60000}分"
+    else -> option.label
+}
+
+private fun ttsTimerFullLabelV50(
+    option: ReaderTtsSleepOptionV50,
+    remainingMillis: Long,
+    customMinutes: Int?,
+    customRemainingMillis: Long,
+): String = when {
+    customMinutes != null -> {
+        val left = if (customRemainingMillis > 0) "，剩余约 ${customRemainingMillis / 60000} 分钟" else ""
+        "自定义 ${customMinutes} 分钟$left"
+    }
+    option == ReaderTtsSleepOptionV50.OFF -> "定时关闭：未开启"
+    option == ReaderTtsSleepOptionV50.END_OF_CHAPTER -> "本章结束后停止朗读"
+    remainingMillis > 0 -> "${option.label}，剩余约 ${remainingMillis / 60000} 分钟"
+    else -> option.label
+}
+
+@Composable
+private fun TtsIconButtonV50(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(color = t.card, shape = CircleShape)
+            .border(width = 1.dp, color = t.border, shape = CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            modifier = Modifier.size(20.dp),
+            tint = t.foreground,
+        )
+    }
+}
+
+@Composable
+private fun TtsSectionTitleV50(title: String) {
+    val t = LocalLanghuanUiTokens.current
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = t.foreground,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
+private fun TtsSecondaryActionV50(
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = t.card, shape = RoundedCornerShape(t.radiusMd))
+            .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space3, vertical = t.space3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = t.primary,
+        )
+        Spacer(Modifier.width(t.space3))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = t.foreground,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = t.mutedForeground,
+        )
+    }
+}
+
+@Composable
+private fun TtsChoiceChipV50(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Box(
+        modifier = modifier
+            .background(
+                color = if (selected) t.primary else t.card,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.primary else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = t.space3, vertical = t.space2),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) t.primaryForeground else t.foreground,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
+
+@Composable
+private fun TtsTimerChoiceV50(
+    title: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusLg)
+    Box(
+        modifier = modifier
+            .background(
+                color = if (selected) t.goldContainer else t.card,
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) t.gold else t.border,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = t.space3),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) t.goldForeground else t.foreground,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
+
+@Composable
+private fun TtsDialogButtonV50(
+    text: String,
+    primary: Boolean = false,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusMd)
+    Box(
+        modifier = modifier
+            .background(
+                color = when {
+                    !enabled -> t.input
+                    primary -> t.primary
+                    else -> t.card
+                },
+                shape = shape,
+            )
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = t.space3),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = when {
+                !enabled -> t.mutedForeground
+                primary -> t.primaryForeground
+                else -> t.foreground
+            },
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
 }
