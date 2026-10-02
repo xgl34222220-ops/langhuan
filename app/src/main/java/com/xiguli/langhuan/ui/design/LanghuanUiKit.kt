@@ -30,8 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,64 +40,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-
-/** Semantic UI tokens. LuoShu is the visual baseline for all non-reader-body surfaces. */
-@Immutable
-data class LanghuanUiTokens(
-    val background: Color,
-    val foreground: Color,
-    val card: Color,
-    val cardForeground: Color,
-    val muted: Color,
-    val mutedForeground: Color,
-    val strong: Color,
-    val track: Color,
-    val border: Color,
-    val input: Color,
-    val primary: Color,
-    val primaryForeground: Color,
-    val accent: Color,
-    val accentForeground: Color,
-    val destructive: Color,
-    val destructiveForeground: Color,
-    val success: Color,
-    val successForeground: Color,
-    val warning: Color,
-    val warningForeground: Color,
-    val ring: Color,
-    val warmSurface: Color,
-    val radiusSm: Dp = 11.dp,
-    val radiusMd: Dp = 18.dp,
-    val radiusLg: Dp = 24.dp,
-    val radiusXl: Dp = 30.dp,
-)
-
-val LocalLanghuanUiTokens = staticCompositionLocalOf {
-    LanghuanUiTokens(
-        background = Color(0xFFF4F6FA),
-        foreground = Color(0xFF171A1F),
-        card = Color.White,
-        cardForeground = Color(0xFF171A1F),
-        muted = Color(0xFFF0F3F7),
-        mutedForeground = Color(0xFF646A72),
-        strong = Color(0xFF30363D),
-        track = Color(0x13171A1F),
-        border = Color(0xFFDDE2E8),
-        input = Color(0xFFE9EDF2),
-        primary = Color(0xFF315F8C),
-        primaryForeground = Color.White,
-        accent = Color(0xFFD7E8FA),
-        accentForeground = Color(0xFF153451),
-        destructive = Color(0xFFBA1A1A),
-        destructiveForeground = Color.White,
-        success = Color(0xFF1B8A61),
-        successForeground = Color.White,
-        warning = Color(0xFFC47700),
-        warningForeground = Color.White,
-        ring = Color(0xFF315F8C).copy(alpha = .48f),
-        warmSurface = Color(0xFFF8F5EF),
-    )
-}
 
 @Composable
 fun LanghuanCard(
