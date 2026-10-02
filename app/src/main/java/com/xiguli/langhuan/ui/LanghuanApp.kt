@@ -395,8 +395,8 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 }
 
 @Composable private fun SettingsPage(state: StudioUiState, vm: StudioViewModel, onExport: (ExportFormat) -> Unit) = Page("设置", "AI 服务、模型切换与整书导出") {
-    val context = androidx.compose.ui.platform.LocalContext.current
     item { MiuixCard {
+        val context = androidx.compose.ui.platform.LocalContext.current
         Text("外观", style = MaterialTheme.typography.titleMedium)
         Text("v3 新增：手动切换浅色 / 深色，或跟随系统。", color = LocalMiuixTokens.current.textSecondary)
         Spacer(Modifier.height(10.dp))

@@ -245,34 +245,36 @@ fun ShelfLuoShuFunctionalV1(
                 ) { current ->
                     when (current) {
                         LuoShelfScreenV1.HOME -> LuoShelfHomeV1(state.stories, openingBookId, onOpenBook, { screen = LuoShelfScreenV1.SHELF }, onImportLocal, onCreate)
-                        LuoShelfScreenV1.SHELF -> LuoShelfLibraryV1(
-                            state, importState, openingBookId, query, searchOpen,
-                            onSearchOpen = { searchOpen = it; if (!it) query = "" },
-                            onQuery = { query = it }, onAdd = { addOpen = true }, onOpenBook = onOpenBook, onLongPress = { actionsFor = it },
-                            shelves = customShelves,
-                            assignments = assignments,
-                            activeShelf = activeShelf,
-                            onShelf = { activeShelf = it },
-                            sort = LuoShelfSortV33.of(sortKey),
-                            onSort = {
-                                sortKey = it.key
-                                prefs.edit().putString("shelf_sort", it.key).apply()
-                            },
-                            onBatchOrganize = { batchOpen = true },
-                        )
-                        // v3: 批量整理面板（多选 / 移动 / 删除 / 6 秒撤销）。
-                        LuoShelfBatchOrganizerV50(
-                            books = state.stories,
-                            shelves = customShelves,
-                            shelfPrefs = prefs,
-                            visible = batchOpen,
-                            onDismiss = { batchOpen = false },
-                            onDeleteBooks = { ids ->
-                                ids.forEach(onDeleteBook)
-                                shelfRevision++
-                            },
-                            onMoveCompleted = { _, _ -> shelfRevision++ },
-                        )
+                        LuoShelfScreenV1.SHELF -> {
+                            LuoShelfLibraryV1(
+                                state, importState, openingBookId, query, searchOpen,
+                                onSearchOpen = { searchOpen = it; if (!it) query = "" },
+                                onQuery = { query = it }, onAdd = { addOpen = true }, onOpenBook = onOpenBook, onLongPress = { actionsFor = it },
+                                shelves = customShelves,
+                                assignments = assignments,
+                                activeShelf = activeShelf,
+                                onShelf = { activeShelf = it },
+                                sort = LuoShelfSortV33.of(sortKey),
+                                onSort = {
+                                    sortKey = it.key
+                                    prefs.edit().putString("shelf_sort", it.key).apply()
+                                },
+                                onBatchOrganize = { batchOpen = true },
+                            )
+                            // v3: 批量整理面板（多选 / 移动 / 删除 / 6 秒撤销）。
+                            LuoShelfBatchOrganizerV50(
+                                books = state.stories,
+                                shelves = customShelves,
+                                shelfPrefs = prefs,
+                                visible = batchOpen,
+                                onDismiss = { batchOpen = false },
+                                onDeleteBooks = { ids ->
+                                    ids.forEach(onDeleteBook)
+                                    shelfRevision++
+                                },
+                                onMoveCompleted = { _, _ -> shelfRevision++ },
+                            )
+                        }
                         LuoShelfScreenV1.CREATE -> LuoShelfCreateV1(onCreate, onImportLocal, onSkills)
                         LuoShelfScreenV1.BOOKSTORE -> onlineContent(manageSources)
                         LuoShelfScreenV1.PROFILE -> ReaderProfileV41(
@@ -610,7 +612,7 @@ private fun LuoShelfLibraryV1(
                 PaperIconButtonV44(Icons.Rounded.SwapVert, "排序：${sort.label}", { onSort(sort.next()) })
                 PaperIconButtonV44(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, if (searchOpen) "关闭搜索" else "搜索书架", { onSearchOpen(!searchOpen) }, selected = searchOpen)
                 // v3: 批量整理（多选 / 移动 / 删除 / 撤销）。
-                PaperIconButtonV44(Icons.Rounded.SelectAll, "批量整理", onBatchOrganize)
+                PaperIconButtonV44(Icons.Rounded.PlaylistAddCheck, "批量整理", onBatchOrganize)
                 PaperIconButtonV44(Icons.Rounded.Add, "添加书籍", onAdd)
             }
             AnimatedVisibility(searchOpen, enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(160)), exit = shrinkVertically(tween(180)) + fadeOut(tween(120))) {
