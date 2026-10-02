@@ -17,8 +17,9 @@ class UiMotionV31ContractTest {
         assertTrue(motion.contains("fun Modifier.enterOnceV31("))
         assertTrue(motion.contains("HapticFeedbackType.LongPress"))
         assertTrue(uiKit.contains("onClick: (() -> Unit)? = null"))
-        assertTrue(uiKit.contains("pressScaleV31(interaction"))
-        assertTrue(uiKit.contains("Crossfade(targetState = icon"))
+        // v3：按压缩放与图标交叉淡入保留在新版 UiKit。
+        assertTrue(uiKit.contains("pressScaleV31("))
+        assertTrue(uiKit.contains("targetState = icon"))
     }
 
     @Test

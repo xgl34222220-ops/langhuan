@@ -9,33 +9,29 @@ class GlobalDepthTypographyContractTest {
     private fun source(path: String): String = File(path).readText()
 
     @Test
-    fun stableThemeUsesLuoShuPageRhythmAndNovelTypography() {
+    fun stableThemeUsesV3RadiiAndNovelTypography() {
         val theme = source("src/main/java/com/xiguli/langhuan/ui/theme/LanghuanStableTheme.kt")
-        assertTrue(theme.contains("fontSize = 26.sp"))
-        assertTrue(theme.contains("lineHeight = 34.sp"))
-        assertTrue(theme.contains("fontSize = 22.sp"))
-        assertTrue(theme.contains("lineHeight = 28.sp"))
-        assertTrue(theme.contains("fontSize = 19.sp"))
-        assertTrue(theme.contains("lineHeight = 24.sp"))
-        assertTrue(theme.contains("fontSize = 14.5.sp"))
-        assertTrue(theme.contains("lineHeight = 18.sp"))
-        assertTrue(theme.contains("extraLarge = RoundedCornerShape(26.dp)"))
+        // v3：排版收敛到 LanghuanTypography，圆角仅 8/12/16/24。
+        assertTrue(theme.contains("typography = LanghuanTypography"))
+        assertTrue(theme.contains("extraSmall = RoundedCornerShape(8.dp)"))
+        assertTrue(theme.contains("medium = RoundedCornerShape(12.dp)"))
+        assertTrue(theme.contains("large = RoundedCornerShape(16.dp)"))
+        assertTrue(theme.contains("extraLarge = RoundedCornerShape(24.dp)"))
+        assertFalse(theme.contains("26.dp"))
     }
 
     @Test
-    fun commonHierarchyUsesCalmLuoShuSurfaces() {
+    fun commonHierarchyUsesV3BorderAndTokens() {
         val kit = source("src/main/java/com/xiguli/langhuan/ui/design/LanghuanUiKit.kt")
-        assertTrue(kit.contains("val strong: Color"))
-        assertTrue(kit.contains("val track: Color"))
-        assertTrue(kit.contains("contentPadding: Dp = 20.dp"))
-        assertTrue(kit.contains("Column(Modifier.padding(contentPadding)) { content() }"))
-        assertTrue(kit.contains(".size(48.dp)"))
-        assertTrue(kit.contains(".size(44.dp)"))
-        assertTrue(kit.contains(".size(21.dp)"))
-        assertTrue(kit.contains(".shadow(1.dp, CircleShape"))
-        assertTrue(kit.contains(".background(t.track)"))
+        val tokens = source("src/main/java/com/xiguli/langhuan/ui/design/LanghuanDesignTokens.kt")
+        // v3：旧语义收敛进 tokens，卡片去投影改 1px 描边。
+        assertTrue(tokens.contains("val strong: Color"))
+        assertTrue(tokens.contains("val track: Color"))
+        assertTrue(kit.contains("contentPadding: Dp = 16.dp"))
+        assertTrue(kit.contains(".border("))
+        assertTrue(kit.contains("width = 1.dp"))
         assertFalse(kit.contains("HorizontalDivider"))
-        assertFalse(kit.contains("Modifier.border"))
+        assertFalse(kit.contains(".shadow("))
     }
 
     @Test

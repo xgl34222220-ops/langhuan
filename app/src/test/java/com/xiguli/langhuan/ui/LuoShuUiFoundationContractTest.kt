@@ -21,14 +21,16 @@ class LuoShuUiFoundationContractTest {
     }
 
     @Test
-    fun activeThemeUsesLuoShuGeometryAndCalmBackground() {
+    fun activeThemeUsesV3GeometryAndWarmBackground() {
         val theme = source("src/main/java/com/xiguli/langhuan/ui/theme/LanghuanStableTheme.kt")
-        assertTrue(theme.contains("background = Color(0xFFF6F7F9)"))
-        assertTrue(theme.contains("extraSmall = RoundedCornerShape(6.dp)"))
-        assertTrue(theme.contains("small = RoundedCornerShape(10.dp)"))
-        assertTrue(theme.contains("medium = RoundedCornerShape(14.dp)"))
-        assertTrue(theme.contains("large = RoundedCornerShape(20.dp)"))
-        assertTrue(theme.contains("extraLarge = RoundedCornerShape(26.dp)"))
+        val tokens = source("src/main/java/com/xiguli/langhuan/ui/design/LanghuanDesignTokens.kt")
+        // v3：暖纸底 #F7F5F0 / 暖墨黑 #141311，圆角仅 8/12/16/24。
+        assertTrue(tokens.contains("background = Color(0xFFF7F5F0)"))
+        assertTrue(tokens.contains("background = Color(0xFF141311)"))
+        assertTrue(theme.contains("extraSmall = RoundedCornerShape(8.dp)"))
+        assertTrue(theme.contains("medium = RoundedCornerShape(12.dp)"))
+        assertTrue(theme.contains("large = RoundedCornerShape(16.dp)"))
+        assertTrue(theme.contains("extraLarge = RoundedCornerShape(24.dp)"))
         assertTrue(theme.contains("LocalLanghuanUiTokens provides uiTokens"))
     }
 

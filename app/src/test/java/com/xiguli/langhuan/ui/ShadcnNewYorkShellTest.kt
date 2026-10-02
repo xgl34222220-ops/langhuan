@@ -13,6 +13,7 @@ class ShadcnNewYorkShellTest {
         val reader = File(root, "src/main/java/com/xiguli/langhuan/ui/reader/ReaderMobileExperience.kt").readText()
         val kit = File(root, "src/main/java/com/xiguli/langhuan/ui/design/ShadcnCompose.kt").readText()
         val theme = File(root, "src/main/java/com/xiguli/langhuan/ui/theme/LanghuanStableTheme.kt").readText()
+        val tokens = File(root, "src/main/java/com/xiguli/langhuan/ui/design/LanghuanDesignTokens.kt").readText()
 
         assertTrue(shelf.contains("MobileLibraryPageV3("))
         assertTrue(shelf.contains("MobileShelfNavigationV3("))
@@ -39,11 +40,12 @@ class ShadcnNewYorkShellTest {
 
         assertTrue(kit.contains("enum class ShadcnButtonVariant"))
         assertTrue(kit.contains("fun ShadcnInput("))
-        assertTrue(theme.contains("dynamicColor: Boolean = false"))
-        assertTrue(theme.contains("accent = colors.primaryContainer"))
+        // v3：主题三档 + v3 token 映射，圆角仅 8/12/16/24。
+        assertTrue(theme.contains("themeMode: LanghuanThemeMode = LanghuanThemeMode.FOLLOW_SYSTEM"))
+        assertTrue(theme.contains("primaryContainer = LanghuanLightUiTokens.accent"))
         // LuoShu / MIUIX hierarchy is the active shell contract; Shadcn stays a component library.
-        assertTrue(theme.contains("radiusMd = 14.dp"))
-        assertTrue(theme.contains("large = RoundedCornerShape(20.dp)"))
-        assertTrue(theme.contains("extraLarge = RoundedCornerShape(26.dp)"))
+        assertTrue(tokens.contains("radiusMd = 12.dp"))
+        assertTrue(theme.contains("large = RoundedCornerShape(16.dp)"))
+        assertTrue(theme.contains("extraLarge = RoundedCornerShape(24.dp)"))
     }
 }
