@@ -395,6 +395,26 @@ fun LanghuanApp(viewModel: StudioViewModel) {
 }
 
 @Composable private fun SettingsPage(state: StudioUiState, vm: StudioViewModel, onExport: (ExportFormat) -> Unit) = Page("设置", "AI 服务、模型切换与整书导出") {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    item { MiuixCard {
+        Text("外观", style = MaterialTheme.typography.titleMedium)
+        Text("v3 新增：手动切换浅色 / 深色，或跟随系统。", color = LocalMiuixTokens.current.textSecondary)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                com.xiguli.langhuan.ui.theme.LanghuanThemeMode.FOLLOW_SYSTEM to "跟随系统",
+                com.xiguli.langhuan.ui.theme.LanghuanThemeMode.LIGHT to "浅色",
+                com.xiguli.langhuan.ui.theme.LanghuanThemeMode.DARK to "深色",
+            ).forEach { (mode, label) ->
+                val selected = com.xiguli.langhuan.ui.theme.LanghuanThemeModeStateV50.current == mode
+                if (selected) {
+                    Button({ com.xiguli.langhuan.ui.theme.LanghuanThemeModeStateV50.set(context, mode) }, shape = RoundedCornerShape(16.dp)) { Text(label) }
+                } else {
+                    OutlinedButton({ com.xiguli.langhuan.ui.theme.LanghuanThemeModeStateV50.set(context, mode) }, shape = RoundedCornerShape(16.dp)) { Text(label) }
+                }
+            }
+        }
+    } }
     val p = state.provider
     item { MiuixCard {
         Text("整书导出", style = MaterialTheme.typography.titleMedium)

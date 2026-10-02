@@ -1,416 +1,475 @@
 package com.xiguli.langhuan.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.xiguli.langhuan.ui.design.LanghuanUiTokens
+import com.xiguli.langhuan.ui.design.LanghuanDarkUiTokens
+import com.xiguli.langhuan.ui.design.LanghuanLightUiTokens
+import com.xiguli.langhuan.ui.design.LanghuanTypography
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 
 /**
- * 琅嬛全局稳定主题。
+ * 琅嬛全局主题模式。
  *
- * 设计原则：
- * 1. 应用层保持现代、克制、低饱和，不把“书卷气”简单等同于仿古纸张。
- * 2. 标题使用系统 Serif，形成出版物/书籍气质；功能正文和控件使用 Sans。
- * 3. 浅色主题以暖纸白、墨色、青黛为主；深色主题使用暖墨黑而非纯黑。
- * 4. 阅读器正文主题独立于这里的 MaterialTheme，由 ReaderRenderV30 等模块管理。
- * 5. 保留 LocalMiuixTokens / LocalLanghuanUiTokens，避免现有页面调用断裂。
+ * FOLLOW_SYSTEM
+ * 跟随 Android 系统浅色 / 深色设置。
+ *
+ * LIGHT
+ * 强制使用琅嬛 v3 浅色主题。
+ *
+ * DARK
+ * 强制使用琅嬛 v3 深色主题。
+ */
+enum class LanghuanThemeMode {
+    FOLLOW_SYSTEM,
+    LIGHT,
+    DARK,
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Material Colors                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Material3 仍然是大量现有 Compose 页面与系统组件的基础，
+ * 因此这里把 Claude v3 的语义 Token 映射到 Material ColorScheme。
+ *
+ * 所有核心颜色均直接来自 LanghuanDesignTokens.kt，
+ * 不另起一套品牌颜色。
+ *
+ * v3 的真正 UI 组件应优先读取 LocalLanghuanUiTokens，
+ * MaterialTheme.colorScheme 主要负责兼容：
+ *
+ * - Dialog
+ * - Snackbar
+ * - TextField
+ * - Material Button
+ * - ProgressIndicator
+ * - 尚未迁移完成的旧页面
  */
 
-/* -------------------------------------------------------------------------- */
-/*                                    Color                                   */
-/* -------------------------------------------------------------------------- */
 
-private val Ink = Color(0xFF22221F)
-private val InkSoft = Color(0xFF5F605A)
+/**
+ * Claude v3 浅色主题。
+ *
+ * Token：
+ *
+ * background          #F7F5F0
+ * card                #FFFFFF
+ * input               #EAE7E0
+ * border              #DDDAD3
+ * foreground          #22221F
+ * secondaryForeground #4B4B46
+ * mutedForeground     #666760
+ * primary             #1E6A5A
+ * accent              #DDE9E4
+ * accentForeground    #17513F
+ * gold                #A9681C
+ * goldContainer       #F3E6D2
+ * destructive         #B03A2B
+ */
+private val LanghuanLightColorScheme = lightColorScheme(
 
-private val Paper = Color(0xFFF7F5F0)
-private val PaperSurface = Color(0xFFFCFBF8)
-private val PaperRaised = Color(0xFFFFFFFF)
+    /* Primary */
+    primary = LanghuanLightUiTokens.primary,
 
-private val Jade = Color(0xFF456A61)
-private val JadeDeep = Color(0xFF294A42)
-private val JadeSoft = Color(0xFFDDE9E4)
+    /*
+     * v3 Token 表没有单独定义 primaryForeground。
+     * 这里直接复用现有 card 白色作为实色玉青按钮前景，
+     * 不新增额外品牌色。
+     */
+    onPrimary = LanghuanLightUiTokens.card,
 
-private val Tea = Color(0xFF806A4B)
-private val TeaSoft = Color(0xFFEDE5D8)
+    primaryContainer = LanghuanLightUiTokens.accent,
+    onPrimaryContainer = LanghuanLightUiTokens.accentForeground,
 
-private val Bamboo = Color(0xFF647761)
-private val BambooSoft = Color(0xFFE2E8DE)
 
-private val Night = Color(0xFF111310)
-private val NightSurface = Color(0xFF191C18)
-private val NightInk = Color(0xFFE9E8E1)
-private val NightInkSoft = Color(0xFFB9BAB2)
+    /* Secondary / Gold */
+    secondary = LanghuanLightUiTokens.gold,
 
-private val LanghuanLightColors = lightColorScheme(
-    primary = Jade,
-    onPrimary = Color(0xFFFFFFFF),
+    /*
+     * Gold 的语义文字色已在 v3 表中定义。
+     * Material secondary 实色面暂以 card 作为高对比前景；
+     * goldForeground 仍通过 LocalLanghuanUiTokens.goldForeground
+     * 用于文字型 Gold 强调。
+     */
+    onSecondary = LanghuanLightUiTokens.card,
 
-    primaryContainer = JadeSoft,
-    onPrimaryContainer = JadeDeep,
+    secondaryContainer = LanghuanLightUiTokens.goldContainer,
+    onSecondaryContainer = LanghuanLightUiTokens.goldForeground,
 
-    secondary = Tea,
-    onSecondary = Color(0xFFFFFFFF),
 
-    secondaryContainer = TeaSoft,
-    onSecondaryContainer = Color(0xFF493B28),
+    /* Tertiary */
+    tertiary = LanghuanLightUiTokens.gold,
+    onTertiary = LanghuanLightUiTokens.card,
 
-    tertiary = Bamboo,
-    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = LanghuanLightUiTokens.goldContainer,
+    onTertiaryContainer = LanghuanLightUiTokens.goldForeground,
 
-    tertiaryContainer = BambooSoft,
-    onTertiaryContainer = Color(0xFF354333),
 
-    background = Paper,
-    onBackground = Ink,
+    /* Background */
+    background = LanghuanLightUiTokens.background,
+    onBackground = LanghuanLightUiTokens.foreground,
 
-    surface = PaperSurface,
-    onSurface = Ink,
 
-    surfaceVariant = Color(0xFFECEAE4),
-    onSurfaceVariant = InkSoft,
+    /* Surface */
+    surface = LanghuanLightUiTokens.card,
+    onSurface = LanghuanLightUiTokens.foreground,
 
-    surfaceContainerLowest = PaperRaised,
-    surfaceContainerLow = Color(0xFFFAF8F4),
-    surfaceContainer = Color(0xFFF1EFE9),
-    surfaceContainerHigh = Color(0xFFEAE7E0),
-    surfaceContainerHighest = Color(0xFFE2DED6),
+    surfaceVariant = LanghuanLightUiTokens.input,
+    onSurfaceVariant = LanghuanLightUiTokens.secondaryForeground,
 
-    outline = Color(0xFFAAA9A1),
-    outlineVariant = Color(0xFFDDDAD3),
 
-    error = Color(0xFFB3261E),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFF9DEDC),
-    onErrorContainer = Color(0xFF410E0B),
+    /* Material 3 surface hierarchy */
+    surfaceContainerLowest = LanghuanLightUiTokens.card,
+
+    surfaceContainerLow = LanghuanLightUiTokens.background,
+
+    surfaceContainer = LanghuanLightUiTokens.input,
+
+    surfaceContainerHigh = LanghuanLightUiTokens.input,
+
+    surfaceContainerHighest = LanghuanLightUiTokens.input,
+
+
+    /* Border */
+    outline = LanghuanLightUiTokens.border,
+    outlineVariant = LanghuanLightUiTokens.border,
+
+
+    /* Error / Destructive */
+    error = LanghuanLightUiTokens.destructive,
+    onError = LanghuanLightUiTokens.destructiveForeground,
+
+    errorContainer = LanghuanLightUiTokens.destructive.copy(alpha = 0.10f),
+    onErrorContainer = LanghuanLightUiTokens.destructive,
+
+
+    /* Inverse */
+    inverseSurface = LanghuanDarkUiTokens.card,
+    inverseOnSurface = LanghuanDarkUiTokens.foreground,
+    inversePrimary = LanghuanDarkUiTokens.primary,
+
+
+    /* Misc */
+    scrim = Color.Black,
 )
 
-private val LanghuanDarkColors = darkColorScheme(
-    primary = Color(0xFFA7CFC2),
-    onPrimary = Color(0xFF12372F),
 
-    primaryContainer = Color(0xFF284C43),
-    onPrimaryContainer = Color(0xFFC2E9DD),
+/**
+ * Claude v3 深色主题。
+ *
+ * Token：
+ *
+ * background          #141311
+ * card                #1C1B18
+ * input               #262420
+ * border              #2C2A26
+ * foreground          #ECE8E0
+ * secondaryForeground #B5B0A6
+ * mutedForeground     #8E897F
+ * primary             #7CCAB3
+ * accent              #1B3731
+ * accentForeground    #A6E0CD
+ * gold                #D8A45E
+ * goldContainer       #372C1B
+ * destructive         #F08C7C
+ */
+private val LanghuanDarkColorScheme = darkColorScheme(
 
-    secondary = Color(0xFFD7BE94),
-    onSecondary = Color(0xFF3C2F1C),
+    /* Primary */
+    primary = LanghuanDarkUiTokens.primary,
 
-    secondaryContainer = Color(0xFF55462F),
-    onSecondaryContainer = Color(0xFFF1D7AA),
+    /*
+     * 深色 primary 本身较亮，
+     * 直接复用 v3 background 作为高对比前景，
+     * 不新增额外色值。
+     */
+    onPrimary = LanghuanDarkUiTokens.background,
 
-    tertiary = Color(0xFFB8CDB2),
-    onTertiary = Color(0xFF253623),
+    primaryContainer = LanghuanDarkUiTokens.accent,
+    onPrimaryContainer = LanghuanDarkUiTokens.accentForeground,
 
-    tertiaryContainer = Color(0xFF3B4D38),
-    onTertiaryContainer = Color(0xFFD3E7CD),
 
-    background = Night,
-    onBackground = NightInk,
+    /* Secondary / Gold */
+    secondary = LanghuanDarkUiTokens.gold,
+    onSecondary = LanghuanDarkUiTokens.background,
 
-    surface = NightSurface,
-    onSurface = NightInk,
+    secondaryContainer = LanghuanDarkUiTokens.goldContainer,
+    onSecondaryContainer = LanghuanDarkUiTokens.goldForeground,
 
-    surfaceVariant = Color(0xFF292D28),
-    onSurfaceVariant = NightInkSoft,
 
-    surfaceContainerLowest = Color(0xFF0C0E0C),
-    surfaceContainerLow = Color(0xFF151815),
-    surfaceContainer = Color(0xFF1B1F1B),
-    surfaceContainerHigh = Color(0xFF222722),
-    surfaceContainerHighest = Color(0xFF2A302A),
+    /* Tertiary */
+    tertiary = LanghuanDarkUiTokens.gold,
+    onTertiary = LanghuanDarkUiTokens.background,
 
-    outline = Color(0xFF858880),
-    outlineVariant = Color(0xFF3C403A),
+    tertiaryContainer = LanghuanDarkUiTokens.goldContainer,
+    onTertiaryContainer = LanghuanDarkUiTokens.goldForeground,
 
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
+
+    /* Background */
+    background = LanghuanDarkUiTokens.background,
+    onBackground = LanghuanDarkUiTokens.foreground,
+
+
+    /* Surface */
+    surface = LanghuanDarkUiTokens.card,
+    onSurface = LanghuanDarkUiTokens.foreground,
+
+    surfaceVariant = LanghuanDarkUiTokens.input,
+    onSurfaceVariant = LanghuanDarkUiTokens.secondaryForeground,
+
+
+    /* Material 3 surface hierarchy */
+    surfaceContainerLowest = LanghuanDarkUiTokens.background,
+
+    surfaceContainerLow = LanghuanDarkUiTokens.card,
+
+    surfaceContainer = LanghuanDarkUiTokens.card,
+
+    surfaceContainerHigh = LanghuanDarkUiTokens.input,
+
+    surfaceContainerHighest = LanghuanDarkUiTokens.input,
+
+
+    /* Border */
+    outline = LanghuanDarkUiTokens.border,
+    outlineVariant = LanghuanDarkUiTokens.border,
+
+
+    /* Error / Destructive */
+    error = LanghuanDarkUiTokens.destructive,
+    onError = LanghuanDarkUiTokens.destructiveForeground,
+
+    errorContainer = LanghuanDarkUiTokens.destructive.copy(alpha = 0.14f),
+    onErrorContainer = LanghuanDarkUiTokens.destructive,
+
+
+    /* Inverse */
+    inverseSurface = LanghuanLightUiTokens.card,
+    inverseOnSurface = LanghuanLightUiTokens.foreground,
+    inversePrimary = LanghuanLightUiTokens.primary,
+
+
+    /* Misc */
+    scrim = Color.Black,
 )
 
+
 /* -------------------------------------------------------------------------- */
-/*                                    Shape                                   */
+/*                                  Shapes                                    */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Claude v3 只保留四级圆角：
+ *
+ * 8dp
+ * 12dp
+ * 16dp
+ * 24dp
+ *
+ * Material3 本身有五级 Shapes，因此 extraSmall 与 small
+ * 都映射到最小 8dp 档，不再产生第五种圆角。
+ *
+ * 禁止重新引入：
+ *
+ * - 20dp
+ * - 28dp
+ * - 30dp
+ *
+ * 等旧档位。
+ */
 private val LanghuanShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
-/* -------------------------------------------------------------------------- */
-/*                                 Typography                                 */
-/* -------------------------------------------------------------------------- */
-
-private val LanghuanSerif = FontFamily.Serif
-private val LanghuanSans = FontFamily.SansSerif
-
-private val LanghuanTypography = Typography(
-    displayLarge = TextStyle(
-        fontFamily = LanghuanSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 34.sp,
-        lineHeight = 43.sp,
-        letterSpacing = (-0.8).sp,
-    ),
-
-    displayMedium = TextStyle(
-        fontFamily = LanghuanSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 32.sp,
-        lineHeight = 40.sp,
-        letterSpacing = (-0.7).sp,
-    ),
-
-    displaySmall = TextStyle(
-        fontFamily = LanghuanSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 30.sp,
-        lineHeight = 38.sp,
-        letterSpacing = (-0.6).sp,
-    ),
-
-    headlineLarge = TextStyle(
-        fontFamily = LanghuanSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
-        letterSpacing = (-0.55).sp,
-    ),
-
-    headlineMedium = TextStyle(
-        fontFamily = LanghuanSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = (-0.35).sp,
-    ),
-
-    headlineSmall = TextStyle(
-        fontFamily = LanghuanSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 30.sp,
-        letterSpacing = (-0.2).sp,
-    ),
-
-    titleLarge = TextStyle(
-        fontFamily = LanghuanSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 19.sp,
-        lineHeight = 26.sp,
-        letterSpacing = 0.15.sp,
-    ),
-
-    titleMedium = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 17.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.05.sp,
-    ),
-
-    titleSmall = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 15.sp,
-        lineHeight = 21.sp,
-        letterSpacing = 0.1.sp,
-    ),
-
-    bodyLarge = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 25.sp,
-        letterSpacing = 0.15.sp,
-    ),
-
-    bodyMedium = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.Normal,
-        fontSize = 14.5.sp,
-        lineHeight = 21.sp,
-        letterSpacing = 0.2.sp,
-    ),
-
-    bodySmall = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.Normal,
-        fontSize = 12.5.sp,
-        lineHeight = 18.sp,
-        letterSpacing = 0.15.sp,
-    ),
-
-    labelLarge = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp,
-    ),
-
-    labelMedium = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.5.sp,
-        lineHeight = 18.sp,
-        letterSpacing = 0.15.sp,
-    ),
-
-    labelSmall = TextStyle(
-        fontFamily = LanghuanSans,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.2.sp,
-    ),
-)
 
 /* -------------------------------------------------------------------------- */
-/*                                    Theme                                   */
+/*                               Theme Resolver                               */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * 根据用户主题设置计算当前是否使用深色主题。
+ */
+@Composable
+private fun resolveLanghuanDarkTheme(
+    themeMode: LanghuanThemeMode,
+): Boolean {
+    return when (themeMode) {
+        LanghuanThemeMode.FOLLOW_SYSTEM -> isSystemInDarkTheme()
+        LanghuanThemeMode.LIGHT -> false
+        LanghuanThemeMode.DARK -> true
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                              Stable Theme                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 琅嬛全局稳定主题 · v3。
+ *
+ * 默认行为：
+ *
+ * themeMode = FOLLOW_SYSTEM
+ *
+ * 即保持 Android 用户预期：
+ * 系统深色时使用深色，
+ * 系统浅色时使用浅色。
+ *
+ * 设置页后续可以直接传：
+ *
+ * LanghuanStableTheme(
+ *     themeMode = LanghuanThemeMode.LIGHT
+ * )
+ *
+ * 或：
+ *
+ * LanghuanStableTheme(
+ *     themeMode = LanghuanThemeMode.DARK
+ * )
+ *
+ * v3 已取消动态壁纸取色。
+ *
+ * 原因：
+ * 琅嬛拥有固定的纸白 / 墨色 / 玉青 / 赤金视觉系统，
+ * 如果继续使用 Android Dynamic Color，
+ * 不同用户设备会出现完全不同的品牌颜色。
+ */
 @Composable
 fun LanghuanStableTheme(
-    dynamicColor: Boolean = false,
+    themeMode: LanghuanThemeMode = LanghuanThemeMode.FOLLOW_SYSTEM,
     content: @Composable () -> Unit,
 ) {
-    val darkTheme = isSystemInDarkTheme()
-    val context = LocalContext.current
+    val darkTheme = resolveLanghuanDarkTheme(themeMode)
 
-    val colors = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme) {
-                dynamicDarkColorScheme(context)
-            } else {
-                dynamicLightColorScheme(context)
-            }
-        }
-
-        darkTheme -> LanghuanDarkColors
-        else -> LanghuanLightColors
-    }
-
-    val success = if (darkTheme) {
-        Color(0xFF8DD5AE)
+    val uiTokens = if (darkTheme) {
+        LanghuanDarkUiTokens
     } else {
-        Color(0xFF377B58)
+        LanghuanLightUiTokens
     }
 
-    val warning = if (darkTheme) {
-        Color(0xFFE5BE76)
+    val materialColors = if (darkTheme) {
+        LanghuanDarkColorScheme
     } else {
-        Color(0xFF9A6B24)
+        LanghuanLightColorScheme
     }
 
-    val pageBackground = colors.background
-    val cardBackground = if (darkTheme) {
-        colors.surfaceContainerLow
-    } else {
-        colors.surfaceContainerLowest
-    }
-    val raisedBackground = colors.surface
 
+    /*
+     * 旧页面兼容层。
+     *
+     * 当前工程仍有部分页面使用 LocalMiuixTokens。
+     * 在所有页面完成 v3 Design System 迁移前，
+     * 这里继续向旧组件提供与 v3 一致的基础色。
+     *
+     * 不再让旧页面返回蓝色 LuoShu 风格。
+     */
     val legacyTokens = MiuixTokens(
-        pageBackground = pageBackground,
-        cardBackground = cardBackground,
-        elevatedCardBackground = raisedBackground,
-        textPrimary = colors.onSurface,
-        textSecondary = colors.onSurfaceVariant,
-        success = success,
-        warning = warning,
+        pageBackground = uiTokens.background,
+
+        cardBackground = uiTokens.card,
+
+        /*
+         * v3 明确要求取消投影分层。
+         * 因此旧 elevatedCard 也不再制造另一种浮起 Surface，
+         * 直接保持 card。
+         */
+        elevatedCardBackground = uiTokens.card,
+
+        textPrimary = uiTokens.foreground,
+
+        /*
+         * 旧 Token 只有一个 secondary text，
+         * 优先映射到新的二级文字。
+         */
+        textSecondary = uiTokens.secondaryForeground,
+
+        /*
+         * MiuixTokens 暂时仍需要 success / warning。
+         * v3 Claude Token 表没有重新定义这两项，
+         * 因此兼容层不创造新的品牌色：
+         *
+         * success → primary
+         * warning → gold
+         *
+         * 新版组件不应依赖这两个旧语义。
+         */
+        success = uiTokens.primary,
+        warning = uiTokens.gold,
     )
 
-    val uiTokens = LanghuanUiTokens(
-        background = pageBackground,
-        foreground = colors.onBackground,
-
-        card = cardBackground,
-        cardForeground = colors.onSurface,
-
-        muted = colors.surfaceContainer,
-        mutedForeground = colors.onSurfaceVariant,
-
-        strong = colors.onSurface.copy(
-            alpha = if (darkTheme) 0.92f else 0.88f,
-        ),
-
-        track = colors.onSurface.copy(
-            alpha = if (darkTheme) 0.12f else 0.07f,
-        ),
-
-        border = colors.outlineVariant,
-
-        input = colors.surfaceContainerHigh,
-
-        primary = colors.primary,
-        primaryForeground = colors.onPrimary,
-
-        accent = colors.primaryContainer,
-        accentForeground = colors.onPrimaryContainer,
-
-        destructive = colors.error,
-        destructiveForeground = colors.onError,
-
-        success = success,
-        successForeground = if (darkTheme) {
-            Color(0xFF102D20)
-        } else {
-            Color.White
-        },
-
-        warning = warning,
-        warningForeground = if (darkTheme) {
-            Color(0xFF352508)
-        } else {
-            Color.White
-        },
-
-        ring = colors.primary.copy(
-            alpha = if (darkTheme) 0.56f else 0.42f,
-        ),
-
-        warmSurface = if (darkTheme) {
-            Color(0xFF211F1A)
-        } else {
-            Color(0xFFF4EFE5)
-        },
-
-        radiusSm = 12.dp,
-        radiusMd = 16.dp,
-        radiusLg = 20.dp,
-        radiusXl = 28.dp,
-    )
 
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = materialColors,
         typography = LanghuanTypography,
         shapes = LanghuanShapes,
     ) {
         CompositionLocalProvider(
             LocalMiuixTokens provides legacyTokens,
             LocalLanghuanUiTokens provides uiTokens,
-            content = content,
-        )
+        ) {
+            content()
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                          Theme Mode Persistence                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 主题三档（跟随系统 / 浅色 / 深色）的 SharedPreferences 持久化。
+ *
+ * 与设置页的外观卡片、MainActivity 的 LanghuanStableTheme 接线配合。
+ * v3 新增：此前工程没有手动主题切换。
+ */
+internal object LanghuanThemeModeStoreV50 {
+    private const val PREFS = "langhuan_theme_v50"
+    private const val KEY_MODE = "theme_mode"
+
+    fun load(context: android.content.Context): LanghuanThemeMode {
+        val name = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .getString(KEY_MODE, null)
+        return runCatching { if (name == null) LanghuanThemeMode.FOLLOW_SYSTEM else LanghuanThemeMode.valueOf(name) }
+            .getOrDefault(LanghuanThemeMode.FOLLOW_SYSTEM)
+    }
+
+    fun save(context: android.content.Context, mode: LanghuanThemeMode) {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_MODE, mode.name)
+            .apply()
+    }
+}
+
+/**
+ * 进程内主题状态。设置页写入后立即生效，无需重启。
+ */
+internal object LanghuanThemeModeStateV50 {
+    var current: LanghuanThemeMode by androidx.compose.runtime.mutableStateOf(LanghuanThemeMode.FOLLOW_SYSTEM)
+        private set
+
+    fun init(context: android.content.Context) {
+        current = LanghuanThemeModeStoreV50.load(context)
+    }
+
+    fun set(context: android.content.Context, mode: LanghuanThemeMode) {
+        LanghuanThemeModeStoreV50.save(context, mode)
+        current = mode
     }
 }

@@ -32,6 +32,7 @@ import com.xiguli.langhuan.ui.LanghuanRootV4
 import com.xiguli.langhuan.ui.ExternalBookImportCoordinatorV1
 import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
+import com.xiguli.langhuan.ui.theme.LanghuanThemeModeStateV50
 
 class MainActivity : ComponentActivity() {
     private val externalBooks by lazy { ViewModelProvider(this)[ExternalBookImportCoordinatorV1::class.java] }
@@ -96,7 +97,8 @@ private fun StartupDatabaseRoot(externalBooks: ExternalBookImportCoordinatorV1) 
         is LauncherState.Failed -> LauncherFailureScreen(state.status)
         is LauncherState.Ready -> {
             // Visual styling and noncritical background work begin only after startup is proven safe.
-            LanghuanStableTheme {
+            LanghuanThemeModeStateV50.init(context)
+            LanghuanStableTheme(themeMode = LanghuanThemeModeStateV50.current) {
                 LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
                 val studioViewModel: StudioViewModel = viewModel()
                 LanghuanRootV4(studioViewModel, externalBooks)
