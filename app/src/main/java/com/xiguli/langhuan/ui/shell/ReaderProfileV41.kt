@@ -97,6 +97,11 @@ internal fun ReaderProfileV41(
             }
         }
         Text("一卷在手，心有远山", Modifier.align(Alignment.CenterHorizontally).padding(top = 22.dp), color = p.muted.copy(alpha = .65f), fontFamily = FontFamily.Serif, fontSize = 12.sp)
+        // v3: 每日阅读目标。
+        Spacer(Modifier.height(18.dp))
+        PaperCardV44(Modifier.fillMaxWidth()) {
+            ReaderDailyGoalPanelV50()
+        }
     }
 }
 

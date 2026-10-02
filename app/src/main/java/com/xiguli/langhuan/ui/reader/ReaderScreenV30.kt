@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -100,6 +101,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.domain.ChapterDraft
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -572,6 +574,14 @@ internal fun ReaderSessionV30(
 
     // Long-pressed paragraph (copy / share / look up). Cleared whenever the page changes.
     var selection by remember { mutableStateOf<ReaderSelectionV30?>(null) }
+    // v3: paragraph note editor target + highlight revision (bumps to redraw bands).
+    var noteEditorFor by remember { mutableStateOf<ReaderSelectionV30?>(null) }
+    var highlightRevision by remember { mutableIntStateOf(0) }
+    // v3: paragraph highlights for the current book; reloaded when highlightRevision bumps.
+    val v3Tokens = LocalLanghuanUiTokens.current
+    val v3Highlights = remember(book.id, highlightRevision) {
+        ReaderParagraphHighlightStoreV50.load(prefs, book.id).getOrElse { emptyList() }
+    }
     val selectionAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(selection) {
         if (selection != null) selectionAlpha.animateTo(1f, tween(160)) else selectionAlpha.snapTo(0f)
@@ -723,6 +733,19 @@ internal fun ReaderSessionV30(
         edgeHint = "朗读失败，已停止；请点听书重试"
     }
 
+    // v3: 听书定时。到期自动 stopListening；切章时通知 timer 以支持"本章结束"模式。
+    val ttsSleepTimerV50 = remember {
+        ReaderTtsSleepTimerV50(
+            prefs,
+            stopPlayback = { stopListening() },
+            onExpired = { edgeHint = "定时已到，已停止朗读" },
+        )
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { ttsSleepTimerV50.release() }
+    }
+    var ttsTimerPanelOpen by remember { mutableStateOf(false) }
+
     fun ttsStartFromPage() {
         if (!listening || !ttsReady) return
         val tts = ttsHolder[0] ?: return
@@ -778,6 +801,7 @@ internal fun ReaderSessionV30(
             next == null -> { stopListening(); edgeHint = "已读到最后一章" }
             else -> {
                 chapters.getOrNull(chapterIndex)?.let { ReaderStatsV35.markChapterFinished(context, book.id, it.chapterNumber) }
+                ttsSleepTimerV50.onChapterFinished()
                 ttsAdvancing = true
                 anchorHolder[0] = 0
                 pendingAnchor = 0
@@ -1053,6 +1077,14 @@ internal fun ReaderSessionV30(
                             if (picked != null && current != null && picked.chapterIndex == current.chapterIndex && picked.pageIndex == current.index) {
                                 drawReaderSelectionV30(picked, geometry, theme, selectionAlpha.value)
                             }
+                            // v3: paragraph highlights persisted across sessions.
+                            if (current != null) {
+                                v3Highlights.forEach { h ->
+                                    readerParagraphHighlightBandV50(current, geometry, h)?.let { band ->
+                                        drawReaderParagraphHighlightV50(band, geometry, v3Tokens)
+                                    }
+                                }
+                            }
                             return@drawBehind
                         }
                         val w = size.width.coerceAtLeast(1f)
@@ -1166,6 +1198,22 @@ internal fun ReaderSessionV30(
                     IconButton(onClick = { stopListening() }, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Rounded.Close, "停止朗读", tint = theme.sheetText)
                     }
+                    // v3: 听书定时。
+                    ReaderTtsSleepTimerChipV50(
+                        timer = ttsSleepTimerV50,
+                        onClick = { ttsTimerPanelOpen = true },
+                    )
+                }
+            }
+        }
+
+        // v3: 听书定时面板。
+        if (ttsTimerPanelOpen) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = { ttsTimerPanelOpen = false }) {
+                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
+                    Box(Modifier.padding(20.dp)) {
+                        ReaderTtsSleepTimerPanelV50(timer = ttsSleepTimerV50)
+                    }
                 }
             }
         }
@@ -1195,7 +1243,33 @@ internal fun ReaderSessionV30(
                     if (number != null) applyBookmarkResult(ReaderBookmarkStoreV49.add(prefs, book.id, number), "已加入本书书签")
                     selection = null
                 },
+                onNote = {
+                    noteEditorFor = picked
+                    selection = null
+                },
+                onHighlight = {
+                    ReaderParagraphHighlightStoreV50.saveSelection(prefs, book.id, picked)
+                        .onSuccess {
+                            highlightRevision++
+                            edgeHint = "已划线"
+                        }
+                        .onFailure { edgeHint = it.message ?: "划线失败" }
+                    selection = null
+                },
                 onDismiss = { selection = null },
+            )
+        }
+
+        // v3: paragraph note editor.
+        noteEditorFor?.let { target ->
+            val chapterTitle = chapters.getOrNull(target.chapterIndex)?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) } ?: ""
+            ReaderParagraphNoteEditorV50(
+                prefs = prefs,
+                bookId = book.id,
+                selection = target,
+                chapterTitle = chapterTitle,
+                onDismiss = { noteEditorFor = null },
+                onSaved = { noteEditorFor = null; edgeHint = "笔记已保存" },
             )
         }
 

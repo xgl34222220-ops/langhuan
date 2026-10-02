@@ -199,6 +199,8 @@ fun ShelfLuoShuFunctionalV1(
         mutableStateOf(prefs.getString("shelf_sort", LuoShelfSortV33.RECENT_READ.key) ?: LuoShelfSortV33.RECENT_READ.key)
     }
     var moveFor by remember { mutableStateOf<ReaderBookUi?>(null) }
+    // v3: 批量整理面板。
+    var batchOpen by remember { mutableStateOf(false) }
     var pendingShelfDelete by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(activeShelf, customShelves) {
         if (activeShelf != null && activeShelf !in customShelves) activeShelf = null
@@ -256,6 +258,20 @@ fun ShelfLuoShuFunctionalV1(
                                 sortKey = it.key
                                 prefs.edit().putString("shelf_sort", it.key).apply()
                             },
+                            onBatchOrganize = { batchOpen = true },
+                        )
+                        // v3: 批量整理面板（多选 / 移动 / 删除 / 6 秒撤销）。
+                        LuoShelfBatchOrganizerV50(
+                            books = state.stories,
+                            shelves = customShelves,
+                            shelfPrefs = prefs,
+                            visible = batchOpen,
+                            onDismiss = { batchOpen = false },
+                            onDeleteBooks = { ids ->
+                                ids.forEach(onDeleteBook)
+                                shelfRevision++
+                            },
+                            onMoveCompleted = { _, _ -> shelfRevision++ },
                         )
                         LuoShelfScreenV1.CREATE -> LuoShelfCreateV1(onCreate, onImportLocal, onSkills)
                         LuoShelfScreenV1.BOOKSTORE -> onlineContent(manageSources)
@@ -571,6 +587,7 @@ private fun LuoShelfLibraryV1(
     onShelf: (String?) -> Unit = {},
     sort: LuoShelfSortV33 = LuoShelfSortV33.RECENT_READ,
     onSort: (LuoShelfSortV33) -> Unit = {},
+    onBatchOrganize: () -> Unit = {},
 ) = PaperReaderThemeV44 {
     val t = LocalLanghuanUiTokens.current
     val context = LocalContext.current
@@ -592,6 +609,8 @@ private fun LuoShelfLibraryV1(
             PaperPageTitleV44("书架", Modifier.padding(start = 20.dp, end = 16.dp, bottom = 9.dp)) {
                 PaperIconButtonV44(Icons.Rounded.SwapVert, "排序：${sort.label}", { onSort(sort.next()) })
                 PaperIconButtonV44(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, if (searchOpen) "关闭搜索" else "搜索书架", { onSearchOpen(!searchOpen) }, selected = searchOpen)
+                // v3: 批量整理（多选 / 移动 / 删除 / 撤销）。
+                PaperIconButtonV44(Icons.Rounded.SelectAll, "批量整理", onBatchOrganize)
                 PaperIconButtonV44(Icons.Rounded.Add, "添加书籍", onAdd)
             }
             AnimatedVisibility(searchOpen, enter = expandVertically(LanghuanMotionV31.settle()) + fadeIn(tween(160)), exit = shrinkVertically(tween(180)) + fadeOut(tween(120))) {
