@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.FormatQuote
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
@@ -119,6 +121,9 @@ internal fun ReaderSelectionBarV30(
     onSearch: () -> Unit,
     onBookmark: () -> Unit,
     onDismiss: () -> Unit,
+    // v3 新增：段落笔记 / 段落划线。为 null 时不显示对应按钮，老调用方不受影响。
+    onNote: (() -> Unit)? = null,
+    onHighlight: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val appear = remember(selection) { Animatable(0f) }
@@ -150,6 +155,8 @@ internal fun ReaderSelectionBarV30(
             Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 ReaderSelectionActionV30(Icons.Rounded.TextFields, "复制", theme, onCopy)
                 ReaderSelectionActionV30(Icons.Outlined.Bookmark, "书签", theme, onBookmark)
+                onNote?.let { ReaderSelectionActionV30(Icons.Outlined.EditNote, "笔记", theme, it) }
+                onHighlight?.let { ReaderSelectionActionV30(Icons.Outlined.FormatQuote, "划线", theme, it) }
                 ReaderSelectionActionV30(Icons.Rounded.Search, "查询", theme, onSearch)
                 ReaderSelectionActionV30(Icons.Rounded.Share, "分享", theme, onShare)
                 ReaderSelectionActionV30(Icons.Rounded.Close, "取消", theme, onDismiss)

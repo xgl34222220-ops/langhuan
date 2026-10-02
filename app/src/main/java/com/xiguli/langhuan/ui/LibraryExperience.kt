@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.ui
 
 import android.app.Application
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -844,6 +846,52 @@ private fun BookDetail(
                     Spacer(Modifier.height(14.dp))
                     Button(onEnterWorkspace, Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp)) {
                         Icon(Icons.Rounded.EditNote, null); Spacer(Modifier.width(7.dp)); Text("进入创作工作台")
+                    }
+                }
+            }
+        }
+        // v3: 书签与笔记入口 —— 段落笔记 / 段落划线汇总，可删除。
+        item {
+            val context = LocalContext.current
+            val notePrefs = remember(book.id) { context.getSharedPreferences("reader_qingmo_v9", Context.MODE_PRIVATE) }
+            var notesOpen by remember(book.id) { mutableStateOf(false) }
+            var notesRevision by remember(book.id) { mutableIntStateOf(0) }
+            val notes = remember(book.id, notesRevision) { ReaderParagraphNoteStoreV50.load(notePrefs, book.id).getOrElse { emptyList() } }
+            val highlights = remember(book.id, notesRevision) { ReaderParagraphHighlightStoreV50.load(notePrefs, book.id).getOrElse { emptyList() } }
+            val total = notes.size + highlights.size
+            Surface(shape = RoundedCornerShape(26.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth().clickable { notesOpen = !notesOpen }) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.EditNote, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("书签与笔记", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (total == 0) "还没有段落笔记或划线，去阅读时长按段落添加" else "共 $total 条：${notes.size} 条笔记 · ${highlights.size} 条划线",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Icon(if (notesOpen) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+                    }
+                    if (notesOpen) {
+                        notes.forEach { note ->
+                            ReaderParagraphNoteCardV50(
+                                note = note,
+                                onDelete = {
+                                    ReaderParagraphNoteStoreV50.delete(notePrefs, book.id, note.id)
+                                    notesRevision++
+                                },
+                            )
+                        }
+                        highlights.forEach { highlight ->
+                            ReaderParagraphHighlightCardV50(
+                                highlight = highlight,
+                                onDelete = {
+                                    ReaderParagraphHighlightStoreV50.delete(notePrefs, book.id, highlight.id)
+                                    notesRevision++
+                                },
+                            )
+                        }
                     }
                 }
             }
