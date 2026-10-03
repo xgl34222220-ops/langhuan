@@ -10,6 +10,7 @@ on:
       - 'app/src/main/java/com/xiguli/langhuan/LanghuanApplication.kt'
       - 'app/src/main/AndroidManifest.xml'
       - 'app/src/androidTest/java/com/xiguli/langhuan/ui/SourceBrowserSessionV56DeviceTest.kt'
+      - 'app/src/androidTest/java/com/xiguli/langhuan/ui/ReaderRecreationV42DeviceTest.kt'
       - '.github/workflows/ai-source-browser-qa.yml'
       - 'tools/verify_browser_process_death.py'
       - 'tools/run_browser_device_checks.sh'

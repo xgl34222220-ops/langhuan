@@ -22,6 +22,42 @@ import org.junit.Test
 class ReaderRecreationV42DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
+    /** Scroll motion can leave Compose 1.10 merged-node coordinates stale in a rotated
+     * AnimatedContent. Validate the foreground system tree and inject a real screen tap;
+     * the caller must also observe the actual settings change, so a hidden node cannot pass.
+     */
+    private fun tapVisibleFontAction(text: String) {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        var hit: android.graphics.Rect? = null
+        rule.waitUntil(5_000) {
+            val root = automation.rootInActiveWindow ?: return@waitUntil false
+            if (root.packageName?.toString() != "com.xiguli.langhuan") return@waitUntil false
+            val window = android.graphics.Rect().also(root::getBoundsInScreen)
+            fun find(node: android.view.accessibility.AccessibilityNodeInfo?): android.graphics.Rect? {
+                if (node == null) return null
+                if (node.text?.toString() == text && node.isVisibleToUser) {
+                    val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
+                    if (!bounds.isEmpty && window.contains(bounds)) return bounds
+                }
+                for (index in 0 until node.childCount) find(node.getChild(index))?.let { return it }
+                return null
+            }
+            hit = find(root)
+            hit != null && window.width() > window.height()
+        }
+        val bounds = requireNotNull(hit)
+        val downTime = android.os.SystemClock.uptimeMillis()
+        val down = android.view.MotionEvent.obtain(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, bounds.exactCenterX(), bounds.exactCenterY(), 0)
+        down.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+        try { assertTrue("Visible $text must accept a screen touch", automation.injectInputEvent(down, true)) }
+        finally { down.recycle() }
+        Thread.sleep(60)
+        val up = android.view.MotionEvent.obtain(downTime, android.os.SystemClock.uptimeMillis(), android.view.MotionEvent.ACTION_UP, bounds.exactCenterX(), bounds.exactCenterY(), 0)
+        up.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+        try { assertTrue("Visible $text must accept touch release", automation.injectInputEvent(up, true)) }
+        finally { up.recycle() }
+    }
+
     @Test fun longChapterAndChangedFontStayInReaderAfterActivityRecreation() = runBlocking {
         val context = rule.activity.applicationContext
         val title = "阅读位置回归V42"
@@ -105,7 +141,14 @@ class ReaderRecreationV42DeviceTest {
             deviceWindowEvidenceV46("v42-reader-landscape-font")
             val fontAction = rule.onNodeWithText("A+")
             try {
-                fontAction.assertIsDisplayed()
+                fontAction.assertExists().assertIsEnabled()
+                val prefs = context.getSharedPreferences("reader_qingmo_v9", 0)
+                assertEquals("Rotation changed the saved font", 21f, prefs.getFloat("font", 0f), 0f)
+                tapVisibleFontAction("A+")
+                rule.waitUntil(5_000) { prefs.getFloat("font", 0f) == 22f }
+                tapVisibleFontAction("A−")
+                rule.waitUntil(5_000) { prefs.getFloat("font", 0f) == 21f }
+                deviceWindowEvidenceV46("v42-reader-landscape-font-operable")
             } catch (error: AssertionError) {
                 val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
                 val tree = StringBuilder()
