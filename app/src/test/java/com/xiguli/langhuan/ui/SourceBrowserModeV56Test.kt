@@ -15,7 +15,8 @@ class SourceBrowserModeV56Test {
     }
 
     @Test fun aChallengeOrLoadingPlaceholderIsNeverAUsableBookPage() {
-        listOf("", "<script>window.pending=true</script>", "<p>Loading...</p>",
+        listOf("", "<script>window.pending=true</script>", "<p>Loading...</p>", "<header>原创书城</header><a href='/home'>首页</a><main><p>Loading...</p></main>",
+            "<h1>第一章</h1><div aria-busy=true>尚未完成</div>",
             "<title>Just a moment...</title><form id=challenge-form>Verify you are human</form>")
             .forEach { assertFalse(it, browserDocumentReadyV56(it)) }
         assertTrue(browserDocumentReadyV56("<form action='/s'><input name='q'></form>"))

@@ -589,6 +589,9 @@ internal fun ReaderSessionV30(
         mutableStateOf(bookmarkState.exceptionOrNull()?.message)
     }
     val legacyBookmarkState = remember { ReaderBookmarkStoreV49.legacy(prefs) }
+    val catalogueIncomplete = remember(book.sourceId, chapters) {
+        book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null
+    }
 
     fun infoFor(page: ReaderPageV30?, index: Int): ReaderChromeInfoV30 {
         val chapter = chapters.getOrNull(index)
@@ -614,7 +617,7 @@ internal fun ReaderSessionV30(
         return ReaderChromeInfoV30(
             chapterTitle = header,
             pageLabel = if (count > 0) "本章 $pageNumber / $count 页" else "",
-            progressLabel = if (book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null) "目录待补全" else "全书 ${bookProgress.roundToInt()}%",
+            progressLabel = if (catalogueIncomplete) "目录待补全" else "全书 ${bookProgress.roundToInt()}%",
             time = clock,
             battery = battery,
             showTimeBattery = settings.showTimeBattery,

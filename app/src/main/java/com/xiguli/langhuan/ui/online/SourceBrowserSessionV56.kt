@@ -205,7 +205,11 @@ internal fun browserDocumentReadyV56(html: String): Boolean {
     val doc = Jsoup.parse(html)
     doc.select("script, style, template, [hidden], [aria-hidden=true]").remove()
     val text = doc.body().text().trim()
-    if (text.matches(Regex("(?:loading|加载中|載入中|正在加载)[.!…\\s]*", RegexOption.IGNORE_CASE))) return false
+    val loading = Regex("(?:loading|加载中|載入中|正在加载)[.!…\\s]*", RegexOption.IGNORE_CASE)
+    // A site header can already be stable while its result/body container is still loading.
+    // Match standalone visible indicators; prose quoting these words remains readable.
+    if (doc.selectFirst("[aria-busy=true], [role=progressbar], progress:not([value])") != null ||
+        doc.body().allElements.any { loading.matches(it.ownText().trim()) }) return false
     return text.isNotEmpty() || doc.selectFirst("form input:not([type=hidden]), a[href], img[src]") != null
 }
 

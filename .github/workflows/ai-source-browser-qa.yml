@@ -9,6 +9,8 @@ on:
       - 'app/src/main/AndroidManifest.xml'
       - 'app/src/androidTest/java/com/xiguli/langhuan/ui/SourceBrowserSessionV56DeviceTest.kt'
       - '.github/workflows/ai-source-browser-qa.yml'
+      - 'tools/verify_browser_process_death.py'
+      - 'tools/verify_epub_process_death.py'
   workflow_dispatch:
 
 permissions:
@@ -45,7 +47,11 @@ jobs:
           profile: pixel_7
           disable-animations: true
           script: |
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest
+            mkdir -p browser-qa
+            adb logcat -v threadtime > browser-qa/device-logcat.txt 2>&1 &
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest
+            python3 tools/verify_browser_process_death.py --evidence browser-qa/process
+            adb pull /sdcard/Download/reader-qa browser-qa/screens
             sha256sum app/build/outputs/apk/debug/app-debug.apk > browser-tested-apk.sha256
       - uses: actions/upload-artifact@v4
         if: always()
@@ -54,5 +60,6 @@ jobs:
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             browser-tested-apk.sha256
+            browser-qa
             app/build/reports/androidTests
             app/build/outputs/androidTest-results

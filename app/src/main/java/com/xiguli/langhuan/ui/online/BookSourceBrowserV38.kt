@@ -11,8 +11,22 @@ internal object BookSourceBrowserV38 {
             if (transport == null) transport = SourceBrowserTransportV56(context.applicationContext)
         }
     }
-    fun document(source: BookSourceV36, request: SourceRequestV36): org.jsoup.nodes.Document =
-        (transport ?: error("浏览器会话尚未初始化")).document(source, request)
+    @Volatile private var fixtureSite: ((SourceRequestV36) -> String)? = null
+
+    /** Debug-only reserved-domain pages exercise the default engine path without network access. */
+    internal fun <T> withFixtureSiteV56(pages: (SourceRequestV36) -> String, block: () -> T): T {
+        check(fixtureSite == null)
+        fixtureSite = pages
+        return try { block() } finally { fixtureSite = null }
+    }
+
+    fun document(source: BookSourceV36, request: SourceRequestV36): org.jsoup.nodes.Document {
+        val browser = transport ?: error("浏览器会话尚未初始化")
+        val pages = fixtureSite
+        return if (pages != null && publicSourceUrlV36(request.url).host == "browser-fixture.example")
+            browser.fixtureDocument(source, request, pages(request))
+        else browser.document(source, request)
+    }
 }
 
 internal fun browserChallengePendingV38(html: String, mitigationHeader: String? = null): Boolean {

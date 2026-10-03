@@ -16,7 +16,7 @@ COMPONENT = "com.xiguli.langhuan.test/androidx.test.runner.AndroidJUnitRunner"
 PACKAGE = "com.xiguli.langhuan"
 
 
-def verify_instrumentation(output: str) -> None:
+def verify_instrumentation(output: str, test_class: str = TEST_CLASS, test_method: str = TEST_METHOD) -> None:
     terminal = re.findall(r"^INSTRUMENTATION_CODE:\s*(-?\d+)\s*$", output, re.M)
     if terminal != ["-1"]:
         raise RuntimeError("Instrumentation did not report one normal terminal result")
@@ -37,7 +37,7 @@ def verify_instrumentation(output: str) -> None:
     if len(successes) != 1:
         raise RuntimeError("Expected exactly one completed successful test")
     success = successes[0]
-    expected = {"class": TEST_CLASS, "test": TEST_METHOD, "numtests": "1", "current": "1"}
+    expected = {"class": test_class, "test": test_method, "numtests": "1", "current": "1"}
     if any(success.get(key) != value for key, value in expected.items()):
         raise RuntimeError("Instrumentation did not execute the exact requested single test")
     if not re.search(r"^OK \(1 test\)\s*$", output, re.M):
