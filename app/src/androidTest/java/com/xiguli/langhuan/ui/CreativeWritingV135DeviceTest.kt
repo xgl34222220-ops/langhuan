@@ -153,9 +153,9 @@ class CreativeWritingV135DeviceTest {
             val sourceBody = projects.chapterDraft(originalId, 1)!!.content
             assertTrue(projects.chapterDraft(originalId, 2)!!.content.isBlank())
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
-            rule.onNodeWithText("详情").performClick()
-            // Reader detail actions are fixed, visible controls, not children of a scroll container.
-            rule.onNodeWithText("AI 创作").assertIsDisplayed().performClick()
+            // V3 keeps chapter editing and creation in the scrollable “更多” tab.
+            rule.onNodeWithText("更多").performClick()
+            rule.onNodeWithText("AI 创作").performScrollTo().assertIsDisplayed().performClick()
             markPhase("create independent writing copy")
             rule.onNodeWithText("创建副本并进入").performClick()
             rule.waitUntil(20_000) { flow.state.value.ready && flow.state.value.novelId != originalId && chat.state.value.isLoaded }

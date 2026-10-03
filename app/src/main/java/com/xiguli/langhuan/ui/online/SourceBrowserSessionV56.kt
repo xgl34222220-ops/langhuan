@@ -220,7 +220,7 @@ internal fun browserHttpsUpgradeV56(status: Int, method: String, url: String, ht
  * There is no JavaScript bridge, source-rule evaluator, file picker, download, or native permission.
  */
 class BookSourceBrowserServiceV56 : Service() {
-    private class Task(val id: String, val reply: Messenger, val request: SourceRequestV36) {
+    private class Task(val id: String, val reply: Messenger, val request: SourceRequestV36, val fixture: String? = null) {
         var navigation = 0
         var status = 200
         var retryAfter: Long? = null
@@ -229,7 +229,7 @@ class BookSourceBrowserServiceV56 : Service() {
         var shown = false
         var upgraded = false
     }
-    private val handler = Handler(Looper.getMainLooper())
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val writer = Executors.newSingleThreadExecutor()
     private val checkedHosts = ConcurrentHashMap<String, Long>()
     private val writes = ConcurrentHashMap<String, AtomicBoolean>()
@@ -272,19 +272,17 @@ class BookSourceBrowserServiceV56 : Service() {
             require(request.method in setOf("GET", "POST") && request.body.orEmpty().length <= 64 * 1024)
             request.charset?.let { Charset.forName(it) }
             if (request.method == "POST") require(sameSourceOriginV36(publicSourceUrlV36(data.getString("base").orEmpty()), publicSourceUrlV36(url))) { "不能跨站提交搜索表单" }
-            task = Task(id, reply, request)
+            val fixture = data.getString("fixture")
+            if (fixture != null) check((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 && publicSourceUrlV36(url).host == "browser-fixture.example" && fixture.toByteArray().size <= 64 * 1024)
+            task = Task(id, reply, request, fixture)
             val view = webView ?: createView().also { webView = it }
             view.onResume()
             view.resumeTimers()
             view.settings.userAgentString = data.getString("ua")?.takeIf { it.length <= 1024 } ?: WebSettings.getDefaultUserAgent(this)
-            handler.postDelayed(timeout, BROWSER_TIMEOUT_MS)
+            mainHandler.postDelayed(timeout, BROWSER_TIMEOUT_MS)
             fun load() {
                 if (!active(id)) return
-                val fixture = data.getString("fixture")
-                if (fixture != null) {
-                    check((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 && publicSourceUrlV36(url).host == "browser-fixture.example" && fixture.toByteArray().size <= 64 * 1024)
-                    view.loadDataWithBaseURL(url, fixture, "text/html", "UTF-8", url)
-                } else if (request.method == "POST") view.postUrl(url, request.body.orEmpty().toByteArray(Charset.forName(request.charset ?: "UTF-8")))
+                if (request.method == "POST") view.postUrl(url, request.body.orEmpty().toByteArray(Charset.forName(request.charset ?: "UTF-8")))
                 else view.loadUrl(url)
             }
             val cookies = data.getString("cookie").orEmpty().split(';').map(String::trim).filter { it.contains('=') }
@@ -340,7 +338,15 @@ class BookSourceBrowserServiceV56 : Service() {
             } catch (_: Exception) { if (request.isForMainFrame) finishError("网页跳转到了不支持的地址"); true }
 
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                val id = task?.id ?: return blocked()
+                val currentTask = task ?: return blocked()
+                val id = currentTask.id
+                // The debug-only reserved-domain fixture follows normal loadUrl/postUrl and
+                // supplies just its main document. No fixture resource reaches the network.
+                currentTask.fixture?.let { html ->
+                    return if (request.isForMainFrame && request.url.toString() == currentTask.request.url)
+                        WebResourceResponse("text/html", "UTF-8", ByteArrayInputStream(html.toByteArray(Charsets.UTF_8)))
+                    else blocked()
+                }
                 return try {
                     val url = publicSourceUrlV36(request.url.toString())
                     val now = System.currentTimeMillis()
@@ -351,15 +357,15 @@ class BookSourceBrowserServiceV56 : Service() {
                     }
                     null
                 } catch (error: Exception) {
-                    if (request.isForMainFrame) handler.post { if (active(id)) finishError(error.message?.take(500) ?: "网页地址无法读取") }
+                    if (request.isForMainFrame) mainHandler.post { if (active(id)) finishError(error.message?.take(500) ?: "网页地址无法读取") }
                     blocked()
                 }
             }
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 task?.let { it.navigation++; it.status = 200; it.retryAfter = null; it.html = null; it.stable = 0 }
-                handler.removeCallbacks(poll)
+                mainHandler.removeCallbacks(poll)
             }
-            override fun onPageFinished(view: WebView, url: String) { if (task != null) { handler.removeCallbacks(poll); handler.postDelayed(poll, 750) } }
+            override fun onPageFinished(view: WebView, url: String) { if (task != null) { mainHandler.removeCallbacks(poll); mainHandler.postDelayed(poll, 750) } }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) finishError("网页加载失败，请检查网络（${error.errorCode}）")
             }
@@ -428,14 +434,14 @@ class BookSourceBrowserServiceV56 : Service() {
                             send(currentTask.reply, BROWSER_RESULT, Bundle().apply { putString("id", currentTask.id); putString("error", "浏览器页面暂存失败") })
                         } finally { writes.remove(currentTask.id) }
                     }
-                } else handler.postDelayed(poll, 750)
+                } else mainHandler.postDelayed(poll, 750)
             } catch (error: Exception) { finishError(error.message?.take(500) ?: "浏览器页面读取失败") }
         }
     }
 
     private fun detachTask() {
         task = null
-        handler.removeCallbacks(timeout); handler.removeCallbacks(poll)
+        mainHandler.removeCallbacks(timeout); mainHandler.removeCallbacks(poll)
         webView?.stopLoading()
         webView?.onPause()
         webView?.pauseTimers()
