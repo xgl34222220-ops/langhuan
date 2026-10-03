@@ -3,12 +3,16 @@ package com.xiguli.langhuan.ui
 import android.content.Context
 import org.jsoup.Jsoup
 
-/** Kept for application startup compatibility. Source fetches never create a WebView.
- * Dynamic sites require an explicit, isolated browser design before they can be supported safely.
- */
+/** Browser rendering is explicitly selected and confined to its own process and WebView profile. */
 internal object BookSourceBrowserV38 {
-    @Suppress("UNUSED_PARAMETER")
-    fun install(context: Context) = Unit
+    @Volatile private var transport: SourceBrowserTransportV56? = null
+    fun install(context: Context) {
+        if (transport == null) synchronized(this) {
+            if (transport == null) transport = SourceBrowserTransportV56(context.applicationContext)
+        }
+    }
+    fun document(source: BookSourceV36, request: SourceRequestV36): org.jsoup.nodes.Document =
+        (transport ?: error("浏览器会话尚未初始化")).document(source, request)
 }
 
 internal fun browserChallengePendingV38(html: String, mitigationHeader: String? = null): Boolean {

@@ -94,7 +94,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     // ---- AI-written sources ---------------------------------------------------------------------
 
-    fun buildWithAi(siteUrl: String, keyword: String) {
+    fun buildWithAi(siteUrl: String, keyword: String, useBrowser: Boolean = false) {
         if (!sourceStorageReady()) { _state.update { it.copy(aiError = it.sourceStorageError) }; return }
         if (aiJob?.isActive == true) return
         if (siteUrl.isBlank() || keyword.isBlank()) {
@@ -104,21 +104,30 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         val generation = aiGeneration.incrementAndGet()
         _state.update { it.copy(aiSteps = emptyList(), aiRunning = true, aiReport = null, aiError = null) }
         aiJob = viewModelScope.launch {
-            val config = activeProviderId?.let { repository.providerConfig(it) }
-            if (config == null) {
-                _state.update { it.copy(aiRunning = false, aiError = "请先在设置里添加并启用一个 AI 服务") }
-                return@launch
-            }
-            currentCoroutineContext().ensureActive()
-            val builder = BookSourceAiBuilderV37(com.xiguli.langhuan.engine.UniversalAiGateway(config), onSteps = { steps ->
-                _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = steps) else it }
-            })
-            sourceAttemptV36 { builder.build(siteUrl, keyword) }
-                .onSuccess { report -> _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiReport = report) else it } }
-                .onFailure { e ->
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiError = e.message ?: "生成失败") else it }
+            try {
+                val config = activeProviderId?.let { repository.providerConfig(it) }
+                if (config == null) {
+                    _state.update { it.copy(aiRunning = false, aiError = "请先在设置里添加并启用一个 AI 服务") }
+                    return@launch
                 }
+                currentCoroutineContext().ensureActive()
+                val builder = BookSourceAiBuilderV37(com.xiguli.langhuan.engine.UniversalAiGateway(config), onSteps = { steps ->
+                    _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = steps) else it }
+                })
+                sourceAttemptV36 { builder.build(siteUrl, keyword, useBrowser) }
+                    .onSuccess { report -> _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiReport = report) else it } }
+                    .onFailure { e ->
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiError = e.message ?: "生成失败") else it }
+                    }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = emptyList(), aiReport = null, aiError = null) else it }
+                throw error
+            } catch (error: Exception) {
+                _state.update { if (aiGeneration.get() == generation) it.copy(aiError = error.message ?: "AI 书源生成失败，请重试") else it }
+            } finally {
+                _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false) else it }
+            }
         }
     }
 

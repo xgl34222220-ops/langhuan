@@ -53,6 +53,7 @@ internal fun AiBookSourceScreenV50(
     onTestBookNameChange: (String) -> Unit,
     onConfigureAi: () -> Unit,
     onStart: (String, String) -> Unit,
+    onStartWithBrowser: (String, String) -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
 ) {
@@ -152,21 +153,36 @@ internal fun AiBookSourceScreenV50(
                             primary = false,
                             enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
                             onClick = {
+                                val browser = state.aiReport.source.useBrowser
                                 onCancel()
-                                onStart(siteUrl, testBookName)
+                                if (browser) onStartWithBrowser(siteUrl, testBookName) else onStart(siteUrl, testBookName)
                             },
                         )
                     }
                 }
 
                 else -> {
-                    AiSourceMainButtonV50(
-                        icon = Icons.Rounded.AutoAwesome,
-                        text = "开始生成",
-                        primary = true,
-                        enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
-                        onClick = { onStart(siteUrl, testBookName) },
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
+                        AiSourceMainButtonV50(
+                            icon = Icons.Rounded.AutoAwesome,
+                            text = "开始生成",
+                            primary = true,
+                            enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
+                            onClick = { onStart(siteUrl, testBookName) },
+                        )
+                        AiSourceMainButtonV50(
+                            icon = Icons.Rounded.AutoAwesome,
+                            text = "浏览器模式生成",
+                            primary = false,
+                            enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
+                            onClick = { onStartWithBrowser(siteUrl, testBookName) },
+                        )
+                        Text(
+                            "网站需要网页验证或动态加载时，可使用浏览器模式；验证通过后自动继续。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
+                    }
                 }
             }
         }
