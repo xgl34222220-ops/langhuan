@@ -8,8 +8,12 @@ import com.xiguli.langhuan.ui.BookSourceBrowserV38
 class LanghuanApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Register only the application context. WebView itself is created lazily after a direct
-        // book-source request is rejected, so launcher cold-start remains side-effect free.
+        if (Application.getProcessName().endsWith(":book_source_browser")) {
+            android.webkit.WebView.setDataDirectorySuffix("book_source_v56")
+            return
+        }
+        // Register only the application context. Browser requests opt in explicitly and use a
+        // separate process/profile, leaving the reader's WebView and launcher untouched.
         BookSourceBrowserV38.install(this)
     }
 

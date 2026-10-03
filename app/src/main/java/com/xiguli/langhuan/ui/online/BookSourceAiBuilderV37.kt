@@ -79,12 +79,12 @@ internal class BookSourceAiBuilderV37(
         error(detail)
     }
 
-    suspend fun build(siteUrl: String, keyword: String): AiSourceReportV37 = withContext(Dispatchers.IO) {
+    suspend fun build(siteUrl: String, keyword: String, useBrowser: Boolean = false): AiSourceReportV37 = withContext(Dispatchers.IO) {
         network.reset()
         steps.clear()
         generationCalls.clear()
         try {
-            buildSource(siteUrl, keyword)
+            buildSource(siteUrl, keyword, useBrowser)
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -101,10 +101,10 @@ internal class BookSourceAiBuilderV37(
         }
     }
 
-    private suspend fun buildSource(siteUrl: String, keyword: String): AiSourceReportV37 {
+    private suspend fun buildSource(siteUrl: String, keyword: String, useBrowser: Boolean): AiSourceReportV37 {
         val home = normalizeSiteV37(siteUrl)
         val enteredOrigin = canonicalOriginV37(home)
-        var source = BookSourceV36(id = enteredOrigin, name = URL(home).host, baseUrl = enteredOrigin)
+        var source = BookSourceV36(id = enteredOrigin, name = URL(home).host, baseUrl = enteredOrigin, useBrowser = useBrowser)
 
         // 1. Home page and search entry
         step("读取网站首页")

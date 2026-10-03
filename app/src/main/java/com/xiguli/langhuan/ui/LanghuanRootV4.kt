@@ -715,6 +715,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 onTestBookNameChange = { aiTestBook = it },
                                 onConfigureAi = { openAiSetup(RootRouteV4.ONLINE) },
                                 onStart = { url, keyword -> onlineVm.buildWithAi(url, keyword) },
+                                onStartWithBrowser = { url, keyword -> onlineVm.buildWithAi(url, keyword, useBrowser = true) },
                                 onCancel = onlineVm::cancelAi,
                                 onSave = { onlineVm.saveAiSource() },
                             )
