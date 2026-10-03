@@ -103,7 +103,24 @@ class ReaderRecreationV42DeviceTest {
             rule.onNodeWithContentDescription("阅读菜单：详情").assertIsDisplayed().performClick()
             rule.onNodeWithText("A+").performScrollTo()
             deviceWindowEvidenceV46("v42-reader-landscape-font")
-            rule.onNodeWithText("A+").assertIsDisplayed()
+            val fontAction = rule.onNodeWithText("A+")
+            try {
+                fontAction.assertIsDisplayed()
+            } catch (error: AssertionError) {
+                val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
+                val tree = StringBuilder()
+                fun describe(node: android.view.accessibility.AccessibilityNodeInfo?, depth: Int = 0) {
+                    if (node == null || depth > 30 || tree.length > 30000) return
+                    val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
+                    tree.append("  ".repeat(depth)).append(node.className).append(" text=").append(node.text)
+                        .append(" description=").append(node.contentDescription).append(" visible=").append(node.isVisibleToUser)
+                        .append(" bounds=").append(bounds).append('\n')
+                    for (index in 0 until node.childCount) describe(node.getChild(index), depth + 1)
+                }
+                describe(root)
+                throw AssertionError("Landscape font visibility: ${fontAction.printToString()}\n" +
+                    "unclipped=${fontAction.getUnclippedBoundsInRoot()}\n$tree", error)
+            }
             rule.onNodeWithContentDescription("阅读菜单：目录").assertIsDisplayed().performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             val rotated = ReaderProgressStoreV11.load(context, id, 1)
