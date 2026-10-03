@@ -11,7 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -91,7 +91,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalConfiguration
@@ -178,11 +180,8 @@ internal fun ReaderMenuV30(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.30f))
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                    onClick = onDismiss,
-                ),
+                .pointerInput(onDismiss) { detectTapGestures(onTap = { onDismiss() }) }
+                .semantics { dismiss { onDismiss(); true } },
             contentAlignment = Alignment.BottomCenter,
         ) {
             val panelShape = RoundedCornerShape(t.radiusXl)
@@ -195,11 +194,9 @@ internal fun ReaderMenuV30(
                     .heightIn(max = maxHeight)
                     .background(color = t.background, shape = panelShape)
                     .border(width = 1.dp, color = t.border, shape = panelShape)
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() },
-                        onClick = {},
-                    ),
+                    // Swallow backdrop taps without merging the body's scroll viewport
+                    // or unrelated text into one large clickable accessibility node.
+                    .pointerInput(Unit) { detectTapGestures(onTap = {}) },
             ) {
                 ReaderMenuHandleV30()
 

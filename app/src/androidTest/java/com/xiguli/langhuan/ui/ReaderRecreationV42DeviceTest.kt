@@ -101,7 +101,9 @@ class ReaderRecreationV42DeviceTest {
             deviceWindowEvidenceV46("v42-reader-landscape-menu")
             // The reader opens its “更多” tab; the shelf button belongs to “目录”/“详情”.
             rule.onNodeWithContentDescription("阅读菜单：详情").assertIsDisplayed().performClick()
-            rule.onNodeWithText("A+").performScrollTo().assertIsDisplayed()
+            rule.onNodeWithText("A+").performScrollTo()
+            deviceWindowEvidenceV46("v42-reader-landscape-font")
+            rule.onNodeWithText("A+").assertIsDisplayed()
             rule.onNodeWithContentDescription("阅读菜单：目录").assertIsDisplayed().performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             val rotated = ReaderProgressStoreV11.load(context, id, 1)
