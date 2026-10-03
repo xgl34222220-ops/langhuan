@@ -258,6 +258,7 @@ class EpubReaderActivity : FragmentActivity() {
                         },
                         onToggleBookmark = { toggleOriginalBookmark() },
                         onRelinkOriginal = { pickOriginal() },
+                        onContinueAfterRestoreFailure = { continueAfterRestoreFailure() },
                         onClearSelection = { clearSelection() },
                         onNoteSaved = {
                             Toast.makeText(
@@ -945,9 +946,22 @@ class EpubReaderActivity : FragmentActivity() {
     }
 
     private fun showRestoreFailure(message: String) {
-        showStatus("$message\n可返回后重新打开，或长按提示区域后从当前页继续。")
-        // Compose 状态层没有旧 TextView 的 onClick；为避免隐式丢弃原 Locator，
-        // 这里不自动放弃恢复目标。用户重新关联或退出再进入时仍保留原位置。
+        showStatus("$message\n可返回后重新打开，或选择从当前页继续。")
+        readerUiState = readerUiState.copy(canContinueAfterRestoreFailure = restoreTarget != null && navigator != null)
+    }
+
+    private fun continueAfterRestoreFailure() {
+        if (!readerUiState.canContinueAfterRestoreFailure) return
+        val fragment = navigator ?: return
+        // Explicit user choice cancels the pending target before accepting new navigation.
+        restoreJob?.cancel()
+        restoreJob = null
+        restoreTarget = null
+        loaded = true
+        readerUiState = readerUiState.copy(canContinueAfterRestoreFailure = false)
+        hideStatus()
+        lifecycleScope.launch { refreshReaderUi(fragment, fragment.currentLocator.value) }
+        saveCurrentLocator()
     }
 
     /* -------------------------- WebView Geometry -------------------------- */
@@ -1188,7 +1202,7 @@ class EpubReaderActivity : FragmentActivity() {
     /* -------------------------------- Status -------------------------------- */
     private fun showStatus(message: String) {
         loaded = false
-        readerUiState = readerUiState.copy(loaded = false, statusMessage = message)
+        readerUiState = readerUiState.copy(loaded = false, statusMessage = message, canContinueAfterRestoreFailure = false)
     }
 
     private fun hideStatus() {

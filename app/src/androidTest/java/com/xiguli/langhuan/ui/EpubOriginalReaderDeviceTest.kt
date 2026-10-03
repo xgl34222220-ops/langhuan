@@ -8,6 +8,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import org.junit.Rule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.Lifecycle
@@ -25,6 +28,7 @@ import org.readium.r2.shared.publication.Locator
 
 /** This test must run on an Android WebView. JVM extraction tests do not prove rendered artwork. */
 class EpubOriginalReaderDeviceTest {
+    @get:Rule val compose = createEmptyComposeRule()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
@@ -205,7 +209,7 @@ class EpubOriginalReaderDeviceTest {
             while (android.os.SystemClock.uptimeMillis() < backgroundDeadline) {
                 scenario.onActivity { activity ->
                     assertFalse(activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-                    val failure = textViews(activity.window.decorView).any { it.text.contains("可重新关联原文件，或继续阅读文字版") }
+                    val failure = (EpubReaderActivity::class.java.getDeclaredField("readerUiState\$delegate").apply { isAccessible = true }.get(activity) as androidx.compose.runtime.State<*>).value.let { (it as EpubReaderUiStateV50).statusMessage.contains("可重新关联原文件，或继续阅读文字版") }
                     assertFalse("Background open reported an attachment error", failure)
                 }
                 Thread.sleep(100)
@@ -263,11 +267,12 @@ class EpubOriginalReaderDeviceTest {
                 EpubReaderActivity::class.java.getDeclaredMethod("restorePendingPosition").apply { isAccessible = true }.invoke(activity)
                 EpubReaderActivity::class.java.getDeclaredMethod("showRestoreFailure", String::class.java).apply { isAccessible = true }
                     .invoke(activity, "合成恢复失败")
-                val notice = textViews(activity.window.decorView).single { it.text.contains("从当前页继续") }
-                assertTrue(notice.performClick())
-                assertNull(EpubReaderActivity::class.java.getDeclaredField("restoreTarget").apply { isAccessible = true }.get(activity))
-                textViews(activity.window.decorView).single { it.text == "下一页" }.performClick()
             }
+            compose.onNodeWithText("从当前页继续").assertIsDisplayed().performClick()
+            scenario.onActivity { activity ->
+                assertNull(EpubReaderActivity::class.java.getDeclaredField("restoreTarget").apply { isAccessible = true }.get(activity))
+            }
+            compose.onNodeWithContentDescription("下一页").assertIsEnabled().performClick()
             waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 &&
                 evaluate(scenario, "window.scrollX > 0 || window.scrollY > 0") == "true" }
             val selected = requireNotNull(current(scenario))
@@ -312,7 +317,7 @@ class EpubOriginalReaderDeviceTest {
     }
 
     private fun restoreProcessDeath(requireNewProcess: Boolean) {
-        val id = "epub-device-process-death"
+        val id = requireNotNull(context.getSharedPreferences("epub_device_fixture_v56", 0).getString("epub-device-process-death", null))
         val store = EpubReaderEntry.store(context)
         assertTrue("Restore requires a successful seed; this test never skips", store.hasOriginal(id))
         val evidence = context.getSharedPreferences("epub_process_test_evidence", 0)
@@ -345,7 +350,8 @@ class EpubOriginalReaderDeviceTest {
         instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
     }
 
-    private fun seed(file: String, id: String): String {
+    private fun seed(file: String, key: String): String {
+        val id = epubShelfFixtureV56(context, key)
         val store = EpubReaderEntry.store(context)
         val prepared = instrumentation.context.assets.open("epub/$file").use { store.prepare(it) }
         store.associate(id, prepared)
@@ -394,9 +400,8 @@ class EpubOriginalReaderDeviceTest {
         scenario.onActivity { activity ->
             // initialLocator is observable before the first layout. The SDK can accept direct
             // test calls while the app still blocks navigation behind its restore overlay.
-            val controlsReady = textViews(activity.window.decorView).single { it.text == "下一页" }.isEnabled
-            val status = EpubReaderActivity::class.java.getDeclaredField("status").apply { isAccessible = true }.get(activity) as View
-            ready = controlsReady && status.visibility == View.GONE
+            val loaded = EpubReaderActivity::class.java.getDeclaredField("loaded").apply { isAccessible = true }.getBoolean(activity)
+            ready = loaded
         }
         return ready
     }

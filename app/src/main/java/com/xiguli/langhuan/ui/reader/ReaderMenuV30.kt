@@ -70,6 +70,8 @@ import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -88,6 +90,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -377,7 +381,8 @@ private fun ReaderMenuPrimaryActionsV30(
         ReaderPrimaryActionV30(
             icon = if (bookmarked) Icons.Outlined.Bookmark
             else Icons.Outlined.BookmarkBorder,
-            label = if (bookmarked) "已加书签" else "这一页加书签",
+            label = if (bookmarked) "已加书签" else "本章加书签",
+            description = if (bookmarked) "取消本章书签" else "添加本章书签",
             selected = bookmarked,
             gold = bookmarked,
             modifier = Modifier.weight(1f),
@@ -397,6 +402,7 @@ private fun ReaderMenuPrimaryActionsV30(
 private fun ReaderPrimaryActionV30(
     icon: ImageVector,
     label: String,
+    description: String = label,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     gold: Boolean = false,
@@ -416,6 +422,7 @@ private fun ReaderPrimaryActionV30(
     }
     Column(
         modifier = modifier
+            .semantics { contentDescription = description }
             .height(72.dp)
             .background(color = background, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
@@ -426,7 +433,7 @@ private fun ReaderPrimaryActionV30(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = label,
+            contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = foreground,
         )
@@ -472,6 +479,10 @@ private fun ReaderDetailsTabV30(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4, vertical = t.space3),
     ) {
+        if (book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null) {
+            Text("目录待补全，暂不能计算全书进度", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(t.space2))
+        }
         ReaderSectionTitleV30(title = "当前阅读")
         Spacer(Modifier.height(t.space2))
         ReaderBookInfoCardV30(
@@ -698,6 +709,7 @@ private fun ReaderDirectoryTabV30(
                 ReaderLegacyBookmarkListV30(
                     chapters = chapters,
                     bookmarks = legacyBookmarkedChapters,
+                    restoredBookmarks = bookmarkedChapters,
                     onRestore = onRestoreLegacyBookmark,
                     onJumpChapter = onJumpChapter,
                 )
@@ -786,11 +798,29 @@ private fun ReaderBookmarkListV30(
 private fun ReaderLegacyBookmarkListV30(
     chapters: List<ChapterDraft>,
     bookmarks: Set<Int>,
+    restoredBookmarks: Set<Int>,
     onRestore: (Int) -> Unit,
     onJumpChapter: (Int, Int) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    var selected by remember { mutableStateOf<ChapterDraft?>(null) }
     val rows = chapters.filter { it.chapterNumber in bookmarks }
+    selected?.let { chapter ->
+        val restored = chapter.chapterNumber in restoredBookmarks
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text("旧版书签暂存") },
+            text = { Column {
+                Text("旧版书签未区分书籍。请核对这条书签属于本书后再归入；暂存数据会保留。")
+                Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber))
+                val outside = bookmarks.count { number -> chapters.none { it.chapterNumber == number } }
+                if (outside > 0) Text("另有 $outside 条超出本书目录，仍保留在暂存中。")
+                if (restored) Text("已归入")
+            } },
+            confirmButton = { TextButton(onClick = { onRestore(chapter.chapterNumber) }, enabled = !restored) { Text("归入本书") } },
+            dismissButton = { TextButton(onClick = { selected = null }) { Text("关闭") } },
+        )
+    }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
             title = "没有可恢复的旧版书签",
@@ -819,9 +849,7 @@ private fun ReaderLegacyBookmarkListV30(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(
-                    modifier = Modifier.weight(1f).clickable {
-                        onJumpChapter(index, 0)
-                    },
+                    modifier = Modifier.weight(1f).clickable { selected = chapter },
                 ) {
                     Text(
                         text = readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
@@ -839,7 +867,7 @@ private fun ReaderLegacyBookmarkListV30(
                 }
                 ReaderInlineTextActionV30(
                     text = "归入本书",
-                    onClick = { onRestore(chapter.chapterNumber) },
+                    onClick = { selected = chapter },
                 )
             }
         }

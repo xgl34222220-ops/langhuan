@@ -614,7 +614,7 @@ internal fun ReaderSessionV30(
         return ReaderChromeInfoV30(
             chapterTitle = header,
             pageLabel = if (count > 0) "本章 $pageNumber / $count 页" else "",
-            progressLabel = "全书 ${bookProgress.roundToInt()}%",
+            progressLabel = if (book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null) "目录待补全" else "全书 ${bookProgress.roundToInt()}%",
             time = clock,
             battery = battery,
             showTimeBattery = settings.showTimeBattery,

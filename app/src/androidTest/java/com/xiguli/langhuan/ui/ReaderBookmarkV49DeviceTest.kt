@@ -79,6 +79,7 @@ class ReaderBookmarkV49DeviceTest {
         val prefs = rule.activity.getSharedPreferences("reader_qingmo_v9", 0)
         rule.onNodeWithText("目录").performClick()
         rule.onNodeWithText("书签 0").performClick()
+        rule.onNodeWithText("旧版").performClick()
         rule.onNodeWithText("旧版暂存").performClick()
         rule.onNodeWithText("旧版书签暂存").assertExists()
         rule.onNodeWithText("关闭").performClick()
@@ -103,7 +104,7 @@ class ReaderBookmarkV49DeviceTest {
         val prefs = rule.activity.getSharedPreferences("reader_qingmo_v9", 0)
         rule.onNodeWithContentDescription("添加本章书签").performClick()
         rule.onNodeWithText("目录").performClick()
-        rule.onNodeWithText("书签").performClick()
+        rule.onNodeWithText("书签 0").performClick()
         rule.onAllNodesWithText("本书书签无法完整读取，原始数据已保留，暂停修改").assertAny(hasText("本书书签无法完整读取，原始数据已保留，暂停修改"))
         assertEquals("fixture-corrupt-value", prefs.getString("bookmarks_v49_${f.a.id}", null))
         rule.runOnIdle { f.current.value = f.b }

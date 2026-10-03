@@ -168,7 +168,7 @@ class EpubImportCommitDeviceTest {
         val input = File(app.cacheDir, "synthetic-association-${UUID.randomUUID()}.epub")
         instrumentation.context.assets.open("epub/original-fixed.epub").use { source -> input.outputStream().use { source.copyTo(it) } }
         try {
-            ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(app, "unassociated-staging-test")).use { scenario ->
+            ActivityScenario.launch<EpubReaderActivity>(EpubReaderEntry.intent(app, epubShelfFixtureV56(app, "unassociated-staging-test"))).use { scenario ->
                 scenario.onActivity { activity ->
                     val method = EpubReaderActivity::class.java.getDeclaredMethod("prepareAssociation", Uri::class.java)
                     method.isAccessible = true; method.invoke(activity, Uri.fromFile(input))

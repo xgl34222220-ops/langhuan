@@ -53,10 +53,10 @@ class ReaderRecreationV42DeviceTest {
             val beforeFont = ReaderProgressStoreV11.load(context, id, 1)
             assertTrue(beforeFont.textOffset > 1000)
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
-            rule.onNodeWithText("字号").performClick()
+            rule.onNodeWithText("详情").performClick()
+            rule.onNodeWithText("A+").performScrollTo()
             rule.onNodeWithText("A+").performClick()
             rule.mainClock.advanceTimeBy(1000)
-            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
             rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
             rule.mainClock.advanceTimeBy(1000)
             rule.waitForIdle()
@@ -76,7 +76,8 @@ class ReaderRecreationV42DeviceTest {
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.mainClock.advanceTimeBy(300)
             // The reader opens its “更多” tab; the shelf button belongs to “目录”/“详情”.
-            rule.onNodeWithText("字号").assertIsDisplayed()
+            rule.onNodeWithText("详情").performClick()
+            rule.onNodeWithText("字号").performScrollTo().assertIsDisplayed()
             rule.onNodeWithText("目录").performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             rule.mainClock.advanceTimeBy(1000)
@@ -97,7 +98,8 @@ class ReaderRecreationV42DeviceTest {
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
             rule.mainClock.advanceTimeBy(300)
             // The reader opens its “更多” tab; the shelf button belongs to “目录”/“详情”.
-            rule.onNodeWithText("字号").assertIsDisplayed()
+            rule.onNodeWithText("详情").performClick()
+            rule.onNodeWithText("字号").performScrollTo().assertIsDisplayed()
             rule.onNodeWithText("目录").performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             val rotated = ReaderProgressStoreV11.load(context, id, 1)

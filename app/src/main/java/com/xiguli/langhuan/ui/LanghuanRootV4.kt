@@ -597,6 +597,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 Column {
                                     TextField(
                                         value = onlineState.sourceEditDraft,
+                                        label = { Text("书源 JSON") },
                                         onValueChange = onlineVm::updateSourceEditDraft,
                                         modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
                                     )

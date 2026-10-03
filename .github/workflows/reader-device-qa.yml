@@ -7,6 +7,8 @@ on:
     paths:
       - 'app/src/main/java/com/xiguli/langhuan/ui/**'
       - 'app/src/androidTest/**'
+      - 'tools/run_reader_device_checks.sh'
+      - 'tools/verify_epub_process_death.py'
       - '.github/workflows/reader-device-qa.yml'
   workflow_dispatch:
 permissions:
@@ -65,3 +67,4 @@ jobs:
           path: |
             reader-qa
             app/build/reports/androidTests
+            app/build/outputs/androidTest-results
