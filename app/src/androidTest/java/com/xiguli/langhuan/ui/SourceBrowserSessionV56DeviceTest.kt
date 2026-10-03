@@ -191,6 +191,41 @@ class SourceBrowserSessionV56DeviceTest {
     @Test fun cancellingVerificationWithItsButtonAllowsRetry() = cancelVisibleVerification(false)
     @Test fun backingOutOfVerificationAllowsRetry() = cancelVisibleVerification(true)
 
+    @Test fun rendererExitWhileVerifyingReleasesTheWaitAndRetryKeepsTheProfile() {
+        assertTrue("Renderer termination evidence requires the API 35 CI emulator", android.os.Build.VERSION.SDK_INT >= 29)
+        val browser = transport()
+        val source = BookSourceV36("renderer-exit", "Synthetic renderer recovery", base, useBrowser = true)
+        val token = UUID.randomUUID().toString()
+        val pid = android.os.Process.myPid()
+        val seeded = browser.fixtureDocument(source, SourceRequestV36("$base/renderer-seed"),
+            """<h1>异常恢复会话已保存</h1><script>document.cookie='renderer_v57=$token; Max-Age=3600; Path=/; Secure';localStorage.setItem('renderer_v57','$token');</script>""")
+        assertEquals("异常恢复会话已保存", seeded.selectFirst("h1")?.text())
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val worker = Thread {
+            try {
+                browser.fixtureDocument(source, SourceRequestV36("$base/renderer-pending"),
+                    "<title>Just a moment...</title><form id='challenge-form'><h1>Verify you are human</h1></form>")
+                failure.set(AssertionError("A terminated renderer cannot return a document"))
+            } catch (error: Throwable) { failure.set(error) }
+        }
+        worker.start()
+        try {
+            waitForNode("取消验证")
+            assertTrue("Verification must still own a pending request", worker.isAlive)
+            deviceWindowEvidenceV46("browser-before-renderer-exit")
+            browser.terminateFixtureRendererV57()
+            worker.join(10_000)
+            assertFalse("Renderer exit must promptly release the waiting request", worker.isAlive)
+            assertTrue(failure.get().toString(), failure.get() is java.io.IOException)
+            assertTrue(failure.get().toString(), failure.get()?.message?.contains("网页渲染进程已结束") == true)
+            assertEquals("Renderer exit must not kill the app", pid, android.os.Process.myPid())
+            val retry = browser.fixtureDocument(source, SourceRequestV36("$base/renderer-retry"),
+                """<body><script>document.body.innerHTML=(document.cookie.includes('renderer_v57=$token') && localStorage.getItem('renderer_v57')==='$token')?'<h1>新渲染器会话已恢复</h1>':'<h1>会话丢失</h1>';</script></body>""")
+            assertEquals("新渲染器会话已恢复", retry.selectFirst("h1")?.text())
+            deviceWindowEvidenceV46("browser-after-renderer-retry")
+        } finally { worker.interrupt(); worker.join(10_000) }
+    }
+
     /** Dedicated CI invokes seed and restore with a real package force-stop between them. */
     @Test fun browserProfileSurvivesProcessDeath() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

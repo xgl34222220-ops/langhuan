@@ -10,6 +10,7 @@ import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.net.http.SslError
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -19,6 +20,7 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ServiceWorkerClient
 import android.webkit.ServiceWorkerController
 import android.webkit.SslErrorHandler
@@ -37,6 +39,7 @@ import androidx.activity.OnBackPressedCallback
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
+import java.lang.ref.WeakReference
 import java.nio.charset.Charset
 import java.util.UUID
 import java.util.concurrent.CancellationException
@@ -54,6 +57,7 @@ private const val BROWSER_FETCH = 1
 private const val BROWSER_CANCEL = 2
 private const val BROWSER_RESULT = 3
 private const val BROWSER_SHOW = 4
+private const val BROWSER_FIXTURE_RENDERER_EXIT = 5
 private const val BROWSER_TIMEOUT_MS = 120_000L
 private const val BROWSER_CACHE = "book-source-browser-v56"
 
@@ -132,6 +136,15 @@ internal class SourceBrowserTransportV56(private val context: Context) {
     }
 
     fun document(source: BookSourceV36, request: SourceRequestV36): Document = read(source, request, null)
+
+    /** Real renderer termination is confined to an active debug reserved-domain fixture. */
+    internal fun terminateFixtureRendererV57() {
+        check((context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+        val id = pending.keys.single()
+        checkNotNull(remote).send(Message.obtain(null, BROWSER_FIXTURE_RENDERER_EXIT).apply {
+            data = Bundle().apply { putString("id", id) }
+        })
+    }
 
     /** Controlled, inline device fixture; the exported UI can never select it. */
     internal fun fixtureDocument(source: BookSourceV36, request: SourceRequestV36, html: String): Document {
@@ -238,7 +251,7 @@ class BookSourceBrowserServiceV56 : Service() {
     private val checkedHosts = ConcurrentHashMap<String, Long>()
     private val writes = ConcurrentHashMap<String, AtomicBoolean>()
     @Volatile private var task: Task? = null
-    internal var webView: WebView? = null
+    @Volatile internal var webView: WebView? = null
         private set
     private val timeout = Runnable { finishError("网页尚未完成验证或加载，请完成验证后重试") }
     private val poll = Runnable { capture() }
@@ -250,6 +263,15 @@ class BookSourceBrowserServiceV56 : Service() {
                 if (task?.id == id) cancel()
                 writes[id]?.set(true)
                 if (id.matches(Regex("[a-f0-9-]{36}"))) File(File(cacheDir, BROWSER_CACHE), "$id.html").delete()
+            }
+            BROWSER_FIXTURE_RENDERER_EXIT -> {
+                val currentTask = task
+                if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+                    currentTask != null && currentTask.id == message.data.getString("id") && currentTask.fixture != null &&
+                    publicSourceUrlV36(currentTask.request.url).host == "browser-fixture.example") {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || webView?.webViewRenderProcess?.terminate() != true)
+                        finishError("合成样例的渲染器未能终止，测试未完成")
+                }
             }
         }
         true
@@ -332,16 +354,19 @@ class BookSourceBrowserServiceV56 : Service() {
         setDownloadListener { _, _, _, _, _ -> finishError("这个链接返回下载文件，未取得小说网页") }
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = try {
-                val next = publicSourceUrlV36(request.url.toString())
-                val previous = view.url?.let { runCatching { publicSourceUrlV36(it) }.getOrNull() }
-                require(previous == null || !previous.isHttps || next.isHttps) { "不能降级到 HTTP" }
-                task?.request?.let { initial ->
-                    require(initial.method != "POST" || request.method != "POST" || sameSourceOriginV36(publicSourceUrlV36(initial.url), next)) { "不能跨站转发搜索表单" }
+                if (webView !== view) true else {
+                    val next = publicSourceUrlV36(request.url.toString())
+                    val previous = view.url?.let { runCatching { publicSourceUrlV36(it) }.getOrNull() }
+                    require(previous == null || !previous.isHttps || next.isHttps) { "不能降级到 HTTP" }
+                    task?.request?.let { initial ->
+                        require(initial.method != "POST" || request.method != "POST" || sameSourceOriginV36(publicSourceUrlV36(initial.url), next)) { "不能跨站转发搜索表单" }
+                    }
+                    false
                 }
-                false
             } catch (_: Exception) { if (request.isForMainFrame) finishError("网页跳转到了不支持的地址"); true }
 
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                if (webView !== view) return blocked()
                 val currentTask = task ?: return blocked()
                 val id = currentTask.id
                 // The debug-only reserved-domain fixture follows normal loadUrl/postUrl and
@@ -366,15 +391,16 @@ class BookSourceBrowserServiceV56 : Service() {
                 }
             }
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                if (webView !== view) return
                 task?.let { it.navigation++; it.status = 200; it.retryAfter = null; it.html = null; it.stable = 0 }
                 mainHandler.removeCallbacks(poll)
             }
-            override fun onPageFinished(view: WebView, url: String) { if (task != null) { mainHandler.removeCallbacks(poll); mainHandler.postDelayed(poll, 750) } }
+            override fun onPageFinished(view: WebView, url: String) { if (webView === view && task != null) { mainHandler.removeCallbacks(poll); mainHandler.postDelayed(poll, 750) } }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) finishError("网页加载失败，请检查网络（${error.errorCode}）")
+                if (webView === view && request.isForMainFrame) finishError("网页加载失败，请检查网络（${error.errorCode}）")
             }
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-                if (request.isForMainFrame) task?.let {
+                if (webView === view && request.isForMainFrame) task?.let {
                     it.status = response.statusCode
                     it.retryAfter = sourceRetryAfterMillisV46(response.responseHeaders?.entries?.firstOrNull { header -> header.key.equals("Retry-After", true) }?.value)
                     if (it.status == 429) finishError("网站限制了请求频率（HTTP 429），请稍后重试", status = 429)
@@ -382,7 +408,17 @@ class BookSourceBrowserServiceV56 : Service() {
             }
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
                 handler.cancel()
-                finishError("网站证书验证失败，未继续读取")
+                if (webView === view) finishError("网站证书验证失败，未继续读取")
+            }
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                // A dead WebView must never receive stopLoading/onPause or be reused. Retire
+                // only this instance before releasing the waiter and closing verification UI.
+                val wasCurrent = webView === view
+                if (wasCurrent) webView = null
+                (view.parent as? ViewGroup)?.removeView(view)
+                view.destroy()
+                if (wasCurrent) finishError("网页渲染进程已结束，请重试；已保存的书源和阅读进度保留")
+                return true
             }
         }
         // Detached requests still get a phone-sized viewport for responsive layouts.
@@ -395,7 +431,7 @@ class BookSourceBrowserServiceV56 : Service() {
         val view = webView ?: return
         val navigation = currentTask.navigation
         view.evaluateJavascript("(function(){var h=document.documentElement?document.documentElement.outerHTML:'';return h.length<=4194304?h:null;})()") { value ->
-            if (task !== currentTask || navigation != currentTask.navigation) return@evaluateJavascript
+            if (task !== currentTask || webView !== view || navigation != currentTask.navigation) return@evaluateJavascript
             try {
                 val primitive = BookSourceJsonV36.parseToJsonElement(value) as? JsonPrimitive
                 val html = primitive?.takeIf { it.isString }?.content ?: throw IOException("网页内容超过大小限制或尚未可读")
@@ -465,12 +501,15 @@ class BookSourceBrowserServiceV56 : Service() {
         finishError("浏览器进程已结束，请重试")
         webView?.let { (it.parent as? ViewGroup)?.removeView(it); it.destroy() }
         webView = null
-        current = null
+        if (current === this) current = null
         writer.shutdown()
         super.onDestroy()
     }
     companion object {
-        @Volatile internal var current: BookSourceBrowserServiceV56? = null
+        @Volatile private var currentReference: WeakReference<BookSourceBrowserServiceV56>? = null
+        internal var current: BookSourceBrowserServiceV56?
+            get() = currentReference?.get()
+            set(value) { currentReference = value?.let(::WeakReference) }
         private fun blocked() = WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
         private fun send(reply: Messenger, what: Int, data: Bundle) { runCatching { reply.send(Message.obtain(null, what).apply { this.data = data }) } }
     }
@@ -517,8 +556,15 @@ class BookSourceBrowserActivityV56 : ComponentActivity() {
     }
     override fun onDestroy() {
         attachedView?.let { if (it.parent === container) container?.removeView(it) }
+        attachedView = null
+        container = null
         if (current === this) current = null
         super.onDestroy()
     }
-    companion object { internal var current: BookSourceBrowserActivityV56? = null }
+    companion object {
+        @Volatile private var currentReference: WeakReference<BookSourceBrowserActivityV56>? = null
+        internal var current: BookSourceBrowserActivityV56?
+            get() = currentReference?.get()
+            set(value) { currentReference = value?.let(::WeakReference) }
+    }
 }
