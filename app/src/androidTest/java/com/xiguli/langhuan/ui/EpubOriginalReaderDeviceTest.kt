@@ -419,12 +419,9 @@ class EpubOriginalReaderDeviceTest {
         }
     }
     private fun waitUntil(test: () -> Boolean) {
-        val deadline = android.os.SystemClock.uptimeMillis() + 25_000
-        while (android.os.SystemClock.uptimeMillis() < deadline) {
-            if (runCatching(test).getOrDefault(false)) return
-            Thread.sleep(100)
-        }
-        assertTrue("EPUB rendering or navigation did not become ready", test())
+        // The V50 shell collects Room state in Compose. Advance its test frame clock while
+        // the real WebView/Readium renderer continues on Android's ordinary clock.
+        compose.waitUntil(25_000) { runCatching(test).getOrDefault(false) }
     }
     private fun countPixels(bitmap: Bitmap, color: Int): Int {
         var count = 0

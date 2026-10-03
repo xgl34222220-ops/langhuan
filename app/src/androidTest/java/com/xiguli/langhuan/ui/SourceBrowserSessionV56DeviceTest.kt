@@ -63,15 +63,15 @@ class SourceBrowserSessionV56DeviceTest {
             val previous = BookSourceStoreV36.load(context)
             val savedSource = report.source.copy(id = "browser-chain-${UUID.randomUUID()}")
             try {
-            BookSourceStoreV36.save(context, previous + savedSource, expected = previous)
-            val restored = BookSourceStoreV36.load(context).single { it.id == savedSource.id }
-            assertTrue(restored.useBrowser)
-            val books = searchSourceV36(restored, "原创小说")
-            val catalogue = loadBookV36(restored, books.single())
-            assertEquals(2, catalogue.second.size)
-            val chapter = loadChapterTextV36(restored, catalogue.second.first(), catalogue.second.map { it.url }.toSet())
-            assertEquals(text, chapter)
-        } finally { BookSourceStoreV36.save(context, previous) }
+                BookSourceStoreV36.save(context, previous + savedSource, expected = previous)
+                val restored = BookSourceStoreV36.load(context).single { it.id == savedSource.id }
+                assertTrue(restored.useBrowser)
+                val books = searchSourceV36(restored, "原创小说")
+                val catalogue = loadBookV36(restored, books.single())
+                assertEquals(2, catalogue.second.size)
+                val chapter = loadChapterTextV36(restored, catalogue.second.first(), catalogue.second.map { it.url }.toSet())
+                assertEquals(text, chapter)
+            } finally { BookSourceStoreV36.save(context, previous) }
         }
     }
 
@@ -97,10 +97,21 @@ class SourceBrowserSessionV56DeviceTest {
         val deadline = android.os.SystemClock.uptimeMillis() + 20_000
         while (android.os.SystemClock.uptimeMillis() < deadline) {
             automation.rootInActiveWindow?.findAccessibilityNodeInfosByText(text)
-                ?.firstOrNull { it.text?.toString() == text }?.let { return it }
+                ?.firstOrNull { (it.text?.toString() == text || it.contentDescription?.toString() == text) && it.isVisibleToUser }?.let { return it }
             Thread.sleep(100)
         }
-        error("Browser verification control did not appear: $text")
+        deviceWindowEvidenceV46("browser-missing-verification-control")
+        val tree = StringBuilder()
+        fun describe(node: android.view.accessibility.AccessibilityNodeInfo?, depth: Int = 0) {
+            if (node == null || tree.length > 30000 || depth > 30) return
+            tree.append("  ".repeat(depth)).append(node.className).append(" text=").append(node.text)
+                .append(" description=").append(node.contentDescription).append(" visible=").append(node.isVisibleToUser).append('\n')
+            for (index in 0 until node.childCount) describe(node.getChild(index), depth + 1)
+        }
+        describe(automation.rootInActiveWindow)
+        val file = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "reader-qa/browser-accessibility.txt")
+        file.writeText(tree.toString())
+        error("Browser verification control did not appear: $text\n$tree")
     }
 
     @Test fun verificationRecreationWaitsForTheUserAndKeepsTheResultingCookie() {
@@ -121,6 +132,7 @@ class SourceBrowserSessionV56DeviceTest {
             waitForNode("取消验证")
             assertTrue("A verification page must keep extraction pending", worker.isAlive)
             assertNull(result.get())
+            waitForNode("完成合成验证")
             deviceWindowEvidenceV46("browser-verification-before-recreation")
             assertTrue(automation.setRotation(android.app.UiAutomation.ROTATION_FREEZE_90))
             val deadline = android.os.SystemClock.uptimeMillis() + 15_000
@@ -159,8 +171,7 @@ class SourceBrowserSessionV56DeviceTest {
             val cancel = waitForNode("取消验证")
             if (useBack) {
                 val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-                assertTrue(automation.injectInputEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK), true))
-                assertTrue(automation.injectInputEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK), true))
+                assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
             } else assertTrue(cancel.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
             worker.join(10_000)
             assertFalse("User cancellation must release the browser request", worker.isAlive)

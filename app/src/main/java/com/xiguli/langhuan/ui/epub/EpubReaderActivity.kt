@@ -305,12 +305,17 @@ class EpubReaderActivity : FragmentActivity() {
     /* ------------------------------ Host Ready ------------------------------ */
     private fun onReaderHostReady(host: FrameLayout) {
         if (host.id != HOST_ID) host.id = HOST_ID
-        readerHostReady = true
-        attachNavigatorToHostIfReady()
+        // AndroidView.factory runs before the host belongs to the Activity view tree.
+        // View.post on an unattached host waits for attachment; FragmentManager then sees it.
+        host.post {
+            if (isDestroyed || isFinishing || window.decorView.findViewById<View>(HOST_ID) !== host) return@post
+            readerHostReady = true
+            attachNavigatorToHostIfReady()
+        }
     }
 
     private fun attachNavigatorToHostIfReady() {
-        if (!readerHostReady || navigatorAttached) return
+        if (!readerHostReady || navigatorAttached || window.decorView.findViewById<View>(HOST_ID) == null) return
         val fragment = navigator ?: return
         if (supportFragmentManager.isStateSaved) {
             lifecycleScope.launch {
