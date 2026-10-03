@@ -65,11 +65,12 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
     val appContext = LocalContext.current.applicationContext
     val projectConversationStore = remember(appContext) { ProjectConversationStore(appContext) }
 
-    // Configuration recreation must keep an open reader on screen. Other tools retain their
-    // existing shelf fallback; their transient editors are not reconstructed from only a route.
+    // Retained reader/online ViewModels own their configuration-recreation state, including
+    // an unsaved source draft. Restoring the online route is also safe with a fresh ViewModel.
+    // Other transient tools still need more than a saved route to reconstruct their editors.
     var route by rememberSaveable(stateSaver = Saver<RootRouteV4, String>(
-        save = { if (it == RootRouteV4.BOOK) "book" else "shelf" },
-        restore = { if (it == "book") RootRouteV4.BOOK else RootRouteV4.SHELF },
+        save = { when (it) { RootRouteV4.BOOK -> "book"; RootRouteV4.ONLINE -> "online"; else -> "shelf" } },
+        restore = { when (it) { "book" -> RootRouteV4.BOOK; "online" -> RootRouteV4.ONLINE; else -> RootRouteV4.SHELF } },
     )) { mutableStateOf(RootRouteV4.SHELF) }
     LaunchedEffect(route, libraryState.libraryLoaded, libraryState.openedBook) {
         // After process death the ViewModel may no longer hold the book. Return to a usable

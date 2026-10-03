@@ -32,6 +32,8 @@
 
 实际功能修复：Compose EPUB 宿主延后至容器挂窗后提交 Readium Fragment，避免真实导入时的 No view found 崩溃；EPUB 恢复失败后的「从当前页继续」现为显式按钮；点击先取消旧恢复任务和目标，再启用新导航。未点击时原 Locator 继续保留。
 
+在线书城路由随 Activity 重建保留，继续显示 ViewModel 中尚未保存的书源编辑草稿；取消后不改写规则。阅读器菜单先预留底部标签的高度，再测量中部滚动内容，避免横屏时标签被挤出窗口；重建与旋转测试实际点击可见的详情/目录标签并核对原字号和句子位置。
+
 浏览器设备用例扩展为 7 项：默认生成/搜索/目录/正文引擎与真实书源保存读取、后台取消重试、验证页旋转重建和 Cookie 接续、验证按钮取消、返回取消、Cookie 与 DOM 存储恢复、浏览器生成及重新生成按钮模式。动态页面保留稳定页头后延迟 4 秒提供正文；可见独立 loading/aria-busy/progress 标记不会作为已完成页面抽取，小说正文中引用验证或加载文案不受影响。
 
 CI 另执行 browserProfileSurvivesProcessDeath 的 seed / force-stop / restore 两次 instrumentation；校验完整 JUnit 结果、零跳过、新进程 PID 与持久 Cookie/DOM 存储。Reader 的独立 EPUB 进程关卡仍保留。原始测试结果和窗口/日志证据随 CI artifact 保存。

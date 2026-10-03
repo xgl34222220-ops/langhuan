@@ -218,6 +218,9 @@ internal fun ReaderMenuV30(
                 ReaderMenuDividerV30()
 
                 AnimatedContent(
+                    // Reserve the fixed bottom tabs before sizing the scrollable body.
+                    // Landscape has less height; a body measured first can hide every tab.
+                    modifier = Modifier.weight(1f, fill = false),
                     targetState = panel to tab,
                     transitionSpec = {
                         val oldPanel = initialState.first
