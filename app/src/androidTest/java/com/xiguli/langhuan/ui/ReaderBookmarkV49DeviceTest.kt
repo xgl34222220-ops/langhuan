@@ -87,8 +87,10 @@ class ReaderBookmarkV49DeviceTest {
         assertEquals(setOf("1", "99"), prefs.getStringSet("bookmarks", null))
         rule.onNodeWithText("旧版暂存").performClick()
         rule.onNodeWithText("另有 1 条超出本书目录，仍保留在暂存中。").assertExists()
-        rule.onNodeWithText("归入本书").performClick()
-        rule.onNodeWithText("已归入").assertExists()
+        rule.onNode(hasText("归入本书") and SemanticsMatcher.expectValue(
+            androidx.compose.ui.semantics.SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button,
+        ) and hasAnyAncestor(isDialog())).performClick()
+        rule.onNode(hasText("已归入") and hasAnyAncestor(isDialog())).assertExists()
         rule.waitForIdle()
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         deviceWindowEvidenceV46("v49-legacy-bookmark-recovery")

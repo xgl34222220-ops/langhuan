@@ -77,7 +77,7 @@ class ReaderRecreationV42DeviceTest {
             rule.mainClock.advanceTimeBy(300)
             // The reader opens its “更多” tab; the shelf button belongs to “目录”/“详情”.
             rule.onNodeWithText("详情").performClick()
-            rule.onNodeWithText("字号").performScrollTo().assertIsDisplayed()
+            rule.onNodeWithText("A+").performScrollTo().assertIsDisplayed()
             rule.onNodeWithText("目录").performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             rule.mainClock.advanceTimeBy(1000)
@@ -99,7 +99,7 @@ class ReaderRecreationV42DeviceTest {
             rule.mainClock.advanceTimeBy(300)
             // The reader opens its “更多” tab; the shelf button belongs to “目录”/“详情”.
             rule.onNodeWithText("详情").performClick()
-            rule.onNodeWithText("字号").performScrollTo().assertIsDisplayed()
+            rule.onNodeWithText("A+").performScrollTo().assertIsDisplayed()
             rule.onNodeWithText("目录").performClick()
             rule.onNodeWithContentDescription("返回书架").assertIsDisplayed()
             val rotated = ReaderProgressStoreV11.load(context, id, 1)

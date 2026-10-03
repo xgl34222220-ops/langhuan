@@ -94,10 +94,17 @@ class SourceBrowserSessionV56DeviceTest {
     }
     private fun waitForNode(text: String): android.view.accessibility.AccessibilityNodeInfo {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        // WebView exposes virtual descendants that platform text search can omit.
+        // Traverse the active foreground tree, keeping exact text and visibility checks.
+        fun find(node: android.view.accessibility.AccessibilityNodeInfo?): android.view.accessibility.AccessibilityNodeInfo? {
+            if (node == null) return null
+            if ((node.text?.toString() == text || node.contentDescription?.toString() == text) && node.isVisibleToUser) return node
+            for (index in 0 until node.childCount) find(node.getChild(index))?.let { return it }
+            return null
+        }
         val deadline = android.os.SystemClock.uptimeMillis() + 20_000
         while (android.os.SystemClock.uptimeMillis() < deadline) {
-            automation.rootInActiveWindow?.findAccessibilityNodeInfosByText(text)
-                ?.firstOrNull { (it.text?.toString() == text || it.contentDescription?.toString() == text) && it.isVisibleToUser }?.let { return it }
+            find(automation.rootInActiveWindow)?.let { return it }
             Thread.sleep(100)
         }
         deviceWindowEvidenceV46("browser-missing-verification-control")

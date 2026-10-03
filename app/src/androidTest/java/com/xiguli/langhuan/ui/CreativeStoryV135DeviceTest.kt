@@ -87,7 +87,12 @@ class CreativeStoryV135DeviceTest {
             rule.onNodeWithText(NAME).performScrollTo().performClick()
             rule.onNodeWithText("开始聊天").performClick()
             sendCharacterMessage("这一条会被清空")
-            rule.waitUntil(15_000) { server.requests.size == 2 && vm.state.value.chatting }
+            try {
+                rule.waitUntil(15_000) { server.requests.size == 2 && vm.state.value.chatting }
+            } catch (error: Throwable) {
+                val diagnostic = storyFailureEvidence("character chat before clearing", null, server, "character=${vm.state.value}")
+                throw AssertionError("Character chat did not reach its held HTTP response: $diagnostic", error)
+            }
             rule.onNodeWithContentDescription("清空聊天").performClick()
             rule.onNodeWithText("清空", substring = false).performClick()
             rule.waitUntil(5_000) { !vm.state.value.chatting && vm.state.value.chats.values.all { it.isEmpty() } }
@@ -222,8 +227,19 @@ class CreativeStoryV135DeviceTest {
     }
 
     private fun sendCharacterMessage(text: String) {
-        rule.onNode(hasSetTextAction()).performTextInput(text)
-        rule.onNodeWithContentDescription("发送").performClick()
+        val editor = rule.onNode(hasSetTextAction()).assertIsEnabled()
+        editor.performTextReplacement(text)
+        editor.assertTextContains(text)
+        // Opening the IME moves this bottom action; inject only after its bounds settle.
+        var lastBounds: androidx.compose.ui.geometry.Rect? = null
+        var stableSince = SystemClock.uptimeMillis()
+        rule.waitUntil(10_000) {
+            val target = rule.onNodeWithContentDescription("发送")
+            val bounds = target.fetchSemanticsNode().boundsInRoot
+            if (bounds != lastBounds) { lastBounds = bounds; stableSince = SystemClock.uptimeMillis() }
+            target.isDisplayed() && SystemClock.uptimeMillis() - stableSince >= 300
+        }
+        rule.onNodeWithContentDescription("发送").assertIsEnabled().assertIsDisplayed().performClick()
     }
     private fun sendStoryAction(text: String) {
         val editor = rule.onNode(hasSetTextAction()).assertIsEnabled()

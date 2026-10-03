@@ -36,4 +36,6 @@
 
 CI 另执行 browserProfileSurvivesProcessDeath 的 seed / force-stop / restore 两次 instrumentation；校验完整 JUnit 结果、零跳过、新进程 PID 与持久 Cookie/DOM 存储。Reader 的独立 EPUB 进程关卡仍保留。原始测试结果和窗口/日志证据随 CI artifact 保存。
 
+两套设备 CI 在 instrumentation 前检查模拟器前台窗口。新 Google 镜像出现过 Pixel Launcher 无响应遮挡验证页，浏览器 CI 现复用阅读器的 Launcher 启动准备；若仍有 ANR 则直接失败并保存窗口证据，测试中不关闭弹窗或放宽前台断言。
+
 边界：设备 HTML 仅由 debug 保留域名 browser-fixture.example 提供，所有 fixture 附属网络请求被阻止。模型响应为合成 CSS 规则；网页验证为原创按钮页面。没有实测外站登录、真实验证码、在线模型凭据或第三方站点服务策略，也未绕过这些限制。本轮通过结论须以新提交的完整 CI 为准，旧 714 项单测与 2 项设备测试不能替代。

@@ -25,7 +25,8 @@ class SourceEditingV41DeviceTest {
         rule.onAllNodesWithContentDescription("在线书城").onLast().performClick()
         rule.onNodeWithText("书源管理").performClick()
         rule.onNodeWithText("编辑测试书源").performClick()
-        rule.onNodeWithText("编辑规则").performScrollTo().performClick()
+        // The visible header action and bottom operation both edit the same source.
+        rule.onAllNodesWithText("编辑规则").onFirst().assertIsDisplayed().performClick()
         rule.onNodeWithText("书源 JSON").performTextReplacement("{\"unfinished\":")
         assertEquals("{\"unfinished\":", vm.state.value.sourceEditDraft)
         rule.activityRule.scenario.recreate()

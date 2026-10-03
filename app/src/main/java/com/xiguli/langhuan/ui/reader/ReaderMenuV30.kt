@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -91,6 +92,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
@@ -1906,7 +1908,8 @@ private fun ReaderMenuTabsV30(
                         color = if (selected) t.border else Color.Transparent,
                         shape = shape,
                     )
-                    .clickable { onTab(item) },
+                    .selectable(selected = selected, role = Role.Tab) { onTab(item) }
+                    .semantics { contentDescription = "阅读菜单：$label" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
