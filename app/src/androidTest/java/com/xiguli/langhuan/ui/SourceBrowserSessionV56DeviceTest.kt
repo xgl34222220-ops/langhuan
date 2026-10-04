@@ -311,6 +311,8 @@ class SourceBrowserSessionV56DeviceTest {
             events.clear()
             state.value = state.value.copy(aiRunning = false, aiStopped = true)
         }
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("生成已停止"))
+        rule.onNodeWithText("生成已停止").assertIsDisplayed()
 
         assertTrue(
             InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(

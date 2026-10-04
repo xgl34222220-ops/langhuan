@@ -51,3 +51,22 @@ process checks are required for this commit. The preceding 148 Reader, 16 Browse
 are baselines only. Real AI services, third-party login or CAPTCHA, physical devices, API 28 renderer
 reclamation, real split-screen/freeform windows, and the intermittent emulator `device offline` root
 cause remain outside the authorized environment.
+
+## Preserved first Reader failure
+
+The first unfiltered Reader run for `95630e5d`, run
+[37194325591](https://github.com/xgl34222220-ops/langhuan/actions/runs/37194325591), executed all 149 tests
+and ended at 149 / 1 failure / 0 skipped. The only failure was the new navigation test's idle-exit phase:
+the test changed `aiRunning` to false and immediately emitted global Back without waiting for Compose to
+apply that state to the remembered Back callback. Browser happened to recompose within that timing
+window, while Reader received the previous active callback and correctly produced cancel then back;
+the test then timed out waiting for a single back event. The preceding 129 tests had reported no
+failures, and this was not a `device offline` event.
+
+The corrective test change does not alter production code or expected event order. It scrolls to and
+asserts the actual **生成已停止** node after the idle state transition, establishing that recomposition
+and the Back callback update completed before emitting the idle Back action. The original failure
+artifact is retained as `reader-device-qa` 11300986395, 60,149,346 bytes, SHA-256
+`7e78cc0a8aa21eb7de35aad08c60754ceeecaf32454bfb7325c8161e56fa83f8`. A fresh complete acceptance
+run is required for the corrective commit; the successful Browser and Android runs on `95630e5d`
+cannot substitute for it.
