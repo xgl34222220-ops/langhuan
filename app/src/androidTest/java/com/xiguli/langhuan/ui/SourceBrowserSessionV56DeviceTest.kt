@@ -1,6 +1,8 @@
 package com.xiguli.langhuan.ui
 
 import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -21,6 +23,14 @@ class SourceBrowserSessionV56DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
     private val base = "https://browser-fixture.example"
     private fun transport() = SourceBrowserTransportV56(InstrumentationRegistry.getInstrumentation().targetContext.applicationContext)
+    private fun keyboardVisible(): Boolean {
+        var shown = false
+        rule.runOnUiThread {
+            shown = ViewCompat.getRootWindowInsets(rule.activity.window.decorView)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        return shown
+    }
 
     @Test fun dynamicSourceBuildAndSavedSourceReadingKeepTheBrowserSession(): Unit = runBlocking {
         val sessionCookie = "session_${UUID.randomUUID().toString().replace("-", "")}"
@@ -525,6 +535,7 @@ class SourceBrowserSessionV56DeviceTest {
         rule.waitUntil(5_000) {
             rule.onAllNodesWithText(saved.name).fetchSemanticsNodes().isNotEmpty()
         }
+        rule.waitUntil(5_000) { !keyboardVisible() }
         rule.onNodeWithText("刚保存").assertIsDisplayed()
         rule.onNodeWithText(saved.name).assertIsDisplayed()
         deviceWindowEvidenceV46("v74-ai-source-saved-management-focus")

@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,12 +70,16 @@ internal fun BookSourceManageScreenV50(
     onAiGenerateSource: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var query by rememberSaveable { mutableStateOf("") }
     var group by rememberSaveable { mutableStateOf(SourceManageGroupV50.ALL) }
 
     LaunchedEffect(focusSourceId) {
         if (focusSourceId != null) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
             query = ""
             group = SourceManageGroupV50.ALL
         }
