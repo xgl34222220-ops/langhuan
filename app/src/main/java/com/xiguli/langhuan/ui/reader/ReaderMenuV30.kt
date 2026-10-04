@@ -102,7 +102,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -131,6 +132,11 @@ private data class ReaderSearchHitV30(
 )
 
 private enum class ReaderDirectoryModeV30 { CHAPTERS, BOOKMARKS }
+
+@Composable
+private fun readerMenuWindowHeightV63() = with(LocalDensity.current) {
+    LocalWindowInfo.current.containerSize.height.toDp()
+}
 
 
 /* -------------------------------------------------------------------------- */
@@ -176,7 +182,7 @@ internal fun ReaderMenuV30(
 ) {
     if (!visible) return
     val t = LocalLanghuanUiTokens.current
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
+    val maxHeight = readerMenuWindowHeightV63() * 0.88f
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -478,6 +484,7 @@ private fun ReaderDetailsTabV30(
     onSizePanel: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     val chapter = chapters.getOrNull(chapterIndex)
     val fraction = when {
         pageCount <= 1 -> 0f
@@ -486,7 +493,7 @@ private fun ReaderDetailsTabV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.58f).dp)
+            .heightIn(max = windowHeight * 0.58f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4, vertical = t.space3),
     ) {
@@ -744,6 +751,7 @@ private fun ReaderChapterListV30(
     onJumpChapter: (Int, Int) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     if (chapters.isEmpty()) {
         ReaderMenuEmptyV30(title = "暂无章节", description = "这本书还没有可阅读的章节。")
         return
@@ -751,7 +759,7 @@ private fun ReaderChapterListV30(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+            .heightIn(max = windowHeight * 0.44f),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -777,6 +785,7 @@ private fun ReaderBookmarkListV30(
     onJumpChapter: (Int, Int) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     val rows = chapters.filter { it.chapterNumber in bookmarks }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
@@ -788,7 +797,7 @@ private fun ReaderBookmarkListV30(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+            .heightIn(max = windowHeight * 0.44f),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -814,6 +823,7 @@ private fun ReaderLegacyBookmarkListV30(
     onJumpChapter: (Int, Int) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     var selected by remember { mutableStateOf<ChapterDraft?>(null) }
     val rows = chapters.filter { it.chapterNumber in bookmarks }
     selected?.let { chapter ->
@@ -842,7 +852,7 @@ private fun ReaderLegacyBookmarkListV30(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+            .heightIn(max = windowHeight * 0.44f),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -963,6 +973,7 @@ private fun ReaderMoreTabV30(
     onDeleteLastChapter: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     val currentChapter = chapters.getOrNull(chapterIndex)
     var renameOpen by remember { mutableStateOf(false) }
     var deleteOpen by remember { mutableStateOf(false) }
@@ -970,7 +981,7 @@ private fun ReaderMoreTabV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.58f).dp)
+            .heightIn(max = windowHeight * 0.58f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4, vertical = t.space3),
     ) {
@@ -1589,6 +1600,7 @@ private fun ReaderSearchPanelV30(
     onBack: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     var query by rememberSaveable { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<ReaderSearchHitV30>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -1709,7 +1721,7 @@ private fun ReaderSearchPanelV30(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.42f).dp),
+                .heightIn(max = windowHeight * 0.42f),
             verticalArrangement = Arrangement.spacedBy(t.space2),
         ) {
             items(items = hits, key = { "${it.chapterIndex}:${it.offset}" }) { hit ->
@@ -1753,10 +1765,11 @@ private fun ReaderStatsPanelV30(
     onBack: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.62f).dp)
+            .heightIn(max = windowHeight * 0.62f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
