@@ -34,9 +34,8 @@ class ReaderRecreationV42DeviceTest {
         var lastCandidate: String? = null
         rule.waitForIdle()
         automation.waitForIdle(250, 5_000)
-        rule.waitUntil(5_000) {
-            val root = automation.rootInActiveWindow ?: return@waitUntil false
-            if (root.packageName?.toString() != "com.xiguli.langhuan") return@waitUntil false
+        fun currentHit(root: android.view.accessibility.AccessibilityNodeInfo): android.graphics.Rect? {
+            if (root.packageName?.toString() != "com.xiguli.langhuan") return null
             val window = android.graphics.Rect().also(root::getBoundsInScreen)
             fun find(node: android.view.accessibility.AccessibilityNodeInfo?): android.graphics.Rect? {
                 if (node == null) return null
@@ -58,7 +57,48 @@ class ReaderRecreationV42DeviceTest {
                 for (index in 0 until node.childCount) find(node.getChild(index))?.let { return it }
                 return null
             }
-            val current = find(root)
+            return find(root)
+        }
+        fun scrollViewport(node: android.view.accessibility.AccessibilityNodeInfo?): android.graphics.Rect? {
+            if (node == null) return null
+            if (node.isScrollable && node.isVisibleToUser && node.className?.toString() == "android.widget.ScrollView") {
+                return android.graphics.Rect().also(node::getBoundsInScreen).takeUnless { it.isEmpty }
+            }
+            for (index in 0 until node.childCount) scrollViewport(node.getChild(index))?.let { return it }
+            return null
+        }
+        // Scroll using actual screen input: a stale merged-node ScrollToRect can leave
+        // the font control outside the clipped body while claiming it was brought in.
+        for (attempt in 0 until 4) {
+            val root = requireNotNull(automation.rootInActiveWindow)
+            assertEquals("Font controls must stay in the foreground app", "com.xiguli.langhuan", root.packageName?.toString())
+            if (currentHit(root) != null) break
+            val viewport = requireNotNull(scrollViewport(root)) { "Reader menu has no visible scroll viewport" }
+            val window = android.graphics.Rect().also(root::getBoundsInScreen)
+            assertTrue("Menu scroll must stay inside the landscape window", window.width() > window.height() && window.contains(viewport))
+            android.util.Log.i("ReaderFontInputV57", "Physical scroll $attempt inside $viewport")
+            val downTime = android.os.SystemClock.uptimeMillis()
+            val startY = viewport.bottom - viewport.height() * 0.15f
+            fun move(action: Int, y: Float) {
+                val event = android.view.MotionEvent.obtain(downTime, android.os.SystemClock.uptimeMillis(), action,
+                    viewport.exactCenterX(), y, 0)
+                event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+                try { assertTrue("Menu must accept the physical scroll", automation.injectInputEvent(event, true)) }
+                finally { event.recycle() }
+            }
+            move(android.view.MotionEvent.ACTION_DOWN, startY)
+            for (step in 1..10) {
+                Thread.sleep(25)
+                move(android.view.MotionEvent.ACTION_MOVE, startY - viewport.height() * 0.45f * step / 10)
+            }
+            move(android.view.MotionEvent.ACTION_UP, startY - viewport.height() * 0.45f)
+            rule.waitForIdle()
+            automation.waitForIdle(250, 5_000)
+        }
+        rule.waitUntil(5_000) {
+            val root = automation.rootInActiveWindow ?: return@waitUntil false
+            val window = android.graphics.Rect().also(root::getBoundsInScreen)
+            val current = currentHit(root)
             if (current == null || current != hit) stableSince = android.os.SystemClock.elapsedRealtime()
             hit = current
             hit != null && window.width() > window.height() && android.os.SystemClock.elapsedRealtime() - stableSince >= 100
