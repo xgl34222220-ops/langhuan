@@ -2109,7 +2109,8 @@ private fun ReaderStepperButtonV30(
             .height(46.dp)
             .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { contentDescription = if (text == "A+") "增大阅读字号" else "减小阅读字号" },
         contentAlignment = Alignment.Center,
     ) {
         Text(

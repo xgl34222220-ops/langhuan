@@ -28,24 +28,40 @@ class ReaderRecreationV42DeviceTest {
      */
     private fun tapVisibleFontAction(text: String) {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val description = if (text == "A+") "增大阅读字号" else "减小阅读字号"
         var hit: android.graphics.Rect? = null
+        var stableSince = 0L
+        rule.waitForIdle()
+        automation.waitForIdle(250, 5_000)
         rule.waitUntil(5_000) {
             val root = automation.rootInActiveWindow ?: return@waitUntil false
             if (root.packageName?.toString() != "com.xiguli.langhuan") return@waitUntil false
             val window = android.graphics.Rect().also(root::getBoundsInScreen)
             fun find(node: android.view.accessibility.AccessibilityNodeInfo?): android.graphics.Rect? {
                 if (node == null) return null
-                if (node.text?.toString() == text && node.isVisibleToUser) {
+                if (node.contentDescription?.toString() == description && node.isClickable && node.isEnabled && node.isVisibleToUser) {
                     val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
-                    if (!bounds.isEmpty && window.contains(bounds)) return bounds
+                    var parent = node.parent
+                    var inViewport = true
+                    while (parent != null) {
+                        if (parent.isScrollable) {
+                            val viewport = android.graphics.Rect().also(parent::getBoundsInScreen)
+                            if (!viewport.contains(bounds)) inViewport = false
+                        }
+                        parent = parent.parent
+                    }
+                    if (!bounds.isEmpty && window.contains(bounds) && inViewport) return bounds
                 }
                 for (index in 0 until node.childCount) find(node.getChild(index))?.let { return it }
                 return null
             }
-            hit = find(root)
-            hit != null && window.width() > window.height()
+            val current = find(root)
+            if (current == null || current != hit) stableSince = android.os.SystemClock.elapsedRealtime()
+            hit = current
+            hit != null && window.width() > window.height() && android.os.SystemClock.elapsedRealtime() - stableSince >= 100
         }
         val bounds = requireNotNull(hit)
+        android.util.Log.i("ReaderFontInputV57", "$description physical touch at $bounds")
         val downTime = android.os.SystemClock.uptimeMillis()
         val down = android.view.MotionEvent.obtain(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, bounds.exactCenterX(), bounds.exactCenterY(), 0)
         down.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
@@ -149,7 +165,8 @@ class ReaderRecreationV42DeviceTest {
                 tapVisibleFontAction("A−")
                 rule.waitUntil(5_000) { prefs.getFloat("font", 0f) == 21f }
                 deviceWindowEvidenceV46("v42-reader-landscape-font-operable")
-            } catch (error: AssertionError) {
+            } catch (error: Throwable) {
+                deviceWindowEvidenceV46("v42-reader-landscape-font-failure")
                 val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
                 val tree = StringBuilder()
                 fun describe(node: android.view.accessibility.AccessibilityNodeInfo?, depth: Int = 0) {
