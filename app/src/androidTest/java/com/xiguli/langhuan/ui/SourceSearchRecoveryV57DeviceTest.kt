@@ -126,7 +126,7 @@ class SourceSearchRecoveryV57DeviceTest {
         }) { vm ->
             rule.runOnUiThread { vm.search(keyword) }
             rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.failedSources == 1 }
-            assertEquals(SOURCE_TIMEOUT_MESSAGE_V69, vm.state.value.searchFailures.single().detail)
+            assertEquals(SOURCE_TIMEOUT_MESSAGE_V69, vm.state.value.searchFailures.single().reason)
             rule.onNodeWithText("慢速样例：", substring = true).performScrollTo().assertIsDisplayed()
             rule.onNodeWithText(SOURCE_TIMEOUT_MESSAGE_V69, substring = true).assertIsDisplayed()
             rule.onNodeWithText("Read timed out", substring = true).assertDoesNotExist()
