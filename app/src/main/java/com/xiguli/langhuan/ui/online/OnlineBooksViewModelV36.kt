@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.ImportedChapter
 import com.xiguli.langhuan.data.ImportedManuscript
@@ -77,6 +78,27 @@ internal data class OnlineBooksStateV36(
     val aiSavedSourceName: String? = null,
 )
 
+internal const val AI_SAVED_SOURCE_ID_KEY_V75 = "online_ai_saved_source_id_v75"
+
+/** Restore only a persisted source identity; the durable source remains the name authority. */
+internal fun restoredAiSavedSourceV75(
+    sources: List<BookSourceV36>,
+    savedSourceId: String?,
+): BookSourceV36? = savedSourceId
+    ?.takeIf(String::isNotBlank)
+    ?.let { id -> sources.firstOrNull { it.id == id } }
+
+internal fun reconcileAiSavedSourceV75(
+    state: OnlineBooksStateV36,
+    sources: List<BookSourceV36> = state.sources,
+): OnlineBooksStateV36 {
+    val restored = restoredAiSavedSourceV75(sources, state.aiSavedSourceId)
+    return state.copy(
+        aiSavedSourceId = restored?.id,
+        aiSavedSourceName = restored?.name,
+    )
+}
+
 internal fun aiSourceStartingStateV67(
     state: OnlineBooksStateV36,
     useBrowser: Boolean,
@@ -115,11 +137,23 @@ internal fun aiSourceSavedStateV68(
     aiSavedSourceName = source.name,
 )
 
-internal class OnlineBooksViewModelV36(application: Application) : AndroidViewModel(application) {
+internal class OnlineBooksViewModelV36(
+    application: Application,
+    private val savedState: SavedStateHandle = SavedStateHandle(),
+) : AndroidViewModel(application) {
     private val context get() = getApplication<Application>()
     private val projects = StoryProjectManager(application)
     private val initialSources = BookSourceStoreV36.read(application)
-    private val _state = MutableStateFlow(OnlineBooksStateV36(sources = initialSources.getOrDefault(emptyList()), sourceStorageError = initialSources.exceptionOrNull()?.message))
+    private val restoredAiSavedSource = restoredAiSavedSourceV75(
+        initialSources.getOrDefault(emptyList()),
+        savedState[AI_SAVED_SOURCE_ID_KEY_V75],
+    )
+    private val _state = MutableStateFlow(OnlineBooksStateV36(
+        sources = initialSources.getOrDefault(emptyList()),
+        sourceStorageError = initialSources.exceptionOrNull()?.message,
+        aiSavedSourceId = restoredAiSavedSource?.id,
+        aiSavedSourceName = restoredAiSavedSource?.name,
+    ))
     val state: StateFlow<OnlineBooksStateV36> = _state.asStateFlow()
     private var sourceEditJob: Job? = null
     private var searchJob: Job? = null
@@ -133,6 +167,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     private var activeProviderId: String? = null
 
     init {
+        if (restoredAiSavedSource == null) clearAiSavedSourceCheckpoint()
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
                 val selected = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
@@ -146,14 +181,29 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     // ---- AI-written sources ---------------------------------------------------------------------
 
+    private fun clearAiSavedSourceCheckpoint() {
+        savedState.remove<String>(AI_SAVED_SOURCE_ID_KEY_V75)
+    }
+
+    private fun syncAiSavedSourceCheckpoint() {
+        _state.value.aiSavedSourceId?.let { savedState[AI_SAVED_SOURCE_ID_KEY_V75] = it }
+            ?: savedState.remove<String>(AI_SAVED_SOURCE_ID_KEY_V75)
+    }
+
     fun buildWithAi(siteUrl: String, keyword: String, useBrowser: Boolean = false) {
-        if (!sourceStorageReady()) { _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiSavedSourceId = null, aiSavedSourceName = null) }; return }
+        if (!sourceStorageReady()) {
+            clearAiSavedSourceCheckpoint()
+            _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiSavedSourceId = null, aiSavedSourceName = null) }
+            return
+        }
         if (aiJob?.isActive == true) return
         if (siteUrl.isBlank() || keyword.isBlank()) {
+            clearAiSavedSourceCheckpoint()
             _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false, aiSavedSourceId = null, aiSavedSourceName = null) }
             return
         }
         val generation = aiGeneration.incrementAndGet()
+        clearAiSavedSourceCheckpoint()
         _state.update { aiSourceStartingStateV67(it, useBrowser) }
         aiJob = viewModelScope.launch {
             try {
@@ -197,6 +247,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
             _state.update { it.copy(aiError = it.sourceStorageError ?: it.error ?: "书源保存失败") }
             return false
         }
+        savedState[AI_SAVED_SOURCE_ID_KEY_V75] = report.source.id
         _state.update { aiSourceSavedStateV68(it, report.source) }
         return true
     }
@@ -204,6 +255,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     fun cancelAi() {
         aiGeneration.incrementAndGet()
         aiJob?.cancel()
+        clearAiSavedSourceCheckpoint()
         _state.update(::aiSourceStoppedStateV65)
     }
 
@@ -262,7 +314,8 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         val next = transform(previous)
         if (!saveSources(next, previous)) return false
         invalidateSourceResults()
-        _state.update { it.copy(sources = next) }
+        _state.update { reconcileAiSavedSourceV75(it.copy(sources = next), next) }
+        syncAiSavedSourceCheckpoint()
         return true
     }
 

@@ -1,16 +1,22 @@
 package com.xiguli.langhuan.ui
 
+import android.app.Application
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 import java.util.UUID
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
@@ -486,6 +492,57 @@ class SourceBrowserSessionV56DeviceTest {
             assertEquals(0, cancellations)
             assertTrue(starts.isEmpty())
             assertEquals(listOf("discoverable-source"), openedSavedSources)
+        }
+    }
+
+    @Test fun savedAiSourceConfirmationRestoresFromSavedStateAndRejectsADeletedIdentity() {
+        val app = rule.activity.application as Application
+        val previous = BookSourceStoreV36.load(app)
+        val saved = BookSourceV36(
+            id = "saved-source-v75-${UUID.randomUUID()}",
+            name = "进程恢复合成书源",
+            baseUrl = "https://saved-state.example.invalid",
+        )
+        val handle = SavedStateHandle(mapOf(AI_SAVED_SOURCE_ID_KEY_V75 to saved.id))
+        var vm: OnlineBooksViewModelV36? = null
+        try {
+            BookSourceStoreV36.save(app, previous + saved, expected = previous)
+            rule.runOnUiThread { vm = OnlineBooksViewModelV36(app, handle) }
+            val model = requireNotNull(vm)
+            rule.setContent {
+                val state by model.state.collectAsState()
+                AiBookSourceScreenV50(
+                    state = state,
+                    siteUrl = base,
+                    testBookName = "原创小说",
+                    onBack = {},
+                    onSiteUrlChange = {},
+                    onTestBookNameChange = {},
+                    onConfigureAi = {},
+                    onStart = { _, _ -> },
+                    onStartWithBrowser = { _, _ -> },
+                    onCancel = model::cancelAi,
+                    onSave = {},
+                    onOpenSavedSource = {},
+                )
+            }
+
+            rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("返回书源管理查看"))
+            rule.onNodeWithText("书源已保存").assertIsDisplayed()
+            rule.onNodeWithText("“${saved.name}”已写入书源管理，可继续生成或返回使用。").assertIsDisplayed()
+            assertEquals(saved.id, model.state.value.aiSavedSourceId)
+            assertEquals(saved.name, model.state.value.aiSavedSourceName)
+            assertEquals(saved.id, handle.get<String>(AI_SAVED_SOURCE_ID_KEY_V75))
+            deviceWindowEvidenceV46("v75-ai-source-saved-state-restored")
+
+            rule.runOnUiThread { model.deleteSource(saved.id) }
+            rule.waitUntil(5_000) { model.state.value.aiSavedSourceId == null }
+            rule.onNodeWithText("书源已保存").assertDoesNotExist()
+            rule.onNodeWithText("返回书源管理查看").assertDoesNotExist()
+            assertNull(handle.get<String>(AI_SAVED_SOURCE_ID_KEY_V75))
+        } finally {
+            rule.runOnUiThread { vm?.viewModelScope?.cancel() }
+            BookSourceStoreV36.save(app, previous)
         }
     }
 
