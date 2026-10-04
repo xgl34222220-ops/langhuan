@@ -39,7 +39,8 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
  * AI 生成书源 V50。
  *
  * AI 执行状态直接复用 OnlineBooksStateV36：
- * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError / aiStopped / aiLastUseBrowser。
+ * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError / aiStopped / aiLastUseBrowser /
+ * aiSavedSourceName。
  *
  * 真正生成由 OnlineBooksViewModelV36.buildWithAi() 完成。
  */
@@ -127,6 +128,12 @@ internal fun AiBookSourceScreenV50(
             }
         }
 
+        state.aiSavedSourceName?.let { sourceName ->
+            item("ai-source-saved") {
+                AiSourceSavedCardV68(sourceName)
+            }
+        }
+
         state.aiReport?.let { report ->
             item("ai-source-report") {
                 AiSourceReportCardV50(report = report)
@@ -151,11 +158,7 @@ internal fun AiBookSourceScreenV50(
                     ) {
                         AiSourceMainButtonV50(
                             icon = Icons.Rounded.Check,
-                            text = if (state.aiReport.source.enabledExplore) {
-                                "保存书源"
-                            } else {
-                                "保存搜索书源"
-                            },
+                            text = aiSourceSaveActionLabelV68(state),
                             primary = true,
                             enabled = true,
                             onClick = onSave,
@@ -223,6 +226,12 @@ internal fun aiSourceStartActionsV67(state: OnlineBooksStateV36): List<AiSourceS
             AiSourceStartActionV67("改用浏览器模式", useBrowser = true),
         )
     }
+
+internal fun aiSourceSaveActionLabelV68(state: OnlineBooksStateV36): String {
+    val report = state.aiReport ?: return "保存书源"
+    val base = if (report.source.enabledExplore) "保存书源" else "保存搜索书源"
+    return if (state.aiError.isNullOrBlank()) base else "重试$base"
+}
 
 
 @Composable
@@ -643,6 +652,40 @@ private fun AiSourceStoppedCardV65() {
             )
             Text(
                 text = "网站地址和测试书名已保留，可重新选择普通或浏览器模式。",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.secondaryForeground,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiSourceSavedCardV68(sourceName: String) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(t.accent, RoundedCornerShape(t.radiusMd))
+            .border(1.dp, t.border, RoundedCornerShape(t.radiusMd))
+            .padding(t.space3),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = t.primary,
+        )
+        Spacer(Modifier.width(t.space2))
+        Column(verticalArrangement = Arrangement.spacedBy(t.space1)) {
+            Text(
+                text = "书源已保存",
+                style = MaterialTheme.typography.labelLarge,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "“$sourceName”已写入书源管理，可继续生成或返回使用。",
                 style = MaterialTheme.typography.bodySmall,
                 color = t.secondaryForeground,
             )

@@ -370,4 +370,52 @@ class SourceBrowserSessionV56DeviceTest {
         rule.runOnIdle { assertEquals(listOf(false, true), starts) }
     }
 
+    @Test fun failedAiSourceSaveShowsRetryThenAConfirmedSavedState() {
+        val report = AiSourceReportV37(
+            BookSourceV36("save-recovery", "合法合成书源", base, enabledExplore = true),
+            1,
+            "原创小说",
+            2,
+            "原创正文。",
+        )
+        val state = androidx.compose.runtime.mutableStateOf(
+            OnlineBooksStateV36(
+                aiProviderLabel = "合成测试模型",
+                aiReport = report,
+                aiError = "书源保存失败：隔离夹具拒绝本次写入",
+            ),
+        )
+        var saves = 0
+        rule.setContent {
+            AiBookSourceScreenV50(
+                state = state.value,
+                siteUrl = base,
+                testBookName = "原创小说",
+                onBack = {},
+                onSiteUrlChange = {},
+                onTestBookNameChange = {},
+                onConfigureAi = {},
+                onStart = { _, _ -> },
+                onStartWithBrowser = { _, _ -> },
+                onCancel = {},
+                onSave = { saves++ },
+            )
+        }
+
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("重试保存书源"))
+        rule.onNodeWithText("书源保存失败：隔离夹具拒绝本次写入").assertIsDisplayed()
+        rule.onNodeWithText("重试保存书源").assertIsEnabled().performClick()
+        rule.runOnIdle {
+            assertEquals(1, saves)
+            state.value = aiSourceSavedStateV68(state.value, report.source.name)
+        }
+
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("书源已保存"))
+        rule.onNodeWithText("书源已保存").assertIsDisplayed()
+        rule.onNodeWithText("“合法合成书源”已写入书源管理，可继续生成或返回使用。").assertIsDisplayed()
+        rule.onNodeWithText("书源保存失败：隔离夹具拒绝本次写入").assertDoesNotExist()
+        rule.onNodeWithText("开始生成").assertIsEnabled()
+        rule.onNodeWithText("浏览器模式生成").assertIsEnabled()
+    }
+
 }
