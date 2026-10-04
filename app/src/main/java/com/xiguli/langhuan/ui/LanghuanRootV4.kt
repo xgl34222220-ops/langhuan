@@ -741,6 +741,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                     onlineVm.search(q)
                                 },
                                 onStopSearch = onlineVm::stopSearch,
+                                onRetrySearch = onlineVm::retrySearch,
                                 onRecentSearch = { q ->
                                     onlineQuery = q
                                     onlineVm.search(q)

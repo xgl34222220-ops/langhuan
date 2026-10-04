@@ -30,6 +30,8 @@ internal data class OnlineDetailV36(val book: OnlineBookV36, val chapters: List<
 
 internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed: Int, val saving: Boolean = false)
 
+internal data class OnlineSourceFailureV57(val sourceId: String, val sourceName: String, val reason: String)
+
 internal data class OnlineBooksStateV36(
     val sources: List<BookSourceV36> = emptyList(),
     val sourceStorageError: String? = null,
@@ -48,6 +50,9 @@ internal data class OnlineBooksStateV36(
     val searching: Boolean = false,
     val searchedSources: Int = 0,
     val failedSources: Int = 0,
+    val searchFailures: List<OnlineSourceFailureV57> = emptyList(),
+    val pendingSearchSourceIds: Set<String> = emptySet(),
+    val searchStopped: Boolean = false,
     val results: List<OnlineBookV36> = emptyList(),
     val detailLoading: Boolean = false,
     val detail: OnlineDetailV36? = null,
@@ -236,6 +241,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         searchGeneration.incrementAndGet()
         searchJob?.cancel()
         _state.update { it.copy(searching = false, discoveryLabel = null, discoverySection = null,
+            searchFailures = emptyList(), pendingSearchSourceIds = emptySet(), searchStopped = false,
             discoveryPage = 0, discoveryNextUrl = null, discoveryHasMore = false, discoveryVisitedUrls = emptySet(), discoveryPageError = null, results = emptyList()) }
     }
 
@@ -249,10 +255,33 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
             _state.update { it.copy(error = "还没有启用的书源。先到「书源」页导入。") }
             return
         }
-        searchJob?.cancel()
+        launchSearch(key, sources, preserveCompleted = false)
+    }
+
+    /** Retry only failed or cancelled work; successful sources and their rows stay intact. */
+    fun retrySearch() {
+        val previous = _state.value
+        if (previous.searching || previous.query.isBlank() || previous.discoverySection != null) return
+        val ids = previous.pendingSearchSourceIds + previous.searchFailures.map { it.sourceId }
+        if (ids.isEmpty()) return
+        val sources = previous.sources.filter {
+            it.id in ids && it.enabled && it.searchUrl.isNotBlank() && it.searchList.isNotBlank()
+        }
+        if (sources.isEmpty()) {
+            _state.update { it.copy(error = "未完成的书源已停用或移除，请检查书源") }
+            return
+        }
+        launchSearch(previous.query, sources, preserveCompleted = true)
+    }
+
+    private fun launchSearch(key: String, sources: List<BookSourceV36>, preserveCompleted: Boolean) {
         val generation = searchGeneration.incrementAndGet()
+        searchJob?.cancel()
         _state.update { it.copy(query = key, discoveryLabel = null, discoverySection = null, discoveryPage = 0,
-            discoveryNextUrl = null, discoveryHasMore = false, discoveryVisitedUrls = emptySet(), discoveryPageError = null, searching = true, searchedSources = 0, failedSources = 0, results = emptyList(), error = null) }
+            discoveryNextUrl = null, discoveryHasMore = false, discoveryVisitedUrls = emptySet(), discoveryPageError = null,
+            searching = true, searchedSources = if (preserveCompleted) (it.searchedSources - it.failedSources).coerceAtLeast(0) else 0,
+            failedSources = 0, searchFailures = emptyList(), pendingSearchSourceIds = sources.map { source -> source.id }.toSet(),
+            searchStopped = false, results = if (preserveCompleted) it.results else emptyList(), error = null, message = null) }
         searchJob = viewModelScope.launch {
             val gate = Semaphore(6)
             coroutineScope {
@@ -260,6 +289,11 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                     async(Dispatchers.IO) {
                         val attempt = gate.withPermit { sourceAttemptV36 { runInterruptible { searchSourceV36(source, key) } } }
                         val found = attempt.getOrDefault(emptyList())
+                        val failure = attempt.exceptionOrNull()?.let { error -> OnlineSourceFailureV57(
+                            source.id, source.name,
+                            error.message?.replace('\n', ' ')?.replace('\r', ' ')?.take(240)?.takeIf(String::isNotBlank)
+                                ?: "书源搜索失败，请检查网络或规则",
+                        ) }
                         currentCoroutineContext().ensureActive()
                         // Results stream in per source; exact title matches float to the top.
                         _state.update { state ->
@@ -267,7 +301,10 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                             val merged = (state.results + found)
                                 .distinctBy { it.sourceId + it.bookUrl }
                                 .sortedWith(compareByDescending<OnlineBookV36> { it.name == key }.thenByDescending { it.name.contains(key) })
-                            state.copy(results = merged, searchedSources = state.searchedSources + 1, failedSources = state.failedSources + if (attempt.isFailure) 1 else 0)
+                            state.copy(results = merged, searchedSources = state.searchedSources + 1,
+                                failedSources = state.failedSources + if (failure != null) 1 else 0,
+                                searchFailures = if (failure != null) state.searchFailures + failure else state.searchFailures,
+                                pendingSearchSourceIds = state.pendingSearchSourceIds - source.id)
                         }
                     }
                 }.awaitAll()
@@ -289,6 +326,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         searchJob?.cancel()
         searchGeneration.incrementAndGet()
         _state.update { it.copy(query = "", discoveryLabel = "${source.name} · ${section.label}",
+            searchFailures = emptyList(), pendingSearchSourceIds = emptySet(), searchStopped = false,
             discoverySection = section, discoveryPage = 0, discoveryNextUrl = null, discoveryHasMore = false, discoveryVisitedUrls = emptySet(), discoveryPageError = null,
             searching = false, searchedSources = 0, failedSources = 0, results = emptyList(), error = null, message = null) }
         loadMoreDiscovery()
@@ -334,6 +372,8 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
         searchGeneration.incrementAndGet()
         searchJob?.cancel()
         _state.update { it.copy(searching = false,
+            searchStopped = it.searchStopped || it.searching && it.discoverySection == null && it.query.isNotBlank(),
+            message = if (it.searching && it.discoverySection == null) "已停止搜索，已完成结果保留" else it.message,
             discoveryPageError = if (it.discoverySection != null && it.searching) "已停止加载，可以重试本页" else it.discoveryPageError) }
     }
 

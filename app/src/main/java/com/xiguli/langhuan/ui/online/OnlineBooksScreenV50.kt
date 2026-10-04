@@ -141,6 +141,7 @@ internal fun OnlineBooksScreenV50(
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     onStopSearch: () -> Unit,
+    onRetrySearch: () -> Unit,
 
     onRecentSearch: (String) -> Unit,
     onClearRecentSearches: () -> Unit,
@@ -179,6 +180,8 @@ internal fun OnlineBooksScreenV50(
     }
 
     val t = LocalLanghuanUiTokens.current
+    val searchIncomplete = state.query.isNotBlank() && state.discoverySection == null &&
+        (state.searchStopped || state.searchFailures.isNotEmpty())
 
     var discoveryGroup by rememberSaveable {
         mutableStateOf(OnlineDiscoveryGroupV50.ALL)
@@ -282,6 +285,29 @@ internal fun OnlineBooksScreenV50(
             }
 
             /* Errors */
+            if (searchIncomplete) {
+                item(key = "search-recovery") {
+                    val reasons = state.searchFailures.take(3).joinToString("\n") {
+                        "${it.sourceName.take(48)}：${it.reason}"
+                    }
+                    val summary = buildString {
+                        append("「${state.query.take(60)}」")
+                        append(if (state.searchStopped) "已停止搜索，已完成结果保留。" else "${state.failedSources} 个书源请求失败，已完成结果保留。")
+                        if (state.pendingSearchSourceIds.isNotEmpty()) append("还有 ${state.pendingSearchSourceIds.size} 个书源未完成。")
+                        if (reasons.isNotEmpty()) append('\n').append(reasons)
+                        if (state.searchFailures.size > 3) append("\n另有 ${state.searchFailures.size - 3} 个书源失败。")
+                    }
+                    val canRetry = !state.searching && (state.pendingSearchSourceIds.isNotEmpty() || state.searchFailures.isNotEmpty())
+                    OnlineMessageCardV50(
+                        icon = if (state.searchStopped) Icons.Rounded.Stop else Icons.Rounded.ErrorOutline,
+                        title = if (state.searchStopped) "搜索已停止" else "书源搜索未完成",
+                        body = summary,
+                        destructive = state.searchFailures.isNotEmpty(),
+                        action = if (canRetry) "重试未完成书源" else null,
+                        onAction = if (canRetry) onRetrySearch else null,
+                    )
+                }
+            }
             state.sourceStorageError?.let {
                 item(key = "storage-error") {
                     OnlineMessageCardV50(
@@ -345,7 +371,7 @@ internal fun OnlineBooksScreenV50(
                 }
             }
 
-            if (state.results.isEmpty() && !state.searching) {
+            if (state.results.isEmpty() && !state.searching && !searchIncomplete) {
                 item(key = "empty-results") {
                     OnlineStoreEmptyV50(
                         hasSources = state.sources.any { it.enabled },

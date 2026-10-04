@@ -32,10 +32,33 @@ Android 要求渲染器退出后清理指定 WebView 并返回已处理；该实
 
 故障入口只在 debuggable 包、当前 fixture 请求、`browser-fixture.example` 和匹配请求 ID 下有效；服务继续不导出，不增加界面入口、站点权限或网页桥接。此用例进入浏览器整组和完整阅读器，预检通过后仍执行原完整组及两种真实进程恢复。
 
+第一批提交 `1b7be1d60cb1eb9a3b22655e169f352961e04b79` 的完整 CI：
+
+| 项目 | 新结果 | 证据 |
+| --- | --- | --- |
+| 阅读器 | 完整 138 项及 EPUB 实际进程恢复通过；原 137 项与原 16 项失败保留并核对 | [Reader](https://github.com/xgl34222220-ops/langhuan/actions/runs/37162038341) |
+| 浏览器 | 8 项、0 失败、0 跳过；新 rendererExit 用例及独立进程 Cookie/DOM 恢复通过 | [Browser](https://github.com/xgl34222220-ops/langhuan/actions/runs/37162038331) |
+| JVM / 构建 / lint | 714 项、0 失败、0 跳过；构建成功；0 错误、197 警告、5 提示 | [Android](https://github.com/xgl34222220-ops/langhuan/actions/runs/37162038316) |
+
+两条服务/Activity 静态强引用告警已消除；仍有应用单例 1 条、EPUB 2 条及浏览器匿名类位置的渲染告警 2 条。后者的实际退出回调已由真实终止用例证明执行，告警仍保留并继续核对检测器识别条件，未加抑制。12 条 commit 告警也继续保留数据落盘确认语义。
+
+## 第二批：异常书源、慢网停止和定向重试
+
+V50 书城此前未展示搜索失败摘要；全部书源失败或用户停止后可能仍显示「没有找到」。搜索现在记录逐书源的失败原因和未完成 ID，明确区分失败、主动停止及全部请求成功但没有匹配结果。失败与停止不作为小说不存在的证据。
+
+重试针对同一个已执行关键词，仅重新请求失败或未完成的书源，保留成功行和成功请求计数。新关键词仍开始完整新搜索；既有 generation 检查和 runInterruptible 取消异常传播保留，迟到结果不能更新新请求。取消不记为书源失败。来源配置不被改写，站点冷却规则不变，也没有自动重试循环。
+
+界面复用现有 V3 消息卡片、1px 描边与颜色，显示本次关键词、最多三个有界失败原因和「重试未完成书源」；读取中仍使用原停止按钮。当前页面完整显示数据来自真实 ViewModel，未使用占位计数。
+
+新增 `SourceSearchRecoveryV57DeviceTest` 三项，走真实 ViewModel、默认书源引擎、WebView 与 V50 可见按钮：合成 503 失败后仅重试坏源且稳定源请求次数不变；阻塞的合法慢样例被停止后结果保留，仅继续未完成源；全部失败和成功空搜索显示不同结果。每项核对已保存书源原始字符串不变，取消所有测试 ViewModel 工作后还原原样例。
+
+三项进入浏览器整组和阅读器完整组；完整验收继续包含原阅读/数据断言、两种实际进程恢复、JVM 和 lint，新结果记录在 PR，不以第一批通过代替。
+
 ## 参考、许可证与采用理由
 
 - [Legado Sigma BackstageWebView 源码](https://github.com/apgk/legado/blob/3a7c4daaf79c652b8e60d6aad80f665bbf6cacba/app/src/main/java/io/legado/app/help/http/BackstageWebView.kt)：取消时释放实例/回调、检查当前 WebView 后再接受结果。参考其生命周期和迟到回调隔离思路，独立实现本应用的服务 IPC 恢复；没有引入其规则 JavaScript 或原生接口。[GPL-3.0 许可证](https://github.com/apgk/legado/blob/3a7c4daaf79c652b8e60d6aad80f665bbf6cacba/LICENSE)。
-- [Readium Kotlin Navigator 源码](https://github.com/readium/kotlin-toolkit/blob/develop/readium/navigator/src/main/java/org/readium/r2/navigator/epub/EpubNavigatorFragment.kt)及[导航文档](https://readium.org/kotlin-toolkit/latest/guides/navigator/navigator/)：多页 Fragment、当前 Locator 和视图生命周期需要协调，不能给 EPUB 简单套浏览器重建策略。[BSD-3-Clause 许可证](https://github.com/readium/kotlin-toolkit/blob/develop/LICENSE)。本批保留现有 SDK 与原版阅读断言。
+- [Legado SearchModel](https://github.com/apgk/legado/blob/3a7c4daaf79c652b8e60d6aad80f665bbf6cacba/app/src/main/java/io/legado/app/model/webBook/SearchModel.kt)与[SearchViewModel](https://github.com/apgk/legado/blob/3a7c4daaf79c652b8e60d6aad80f665bbf6cacba/app/src/main/java/io/legado/app/ui/book/search/SearchViewModel.kt)：流式合并结果、取消/完成的独立通知与工作状态控制。第二批采用明确状态和保留已完成工作的交互原则，独立实现按来源 ID 定向重试；不替换现有书源规则或 UI 系统。许可证同上。
+- [Readium Kotlin Navigator 源码](https://github.com/readium/kotlin-toolkit/blob/develop/readium/navigator/src/main/java/org/readium/r2/navigator/epub/EpubNavigatorFragment.kt)及[导航文档](https://github.com/readium/kotlin-toolkit/blob/develop/docs/guides/navigator/navigator.md)：多页 Fragment、当前 Locator 和视图生命周期需要协调，不能给 EPUB 简单套浏览器重建策略。[BSD-3-Clause 许可证](https://github.com/readium/kotlin-toolkit/blob/develop/LICENSE)。本批保留现有 SDK 与原版阅读断言。
 - [Android WebViewClient.onRenderProcessGone](https://developer.android.com/reference/android/webkit/WebViewClient#onRenderProcessGone(android.webkit.WebView,%20android.webkit.RenderProcessGoneDetail))及[WebViewRenderProcess.terminate](https://developer.android.com/reference/android/webkit/WebViewRenderProcess#terminate())：明确要求处理退出并清理不可复用的实例；用于实际故障注入与新实例恢复验证。
 
 真实在线 AI、第三方站点登录/验证码和用户真机仍未实测。CI 仅在原有隔离模拟器与合法样例执行；不绕过网站验证、不扩大网页权限、不合并、不正式发布或部署。
