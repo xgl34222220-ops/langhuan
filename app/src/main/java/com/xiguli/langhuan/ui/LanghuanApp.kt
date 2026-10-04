@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -687,6 +688,13 @@ private fun ForeshadowStatus.label() = when (this) { ForeshadowStatus.PLANTED ->
     val shape = RoundedCornerShape(23.dp)
     val indicatorTint = MaterialTheme.colorScheme.primary.copy(alpha = .18f)
     val lens = if (backdrop != null) Modifier.drawBackdrop(backdrop, shape = { shape }, effects = { padding = maxOf(padding, 22.dp.toPx()); blur(3.dp.toPx(), 3.dp.toPx()); liquidGlassLens(13.dp.toPx(), 14.dp.toPx(), true, .08f) }, highlight = { (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f) }, onDrawSurface = { drawRect(indicatorTint) }) else Modifier.background(indicatorTint.copy(alpha = .72f))
-    Box(Modifier.offset(x + 3.dp).width(width - 6.dp).height(54.dp).squircleClip(23.dp).then(lens))
+    Box(
+        Modifier
+            .offset { IntOffset((x + 3.dp).roundToPx(), 0) }
+            .width(width - 6.dp)
+            .height(54.dp)
+            .squircleClip(23.dp)
+            .then(lens),
+    )
     Row(Modifier.fillMaxWidth()) { AppPage.entries.forEach { p -> val chosen = p == current; val c = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f); Column(Modifier.width(width).height(54.dp).clickable(remember(p) { MutableInteractionSource() }, null) { select(p) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(p.icon, p.label, tint = c, modifier = Modifier.size(21.dp)); Text(p.label, color = c, fontSize = 10.sp, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium) } } }
 }

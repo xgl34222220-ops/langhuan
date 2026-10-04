@@ -53,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -924,7 +925,7 @@ internal fun ReaderSessionV30(
     }
     /* -------------------------------- TTS -------------------------------- */
     var listening by remember { mutableStateOf(false) }
-    var ttsRate by remember { mutableStateOf(prefs.getFloat("tts_rate", 1f)) }
+    var ttsRate by remember { mutableFloatStateOf(prefs.getFloat("tts_rate", 1f)) }
     var ttsFollowPage by remember { mutableIntStateOf(-1) }
     var ttsAdvancing by remember { mutableStateOf(false) }
     val ttsHolder = remember { arrayOfNulls<ReaderSpeechV47>(1) }
@@ -1967,12 +1968,16 @@ private fun ReaderScrollModeV30(
         }
 
         // 上下滚动模式仍固定显示同一套：书名·章节 / 本章 x/y 页 / 全书 xx% / 时间电量
-        val firstKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as?
-            String
-        val visibleChapter = firstKey?.split(':')?.getOrNull(0)?.toIntOrNull()
-            ?: chapterIndex
-        val visiblePage = firstKey?.split(':')?.getOrNull(1)?.toIntOrNull()
-            ?: currentPageIndex
+        val visibleScrollLocation by remember(listState, chapterIndex, currentPageIndex) {
+            derivedStateOf {
+                val parts = (listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as? String)
+                    ?.split(':')
+                val visibleChapter = parts?.getOrNull(0)?.toIntOrNull() ?: chapterIndex
+                val visiblePage = parts?.getOrNull(1)?.toIntOrNull() ?: currentPageIndex
+                visibleChapter to visiblePage
+            }
+        }
+        val (visibleChapter, visiblePage) = visibleScrollLocation
         val page = layoutFor(visibleChapter)?.pages?.getOrNull(visiblePage)
         val info = infoFor(page, visibleChapter)
 
