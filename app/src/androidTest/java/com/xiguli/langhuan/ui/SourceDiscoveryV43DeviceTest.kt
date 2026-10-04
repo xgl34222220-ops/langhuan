@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.SavedStateHandle
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.data.local.LanghuanDatabase
@@ -40,7 +41,7 @@ class SourceDiscoveryV43DeviceTest {
         lateinit var vm: OnlineBooksViewModelV36
         try {
             BookSourceStoreV36.save(context, listOf(source(base!!)))
-            rule.runOnUiThread { vm = OnlineBooksViewModelV36(rule.activity.application as Application) }
+            rule.runOnUiThread { vm = OnlineBooksViewModelV36(rule.activity.application as Application, SavedStateHandle()) }
             rule.setContent {
                 LanghuanStableTheme {
                     OnlineBooksPageV36(vm, {}, { createdId.set(it) }, embedded = true)
@@ -96,7 +97,7 @@ class SourceDiscoveryV43DeviceTest {
         try {
             BookSourceStoreV36.save(context, listOf(fixture))
             lateinit var vm: OnlineBooksViewModelV36
-            rule.runOnUiThread { vm = OnlineBooksViewModelV36(rule.activity.application as Application) }
+            rule.runOnUiThread { vm = OnlineBooksViewModelV36(rule.activity.application as Application, SavedStateHandle()) }
             rule.setContent { LanghuanStableTheme { OnlineBooksPageV36(vm, {}, {}, embedded = true) } }
             rule.onNodeWithText("测试书站 · 分类甲").assertExists()
             rule.onNodeWithText("测试书站 · 分类乙").performScrollTo().assertIsDisplayed()

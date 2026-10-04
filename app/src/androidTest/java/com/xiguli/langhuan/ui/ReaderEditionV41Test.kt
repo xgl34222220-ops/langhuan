@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.SavedStateHandle
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
 import java.io.File
@@ -261,7 +262,7 @@ class ReaderEditionV41Test {
     }
 
     @Test fun readingFirstNavigationAndSourceEmptyStates() {
-        val vm = OnlineBooksViewModelV36(rule.activity.application as Application)
+        val vm = OnlineBooksViewModelV36(rule.activity.application as Application, SavedStateHandle())
         val books = listOf(
             ReaderBookUi("fixture1", "夜航记", "悬疑", "一封迟来的信", "", "", 12000, 100000, 1, 1L),
             ReaderBookUi("fixture2", "山中来信", "文学", "", "", "", 5000, 60000, 1, 2L),

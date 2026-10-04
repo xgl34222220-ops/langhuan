@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.data.StoryProjectManager
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
@@ -51,7 +52,7 @@ class SourceCatalogueRecoveryV58DeviceTest {
             val stored = BookSourceStoreV36.raw(app)
             BookSourceBrowserV38.withFixtureSiteV56(pages) {
                 try {
-                    rule.runOnUiThread { vm = OnlineBooksViewModelV36(app) }
+                    rule.runOnUiThread { vm = OnlineBooksViewModelV36(app, SavedStateHandle()) }
                     val model = requireNotNull(vm)
                     rule.setContent {
                         val state by model.state.collectAsState()

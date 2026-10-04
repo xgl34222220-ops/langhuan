@@ -139,7 +139,7 @@ internal fun aiSourceSavedStateV68(
 
 internal class OnlineBooksViewModelV36(
     application: Application,
-    private val savedState: SavedStateHandle = SavedStateHandle(),
+    private val savedState: SavedStateHandle,
 ) : AndroidViewModel(application) {
     private val context get() = getApplication<Application>()
     private val projects = StoryProjectManager(application)

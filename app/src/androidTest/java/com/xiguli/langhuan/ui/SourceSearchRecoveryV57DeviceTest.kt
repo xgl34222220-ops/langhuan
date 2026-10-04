@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
 import java.util.concurrent.CountDownLatch
@@ -47,7 +48,7 @@ class SourceSearchRecoveryV57DeviceTest {
             val stored = BookSourceStoreV36.raw(app)
             BookSourceBrowserV38.withFixtureSiteV56(pages) {
                 try {
-                    rule.runOnUiThread { vm = OnlineBooksViewModelV36(app) }
+                    rule.runOnUiThread { vm = OnlineBooksViewModelV36(app, SavedStateHandle()) }
                     val model = requireNotNull(vm)
                     rule.setContent {
                         val state by model.state.collectAsState()

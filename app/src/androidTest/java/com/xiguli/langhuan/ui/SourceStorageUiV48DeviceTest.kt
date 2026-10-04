@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.cancel
 import org.junit.Assert.*
@@ -20,7 +21,7 @@ class SourceStorageUiV48DeviceTest {
         var vm: OnlineBooksViewModelV36? = null
         try {
             prefs.edit().putString("sources", corrupt).commit()
-            rule.runOnUiThread { vm = OnlineBooksViewModelV36(app) }
+            rule.runOnUiThread { vm = OnlineBooksViewModelV36(app, SavedStateHandle()) }
             rule.setContent { OnlineBooksPageV36(checkNotNull(vm), {}, {}, startWithSources = true) }
             rule.onNodeWithText("读取异常 · 原始配置已保留").assertExists()
             rule.onNodeWithText("连接你的阅读世界").assertDoesNotExist()
