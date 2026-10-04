@@ -31,6 +31,25 @@ class SourceBrowserSessionV56DeviceTest {
         }
         return shown
     }
+    private fun renderedWindowHasBodyInk(): Boolean {
+        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            ?: return false
+        return try {
+            var bodyInk = 0
+            for (y in bitmap.height / 6 until bitmap.height * 5 / 6 step 3) {
+                for (x in bitmap.width / 20 until bitmap.width * 19 / 20 step 3) {
+                    val pixel = bitmap.getPixel(x, y)
+                    if (android.graphics.Color.red(pixel) < 190 &&
+                        android.graphics.Color.green(pixel) < 190 &&
+                        android.graphics.Color.blue(pixel) < 190
+                    ) bodyInk++
+                }
+            }
+            bodyInk > 80
+        } finally {
+            bitmap.recycle()
+        }
+    }
 
     @Test fun dynamicSourceBuildAndSavedSourceReadingKeepTheBrowserSession(): Unit = runBlocking {
         val sessionCookie = "session_${UUID.randomUUID().toString().replace("-", "")}"
@@ -538,6 +557,9 @@ class SourceBrowserSessionV56DeviceTest {
         rule.waitUntil(5_000) { !keyboardVisible() }
         rule.onNodeWithText("刚保存").assertIsDisplayed()
         rule.onNodeWithText(saved.name).assertIsDisplayed()
+        // Compose semantics and IME visibility can settle before SurfaceFlinger presents
+        // the replacement page. Preserve only a real window frame containing page ink.
+        rule.waitUntil(10_000) { renderedWindowHasBodyInk() }
         deviceWindowEvidenceV46("v74-ai-source-saved-management-focus")
         rule.onNodeWithText(saved.name).performClick()
 
