@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
@@ -55,5 +56,19 @@ class SourceFailurePresentationV69Test {
         assertTrue(blocked.contains("Fake-IP"))
         assertTrue(blocked.contains("尚未连接网站"))
         assertFalse(blocked.contains(SOURCE_DNS_LOOKUP_MESSAGE_V71))
+    }
+
+    @Test fun refusedConnectionUsesSafeActionableCopyWithoutEndpointDetails() {
+        val message = sourceFailureMessageV69(
+            IllegalStateException(
+                "outer transport wrapper",
+                ConnectException("Failed to connect to private.books.example/203.0.113.7:65535"),
+            ),
+        )
+        assertEquals(SOURCE_CONNECTION_MESSAGE_V72, message)
+        assertFalse(message.contains("private.books.example"))
+        assertFalse(message.contains("203.0.113.7"))
+        assertFalse(message.contains("65535"))
+        assertTrue(message.contains("重试"))
     }
 }
