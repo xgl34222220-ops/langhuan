@@ -16,6 +16,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
@@ -174,6 +175,30 @@ internal fun AiBookSourceScreenV50(
                                 if (browser) onStartWithBrowser(siteUrl, testBookName) else onStart(siteUrl, testBookName)
                             },
                         )
+                    }
+                }
+
+                state.aiSavedSourceName != null -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
+                        AiSourceMainButtonV50(
+                            icon = Icons.Rounded.Source,
+                            text = "返回书源管理查看",
+                            primary = true,
+                            enabled = true,
+                            onClick = onBack,
+                        )
+                        aiSourceStartActionsV67(state).forEach { action ->
+                            AiSourceMainButtonV50(
+                                icon = Icons.Rounded.AutoAwesome,
+                                text = action.label,
+                                primary = false,
+                                enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
+                                onClick = {
+                                    if (action.useBrowser) onStartWithBrowser(siteUrl, testBookName)
+                                    else onStart(siteUrl, testBookName)
+                                },
+                            )
+                        }
                     }
                 }
 
