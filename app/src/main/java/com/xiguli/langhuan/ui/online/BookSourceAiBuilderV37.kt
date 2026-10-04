@@ -88,7 +88,7 @@ internal class BookSourceAiBuilderV37(
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) {
-            val detail = error.message.orEmpty().ifBlank { "书源生成失败，请稍后重试" }.take(500)
+            val detail = sourceFailureMessageV69(error, "书源生成失败，请稍后重试").take(500)
             val last = steps.lastOrNull()
             if (last?.completed == true && last.ok == false && last.detail == detail) {
                 // fail() already published this exact failure.
@@ -120,7 +120,7 @@ internal class BookSourceAiBuilderV37(
                     }
                     fail("首页读取失败：${dns.message.orEmpty()}", trace)
                 }
-                fail("首页读取失败：${error.message.orEmpty().take(220)}")
+                fail("首页读取失败：${sourceFailureMessageV69(error)}")
             }
 
         // The typed domain may be only a legacy doorway. Use the final URL after redirects as the
@@ -145,7 +145,7 @@ internal class BookSourceAiBuilderV37(
         // 2. Search results
         step("分析搜索结果页")
         val searchDoc = sourceAttemptV36 { fetchAiDocumentV37(source, buildSearchRequestV36(source, keyword)) }
-            .getOrElse { fail("搜索请求失败：${it.message.orEmpty().take(80)}") }
+            .getOrElse { fail("搜索请求失败：${sourceFailureMessageV69(it)}") }
         var rules = askRules(SEARCH_TASK, searchDoc, keyword, feedback = null)
         source = source.withSearch(rules)
         var results = extractionAttemptV55 { searchAiSourceV37(source, keyword) }.getOrDefault(emptyList())
@@ -161,14 +161,14 @@ internal class BookSourceAiBuilderV37(
         // 3. Book page + table of contents
         step("分析书籍页与目录")
         val bookDoc = sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(picked.bookUrl)) }
-            .getOrElse { fail("书籍页打不开：${it.message.orEmpty().take(80)}") }
+            .getOrElse { fail("书籍页打不开：${sourceFailureMessageV69(it)}") }
         rules = askRules(TOC_TASK, bookDoc, picked.name, feedback = null)
         source = source.withToc(rules)
         var catalogueAttempt = extractionAttemptV55 { loadAiBookV37(source, picked) }
         if (catalogueAttempt.isFailure) {
             // Preserve the reason: a partial/latest-only catalogue is not an empty selector.
             network.checkActive()
-            val problem = catalogueAttempt.exceptionOrNull()?.message.orEmpty().take(240)
+            val problem = catalogueAttempt.exceptionOrNull()?.let { sourceFailureMessageV69(it) }.orEmpty()
             val tocPage = ruleStringV36(bookDoc, source.infoTocUrl).takeIf { it.isNotBlank() }
                 ?.let { sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(resolveUrlV36(bookDoc.location(), it))) }.getOrNull() }
             val evidence = tocPage ?: bookDoc
@@ -182,7 +182,7 @@ internal class BookSourceAiBuilderV37(
             source = source.withToc(rules, keepTocUrl = tocPage != null)
             catalogueAttempt = extractionAttemptV55 { loadAiBookV37(source, picked) }
         }
-        val catalogue = catalogueAttempt.getOrElse { fail("目录检查未通过：${it.message.orEmpty().take(260)}") }
+        val catalogue = catalogueAttempt.getOrElse { fail("目录检查未通过：${sourceFailureMessageV69(it)}") }
         val toc = catalogue.chapters
         if (toc.isEmpty()) fail("没能取到目录")
         finish(true, sourceCatalogueSummaryV50(toc.size, catalogue.proof))
@@ -191,7 +191,7 @@ internal class BookSourceAiBuilderV37(
         step("分析正文页")
         val first = toc.first()
         val chapterDoc = sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(first.url)) }
-            .getOrElse { fail("正文页打不开：${it.message.orEmpty().take(80)}") }
+            .getOrElse { fail("正文页打不开：${sourceFailureMessageV69(it)}") }
         val chapterHint = "《${catalogue.book.name}》 · ${first.title}"
         rules = askRules(CONTENT_TASK, chapterDoc, chapterHint, feedback = null)
         source = source.withContent(rules)
@@ -199,14 +199,14 @@ internal class BookSourceAiBuilderV37(
         var chapterAttempt = extractionAttemptV55 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
         if (!aiChapterSampleAcceptedV50(chapterAttempt.getOrNull())) {
             network.checkActive()
-            val problem = chapterAttempt.exceptionOrNull()?.message?.take(240)
+            val problem = chapterAttempt.exceptionOrNull()?.let { sourceFailureMessageV69(it) }
                 ?: "仅取到 ${chapterAttempt.getOrNull()?.text.orEmpty().length} 个字"
             rules = askRules(CONTENT_TASK, chapterDoc, chapterHint,
                 feedback = "上次规则 ${rules.compact()} 未通过正文检查：$problem。请核对当前书名、章节标题及正文容器，不要选择导航、目录、推荐、简介或其他文章，也不要仅按字数最多选择。")
             source = source.withContent(rules)
             chapterAttempt = extractionAttemptV55 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
         }
-        val chapter = chapterAttempt.getOrElse { fail("正文检查未通过：${it.message.orEmpty().take(260)}") }
+        val chapter = chapterAttempt.getOrElse { fail("正文检查未通过：${sourceFailureMessageV69(it)}") }
         val text = chapter.text
         if (!aiChapterSampleAcceptedV50(chapter)) fail("本次正文抽样不足 60 字且缺少书名或章名证据，暂未确认规则可用；可以换一章核对")
         finish(true, "抽样「${first.title}」${text.length} 字 · " +
@@ -257,7 +257,7 @@ internal class BookSourceAiBuilderV37(
             }
             val doc = pageAttempt.getOrNull()
             if (doc == null) {
-                warnings += "${link.label} · 页面读取失败：${pageAttempt.exceptionOrNull()?.message.orEmpty().take(100)}"
+                warnings += "${link.label} · 页面读取失败：${pageAttempt.exceptionOrNull()?.let { sourceFailureMessageV69(it) }.orEmpty()}"
                 continue
             }
             network.checkActive()
@@ -340,7 +340,7 @@ internal class BookSourceAiBuilderV37(
                 catalogue to content
             }
             if (reading.isFailure) {
-                warnings += "${link.label}：详情/目录/正文验证失败，未添加（${reading.exceptionOrNull()?.message.orEmpty().take(100)}）"
+                warnings += "${link.label}：详情/目录/正文验证失败，未添加（${reading.exceptionOrNull()?.let { sourceFailureMessageV69(it) }.orEmpty()}）"
                 continue
             }
             val (catalogue, content) = reading.getOrThrow()

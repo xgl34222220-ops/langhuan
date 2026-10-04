@@ -12,6 +12,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.net.SocketTimeoutException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import org.junit.Assert.*
@@ -108,6 +109,34 @@ class SourceSearchRecoveryV57DeviceTest {
             assertEquals(2, badCalls.get())
             assertEquals(2, vm.state.value.searchedSources)
             assertEquals(0, vm.state.value.failedSources)
+            assertTrue(vm.state.value.searchFailures.isEmpty())
+            rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
+        }
+    }
+
+    @Test fun slowSourceTimeoutIsExplainedAndRetryRecovers() {
+        val timingOut = AtomicBoolean(true)
+        val calls = AtomicInteger()
+        val slow = source("timeout", "慢速样例")
+        withScreen(listOf(slow), { request ->
+            check(request.url.contains("/v57/timeout?")) { "Unexpected reserved-domain fixture: ${request.url}" }
+            calls.incrementAndGet()
+            if (timingOut.get()) throw SocketTimeoutException("Read timed out: browser-fixture.example")
+            book("timeout", "原创慢源恢复结果")
+        }) { vm ->
+            rule.runOnUiThread { vm.search(keyword) }
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.failedSources == 1 }
+            assertEquals(SOURCE_TIMEOUT_MESSAGE_V69, vm.state.value.searchFailures.single().detail)
+            rule.onNodeWithText("慢速样例：", substring = true).performScrollTo().assertIsDisplayed()
+            rule.onNodeWithText(SOURCE_TIMEOUT_MESSAGE_V69, substring = true).assertIsDisplayed()
+            rule.onNodeWithText("Read timed out", substring = true).assertDoesNotExist()
+            deviceWindowEvidenceV46("v69-source-timeout-diagnostic")
+
+            timingOut.set(false)
+            retry()
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.results.size == 1 }
+            assertEquals(2, calls.get())
+            assertEquals("原创慢源恢复结果", vm.state.value.results.single().name)
             assertTrue(vm.state.value.searchFailures.isEmpty())
             rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
         }

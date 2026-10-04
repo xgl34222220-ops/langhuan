@@ -334,8 +334,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
                         val found = attempt.getOrDefault(emptyList())
                         val failure = attempt.exceptionOrNull()?.let { error -> OnlineSourceFailureV57(
                             source.id, source.name,
-                            error.message?.replace('\n', ' ')?.replace('\r', ' ')?.take(240)?.takeIf(String::isNotBlank)
-                                ?: "书源搜索失败，请检查网络或规则",
+                            sourceFailureMessageV69(error, "书源搜索失败，请检查网络或规则"),
                         ) }
                         currentCoroutineContext().ensureActive()
                         // Results stream in per source; exact title matches float to the top.

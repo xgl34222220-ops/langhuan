@@ -59,7 +59,8 @@ class AiRuleTransportV55Test {
     @Test fun uncachedSearchTimeoutMustNotBecomeSelectorCorrection() {
         val e = run(SocketTimeoutException("synthetic timeout"))
         assertEquals("Transport timeout must not consume a second model call",1,e.calls)
-        assertTrue(e.error!!.message!!.contains("timeout"))
+        assertTrue(e.error!!.message!!.contains(SOURCE_TIMEOUT_MESSAGE_V69))
+        assertFalse("Raw transport diagnostics must not leak into UI copy", e.error!!.message!!.contains("synthetic timeout"))
     }
     @Test fun uncachedSearchCancellationStillPropagates() {
         val e = run(CancellationException("synthetic cancel"))
@@ -104,7 +105,8 @@ class AiRuleTransportV55Test {
         assertEquals(if(content) 3 else 2,modelCalls)
         val failure = requireNotNull(result.exceptionOrNull())
         assertTrue(failure.message.orEmpty(),generateSequence(failure as Throwable) { it.cause }.take(12).any { it is java.io.IOException })
-        assertTrue(failure.message.orEmpty(),failure.message.orEmpty().contains(if(content) "synthetic content timeout" else "403"))
+        assertTrue(failure.message.orEmpty(),failure.message.orEmpty().contains(if(content) SOURCE_TIMEOUT_MESSAGE_V69 else "403"))
+        if (content) assertFalse(failure.message.orEmpty().contains("synthetic content timeout"))
     }
 
 }
