@@ -73,6 +73,7 @@ internal data class OnlineBooksStateV36(
     /** Mode of the last accepted attempt, retained so a terminal failure can retry consistently. */
     val aiLastUseBrowser: Boolean? = null,
     /** Last source confirmed written by the AI flow; cleared by the next attempt or explicit stop. */
+    val aiSavedSourceId: String? = null,
     val aiSavedSourceName: String? = null,
 )
 
@@ -86,6 +87,7 @@ internal fun aiSourceStartingStateV67(
     aiError = null,
     aiStopped = false,
     aiLastUseBrowser = useBrowser,
+    aiSavedSourceId = null,
     aiSavedSourceName = null,
 )
 
@@ -96,19 +98,21 @@ internal fun aiSourceStoppedStateV65(state: OnlineBooksStateV36): OnlineBooksSta
         aiReport = null,
         aiError = null,
         aiStopped = true,
+        aiSavedSourceId = null,
         aiSavedSourceName = null,
     )
 
 internal fun aiSourceSavedStateV68(
     state: OnlineBooksStateV36,
-    sourceName: String,
+    source: BookSourceV36,
 ): OnlineBooksStateV36 = state.copy(
     aiSteps = emptyList(),
     aiRunning = false,
     aiReport = null,
     aiError = null,
     aiStopped = false,
-    aiSavedSourceName = sourceName,
+    aiSavedSourceId = source.id,
+    aiSavedSourceName = source.name,
 )
 
 internal class OnlineBooksViewModelV36(application: Application) : AndroidViewModel(application) {
@@ -143,10 +147,10 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     // ---- AI-written sources ---------------------------------------------------------------------
 
     fun buildWithAi(siteUrl: String, keyword: String, useBrowser: Boolean = false) {
-        if (!sourceStorageReady()) { _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiSavedSourceName = null) }; return }
+        if (!sourceStorageReady()) { _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiSavedSourceId = null, aiSavedSourceName = null) }; return }
         if (aiJob?.isActive == true) return
         if (siteUrl.isBlank() || keyword.isBlank()) {
-            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false, aiSavedSourceName = null) }
+            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false, aiSavedSourceId = null, aiSavedSourceName = null) }
             return
         }
         val generation = aiGeneration.incrementAndGet()
@@ -193,7 +197,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
             _state.update { it.copy(aiError = it.sourceStorageError ?: it.error ?: "书源保存失败") }
             return false
         }
-        _state.update { aiSourceSavedStateV68(it, report.source.name) }
+        _state.update { aiSourceSavedStateV68(it, report.source) }
         return true
     }
 

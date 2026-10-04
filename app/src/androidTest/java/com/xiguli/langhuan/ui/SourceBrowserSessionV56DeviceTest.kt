@@ -407,7 +407,7 @@ class SourceBrowserSessionV56DeviceTest {
         rule.onNodeWithText("重试保存书源").assertIsEnabled().performClick()
         rule.runOnIdle {
             assertEquals(1, saves)
-            state.value = aiSourceSavedStateV68(state.value, report.source.name)
+            state.value = aiSourceSavedStateV68(state.value, report.source)
         }
 
         rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("书源已保存"))
@@ -421,11 +421,13 @@ class SourceBrowserSessionV56DeviceTest {
     @Test fun savedAiSourceOffersDirectManagementReturnWithoutRestartingWork() {
         val state = OnlineBooksStateV36(
             aiProviderLabel = "合成测试模型",
+            aiSavedSourceId = "discoverable-source",
             aiSavedSourceName = "可发现合成书源",
         )
         var backs = 0
         var cancellations = 0
         val starts = mutableListOf<Boolean>()
+        val openedSavedSources = mutableListOf<String>()
         rule.setContent {
             AiBookSourceScreenV50(
                 state = state,
@@ -439,6 +441,7 @@ class SourceBrowserSessionV56DeviceTest {
                 onStartWithBrowser = { _, _ -> starts += true },
                 onCancel = { cancellations++ },
                 onSave = {},
+                onOpenSavedSource = { openedSavedSources += it },
             )
         }
 
@@ -450,7 +453,85 @@ class SourceBrowserSessionV56DeviceTest {
         rule.onNodeWithText("返回书源管理查看").performClick()
 
         rule.runOnIdle {
-            assertEquals(1, backs)
+            assertEquals(0, backs)
+            assertEquals(0, cancellations)
+            assertTrue(starts.isEmpty())
+            assertEquals(listOf("discoverable-source"), openedSavedSources)
+        }
+    }
+
+    @Test fun savedAiSourceReturnPinsTheExactStoredIdentityInManagement() {
+        val saved = BookSourceV36(
+            id = "saved-source-v74",
+            name = "枝上新月书源",
+            baseUrl = "https://saved.example.invalid",
+            group = "综合",
+        )
+        val existing = BookSourceV36(
+            id = "existing-source-v74",
+            name = "旧书源",
+            baseUrl = "https://existing.example.invalid",
+            group = "综合",
+        )
+        val page = androidx.compose.runtime.mutableStateOf("manage")
+        val focusId = androidx.compose.runtime.mutableStateOf<String?>(null)
+        val opened = mutableListOf<String>()
+        var cancellations = 0
+        val starts = mutableListOf<Boolean>()
+        val aiState = OnlineBooksStateV36(
+            aiProviderLabel = "合成测试模型",
+            aiSavedSourceId = saved.id,
+            aiSavedSourceName = saved.name,
+        )
+
+        rule.setContent {
+            when (page.value) {
+                "ai" -> AiBookSourceScreenV50(
+                    state = aiState,
+                    siteUrl = base,
+                    testBookName = "原创小说",
+                    onBack = { page.value = "manage" },
+                    onSiteUrlChange = {},
+                    onTestBookNameChange = {},
+                    onConfigureAi = {},
+                    onStart = { _, _ -> starts += false },
+                    onStartWithBrowser = { _, _ -> starts += true },
+                    onCancel = { cancellations++ },
+                    onSave = {},
+                    onOpenSavedSource = {
+                        focusId.value = it
+                        page.value = "manage"
+                    },
+                )
+
+                else -> BookSourceManageScreenV50(
+                    sources = listOf(existing, saved),
+                    focusSourceId = focusId.value,
+                    onBack = {},
+                    onOpenSource = { opened += it.id },
+                    onToggleSource = {},
+                    onImportSource = {},
+                    onAiGenerateSource = { page.value = "ai" },
+                )
+            }
+        }
+
+        rule.onNode(hasSetTextAction()).performTextInput(existing.name)
+        rule.onNodeWithText(saved.name).assertDoesNotExist()
+        rule.onNodeWithText("AI 生成书源").performClick()
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("返回书源管理查看"))
+        rule.onNodeWithText("返回书源管理查看").performClick()
+
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText(saved.name).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithText("刚保存").assertIsDisplayed()
+        rule.onNodeWithText(saved.name).assertIsDisplayed()
+        deviceWindowEvidenceV46("v74-ai-source-saved-management-focus")
+        rule.onNodeWithText(saved.name).performClick()
+
+        rule.runOnIdle {
+            assertEquals(listOf(saved.id), opened)
             assertEquals(0, cancellations)
             assertTrue(starts.isEmpty())
         }

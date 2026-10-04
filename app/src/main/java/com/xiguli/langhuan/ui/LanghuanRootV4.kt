@@ -567,6 +567,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     val recentSearches = remember { mutableStateListOf<String>() }
                     var aiSiteUrl by rememberSaveable { mutableStateOf("") }
                     var aiTestBook by rememberSaveable { mutableStateOf("") }
+                    var sourceManageFocusId by rememberSaveable { mutableStateOf<String?>(null) }
                     var importDialogOpen by remember { mutableStateOf(false) }
                     var importText by remember { mutableStateOf("") }
                     val clipboard = LocalClipboardManager.current
@@ -700,11 +701,21 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                             BookSourceManageScreenV50(
                                 sources = onlineState.sources,
                                 sourceStorageError = onlineState.sourceStorageError,
-                                onBack = { onlineSub = "main" },
-                                onOpenSource = { browseSourceId = it.id },
+                                focusSourceId = sourceManageFocusId,
+                                onBack = {
+                                    sourceManageFocusId = null
+                                    onlineSub = "main"
+                                },
+                                onOpenSource = {
+                                    sourceManageFocusId = null
+                                    browseSourceId = it.id
+                                },
                                 onToggleSource = onlineVm::toggleSource,
                                 onImportSource = { importDialogOpen = true },
-                                onAiGenerateSource = { onlineSub = "ai" },
+                                onAiGenerateSource = {
+                                    sourceManageFocusId = null
+                                    onlineSub = "ai"
+                                },
                             )
                         }
                         onlineSub == "ai" -> {
@@ -712,7 +723,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 state = onlineState,
                                 siteUrl = aiSiteUrl,
                                 testBookName = aiTestBook,
-                                onBack = { onlineSub = "manage" },
+                                onBack = {
+                                    sourceManageFocusId = null
+                                    onlineSub = "manage"
+                                },
                                 onSiteUrlChange = { aiSiteUrl = it },
                                 onTestBookNameChange = { aiTestBook = it },
                                 onConfigureAi = { openAiSetup(RootRouteV4.ONLINE) },
@@ -720,6 +734,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 onStartWithBrowser = { url, keyword -> onlineVm.buildWithAi(url, keyword, useBrowser = true) },
                                 onCancel = onlineVm::cancelAi,
                                 onSave = { onlineVm.saveAiSource() },
+                                onOpenSavedSource = { sourceId ->
+                                    sourceManageFocusId = sourceId
+                                    onlineSub = "manage"
+                                },
                             )
                         }
                         else -> {

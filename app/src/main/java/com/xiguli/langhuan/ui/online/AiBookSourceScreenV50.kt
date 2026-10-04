@@ -41,7 +41,7 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
  *
  * AI 执行状态直接复用 OnlineBooksStateV36：
  * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError / aiStopped / aiLastUseBrowser /
- * aiSavedSourceName。
+ * aiSavedSourceId / aiSavedSourceName。
  *
  * 真正生成由 OnlineBooksViewModelV36.buildWithAi() 完成。
  */
@@ -59,6 +59,7 @@ internal fun AiBookSourceScreenV50(
     onStartWithBrowser: (String, String) -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
+    onOpenSavedSource: (String) -> Unit = { onBack() },
 ) {
     val t = LocalLanghuanUiTokens.current
     val editable = !state.aiRunning && state.aiReport == null
@@ -185,7 +186,9 @@ internal fun AiBookSourceScreenV50(
                             text = "返回书源管理查看",
                             primary = true,
                             enabled = true,
-                            onClick = onBack,
+                            onClick = {
+                                state.aiSavedSourceId?.let(onOpenSavedSource) ?: onBack()
+                            },
                         )
                         aiSourceStartActionsV67(state).forEach { action ->
                             AiSourceMainButtonV50(

@@ -17,9 +17,10 @@ class AiSourceSaveRecoveryV68Test {
                 aiError = "书源保存失败",
                 aiStopped = true,
             ),
-            report.source.name,
+            report.source,
         )
 
+        assertEquals("save-recovery", saved.aiSavedSourceId)
         assertEquals("合成恢复书源", saved.aiSavedSourceName)
         assertNull(saved.aiReport)
         assertNull(saved.aiError)
