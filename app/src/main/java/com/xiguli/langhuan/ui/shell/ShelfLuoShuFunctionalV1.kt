@@ -114,6 +114,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -130,6 +131,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -188,7 +190,7 @@ fun ShelfLuoShuFunctionalV1(
     var editingBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var nickname by rememberSaveable { mutableStateOf(prefs.getString("nickname", "游客") ?: "游客") }
     var syncEnabled by rememberSaveable { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
-    var shelfRevision by rememberSaveable { mutableStateOf(0) }
+    var shelfRevision by rememberSaveable { mutableIntStateOf(0) }
     val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
     var checkedIn by rememberSaveable { mutableStateOf(prefs.getString("checkin_date", "") == today) }
     val customShelves = remember(shelfRevision) {
@@ -485,7 +487,12 @@ private fun LuoFloatingDockV1(screen: LuoShelfScreenV1, onSelect: (LuoShelfScree
             val pillX by animateDpAsState((slot + gap) * activeIndex, LanghuanMotionV31.settle(), label = "dockPill")
             Box(
                 Modifier
-                    .offset(x = pillX + (slot - indicatorWidth) / 2, y = 5.dp)
+                    .offset {
+                        IntOffset(
+                            x = (pillX + (slot - indicatorWidth) / 2).roundToPx(),
+                            y = 5.dp.roundToPx(),
+                        )
+                    }
                     .width(indicatorWidth)
                     .height(54.dp)
                     .clip(RoundedCornerShape(15.dp))
