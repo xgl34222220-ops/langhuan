@@ -39,7 +39,7 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
  * AI 生成书源 V50。
  *
  * AI 执行状态直接复用 OnlineBooksStateV36：
- * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError / aiStopped。
+ * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError / aiStopped / aiLastUseBrowser。
  *
  * 真正生成由 OnlineBooksViewModelV36.buildWithAi() 完成。
  */
@@ -176,20 +176,18 @@ internal fun AiBookSourceScreenV50(
 
                 else -> {
                     Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
-                        AiSourceMainButtonV50(
-                            icon = Icons.Rounded.AutoAwesome,
-                            text = "开始生成",
-                            primary = true,
-                            enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
-                            onClick = { onStart(siteUrl, testBookName) },
-                        )
-                        AiSourceMainButtonV50(
-                            icon = Icons.Rounded.AutoAwesome,
-                            text = "浏览器模式生成",
-                            primary = false,
-                            enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
-                            onClick = { onStartWithBrowser(siteUrl, testBookName) },
-                        )
+                        aiSourceStartActionsV67(state).forEachIndexed { index, action ->
+                            AiSourceMainButtonV50(
+                                icon = Icons.Rounded.AutoAwesome,
+                                text = action.label,
+                                primary = index == 0,
+                                enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
+                                onClick = {
+                                    if (action.useBrowser) onStartWithBrowser(siteUrl, testBookName)
+                                    else onStart(siteUrl, testBookName)
+                                },
+                            )
+                        }
                         Text(
                             "网站需要网页验证或动态加载时，可使用浏览器模式；验证通过后自动继续。",
                             style = MaterialTheme.typography.bodySmall,
@@ -201,6 +199,30 @@ internal fun AiBookSourceScreenV50(
         }
     }
 }
+
+internal data class AiSourceStartActionV67(
+    val label: String,
+    val useBrowser: Boolean,
+)
+
+/** Keeps the failed attempt's transport as the primary retry without hiding the other mode. */
+internal fun aiSourceStartActionsV67(state: OnlineBooksStateV36): List<AiSourceStartActionV67> =
+    when {
+        state.aiError.isNullOrBlank() || state.aiLastUseBrowser == null -> listOf(
+            AiSourceStartActionV67("开始生成", useBrowser = false),
+            AiSourceStartActionV67("浏览器模式生成", useBrowser = true),
+        )
+
+        state.aiLastUseBrowser == true -> listOf(
+            AiSourceStartActionV67("重试浏览器模式", useBrowser = true),
+            AiSourceStartActionV67("改用普通模式", useBrowser = false),
+        )
+
+        else -> listOf(
+            AiSourceStartActionV67("重试普通模式", useBrowser = false),
+            AiSourceStartActionV67("改用浏览器模式", useBrowser = true),
+        )
+    }
 
 
 @Composable

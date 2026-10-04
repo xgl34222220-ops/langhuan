@@ -325,4 +325,49 @@ class SourceBrowserSessionV56DeviceTest {
         }
     }
 
+    @Test fun failedAiGenerationRetriesItsBrowserModeFirstAndStillOffersNormalMode() {
+        val starts = mutableListOf<Boolean>()
+        val state = androidx.compose.runtime.mutableStateOf(
+            OnlineBooksStateV36(
+                aiProviderLabel = "合成测试模型",
+                aiError = "动态正文验证失败",
+                aiLastUseBrowser = true,
+            ),
+        )
+        rule.setContent {
+            AiBookSourceScreenV50(
+                state = state.value,
+                siteUrl = base,
+                testBookName = "原创小说",
+                onBack = {},
+                onSiteUrlChange = {},
+                onTestBookNameChange = {},
+                onConfigureAi = {},
+                onStart = { _, _ -> starts += false },
+                onStartWithBrowser = { _, _ -> starts += true },
+                onCancel = {},
+                onSave = {},
+            )
+        }
+
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("重试浏览器模式"))
+        rule.onNodeWithText("动态正文验证失败").assertIsDisplayed()
+        rule.onNodeWithText("重试浏览器模式").assertIsEnabled().performClick()
+        rule.onNodeWithText("改用普通模式").assertIsEnabled().performClick()
+        rule.runOnIdle { assertEquals(listOf(true, false), starts) }
+
+        rule.runOnIdle {
+            starts.clear()
+            state.value = state.value.copy(
+                aiError = "目录规则验证失败",
+                aiLastUseBrowser = false,
+            )
+        }
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("重试普通模式"))
+        rule.onNodeWithText("目录规则验证失败").assertIsDisplayed()
+        rule.onNodeWithText("重试普通模式").assertIsEnabled().performClick()
+        rule.onNodeWithText("改用浏览器模式").assertIsEnabled().performClick()
+        rule.runOnIdle { assertEquals(listOf(false, true), starts) }
+    }
+
 }

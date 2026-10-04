@@ -70,6 +70,20 @@ internal data class OnlineBooksStateV36(
     val aiReport: AiSourceReportV37? = null,
     val aiError: String? = null,
     val aiStopped: Boolean = false,
+    /** Mode of the last accepted attempt, retained so a terminal failure can retry consistently. */
+    val aiLastUseBrowser: Boolean? = null,
+)
+
+internal fun aiSourceStartingStateV67(
+    state: OnlineBooksStateV36,
+    useBrowser: Boolean,
+): OnlineBooksStateV36 = state.copy(
+    aiSteps = emptyList(),
+    aiRunning = true,
+    aiReport = null,
+    aiError = null,
+    aiStopped = false,
+    aiLastUseBrowser = useBrowser,
 )
 
 internal fun aiSourceStoppedStateV65(state: OnlineBooksStateV36): OnlineBooksStateV36 =
@@ -120,7 +134,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
             return
         }
         val generation = aiGeneration.incrementAndGet()
-        _state.update { it.copy(aiSteps = emptyList(), aiRunning = true, aiReport = null, aiError = null, aiStopped = false) }
+        _state.update { aiSourceStartingStateV67(it, useBrowser) }
         aiJob = viewModelScope.launch {
             try {
                 val config = activeProviderId?.let { repository.providerConfig(it) }
