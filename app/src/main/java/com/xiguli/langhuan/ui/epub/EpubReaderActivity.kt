@@ -1206,7 +1206,6 @@ class EpubReaderActivity : FragmentActivity() {
             supportFragmentManager.beginTransaction().remove(retired).commitNowAllowingStateLoss()
             true
         }.getOrElse {
-            android.util.Log.w("EpubReader", "Deferring retired Navigator disposal", it)
             window.decorView.post {
                 if (!supportFragmentManager.isDestroyed && retired.isAdded) {
                     supportFragmentManager.beginTransaction().remove(retired).commitNowAllowingStateLoss()

@@ -223,6 +223,12 @@ class EpubOriginalReaderDeviceTest {
             assertArrayEquals("Renderer recovery changed the original EPUB bytes", original, requireNotNull(store.original(id)).readBytes())
             assertEquals("Original/text bookmarks and text-reader settings changed", readerData, context.getSharedPreferences("reader_qingmo_v9", 0).all)
             assertEquals(appPid, android.os.Process.myPid())
+            // Loaded SDK state can precede the Compose frame which removes the overlay.
+            // A recovery screenshot must show the page, not the preceding loading frame.
+            compose.waitForIdle()
+            compose.onNodeWithText("正在打开 EPUB 原版…").assertDoesNotExist()
+            compose.onNodeWithText("正在恢复原版阅读位置…").assertDoesNotExist()
+            compose.onNodeWithText("重新打开原版").assertDoesNotExist()
             instrumentation.uiAutomation.waitForIdle(300, 5_000)
             deviceWindowEvidenceV46("v60-${if (reflow) "reflow" else "fixed"}-renderer-restored")
             val proof = JSONObject().put("fixture", file).put("realRendererTerminated", true)
@@ -233,6 +239,9 @@ class EpubOriginalReaderDeviceTest {
                 .apply { parentFile!!.mkdirs() }.writeText(proof.toString(2))
             scenario.onActivity { nav(it).go(requireNotNull(Locator.fromJSON(JSONObject("""{"href":"OPS/one.xhtml","type":"application/xhtml+xml","locations":{"progression":0.0}}"""))), animated = false) }
             waitForArt(scenario)
+            compose.waitForIdle()
+            instrumentation.uiAutomation.waitForIdle(300, 5_000)
+            deviceWindowEvidenceV46("v60-${if (reflow) "reflow" else "fixed"}-renderer-artwork")
         }
     }
 

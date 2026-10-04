@@ -31,6 +31,18 @@
 
 本批预期完整 Reader 148（上一批 146 全保留）、预检 18、编辑保存 2、创作 11，Browser 完整 16，JVM 714；Debug/lint、EPUB 和浏览器实际 force-stop 两阶段仍必须重新执行。新增预检不替代未筛选完整组。实际 CI、原 XML/HTML、两阶段证明、截图及 artifact 校验以本批新提交在 PR #104 的结果为准，未运行前不记为通过。
 
+### 第五批首次运行与必要修正（2026-10-04）
+
+首个提交 `9fac1392ccb205d49ac7e0b5a79e05b40daca29d` 的 [Reader 37173703203](https://github.com/xgl34222220-ops/langhuan/actions/runs/37173703203) 未完整验收。预检 18、编辑保存 2、创作 11 全部零失败/零跳过，两个新增真实渲染退出用例在预检和完整组均通过；但未筛选完整组接近尾部于 03:40:54 UTC 报 `device offline`，作业失败，随后独立 EPUB force-stop 恢复步骤没有执行。
+
+原 XML 只有 146 条记录，其中 `com.xiguli.langhuan.ui.SourceSearchRecoveryV57DeviceTest#allSourceErrorsAndASuccessfulEmptySearchHaveDifferentVisibleOutcomes` 是没有断言信息的空 `<failure/>`。上一批的 `com.xiguli.langhuan.ui.SourceSearchRecoveryV57DeviceTest#aFailedSourceIsNamedAndRetryKeepsSuccessWithoutRefetchingIt` 和 `com.xiguli.langhuan.ui.SourceStorageUiV48DeviceTest#corruptSourcesShowProtectedStateAndKeepRawExportAvailable` 未留下执行记录，不能视为通过。已拉取日志未找到应用 FATAL/AndroidRuntime 堆栈，末尾可见 Chromium tile memory 警告；主机可用内存约 9.7 GiB、主机 OOM 日志为空。这些信息不能证明设备断连根因，更不能以环境失败排除应用问题。保留 artifact 11292816706（57,476,509 字节），SHA-256 `79c4226d4d55b97e680186de65bbbddfea4a370dee6c17533d0201ef5e4b7258`，后续完整运行必须覆盖所有 148 项及两阶段恢复。
+
+同提交 [Browser 37173703166](https://github.com/xgl34222220-ops/langhuan/actions/runs/37173703166) 的完整 16 项和真实不同 PID/Cookie/DOM 恢复通过，16 个完整类名/方法名与第四批相同；artifact 11292158747，SHA-256 `f66a56640d6dc2336f7bec8850deb8cbb217559bd6565545c3465a8f0f78d7e1`。[Android 37173703159](https://github.com/xgl34222220-ops/langhuan/actions/runs/37173703159) 的 JVM 714、Debug、lint 通过（0 错误/197 警告/5 提示）；artifact 11292880268，SHA-256 `599ccc240f619523f138506f969e05f96c409256a4ae344a818591597ba757c5`。Gradle 9 的逐项 HTML 位于各类的子目录；实际逐一解析后，714 个完整类名/方法名与 f52c04d 和第四批完全一致。以上通过只属于 9fac1392，不能替代修正提交的重新验收。
+
+首次 lint 的 `MissingOnRenderProcessGone` 从 4 降至 3，但新增一条 `LogNotTimber`，总数仍为 197。修正只移除新加的无必要开发日志，用户可见错误、持久化保护及 SDK 清理逻辑保持。不增加日志依赖、不抑制告警；新 lint 数量以新 CI 原 XML 为准。Android CI 在既有 HTML/lint 报告之外归档原始 JVM JUnit XML，便于与完整类名/方法名交叉核验，测试命令和通过门槛保持不变。
+
+首次两张 `renderer-restored.png` 捕获的是前一帧加载覆盖层，不能用作恢复后页面可见的视觉证据。Locator、文件及安全断言和之后四种实际插画颜色均通过，但本次修正进一步等待 Compose 消费加载状态，要求加载/故障覆盖层不存在后再截恢复页；回到原插画页并通过四种实际颜色后另存 `renderer-artwork.png`。继续使用真实窗口截屏，不替换图片，不放宽原断言。修正提交必须重新执行所有完整验收，最终结果记在 PR #104。
+
 ## 参考源码、文档、许可证
 
 独立实现宿主状态与持久化保护，不移植同类项目的规则解释器或桥接，不更换既定 V3 界面及原版排版。
