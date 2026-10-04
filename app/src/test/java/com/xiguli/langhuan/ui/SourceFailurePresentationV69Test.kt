@@ -1,6 +1,7 @@
 package com.xiguli.langhuan.ui
 
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.security.cert.CertificateException
 import javax.net.ssl.SSLHandshakeException
 import org.junit.Assert.assertEquals
@@ -32,5 +33,27 @@ class SourceFailurePresentationV69Test {
         assertFalse(message.contains("private.books.example"))
         assertFalse(message.contains("Trust anchor"))
         assertFalse(message.contains("忽略"))
+    }
+
+    @Test fun ordinaryDnsFailureIsSafeButAnApplicationBlockKeepsItsSpecificReason() {
+        val lookup = sourceFailureMessageV69(
+            IllegalStateException(
+                "outer transport wrapper",
+                UnknownHostException("Unable to resolve host private.books.example: No address associated with hostname"),
+            ),
+        )
+        assertEquals(SOURCE_DNS_LOOKUP_MESSAGE_V71, lookup)
+        assertFalse(lookup.contains("private.books.example"))
+
+        val blocked = sourceFailureMessageV69(
+            IllegalStateException(
+                "outer transport wrapper",
+                SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE, "books.example"),
+            ),
+        )
+        assertTrue(blocked.contains("books.example"))
+        assertTrue(blocked.contains("Fake-IP"))
+        assertTrue(blocked.contains("尚未连接网站"))
+        assertFalse(blocked.contains(SOURCE_DNS_LOOKUP_MESSAGE_V71))
     }
 }

@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.security.cert.CertificateException
 import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.Job
@@ -173,6 +174,39 @@ class SourceSearchRecoveryV57DeviceTest {
             rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.results.size == 1 }
             assertEquals(2, calls.get())
             assertEquals("原创安全连接恢复结果", vm.state.value.results.single().name)
+            assertTrue(vm.state.value.searchFailures.isEmpty())
+            rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
+        }
+    }
+
+    @Test fun dnsLookupFailureIsExplainedWithoutHostnameAndRetryRecovers() {
+        val failingDns = AtomicBoolean(true)
+        val calls = AtomicInteger()
+        val unresolved = source("dns", "域名解析样例")
+        withScreen(listOf(unresolved), { request ->
+            check(request.url.contains("/v57/dns?")) { "Unexpected reserved-domain fixture: ${request.url}" }
+            calls.incrementAndGet()
+            if (failingDns.get()) {
+                throw UnknownHostException(
+                    "Unable to resolve host private.browser-fixture.example: No address associated with hostname",
+                )
+            }
+            book("dns", "原创域名恢复结果")
+        }) { vm ->
+            rule.runOnUiThread { vm.search(keyword) }
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.failedSources == 1 }
+            assertEquals(SOURCE_DNS_LOOKUP_MESSAGE_V71, vm.state.value.searchFailures.single().reason)
+            rule.onNodeWithText("域名解析样例：", substring = true).performScrollTo().assertIsDisplayed()
+            rule.onNodeWithText(SOURCE_DNS_LOOKUP_MESSAGE_V71, substring = true).assertIsDisplayed()
+            rule.onNodeWithText("private.browser-fixture.example", substring = true).assertDoesNotExist()
+            rule.onNodeWithText("No address associated", substring = true).assertDoesNotExist()
+            deviceWindowEvidenceV46("v71-source-dns-diagnostic")
+
+            failingDns.set(false)
+            retry()
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.results.size == 1 }
+            assertEquals(2, calls.get())
+            assertEquals("原创域名恢复结果", vm.state.value.results.single().name)
             assertTrue(vm.state.value.searchFailures.isEmpty())
             rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
         }

@@ -6,6 +6,7 @@ import com.xiguli.langhuan.engine.PromptBundle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
 import org.jsoup.Jsoup
 import org.junit.Assert.*
@@ -69,6 +70,13 @@ class AiRuleTransportV55Test {
         assertEquals("TLS validation failure must not consume a second model call",1,e.calls)
         assertTrue(failure.message!!.contains(SOURCE_TLS_MESSAGE_V70))
         assertFalse("Certificate details must not leak into UI copy", failure.message!!.contains("private.books.example"))
+    }
+    @Test fun uncachedSearchDnsFailureMustNotBecomeSelectorCorrection() {
+        val e = run(UnknownHostException("Unable to resolve host private.books.example"))
+        val failure = requireNotNull(e.error)
+        assertEquals("DNS lookup failure must not consume a second model call",1,e.calls)
+        assertTrue(failure.message!!.contains(SOURCE_DNS_LOOKUP_MESSAGE_V71))
+        assertFalse("Resolved host details must not leak into UI copy", failure.message!!.contains("private.books.example"))
     }
     @Test fun uncachedSearchCancellationStillPropagates() {
         val e = run(CancellationException("synthetic cancel"))
