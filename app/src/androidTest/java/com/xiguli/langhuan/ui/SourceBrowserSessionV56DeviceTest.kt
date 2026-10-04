@@ -418,4 +418,42 @@ class SourceBrowserSessionV56DeviceTest {
         rule.onNodeWithText("浏览器模式生成").assertIsEnabled()
     }
 
+    @Test fun savedAiSourceOffersDirectManagementReturnWithoutRestartingWork() {
+        val state = OnlineBooksStateV36(
+            aiProviderLabel = "合成测试模型",
+            aiSavedSourceName = "可发现合成书源",
+        )
+        var backs = 0
+        var cancellations = 0
+        val starts = mutableListOf<Boolean>()
+        rule.setContent {
+            AiBookSourceScreenV50(
+                state = state,
+                siteUrl = base,
+                testBookName = "原创小说",
+                onBack = { backs++ },
+                onSiteUrlChange = {},
+                onTestBookNameChange = {},
+                onConfigureAi = {},
+                onStart = { _, _ -> starts += false },
+                onStartWithBrowser = { _, _ -> starts += true },
+                onCancel = { cancellations++ },
+                onSave = {},
+            )
+        }
+
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("返回书源管理查看"))
+        rule.onNodeWithText("书源已保存").assertIsDisplayed()
+        rule.onNodeWithText("“可发现合成书源”已写入书源管理，可继续生成或返回使用。").assertIsDisplayed()
+        rule.onNodeWithText("返回书源管理查看").assertIsEnabled()
+        deviceWindowEvidenceV46("v73-ai-source-saved-management")
+        rule.onNodeWithText("返回书源管理查看").performClick()
+
+        rule.runOnIdle {
+            assertEquals(1, backs)
+            assertEquals(0, cancellations)
+            assertTrue(starts.isEmpty())
+        }
+    }
+
 }
