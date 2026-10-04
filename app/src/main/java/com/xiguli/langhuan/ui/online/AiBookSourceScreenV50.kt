@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,6 +61,12 @@ internal fun AiBookSourceScreenV50(
     val t = LocalLanghuanUiTokens.current
     val editable = !state.aiRunning && state.aiReport == null
 
+    val leaveScreen = {
+        if (state.aiRunning) onCancel()
+        onBack()
+    }
+    BackHandler(onBack = leaveScreen)
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -75,7 +82,7 @@ internal fun AiBookSourceScreenV50(
         verticalArrangement = Arrangement.spacedBy(t.space4),
     ) {
         item("ai-source-header") {
-            AiSourceHeaderV50(onBack = onBack)
+            AiSourceHeaderV50(onBack = leaveScreen)
         }
 
         item("ai-source-inputs") {

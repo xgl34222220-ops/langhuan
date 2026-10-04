@@ -271,4 +271,56 @@ class SourceBrowserSessionV56DeviceTest {
         assertEquals(1, cancellations)
     }
 
+    @Test fun leavingActiveAiGenerationCancelsBeforeHeaderAndSystemBack() {
+        val state = androidx.compose.runtime.mutableStateOf(
+            OnlineBooksStateV36(aiProviderLabel = "合成测试模型", aiRunning = true),
+        )
+        val events = mutableListOf<String>()
+        rule.setContent {
+            AiBookSourceScreenV50(
+                state = state.value,
+                siteUrl = base,
+                testBookName = "原创小说",
+                onBack = { events += "back" },
+                onSiteUrlChange = {},
+                onTestBookNameChange = {},
+                onConfigureAi = {},
+                onStart = { _, _ -> },
+                onStartWithBrowser = { _, _ -> },
+                onCancel = { events += "cancel" },
+                onSave = {},
+            )
+        }
+
+        rule.onNodeWithContentDescription("返回").performClick()
+        rule.runOnIdle {
+            assertEquals(listOf("cancel", "back"), events)
+            events.clear()
+        }
+        rule.onNodeWithText(base, useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("原创小说", useUnmergedTree = true).assertExists()
+
+        assertTrue(
+            InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(
+                android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK,
+            ),
+        )
+        rule.waitUntil { events.size == 2 }
+        rule.runOnIdle {
+            assertEquals(listOf("cancel", "back"), events)
+            events.clear()
+            state.value = state.value.copy(aiRunning = false, aiStopped = true)
+        }
+
+        assertTrue(
+            InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(
+                android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK,
+            ),
+        )
+        rule.waitUntil { events.size == 1 }
+        rule.runOnIdle {
+            assertEquals(listOf("back"), events)
+        }
+    }
+
 }
