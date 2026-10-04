@@ -52,7 +52,7 @@ class AiDiscoveryJourneyV43Test {
         }
         return Jsoup.parse(html, request.url)
     }
-    private suspend fun build() = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it) }, ::fetch).build(base, "示例小说1")
+    private suspend fun build() = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it) }, fetchDocument = ::fetch).build(base, "示例小说1")
 
     @Test fun generatedCategoriesAndRanksVerifyPagingAndTheFullReadingJourney() = runBlocking {
         val report = build()

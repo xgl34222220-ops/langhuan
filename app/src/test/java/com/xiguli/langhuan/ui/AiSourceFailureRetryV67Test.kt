@@ -15,6 +15,7 @@ class AiSourceFailureRetryV67Test {
                 aiSteps = listOf(AiSourceStepV37("旧步骤", completed = true)),
                 aiError = "旧错误",
                 aiStopped = true,
+                aiCanResumeValidatedRules = true,
             ),
             useBrowser = true,
         )
@@ -25,6 +26,7 @@ class AiSourceFailureRetryV67Test {
         assertNull(started.aiReport)
         assertNull(started.aiError)
         assertFalse(started.aiStopped)
+        assertFalse(started.aiCanResumeValidatedRules)
         assertEquals("保留的搜索", started.query)
     }
 
@@ -56,6 +58,17 @@ class AiSourceFailureRetryV67Test {
         assertEquals("开始生成", initial.first().label)
         assertEquals("浏览器模式生成", initial.last().label)
 
+        val checkpoint = aiSourceStartActionsV67(
+            OnlineBooksStateV36(
+                aiError = "正文验证失败",
+                aiLastUseBrowser = true,
+                aiCanResumeValidatedRules = true,
+            ),
+        )
+        assertEquals("保留已通过规则重试（浏览器）", checkpoint.first().label)
+        assertEquals(true, checkpoint.first().useBrowser)
+        assertEquals("改用普通模式", checkpoint.last().label)
+
         val stopped = aiSourceStartActionsV67(
             aiSourceStoppedStateV65(
                 OnlineBooksStateV36(aiLastUseBrowser = true, aiRunning = true),
@@ -63,5 +76,6 @@ class AiSourceFailureRetryV67Test {
         )
         assertEquals("开始生成", stopped.first().label)
         assertEquals("浏览器模式生成", stopped.last().label)
+        assertFalse(aiSourceStoppedStateV65(OnlineBooksStateV36(aiCanResumeValidatedRules = true)).aiCanResumeValidatedRules)
     }
 }

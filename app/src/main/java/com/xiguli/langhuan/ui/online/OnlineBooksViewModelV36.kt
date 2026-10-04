@@ -73,6 +73,8 @@ internal data class OnlineBooksStateV36(
     val aiStopped: Boolean = false,
     /** Mode of the last accepted attempt, retained so a terminal failure can retry consistently. */
     val aiLastUseBrowser: Boolean? = null,
+    /** Same-input retry can reuse rules which already passed live extraction. */
+    val aiCanResumeValidatedRules: Boolean = false,
     /** Last source confirmed written by the AI flow; cleared by the next attempt or explicit stop. */
     val aiSavedSourceId: String? = null,
     val aiSavedSourceName: String? = null,
@@ -109,6 +111,7 @@ internal fun aiSourceStartingStateV67(
     aiError = null,
     aiStopped = false,
     aiLastUseBrowser = useBrowser,
+    aiCanResumeValidatedRules = false,
     aiSavedSourceId = null,
     aiSavedSourceName = null,
 )
@@ -120,6 +123,7 @@ internal fun aiSourceStoppedStateV65(state: OnlineBooksStateV36): OnlineBooksSta
         aiReport = null,
         aiError = null,
         aiStopped = true,
+        aiCanResumeValidatedRules = false,
         aiSavedSourceId = null,
         aiSavedSourceName = null,
     )
@@ -133,6 +137,7 @@ internal fun aiSourceSavedStateV68(
     aiReport = null,
     aiError = null,
     aiStopped = false,
+    aiCanResumeValidatedRules = false,
     aiSavedSourceId = source.id,
     aiSavedSourceName = source.name,
 )
@@ -163,6 +168,9 @@ internal class OnlineBooksViewModelV36(
     private var detailJob: Job? = null
     private val detailGeneration = java.util.concurrent.atomic.AtomicLong()
     private var aiJob: Job? = null
+    private data class AiRetryKeyV76(val siteUrl: String, val keyword: String, val useBrowser: Boolean)
+    private var aiRetryKey: AiRetryKeyV76? = null
+    private var aiValidationCheckpoint = AiValidationCheckpointV76()
     private val repository = com.xiguli.langhuan.data.PersistentStoryRepository(application)
     private var activeProviderId: String? = null
 
@@ -190,17 +198,31 @@ internal class OnlineBooksViewModelV36(
             ?: savedState.remove<String>(AI_SAVED_SOURCE_ID_KEY_V75)
     }
 
+    private fun clearAiValidationRetryV76() {
+        aiRetryKey = null
+        // Replace rather than only clearing: a cancelled builder may still be unwinding on another
+        // dispatcher and must not be able to populate the next attempt's checkpoint.
+        aiValidationCheckpoint = AiValidationCheckpointV76()
+    }
+
     fun buildWithAi(siteUrl: String, keyword: String, useBrowser: Boolean = false) {
         if (!sourceStorageReady()) {
+            clearAiValidationRetryV76()
             clearAiSavedSourceCheckpoint()
-            _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiSavedSourceId = null, aiSavedSourceName = null) }
+            _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiCanResumeValidatedRules = false, aiSavedSourceId = null, aiSavedSourceName = null) }
             return
         }
         if (aiJob?.isActive == true) return
         if (siteUrl.isBlank() || keyword.isBlank()) {
+            clearAiValidationRetryV76()
             clearAiSavedSourceCheckpoint()
-            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false, aiSavedSourceId = null, aiSavedSourceName = null) }
+            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false, aiCanResumeValidatedRules = false, aiSavedSourceId = null, aiSavedSourceName = null) }
             return
+        }
+        val retryKey = AiRetryKeyV76(siteUrl.trim(), keyword.trim(), useBrowser)
+        if (aiRetryKey != retryKey) {
+            aiValidationCheckpoint.clear()
+            aiRetryKey = retryKey
         }
         val generation = aiGeneration.incrementAndGet()
         clearAiSavedSourceCheckpoint()
@@ -209,24 +231,44 @@ internal class OnlineBooksViewModelV36(
             try {
                 val config = activeProviderId?.let { repository.providerConfig(it) }
                 if (config == null) {
-                    _state.update { it.copy(aiRunning = false, aiError = "请先在设置里添加并启用一个 AI 服务") }
+                    _state.update { it.copy(
+                        aiRunning = false,
+                        aiError = "请先在设置里添加并启用一个 AI 服务",
+                        aiCanResumeValidatedRules = aiValidationCheckpoint.hasValidatedRules(),
+                    ) }
                     return@launch
                 }
                 currentCoroutineContext().ensureActive()
-                val builder = BookSourceAiBuilderV37(com.xiguli.langhuan.engine.UniversalAiGateway(config), onSteps = { steps ->
-                    _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = steps) else it }
-                })
+                val builder = BookSourceAiBuilderV37(
+                    com.xiguli.langhuan.engine.UniversalAiGateway(config),
+                    onSteps = { steps ->
+                        _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = steps) else it }
+                    },
+                    validationCheckpoint = aiValidationCheckpoint,
+                )
                 sourceAttemptV36 { builder.build(siteUrl, keyword, useBrowser) }
-                    .onSuccess { report -> _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiReport = report) else it } }
+                    .onSuccess { report ->
+                        if (aiGeneration.get() == generation) {
+                            clearAiValidationRetryV76()
+                            _state.update { it.copy(aiRunning = false, aiReport = report, aiCanResumeValidatedRules = false) }
+                        }
+                    }
                     .onFailure { e ->
                         if (e is kotlinx.coroutines.CancellationException) throw e
-                        _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false, aiError = e.message ?: "生成失败") else it }
+                        _state.update { if (aiGeneration.get() == generation) it.copy(
+                            aiRunning = false,
+                            aiError = e.message ?: "生成失败",
+                            aiCanResumeValidatedRules = aiValidationCheckpoint.hasValidatedRules(),
+                        ) else it }
                     }
             } catch (error: kotlinx.coroutines.CancellationException) {
                 _state.update { if (aiGeneration.get() == generation) it.copy(aiSteps = emptyList(), aiReport = null, aiError = null) else it }
                 throw error
             } catch (error: Exception) {
-                _state.update { if (aiGeneration.get() == generation) it.copy(aiError = error.message ?: "AI 书源生成失败，请重试") else it }
+                _state.update { if (aiGeneration.get() == generation) it.copy(
+                    aiError = error.message ?: "AI 书源生成失败，请重试",
+                    aiCanResumeValidatedRules = aiValidationCheckpoint.hasValidatedRules(),
+                ) else it }
             } finally {
                 _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false) else it }
             }
@@ -255,6 +297,7 @@ internal class OnlineBooksViewModelV36(
     fun cancelAi() {
         aiGeneration.incrementAndGet()
         aiJob?.cancel()
+        clearAiValidationRetryV76()
         clearAiSavedSourceCheckpoint()
         _state.update(::aiSourceStoppedStateV65)
     }

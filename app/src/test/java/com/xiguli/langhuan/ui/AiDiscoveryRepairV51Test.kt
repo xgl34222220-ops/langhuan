@@ -170,7 +170,7 @@ class AiDiscoveryRepairV51Test {
                 }
             }
         }
-        suspend fun build(): AiSourceReportV37 = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it) }, ::fetch).build("$BASE/", "真实小说1")
+        suspend fun build(): AiSourceReportV37 = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it) }, fetchDocument = ::fetch).build("$BASE/", "真实小说1")
         private fun fetch(source: BookSourceV36, request: SourceRequestV36): Document {
             requests += request.url
             events += "fetch:${request.url}"

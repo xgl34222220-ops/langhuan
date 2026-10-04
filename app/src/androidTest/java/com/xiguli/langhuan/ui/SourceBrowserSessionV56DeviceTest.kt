@@ -405,6 +405,43 @@ class SourceBrowserSessionV56DeviceTest {
         rule.runOnIdle { assertEquals(listOf(false, true), starts) }
     }
 
+    @Test fun failedValidationOffersCheckpointRetryAndKeepsTransportChoiceExplicit() {
+        val starts = mutableListOf<Boolean>()
+        rule.setContent {
+            AiBookSourceScreenV50(
+                state = OnlineBooksStateV36(
+                    aiProviderLabel = "合成测试模型",
+                    aiSteps = listOf(
+                        AiSourceStepV37("分析搜索结果页", ok = true, detail = "已通过实际页面验证", completed = true),
+                        AiSourceStepV37("分析书籍页与目录", ok = false, detail = "目录规则未通过", completed = true),
+                    ),
+                    aiError = "目录规则未通过，已保留通过验证的搜索规则",
+                    aiLastUseBrowser = true,
+                    aiCanResumeValidatedRules = true,
+                ),
+                siteUrl = base,
+                testBookName = "原创小说",
+                onBack = {},
+                onSiteUrlChange = {},
+                onTestBookNameChange = {},
+                onConfigureAi = {},
+                onStart = { _, _ -> starts += false },
+                onStartWithBrowser = { _, _ -> starts += true },
+                onCancel = {},
+                onSave = {},
+            )
+        }
+
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("保留已通过规则重试（浏览器）"))
+        rule.onNodeWithText("保留已通过规则重试（浏览器）").assertIsDisplayed().assertIsEnabled()
+        rule.onNodeWithText("改用普通模式").assertIsDisplayed().assertIsEnabled()
+        deviceWindowEvidenceV46("v76-ai-validation-checkpoint-retry")
+
+        rule.onNodeWithText("保留已通过规则重试（浏览器）").performClick()
+        rule.onNodeWithText("改用普通模式").performClick()
+        rule.runOnIdle { assertEquals(listOf(true, false), starts) }
+    }
+
     @Test fun failedAiSourceSaveShowsRetryThenAConfirmedSavedState() {
         val report = AiSourceReportV37(
             BookSourceV36("save-recovery", "合法合成书源", base, enabledExplore = true),

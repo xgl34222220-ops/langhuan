@@ -245,12 +245,18 @@ internal fun aiSourceStartActionsV67(state: OnlineBooksStateV36): List<AiSourceS
         )
 
         state.aiLastUseBrowser == true -> listOf(
-            AiSourceStartActionV67("重试浏览器模式", useBrowser = true),
+            AiSourceStartActionV67(
+                if (state.aiCanResumeValidatedRules) "保留已通过规则重试（浏览器）" else "重试浏览器模式",
+                useBrowser = true,
+            ),
             AiSourceStartActionV67("改用普通模式", useBrowser = false),
         )
 
         else -> listOf(
-            AiSourceStartActionV67("重试普通模式", useBrowser = false),
+            AiSourceStartActionV67(
+                if (state.aiCanResumeValidatedRules) "保留已通过规则重试（普通）" else "重试普通模式",
+                useBrowser = false,
+            ),
             AiSourceStartActionV67("改用浏览器模式", useBrowser = true),
         )
     }
