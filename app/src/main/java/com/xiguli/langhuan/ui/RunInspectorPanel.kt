@@ -130,5 +130,5 @@ private fun elapsedMillis(events: List<RunEvent>, stage: RunStage, now: Long): L
 
 private fun formatElapsed(ms: Long): String {
     val seconds = ms / 1_000.0
-    return if (seconds < 10) String.format("%.1fs", seconds) else "${seconds.toInt()}s"
+    return if (seconds < 10) stableOneDecimalV61(seconds, "s") else "${seconds.toInt()}s"
 }
