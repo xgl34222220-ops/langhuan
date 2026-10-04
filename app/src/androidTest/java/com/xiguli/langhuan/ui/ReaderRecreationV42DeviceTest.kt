@@ -31,6 +31,7 @@ class ReaderRecreationV42DeviceTest {
         val description = if (text == "A+") "增大阅读字号" else "减小阅读字号"
         var hit: android.graphics.Rect? = null
         var stableSince = 0L
+        var lastCandidate: String? = null
         rule.waitForIdle()
         automation.waitForIdle(250, 5_000)
         rule.waitUntil(5_000) {
@@ -39,7 +40,7 @@ class ReaderRecreationV42DeviceTest {
             val window = android.graphics.Rect().also(root::getBoundsInScreen)
             fun find(node: android.view.accessibility.AccessibilityNodeInfo?): android.graphics.Rect? {
                 if (node == null) return null
-                if (node.contentDescription?.toString() == description && node.isClickable && node.isEnabled && node.isVisibleToUser) {
+                if (node.contentDescription?.toString() == description) {
                     val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
                     var parent = node.parent
                     var inViewport = true
@@ -50,7 +51,9 @@ class ReaderRecreationV42DeviceTest {
                         }
                         parent = parent.parent
                     }
-                    if (!bounds.isEmpty && window.contains(bounds) && inViewport) return bounds
+                    val candidate = "$description bounds=$bounds clickable=${node.isClickable} enabled=${node.isEnabled} visible=${node.isVisibleToUser} inViewport=$inViewport"
+                    if (candidate != lastCandidate) { android.util.Log.i("ReaderFontInputV57", candidate); lastCandidate = candidate }
+                    if (node.isClickable && node.isEnabled && node.isVisibleToUser && !bounds.isEmpty && window.contains(bounds) && inViewport) return bounds
                 }
                 for (index in 0 until node.childCount) find(node.getChild(index))?.let { return it }
                 return null
@@ -174,6 +177,8 @@ class ReaderRecreationV42DeviceTest {
                     val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
                     tree.append("  ".repeat(depth)).append(node.className).append(" text=").append(node.text)
                         .append(" description=").append(node.contentDescription).append(" visible=").append(node.isVisibleToUser)
+                        .append(" clickable=").append(node.isClickable).append(" enabled=").append(node.isEnabled)
+                        .append(" scrollable=").append(node.isScrollable)
                         .append(" bounds=").append(bounds).append('\n')
                     for (index in 0 until node.childCount) describe(node.getChild(index), depth + 1)
                 }

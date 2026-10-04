@@ -93,6 +93,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -225,7 +226,7 @@ internal fun ReaderMenuV30(
                 AnimatedContent(
                     // Reserve the fixed bottom tabs before sizing the scrollable body.
                     // Landscape has less height; a body measured first can hide every tab.
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f).clipToBounds(),
                     targetState = panel to tab,
                     transitionSpec = {
                         val oldPanel = initialState.first
@@ -247,7 +248,7 @@ internal fun ReaderMenuV30(
                             }
                             else -> fadeIn(tween(150)) togetherWith fadeOut(tween(110))
                         }
-                        transition using SizeTransform(clip = false)
+                        transition using SizeTransform(clip = true)
                     },
                     label = "readerMenuV3",
                 ) { (currentPanel, currentTab) ->
@@ -2109,7 +2110,7 @@ private fun ReaderStepperButtonV30(
             .height(46.dp)
             .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = if (text == "A+") "增大阅读字号" else "减小阅读字号" },
         contentAlignment = Alignment.Center,
     ) {
