@@ -6,6 +6,7 @@ import com.xiguli.langhuan.engine.PromptBundle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import java.net.SocketTimeoutException
+import javax.net.ssl.SSLHandshakeException
 import org.jsoup.Jsoup
 import org.junit.Assert.*
 import org.junit.Test
@@ -61,6 +62,13 @@ class AiRuleTransportV55Test {
         assertEquals("Transport timeout must not consume a second model call",1,e.calls)
         assertTrue(e.error!!.message!!.contains(SOURCE_TIMEOUT_MESSAGE_V69))
         assertFalse("Raw transport diagnostics must not leak into UI copy", e.error!!.message!!.contains("synthetic timeout"))
+    }
+    @Test fun uncachedSearchTlsFailureMustNotBecomeSelectorCorrection() {
+        val e = run(SSLHandshakeException("certificate_unknown: CN=private.books.example"))
+        val failure = requireNotNull(e.error)
+        assertEquals("TLS validation failure must not consume a second model call",1,e.calls)
+        assertTrue(failure.message!!.contains(SOURCE_TLS_MESSAGE_V70))
+        assertFalse("Certificate details must not leak into UI copy", failure.message!!.contains("private.books.example"))
     }
     @Test fun uncachedSearchCancellationStillPropagates() {
         val e = run(CancellationException("synthetic cancel"))

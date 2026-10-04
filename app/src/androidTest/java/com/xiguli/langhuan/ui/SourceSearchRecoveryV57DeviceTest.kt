@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.net.SocketTimeoutException
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import org.junit.Assert.*
@@ -137,6 +139,40 @@ class SourceSearchRecoveryV57DeviceTest {
             rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.results.size == 1 }
             assertEquals(2, calls.get())
             assertEquals("原创慢源恢复结果", vm.state.value.results.single().name)
+            assertTrue(vm.state.value.searchFailures.isEmpty())
+            rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
+        }
+    }
+
+    @Test fun tlsCertificateFailureIsExplainedWithoutBypassAndRetryRecovers() {
+        val failingTls = AtomicBoolean(true)
+        val calls = AtomicInteger()
+        val secure = source("tls", "安全连接样例")
+        withScreen(listOf(secure), { request ->
+            check(request.url.contains("/v57/tls?")) { "Unexpected reserved-domain fixture: ${request.url}" }
+            calls.incrementAndGet()
+            if (failingTls.get()) {
+                throw SSLHandshakeException("Chain validation failed: CN=private.browser-fixture.example").apply {
+                    initCause(CertificateException("Trust anchor for certification path not found"))
+                }
+            }
+            book("tls", "原创安全连接恢复结果")
+        }) { vm ->
+            rule.runOnUiThread { vm.search(keyword) }
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.failedSources == 1 }
+            assertEquals(SOURCE_TLS_MESSAGE_V70, vm.state.value.searchFailures.single().reason)
+            rule.onNodeWithText("安全连接样例：", substring = true).performScrollTo().assertIsDisplayed()
+            rule.onNodeWithText(SOURCE_TLS_MESSAGE_V70, substring = true).assertIsDisplayed()
+            rule.onNodeWithText("private.browser-fixture.example", substring = true).assertDoesNotExist()
+            rule.onNodeWithText("Trust anchor", substring = true).assertDoesNotExist()
+            rule.onNodeWithText("继续访问", substring = true).assertDoesNotExist()
+            deviceWindowEvidenceV46("v70-source-tls-diagnostic")
+
+            failingTls.set(false)
+            retry()
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.results.size == 1 }
+            assertEquals(2, calls.get())
+            assertEquals("原创安全连接恢复结果", vm.state.value.results.single().name)
             assertTrue(vm.state.value.searchFailures.isEmpty())
             rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
         }
