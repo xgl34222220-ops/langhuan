@@ -38,7 +38,7 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
  * AI 生成书源 V50。
  *
  * AI 执行状态直接复用 OnlineBooksStateV36：
- * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError。
+ * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError / aiStopped。
  *
  * 真正生成由 OnlineBooksViewModelV36.buildWithAi() 完成。
  */
@@ -113,6 +113,12 @@ internal fun AiBookSourceScreenV50(
                     AiSourceErrorCardV50(message = error)
                 }
             }
+
+        if (state.aiStopped) {
+            item("ai-source-stopped") {
+                AiSourceStoppedCardV65()
+            }
+        }
 
         state.aiReport?.let { report ->
             item("ai-source-report") {
@@ -575,6 +581,41 @@ private fun AiSourceReportCardV50(report: AiSourceReportV37) {
                 text = warning,
                 style = MaterialTheme.typography.labelSmall,
                 color = t.mutedForeground,
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun AiSourceStoppedCardV65() {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(t.accent, RoundedCornerShape(t.radiusMd))
+            .border(1.dp, t.border, RoundedCornerShape(t.radiusMd))
+            .padding(t.space3),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Stop,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = t.primary,
+        )
+        Spacer(Modifier.width(t.space2))
+        Column(verticalArrangement = Arrangement.spacedBy(t.space1)) {
+            Text(
+                text = "生成已停止",
+                style = MaterialTheme.typography.labelLarge,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "网站地址和测试书名已保留，可重新选择普通或浏览器模式。",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.secondaryForeground,
             )
         }
     }

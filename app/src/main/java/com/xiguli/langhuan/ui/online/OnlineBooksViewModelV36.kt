@@ -69,7 +69,17 @@ internal data class OnlineBooksStateV36(
     val aiRunning: Boolean = false,
     val aiReport: AiSourceReportV37? = null,
     val aiError: String? = null,
+    val aiStopped: Boolean = false,
 )
+
+internal fun aiSourceStoppedStateV65(state: OnlineBooksStateV36): OnlineBooksStateV36 =
+    state.copy(
+        aiSteps = emptyList(),
+        aiRunning = false,
+        aiReport = null,
+        aiError = null,
+        aiStopped = true,
+    )
 
 internal class OnlineBooksViewModelV36(application: Application) : AndroidViewModel(application) {
     private val context get() = getApplication<Application>()
@@ -103,14 +113,14 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     // ---- AI-written sources ---------------------------------------------------------------------
 
     fun buildWithAi(siteUrl: String, keyword: String, useBrowser: Boolean = false) {
-        if (!sourceStorageReady()) { _state.update { it.copy(aiError = it.sourceStorageError) }; return }
+        if (!sourceStorageReady()) { _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false) }; return }
         if (aiJob?.isActive == true) return
         if (siteUrl.isBlank() || keyword.isBlank()) {
-            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名") }
+            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false) }
             return
         }
         val generation = aiGeneration.incrementAndGet()
-        _state.update { it.copy(aiSteps = emptyList(), aiRunning = true, aiReport = null, aiError = null) }
+        _state.update { it.copy(aiSteps = emptyList(), aiRunning = true, aiReport = null, aiError = null, aiStopped = false) }
         aiJob = viewModelScope.launch {
             try {
                 val config = activeProviderId?.let { repository.providerConfig(it) }
@@ -160,7 +170,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     fun cancelAi() {
         aiGeneration.incrementAndGet()
         aiJob?.cancel()
-        _state.update { it.copy(aiRunning = false, aiSteps = emptyList(), aiReport = null, aiError = null) }
+        _state.update(::aiSourceStoppedStateV65)
     }
 
     // ---- Sources ------------------------------------------------------------------------------
