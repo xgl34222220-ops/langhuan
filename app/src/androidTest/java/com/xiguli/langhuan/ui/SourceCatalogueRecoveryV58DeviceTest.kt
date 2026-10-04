@@ -199,6 +199,59 @@ class SourceCatalogueRecoveryV58DeviceTest {
         } finally { release.countDown() }
     }
 
+    @Test fun readingAndCachingRequireAnExplicitShelfAdditionAndThenBecomeEnabled() {
+        val added = AtomicInteger()
+        val read = AtomicInteger()
+        val cached = AtomicInteger()
+        val displayed = mutableStateOf(OnlineBooksStateV36(
+            detail = OnlineDetailV36(book("read"), (1..3).map { OnlineChapterV36("第${it}章", "$base/v58/read/chapter-$it.html") }),
+        ))
+        rule.setContent {
+            LanghuanStableTheme {
+                val state = displayed.value
+                OnlineBooksScreenV50(
+                    state, "", emptyList(), embedded = true,
+                    onBack = {}, onManageSources = {}, onQueryChange = {}, onSearch = {},
+                    onStopSearch = {}, onRetrySearch = {}, onRecentSearch = {}, onClearRecentSearches = {},
+                    onDiscover = {}, onLoadMore = {}, onOpenBook = {}, onCloseDetail = {}, onViewSource = {},
+                    onRetryDetail = {}, onStopDetail = {},
+                    onAddToShelf = { added.incrementAndGet(); displayed.value = displayed.value.copy(addingToShelf = true) },
+                    onRead = { read.incrementAndGet() }, onDownload = { cached.incrementAndGet() },
+                    onCancelDownload = {}, onChapterClick = {},
+                )
+            }
+        }
+        rule.onNodeWithText("先加入书架", substring = true).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("开始阅读").performScrollTo().assertIsDisplayed().assertIsNotEnabled()
+            .performTouchInput { click(center) }
+        rule.onNodeWithText("离线下载").performScrollTo().assertIsDisplayed().assertIsNotEnabled()
+            .performTouchInput { click(center) }
+        assertEquals(0, read.get())
+        assertEquals(0, cached.get())
+        assertEquals(0, added.get())
+        deviceWindowEvidenceV46("v59-catalogue-needs-shelf")
+        rule.onNodeWithText("加入书架").assertIsEnabled().performClick()
+        assertEquals(1, added.get())
+        rule.onNodeWithText("正在加入书架", substring = true).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("开始阅读").assertIsNotEnabled()
+        rule.onNodeWithText("离线下载").assertIsNotEnabled()
+        assertEquals(0, read.get())
+        assertEquals(0, cached.get())
+        rule.runOnUiThread {
+            displayed.value = displayed.value.copy(addingToShelf = false,
+                detail = displayed.value.detail!!.copy(shelfStoryId = "fixture-shelf-v59"))
+        }
+        rule.onNodeWithText("先加入书架", substring = true).assertDoesNotExist()
+        rule.onNodeWithText("已在书架").performScrollTo().assertIsDisplayed().assertIsNotEnabled()
+            .performTouchInput { click(center) }
+        assertEquals(1, added.get())
+        rule.onNodeWithText("开始阅读").assertIsEnabled().performClick()
+        rule.onNodeWithText("离线下载").assertIsEnabled().performClick()
+        assertEquals(1, read.get())
+        assertEquals(1, cached.get())
+        deviceWindowEvidenceV46("v59-catalogue-ready-to-read")
+    }
+
     @Test fun cacheCancellationRemainsReachableWhileCatalogueIsLoadingOrFailed() {
         val cancelled = AtomicInteger()
         val displayed = mutableStateOf(OnlineBooksStateV36(

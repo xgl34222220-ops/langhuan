@@ -214,6 +214,9 @@ class ReaderRecreationV42DeviceTest {
                 tapVisibleFontAction("A−")
                 rule.waitUntil(5_000) { prefs.getFloat("font", 0f) == 21f }
                 rule.waitForIdle()
+                InstrumentationRegistry.getInstrumentation().uiAutomation.waitForIdle(300, 5_000)
+                rule.waitForIdle()
+                assertEquals("Settling the rendered menu changed the font", 21f, prefs.getFloat("font", 0f), 0f)
                 rule.onNodeWithText("21sp").assertIsDisplayed()
                 deviceWindowEvidenceV46("v42-reader-landscape-font-operable")
             } catch (error: Throwable) {

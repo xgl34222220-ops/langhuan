@@ -12,8 +12,10 @@ internal fun deviceWindowEvidenceV46(label: String) {
     val safeLabel = label.replace(Regex("[^a-zA-Z0-9_-]"), "_")
     val dir = File(instrumentation.targetContext.getExternalFilesDir(null), "reader-qa").apply { mkdirs() }
     val image = File(dir, "$safeLabel.png")
-    automation.takeScreenshot()?.let { bitmap ->
-        image.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    val bitmap = requireNotNull(automation.takeScreenshot()) { "Window screenshot unavailable: $safeLabel" }
+    try {
+        image.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) { "Window PNG could not be written: $safeLabel" } }
+    } finally {
         bitmap.recycle()
     }
     val dump = File(dir, "$safeLabel-window.txt")

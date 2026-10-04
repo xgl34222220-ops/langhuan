@@ -1191,13 +1191,23 @@ internal fun OnlineBookDetailScreenV50(
                 }
             }
             if (!loading && detail.chapters.isNotEmpty()) item(key = "detail-actions") {
+                val shelfReady = detail.shelfStoryId != null
                 Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
-                    OnlinePrimaryButtonV50(text = "开始阅读", onClick = onRead)
+                    if (!shelfReady) {
+                        Text(
+                            text = if (adding) "正在加入书架，完成后可阅读或离线缓存。"
+                            else "先加入书架，再开始阅读或离线缓存。仅保存目录，正文按需加载。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
+                    }
+                    OnlinePrimaryButtonV50(text = "开始阅读", onClick = onRead, enabled = shelfReady)
                     Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
                         OnlineSecondaryButtonV50(
-                            text = "加入书架",
+                            text = if (shelfReady) "已在书架" else "加入书架",
                             onClick = onAdd,
                             loading = adding,
+                            enabled = !shelfReady,
                             modifier = Modifier.weight(1f),
                         )
                         if (download != null) {
@@ -1210,6 +1220,7 @@ internal fun OnlineBookDetailScreenV50(
                             OnlineSecondaryButtonV50(
                                 text = "离线下载",
                                 onClick = onDownload,
+                                enabled = shelfReady,
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -1650,6 +1661,7 @@ private fun OnlinePrimaryButtonV50(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusMd)
@@ -1657,14 +1669,14 @@ private fun OnlinePrimaryButtonV50(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
-            .background(color = t.primary, shape = shape)
-            .clickable(onClick = onClick),
+            .background(color = if (enabled) t.primary else t.input, shape = shape)
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.titleSmall,
-            color = t.card,
+            color = if (enabled) t.card else t.mutedForeground,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -1676,6 +1688,7 @@ private fun OnlineSecondaryButtonV50(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusMd)
@@ -1684,7 +1697,7 @@ private fun OnlineSecondaryButtonV50(
             .height(48.dp)
             .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(enabled = !loading, onClick = onClick),
+            .clickable(enabled = enabled && !loading, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (loading) {
@@ -1697,7 +1710,7 @@ private fun OnlineSecondaryButtonV50(
             Text(
                 text = text,
                 style = MaterialTheme.typography.titleSmall,
-                color = t.foreground,
+                color = if (enabled) t.foreground else t.mutedForeground,
                 fontWeight = FontWeight.SemiBold,
             )
         }

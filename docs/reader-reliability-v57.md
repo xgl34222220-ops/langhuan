@@ -76,6 +76,16 @@ V50 详情页此前忽略读取目录的错误，只显示「暂无目录」，�
 
 同时加强字号完成帧的证据：真实减小触摸及 21sp 落盘断言后等待绘制，并检查可见 21sp 再截图，避免捕获上一帧 22sp 的按压状态。原触摸、字号落盘、旋转和句子位置断言不变。
 
+第三批 `df8670d` 完整验收：Reader 145/0失败/0跳过，预检15/编辑2/创作11，原137和原16逐项保留；Browser 15/0/0，原11和新增4项保留；JVM 714/0/0，Debug构建，lint0错误/197警告/5提示。两个实际force-stop进程恢复分别确认新PID、保存Locator和持久Cookie/DOM。Reader artifact 11291606594（SHA-256 `627ca5e423c1e21003b67b112866010466662fbe99f028530c143bcdadd19c02`）、Browser 11291031828（`a144717ebf6382fb7ea25223ad0eb9ff352a573ac9c5aa668c7428bef7e5503e`）、JVM/lint 11290139889（`41dc64e0ba3c58516403f8423757bf4e5c0b19ec8d5941d7bb04310a972c4c2e`）均已下载核对。运行：[Reader](https://github.com/xgl34222220-ops/langhuan/actions/runs/37169975889)、[Browser](https://github.com/xgl34222220-ops/langhuan/actions/runs/37169975839)、[Android](https://github.com/xgl34222220-ops/langhuan/actions/runs/37169975871)。
+
+## 第四批：阅读及缓存动作的明确入架状态
+
+详情页此前在未入架时显示可点击阅读/下载按钮，而处理函数因缺少 shelfStoryId 静默返回。现在未入架时显示明确说明，阅读和下载呈禁用状态；显式加入书架期间继续禁用，成功后启用，并将入架按钮显示为禁用的「已在书架」。目录及正文的数据流程、原入架保护和手动缓存意图不变，不自动入架。沿用 V3 的既有按钮、颜色和排版，仅新增就绪状态。继续参考固定版 Legado BookInfoActivity 对 inBookshelf 的明确状态区分，采用让动作状态与书籍状态一致的交互原则；按本应用现有元数据入架流程独立实现，源码及 GPL-3.0 链接见参考表。
+
+新增一项纯 UI 回归，通过实际触摸确认未入架按钮不执行回调，显式入架进入等待状态后仍禁用，完成后阅读和下载回调各执行一次，重复入架被阻止。该用例验证界面控制，不冒充实际数据库入架；原完整组继续覆盖真正入架、正文加载和缓存的数据安全。预期阅读器146项、浏览器16项，两种进程恢复与全部原断言继续执行，本批结果另行核对。
+
+第三批的语义21sp及落盘断言通过，但最终截图仍显示上一帧22sp，不把它当作视觉21sp证据。第四批增加系统UI空闲同步后再次核对落盘21sp和可见21sp，并重新核验截图。窗口证据捕获若返回空位图或PNG写入失败将明确失败，不复用旧文件。原5秒字号变化门槛、真实触摸及位置断言保留。
+
 ## 参考、许可证与采用理由
 
 - [Legado Sigma BackstageWebView 源码](https://github.com/apgk/legado/blob/3a7c4daaf79c652b8e60d6aad80f665bbf6cacba/app/src/main/java/io/legado/app/help/http/BackstageWebView.kt)：取消时释放实例/回调、检查当前 WebView 后再接受结果。参考其生命周期和迟到回调隔离思路，独立实现本应用的服务 IPC 恢复；没有引入其规则 JavaScript 或原生接口。[GPL-3.0 许可证](https://github.com/apgk/legado/blob/3a7c4daaf79c652b8e60d6aad80f665bbf6cacba/LICENSE)。
