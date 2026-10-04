@@ -5,6 +5,7 @@ import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
@@ -77,6 +78,14 @@ class AiRuleTransportV55Test {
         assertEquals("DNS lookup failure must not consume a second model call",1,e.calls)
         assertTrue(failure.message!!.contains(SOURCE_DNS_LOOKUP_MESSAGE_V71))
         assertFalse("Resolved host details must not leak into UI copy", failure.message!!.contains("private.books.example"))
+    }
+    @Test fun uncachedSearchRefusedConnectionMustNotBecomeSelectorCorrection() {
+        val e = run(ConnectException("Failed to connect to private.books.example/203.0.113.7:65535"))
+        val failure = requireNotNull(e.error)
+        assertEquals("Refused connection must not consume a second model call",1,e.calls)
+        assertTrue(failure.message!!.contains(SOURCE_CONNECTION_MESSAGE_V72))
+        assertFalse("Endpoint details must not leak into UI copy", failure.message!!.contains("private.books.example"))
+        assertFalse("Endpoint addresses must not leak into UI copy", failure.message!!.contains("203.0.113.7"))
     }
     @Test fun uncachedSearchCancellationStillPropagates() {
         val e = run(CancellationException("synthetic cancel"))
