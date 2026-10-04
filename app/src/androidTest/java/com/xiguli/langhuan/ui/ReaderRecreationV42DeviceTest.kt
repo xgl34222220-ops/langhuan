@@ -40,19 +40,25 @@ class ReaderRecreationV42DeviceTest {
             fun find(node: android.view.accessibility.AccessibilityNodeInfo?): android.graphics.Rect? {
                 if (node == null) return null
                 if (node.contentDescription?.toString() == description) {
-                    val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
-                    var parent = node.parent
+                    val labelBounds = android.graphics.Rect().also(node::getBoundsInScreen)
+                    // Compose may expose a named label below the actual clickable Box.
+                    // Only accept that label or its direct button parent, never a page ancestor.
+                    val target = if (node.isClickable) node else node.parent?.takeIf { it.isClickable }
+                    val bounds = target?.let { android.graphics.Rect().also(it::getBoundsInScreen) }
+                    var parent = target?.parent
                     var inViewport = true
                     while (parent != null) {
                         if (parent.isScrollable) {
                             val viewport = android.graphics.Rect().also(parent::getBoundsInScreen)
-                            if (!viewport.contains(bounds)) inViewport = false
+                            if (bounds == null || !viewport.contains(bounds)) inViewport = false
                         }
                         parent = parent.parent
                     }
-                    val candidate = "$description bounds=$bounds clickable=${node.isClickable} enabled=${node.isEnabled} visible=${node.isVisibleToUser} inViewport=$inViewport"
+                    val candidate = "$description label=$labelBounds button=$bounds clickable=${target?.isClickable} enabled=${target?.isEnabled} visible=${target?.isVisibleToUser} inViewport=$inViewport"
                     if (candidate != lastCandidate) { android.util.Log.i("ReaderFontInputV57", candidate); lastCandidate = candidate }
-                    if (node.isClickable && node.isEnabled && node.isVisibleToUser && !bounds.isEmpty && window.contains(bounds) && inViewport) return bounds
+                    if (target != null && bounds != null && target.isClickable && target.isEnabled && target.isVisibleToUser &&
+                        node.isEnabled && node.isVisibleToUser && !labelBounds.isEmpty && !bounds.isEmpty &&
+                        bounds.contains(labelBounds) && window.contains(bounds) && inViewport) return bounds
                 }
                 for (index in 0 until node.childCount) find(node.getChild(index))?.let { return it }
                 return null
