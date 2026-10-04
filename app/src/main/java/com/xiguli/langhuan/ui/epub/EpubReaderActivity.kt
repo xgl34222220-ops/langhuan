@@ -111,6 +111,8 @@ class EpubReaderActivity : FragmentActivity() {
     private var navigator: EpubNavigatorFragment? = null
     private var readerHostReady = false
     private var navigatorAttached = false
+    private var navigatorGeneration = 0L
+    private var rendererExited = false
 
     /* -------------------------------- Jobs -------------------------------- */
     private var openJob: Job? = null
@@ -169,6 +171,7 @@ class EpubReaderActivity : FragmentActivity() {
         }
         savedLocator = savedInstanceState?.getString("epub_locator")
         savedDigest = savedInstanceState?.getString("epub_digest")
+        rendererExited = savedInstanceState?.getBoolean("epub_renderer_exited") == true
         store = EpubReaderEntry.store(this)
         readerPrefs = getSharedPreferences(READER_PREFS, Context.MODE_PRIVATE)
         libraryViewModel = ViewModelProvider(this)[LibraryExperienceViewModel::class.java]
@@ -192,7 +195,7 @@ class EpubReaderActivity : FragmentActivity() {
         buildComposeContent()
 
         if (store.hasOriginal(bookId)) {
-            openStored()
+            if (rendererExited) showRendererFailure() else openStored()
         } else {
             showError(
                 "这本旧书只保存了文字。重新关联原 EPUB 后可阅读插画和作者排版；" +
@@ -259,6 +262,7 @@ class EpubReaderActivity : FragmentActivity() {
                         onToggleBookmark = { toggleOriginalBookmark() },
                         onRelinkOriginal = { pickOriginal() },
                         onContinueAfterRestoreFailure = { continueAfterRestoreFailure() },
+                        onRestartAfterRendererExit = { restartAfterRendererExit() },
                         onClearSelection = { clearSelection() },
                         onNoteSaved = {
                             Toast.makeText(
@@ -394,7 +398,11 @@ class EpubReaderActivity : FragmentActivity() {
                 }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                showError(error.message ?: "无法打开 EPUB")
+                if (rendererExited) {
+                    showRendererFailure("重新打开原版失败。已保留上次确认进度，可重试或阅读文字版。")
+                } else {
+                    showError(error.message ?: "无法打开 EPUB")
+                }
             } finally {
                 pendingPublication?.close()
             }
@@ -520,6 +528,8 @@ class EpubReaderActivity : FragmentActivity() {
         opened: Publication,
     ) {
         saveCurrentLocator()
+        val generation = ++navigatorGeneration
+        rendererExited = false
         locatorJob?.cancel()
         selectionJob?.cancel()
         restoreJob?.cancel()
@@ -584,6 +594,7 @@ class EpubReaderActivity : FragmentActivity() {
                 },
                 paginationListener = object : EpubNavigatorFragment.PaginationListener {
                     override fun onPageLoaded() {
+                        if (navigatorGeneration != generation || rendererExited || navigator == null) return
                         if (restoreTarget == null) {
                             loaded = true
                             hideStatus()
@@ -623,15 +634,16 @@ class EpubReaderActivity : FragmentActivity() {
         val json = locator.toJSON().toString()
         val sequence = synchronized(locatorLock) { ++locatorSequence }
         lifecycleScope.launch {
-            val failed = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 synchronized(locatorLock) {
-                    sequence == locatorSequence &&
-                        runCatching {
-                            store.saveLocator(bookId, book.sha256, json)
-                        }.isFailure
+                    if (sequence == locatorSequence) {
+                        runCatching { store.saveLocator(bookId, book.sha256, json) }
+                    } else null
                 }
             }
-            if (failed) {
+            val current = synchronized(locatorLock) { sequence == locatorSequence }
+            if (!current || !loaded || prepared !== book || rendererExited || result == null) return@launch
+            if (result.isFailure) {
                 warnProgressSave()
             } else {
                 savedLocator = json
@@ -690,6 +702,9 @@ class EpubReaderActivity : FragmentActivity() {
         val geometry = runCatching {
             currentGeometry(fragment, locator)
         }.getOrNull()
+        // Geometry awaits a WebView response. It must not clear a renderer fault or
+        // publish the retired Navigator's page state after that suspension.
+        if (navigator !== fragment || !loaded || rendererExited) return
 
         val pageCount = when {
             opened.metadata.layout == Layout.FIXED -> 1
@@ -1142,8 +1157,11 @@ class EpubReaderActivity : FragmentActivity() {
     private fun protectReadiumViewTree(current: View) {
         if (current is WebView) {
             if (current.webViewClient !is EpubSecureWebViewClient) {
+                val generation = navigatorGeneration
                 current.webViewClient =
-                    EpubSecureWebViewClient(current.webViewClient, assets)
+                    EpubSecureWebViewClient(current.webViewClient, assets) { view ->
+                        retireNavigatorAfterRendererExit(view, generation)
+                    }
             }
             harden(current)
         } else if (current is ViewGroup) {
@@ -1151,6 +1169,70 @@ class EpubReaderActivity : FragmentActivity() {
                 protectReadiumViewTree(current.getChildAt(index))
             }
         }
+    }
+
+    private fun retireNavigatorAfterRendererExit(view: WebView, generation: Long): Boolean {
+        val retired = navigator ?: return false
+        if (generation != navigatorGeneration || isDestroyed) return false
+        var ancestor: View? = view
+        while (ancestor != null && ancestor !== retired.view) ancestor = ancestor.parent as? View
+        if (ancestor == null || !retired.isAdded) return false
+        // Stop accepting navigation/save callbacks BEFORE disposing any SDK views.
+        // Never ask a failed WebView for a new Locator, and never accept page zero.
+        loaded = false
+        rendererExited = true
+        ++navigatorGeneration
+        locatorJob?.cancel()
+        restoreJob?.cancel()
+        selectionJob?.cancel()
+        openJob?.cancel()
+        restoreJob = null
+        restoreTarget = null
+        selectionState = null
+        synchronized(locatorLock) {
+            ++locatorSequence
+            prepared?.let { book ->
+                savedLocator = store.loadLocator(bookId, book.sha256)
+                savedDigest = book.sha256
+            }
+        }
+        navigator = null
+        navigatorAttached = false
+        showRendererFailure()
+        // This is disposal of an unusable transient Navigator, not a data transaction.
+        // Automatic Fragment restoration is already disabled in onCreate. Removal
+        // must also work after onSaveInstanceState; Readium onDetach destroys its views.
+        return runCatching {
+            supportFragmentManager.beginTransaction().remove(retired).commitNowAllowingStateLoss()
+            true
+        }.getOrElse {
+            android.util.Log.w("EpubReader", "Deferring retired Navigator disposal", it)
+            window.decorView.post {
+                if (!supportFragmentManager.isDestroyed && retired.isAdded) {
+                    supportFragmentManager.beginTransaction().remove(retired).commitNowAllowingStateLoss()
+                }
+            }
+            false
+        }
+    }
+
+    private fun showRendererFailure(
+        message: String = "原版页面渲染已中断。已保留上次确认进度，重新打开可继续阅读。",
+    ) {
+        loaded = false
+        readerUiState = readerUiState.copy(
+            loaded = false,
+            statusMessage = message,
+            canContinueAfterRestoreFailure = false,
+            canRestartAfterRendererExit = true,
+            canGoBack = false,
+            canGoForward = false,
+        )
+    }
+
+    private fun restartAfterRendererExit() {
+        if (!rendererExited || !readerUiState.canRestartAfterRendererExit || openJob?.isActive == true) return
+        openStored()
     }
 
     override fun onCreateView(
@@ -1207,7 +1289,10 @@ class EpubReaderActivity : FragmentActivity() {
     /* -------------------------------- Status -------------------------------- */
     private fun showStatus(message: String) {
         loaded = false
-        readerUiState = readerUiState.copy(loaded = false, statusMessage = message, canContinueAfterRestoreFailure = false)
+        readerUiState = readerUiState.copy(
+            loaded = false, statusMessage = message,
+            canContinueAfterRestoreFailure = false, canRestartAfterRendererExit = false,
+        )
     }
 
     private fun hideStatus() {
@@ -1243,6 +1328,7 @@ class EpubReaderActivity : FragmentActivity() {
         super.onSaveInstanceState(outState)
         outState.putString("epub_locator", savedLocator)
         outState.putString("epub_digest", savedDigest)
+        outState.putBoolean("epub_renderer_exited", rendererExited)
     }
 
     override fun onStop() {
@@ -1251,6 +1337,7 @@ class EpubReaderActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        ++navigatorGeneration
         locatorJob?.cancel()
         restoreJob?.cancel()
         selectionJob?.cancel()
