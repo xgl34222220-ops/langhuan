@@ -54,6 +54,7 @@ class SourceSearchRecoveryV57DeviceTest {
                                 onRecentSearch = model::search, onClearRecentSearches = {},
                                 onDiscover = model::discover, onLoadMore = model::loadMoreDiscovery,
                                 onOpenBook = model::openDetail, onCloseDetail = model::closeDetail, onViewSource = {},
+                                onRetryDetail = model::retryDetail, onStopDetail = model::stopDetail,
                                 onAddToShelf = model::addToShelf, onRead = model::readAddedBook,
                                 onDownload = model::downloadDetail, onCancelDownload = model::cancelDownload, onChapterClick = {},
                             )

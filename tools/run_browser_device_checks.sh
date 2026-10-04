@@ -26,6 +26,6 @@ if rg -q 'Application Not Responding:' browser-qa/emulator-before-tests-window.t
   echo 'Emulator preflight failed: an ANR window is still present.' >&2
   exit 1
 fi
-gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest,com.xiguli.langhuan.ui.SourceSearchRecoveryV57DeviceTest
+gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest,com.xiguli.langhuan.ui.SourceSearchRecoveryV57DeviceTest,com.xiguli.langhuan.ui.SourceCatalogueRecoveryV58DeviceTest
 python3 tools/verify_browser_process_death.py --evidence browser-qa/process
 sha256sum app/build/outputs/apk/debug/app-debug.apk > browser-tested-apk.sha256

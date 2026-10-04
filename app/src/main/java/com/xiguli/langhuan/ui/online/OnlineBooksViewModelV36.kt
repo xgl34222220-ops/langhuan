@@ -56,6 +56,8 @@ internal data class OnlineBooksStateV36(
     val results: List<OnlineBookV36> = emptyList(),
     val detailLoading: Boolean = false,
     val detail: OnlineDetailV36? = null,
+    val detailError: String? = null,
+    val detailStopped: Boolean = false,
     val download: OnlineDownloadV36? = null,
     val addingToShelf: Boolean = false,
     val createdStoryId: String? = null,
@@ -81,6 +83,7 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
     private val aiGeneration = java.util.concurrent.atomic.AtomicLong()
     private var downloadJob: Job? = null
     private var detailJob: Job? = null
+    private val detailGeneration = java.util.concurrent.atomic.AtomicLong()
     private var aiJob: Job? = null
     private val repository = com.xiguli.langhuan.data.PersistentStoryRepository(application)
     private var activeProviderId: String? = null
@@ -381,22 +384,49 @@ internal class OnlineBooksViewModelV36(application: Application) : AndroidViewMo
 
     fun openDetail(book: OnlineBookV36) {
         val source = _state.value.sources.firstOrNull { it.id == book.sourceId } ?: return
+        val generation = detailGeneration.incrementAndGet()
         detailJob?.cancel()
-        _state.update { it.copy(detailLoading = true, detail = OnlineDetailV36(book, emptyList()), error = null) }
+        _state.update { it.copy(detailLoading = true, detail = OnlineDetailV36(book, emptyList()),
+            detailError = null, detailStopped = false, error = null) }
         detailJob = viewModelScope.launch {
             sourceAttemptV36 { runInterruptible(Dispatchers.IO) { loadBookCatalogueV50(source, book) } }
                 .onSuccess { catalogue ->
                     val existing = withContext(Dispatchers.IO) { projects.findOnlineStory(source.id, catalogue.book.bookUrl) }
-                    _state.update { it.copy(detailLoading = false, detail = OnlineDetailV36(catalogue.book, catalogue.chapters, existing, catalogue.proof)) }
+                    currentCoroutineContext().ensureActive()
+                    _state.update { state ->
+                        if (generation != detailGeneration.get()) state else state.copy(detailLoading = false,
+                            detail = OnlineDetailV36(catalogue.book, catalogue.chapters, existing, catalogue.proof),
+                            detailError = null, detailStopped = false)
+                    }
                 }
-                .onFailure { e -> _state.update { it.copy(detailLoading = false, error = "读取目录失败：${e.message.orEmpty()}") } }
+                .onFailure { e ->
+                    currentCoroutineContext().ensureActive()
+                    val message = "读取目录失败：" + (e.message?.replace('\n', ' ')?.replace('\r', ' ')?.take(320)
+                        ?.takeIf(String::isNotBlank) ?: "请检查网络或书源规则")
+                    _state.update { state -> if (generation != detailGeneration.get()) state else
+                        state.copy(detailLoading = false, detailError = message, error = message) }
+                }
         }
+    }
+
+    fun retryDetail() {
+        val previous = _state.value
+        if (previous.detailLoading || previous.detailError == null && !previous.detailStopped) return
+        previous.detail?.book?.let(::openDetail)
+    }
+
+    fun stopDetail() {
+        if (!_state.value.detailLoading) return
+        detailGeneration.incrementAndGet()
+        detailJob?.cancel()
+        _state.update { it.copy(detailLoading = false, detailError = null, detailStopped = true, error = null) }
     }
 
     fun closeDetail() {
         if (_state.value.download != null) return
+        detailGeneration.incrementAndGet()
         detailJob?.cancel()
-        _state.update { it.copy(detail = null, detailLoading = false) }
+        _state.update { it.copy(detail = null, detailLoading = false, detailError = null, detailStopped = false, error = null) }
     }
 
     /** Save identity and catalogue only. Reading and offline caching are separate actions. */

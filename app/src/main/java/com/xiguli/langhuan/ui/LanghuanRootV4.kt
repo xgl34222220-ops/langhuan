@@ -751,6 +751,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 onLoadMore = onlineVm::loadMoreDiscovery,
                                 onOpenBook = onlineVm::openDetail,
                                 onCloseDetail = onlineVm::closeDetail,
+                                onRetryDetail = onlineVm::retryDetail,
+                                onStopDetail = onlineVm::stopDetail,
                                 onViewSource = { id -> browseSourceId = id },
                                 onAddToShelf = onlineVm::addToShelf,
                                 onRead = onlineVm::readAddedBook,

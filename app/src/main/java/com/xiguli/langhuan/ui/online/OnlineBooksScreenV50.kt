@@ -152,6 +152,8 @@ internal fun OnlineBooksScreenV50(
     onOpenBook: (OnlineBookV36) -> Unit,
 
     onCloseDetail: () -> Unit,
+    onRetryDetail: () -> Unit,
+    onStopDetail: () -> Unit,
     onViewSource: (String) -> Unit,
     onAddToShelf: () -> Unit,
     onRead: () -> Unit,
@@ -167,7 +169,12 @@ internal fun OnlineBooksScreenV50(
             loading = state.detailLoading,
             adding = state.addingToShelf,
             download = state.download,
+            catalogueError = state.detailError,
+            catalogueStopped = state.detailStopped,
+            operationError = state.error?.takeUnless { it == state.detailError },
             onBack = onCloseDetail,
+            onRetryCatalogue = onRetryDetail,
+            onStopCatalogue = onStopDetail,
             onViewSource = { onViewSource(detail.book.sourceId) },
             onRead = onRead,
             onAdd = onAddToShelf,
@@ -1079,7 +1086,12 @@ internal fun OnlineBookDetailScreenV50(
     loading: Boolean,
     adding: Boolean,
     download: OnlineDownloadV36?,
+    catalogueError: String?,
+    catalogueStopped: Boolean,
+    operationError: String?,
     onBack: () -> Unit,
+    onRetryCatalogue: () -> Unit,
+    onStopCatalogue: () -> Unit,
     onViewSource: () -> Unit,
     onRead: () -> Unit,
     onAdd: () -> Unit,
@@ -1123,6 +1135,9 @@ internal fun OnlineBookDetailScreenV50(
                 text = "书源",
                 onClick = onViewSource,
             )
+            if (loading) {
+                OnlineTextButtonV50(icon = Icons.Rounded.Stop, text = "停止加载", onClick = onStopCatalogue)
+            }
         }
 
         LazyColumn(
@@ -1139,6 +1154,25 @@ internal fun OnlineBookDetailScreenV50(
                 OnlineDetailHeroV50(book = book, loading = loading)
             }
 
+            if (catalogueError != null || catalogueStopped) {
+                item(key = "detail-recovery") {
+                    OnlineMessageCardV50(
+                        icon = if (catalogueStopped) Icons.Rounded.Stop else Icons.Rounded.ErrorOutline,
+                        title = if (catalogueStopped) "目录加载已停止" else "目录读取失败",
+                        body = catalogueError ?: "当前书籍保留，可以继续加载目录。",
+                        destructive = catalogueError != null,
+                        action = if (catalogueStopped) "继续加载目录" else "重试目录",
+                        onAction = onRetryCatalogue,
+                    )
+                }
+            }
+            operationError?.let { message ->
+                item(key = "detail-operation-error") {
+                    OnlineMessageCardV50(icon = Icons.Rounded.ErrorOutline, title = "操作未完成",
+                        body = message, destructive = true)
+                }
+            }
+
             if (book.intro.isNotBlank()) {
                 item(key = "detail-intro") {
                     OnlineDetailSectionV50(title = "简介") {
@@ -1151,7 +1185,12 @@ internal fun OnlineBookDetailScreenV50(
                 }
             }
 
-            item(key = "detail-actions") {
+            if (download != null && (loading || detail.chapters.isEmpty())) {
+                item(key = "detail-pending-download") {
+                    OnlineDownloadProgressV50(download = download, onCancel = onCancelDownload)
+                }
+            }
+            if (!loading && detail.chapters.isNotEmpty()) item(key = "detail-actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
                     OnlinePrimaryButtonV50(text = "开始阅读", onClick = onRead)
                     Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
@@ -1182,6 +1221,12 @@ internal fun OnlineBookDetailScreenV50(
                 OnlineDetailSectionV50(title = "目录") {
                     if (loading) {
                         OnlineCatalogueSkeletonV50()
+                    } else if (catalogueError != null || catalogueStopped) {
+                        Text(
+                            text = "目录尚未完成加载",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
                     } else if (detail.chapters.isEmpty()) {
                         Text(
                             text = "暂无目录",

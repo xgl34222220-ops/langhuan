@@ -213,6 +213,8 @@ class ReaderRecreationV42DeviceTest {
                 rule.waitUntil(5_000) { prefs.getFloat("font", 0f) == 22f }
                 tapVisibleFontAction("A−")
                 rule.waitUntil(5_000) { prefs.getFloat("font", 0f) == 21f }
+                rule.waitForIdle()
+                rule.onNodeWithText("21sp").assertIsDisplayed()
                 deviceWindowEvidenceV46("v42-reader-landscape-font-operable")
             } catch (error: Throwable) {
                 deviceWindowEvidenceV46("v42-reader-landscape-font-failure")
