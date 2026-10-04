@@ -41,7 +41,7 @@ class AiSourceCancellationRecoveryV65Test {
         ).readText()
 
         assertTrue(viewModel.contains("_state.update(::aiSourceStoppedStateV65)"))
-        assertTrue(viewModel.contains("aiError = null, aiStopped = false"))
+        assertTrue(viewModel.contains("_state.update { aiSourceStartingStateV67(it, useBrowser) }"))
         assertTrue(screen.contains("if (state.aiStopped)"))
         assertTrue(screen.contains("生成已停止"))
         assertTrue(screen.contains("网站地址和测试书名已保留，可重新选择普通或浏览器模式。"))
