@@ -12,6 +12,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
@@ -207,6 +208,40 @@ class SourceSearchRecoveryV57DeviceTest {
             rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.results.size == 1 }
             assertEquals(2, calls.get())
             assertEquals("原创域名恢复结果", vm.state.value.results.single().name)
+            assertTrue(vm.state.value.searchFailures.isEmpty())
+            rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
+        }
+    }
+
+    @Test fun refusedConnectionIsExplainedWithoutEndpointAndRetryRecovers() {
+        val refusing = AtomicBoolean(true)
+        val calls = AtomicInteger()
+        val unavailable = source("refused", "连接拒绝样例")
+        withScreen(listOf(unavailable), { request ->
+            check(request.url.contains("/v57/refused?")) { "Unexpected reserved-domain fixture: ${request.url}" }
+            calls.incrementAndGet()
+            if (refusing.get()) {
+                throw ConnectException(
+                    "Failed to connect to private.browser-fixture.example/203.0.113.7:65535",
+                )
+            }
+            book("refused", "原创连接恢复结果")
+        }) { vm ->
+            rule.runOnUiThread { vm.search(keyword) }
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.failedSources == 1 }
+            assertEquals(SOURCE_CONNECTION_MESSAGE_V72, vm.state.value.searchFailures.single().reason)
+            rule.onNodeWithText("连接拒绝样例：", substring = true).performScrollTo().assertIsDisplayed()
+            rule.onNodeWithText(SOURCE_CONNECTION_MESSAGE_V72, substring = true).assertIsDisplayed()
+            rule.onNodeWithText("private.browser-fixture.example", substring = true).assertDoesNotExist()
+            rule.onNodeWithText("203.0.113.7", substring = true).assertDoesNotExist()
+            rule.onNodeWithText("65535", substring = true).assertDoesNotExist()
+            deviceWindowEvidenceV46("v72-source-connection-diagnostic")
+
+            refusing.set(false)
+            retry()
+            rule.waitUntil(20_000) { !vm.state.value.searching && vm.state.value.results.size == 1 }
+            assertEquals(2, calls.get())
+            assertEquals("原创连接恢复结果", vm.state.value.results.single().name)
             assertTrue(vm.state.value.searchFailures.isEmpty())
             rule.onNodeWithText("书源搜索未完成").assertDoesNotExist()
         }
