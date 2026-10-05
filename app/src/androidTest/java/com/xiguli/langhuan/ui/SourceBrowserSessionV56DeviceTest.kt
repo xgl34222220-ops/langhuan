@@ -163,7 +163,7 @@ class SourceBrowserSessionV56DeviceTest {
             activeProvider.set(current, "already-removed-provider")
 
             BookSourceBrowserV38.withFixtureSiteV56(
-                fixture = { request ->
+                pages = { request ->
                     assertTrue(request.url.startsWith(base))
                     "<html><head><title>V78 原创站点</title></head><body>" +
                         "<form action='/search'><input name='q'></form></body></html>"

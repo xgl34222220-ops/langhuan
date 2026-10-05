@@ -41,3 +41,17 @@ rather than treating an asynchronously delivered presentation cache as authority
 `3a7c4daaf79c652b8e60d6aad80f665bbf6cacba` (GPL-3.0) and Readium commit
 `1b1f6b308a7b6f968b2bf1e66c84912879466f75` (BSD-3-Clause) remain fixed behavioural and lifecycle
 references only. No GPL code, rule implementation, or native bridge is copied.
+
+
+## Validation history before the final commit
+
+The implementation commit `fde53967f959f4959d5e2c870470e3132d7df3d1` reached product and JVM
+compilation, but both device workflows stopped at `compileDebugAndroidTestKotlin` before any device
+test or process-recovery phase ran. The new test named the existing fixture-function parameter
+`fixture`; its actual name is `pages`. Reader run
+[37296138144](https://github.com/xgl34222220-ops/langhuan/actions/runs/37296138144) produced no
+artifact. Browser run
+[37296138148](https://github.com/xgl34222220-ops/langhuan/actions/runs/37296138148) preserved
+artifact `11339086192` (37,627,789 bytes, SHA-256
+`2f578121df31f3a0ef594bfca1fca1ccf856a0baef0239f0a47d787515a72576`). The correction changes
+only that named argument; it does not alter product behavior, remove an assertion, or narrow a suite.
