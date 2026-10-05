@@ -5,6 +5,7 @@ import android.view.WindowManager
 import android.util.Log
 import android.os.SystemClock
 import java.io.File
+import androidx.compose.ui.geometry.Offset
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.test.*
@@ -59,6 +60,22 @@ class CreativeWritingV135DeviceTest {
             } else SystemClock.uptimeMillis() - stableSince >= 300
         }
         return node.assertIsDisplayed().assertIsEnabled()
+    }
+    private fun expandedSceneButton(text: String): SemanticsNodeInteraction {
+        val node = rule.onNodeWithText(text)
+        if (!node.isDisplayed()) {
+            // Material3 may retain the sheet at its partial anchor after the IME closes.
+            // Exercise the visible drag surface before requiring the off-screen action.
+            rule.onNodeWithText("本章场景").performTouchInput {
+                swipe(
+                    start = center,
+                    end = Offset(center.x, center.y - 800f),
+                    durationMillis = 500,
+                )
+            }
+            rule.waitUntil(10_000) { node.isDisplayed() }
+        }
+        return stableButton(text)
     }
     private fun dismissSceneSheet() {
         val label = "本章场景"
@@ -213,7 +230,7 @@ class CreativeWritingV135DeviceTest {
                 back()
                 rule.waitUntil(10_000) { !keyboardVisible() }
             }
-            val confirmScenes = stableButton("确认场景")
+            val confirmScenes = expandedSceneButton("确认场景")
             val runtime = (rule.activity.application as LanghuanApplication).chapterRunRuntime.state.value
             Log.i("CreativeWritingV135", "before confirm: dirty=${flow.state.value.sceneDirty}; busy=${flow.state.value.busy}; runtimeActive=${runtime.active}; roomScenes=${projects.chapterDraft(copiedId!!, 1)!!.scenePlan.size}")
             deviceWindowEvidenceV46("v135-writing-scene-preview-before-confirm")
