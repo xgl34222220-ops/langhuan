@@ -40,6 +40,19 @@ internal data class AiValidationRetryInputV77(
     val useBrowser: Boolean,
 )
 
+/** Exact persisted service revision accepted by one in-memory AI attempt. */
+internal data class AiProviderAttemptRevisionV81(
+    val id: String,
+    val revision: Long,
+)
+
+internal fun aiProviderAttemptStillCurrentV81(
+    attempt: AiProviderAttemptRevisionV81,
+    providers: List<com.xiguli.langhuan.data.StoredAiProvider>,
+): Boolean = providers.any { provider ->
+    provider.id == attempt.id && provider.revision == attempt.revision
+}
+
 internal fun aiValidationRetryInputV77(
     siteUrl: String,
     keyword: String,
@@ -172,6 +185,20 @@ internal fun aiSourceSavedStateV68(
     aiSavedSourceName = source.name,
 )
 
+internal fun aiSourceProviderChangedStateV81(state: OnlineBooksStateV36): OnlineBooksStateV36 =
+    state.copy(
+        aiSteps = emptyList(),
+        aiRunning = false,
+        aiAttemptProviderLabel = null,
+        aiReport = null,
+        aiError = "本次使用的 AI 服务已被删除或修改，生成已停止；请确认服务后重试",
+        aiStopped = false,
+        aiCanResumeValidatedRules = false,
+        aiValidationRetryInput = null,
+        aiSavedSourceId = null,
+        aiSavedSourceName = null,
+    )
+
 internal class OnlineBooksViewModelV36(
     application: Application,
     private val savedState: SavedStateHandle,
@@ -203,17 +230,25 @@ internal class OnlineBooksViewModelV36(
     private val repository = com.xiguli.langhuan.data.PersistentStoryRepository(application)
     private var activeProviderId: String? = null
     private var activeProviderPriorityIds: List<String> = emptyList()
+    private var observedProviders: List<com.xiguli.langhuan.data.StoredAiProvider>? = null
+    private var aiAttemptProviderRevision: AiProviderAttemptRevisionV81? = null
 
     init {
         if (restoredAiSavedSource == null) clearAiSavedSourceCheckpoint()
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
+                observedProviders = providers
                 val selected = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
                 activeProviderPriorityIds = providers.map { it.id }
                 activeProviderId = selected?.id
                 _state.update { it.copy(aiProviderLabel = selected?.let { provider ->
                     listOf(provider.name, provider.model).filter(String::isNotBlank).joinToString(" · ")
                 }) }
+                aiAttemptProviderRevision
+                    ?.takeIf { attempt ->
+                        _state.value.aiRunning && !aiProviderAttemptStillCurrentV81(attempt, providers)
+                    }
+                    ?.let { stopAiForProviderChangeV81() }
             }
         }
     }
@@ -234,6 +269,15 @@ internal class OnlineBooksViewModelV36(
         // Replace rather than only clearing: a cancelled builder may still be unwinding on another
         // dispatcher and must not be able to populate the next attempt's checkpoint.
         aiValidationCheckpoint = AiValidationCheckpointV76()
+    }
+
+    private fun stopAiForProviderChangeV81() {
+        aiGeneration.incrementAndGet()
+        aiJob?.cancel()
+        aiAttemptProviderRevision = null
+        clearAiValidationRetryV76()
+        clearAiSavedSourceCheckpoint()
+        _state.update(::aiSourceProviderChangedStateV81)
     }
 
     fun buildWithAi(siteUrl: String, keyword: String, useBrowser: Boolean = false) {
@@ -260,6 +304,7 @@ internal class OnlineBooksViewModelV36(
         // only if the database priority identity is still the same when the attempt resolves.
         val preferredProviderId = activeProviderId
         val observedProviderPriorityIds = activeProviderPriorityIds
+        aiAttemptProviderRevision = null
         clearAiSavedSourceCheckpoint()
         _state.update { aiSourceStartingStateV67(it, useBrowser) }
         aiJob = viewModelScope.launch {
@@ -280,6 +325,12 @@ internal class OnlineBooksViewModelV36(
                             aiValidationRetryInput = retryKey.takeIf { hasValidatedRules },
                         ) else it
                     }
+                    return@launch
+                }
+                val providerRevision = AiProviderAttemptRevisionV81(provider.id, provider.revision)
+                aiAttemptProviderRevision = providerRevision
+                if (observedProviders?.let { !aiProviderAttemptStillCurrentV81(providerRevision, it) } == true) {
+                    stopAiForProviderChangeV81()
                     return@launch
                 }
                 _state.update {
@@ -321,6 +372,7 @@ internal class OnlineBooksViewModelV36(
                     aiValidationRetryInput = retryKey.takeIf { aiValidationCheckpoint.hasValidatedRules() },
                 ) else it }
             } finally {
+                if (aiGeneration.get() == generation) aiAttemptProviderRevision = null
                 _state.update {
                     if (aiGeneration.get() == generation) {
                         it.copy(aiRunning = false, aiAttemptProviderLabel = null)
@@ -352,6 +404,7 @@ internal class OnlineBooksViewModelV36(
     fun cancelAi() {
         aiGeneration.incrementAndGet()
         aiJob?.cancel()
+        aiAttemptProviderRevision = null
         clearAiValidationRetryV76()
         clearAiSavedSourceCheckpoint()
         _state.update(::aiSourceStoppedStateV65)

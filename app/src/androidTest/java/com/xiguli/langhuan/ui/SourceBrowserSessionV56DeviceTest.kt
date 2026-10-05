@@ -391,6 +391,117 @@ class SourceBrowserSessionV56DeviceTest {
         }
     }
 
+    @Test fun deletingTheResolvedProviderStopsBeforeLaterAiStages(): Unit = runBlocking {
+        val application = InstrumentationRegistry.getInstrumentation()
+            .targetContext.applicationContext as Application
+        val repository = PersistentStoryRepository(application)
+        val previousProviders = repository.observeProviders().first()
+        val attemptProviderId = "provider-v81-attempt-${UUID.randomUUID()}"
+        val fallbackProviderId = "provider-v81-fallback-${UUID.randomUUID()}"
+        val attemptLabel = "V81 待删除服务 · v81-attempt-model"
+        val fallbackLabel = "V81 后续服务 · v81-fallback-model"
+        val providerChangedMessage = "本次使用的 AI 服务已被删除或修改，生成已停止；请确认服务后重试"
+        val enteredFixture = java.util.concurrent.CountDownLatch(1)
+        val releaseFixture = java.util.concurrent.CountDownLatch(1)
+        var viewModel: OnlineBooksViewModelV36? = null
+        try {
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = attemptProviderId,
+                    name = "V81 待删除服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v81-attempt-model",
+                    supportsJsonMode = true,
+                    apiKey = "v81-attempt-key",
+                    makeDefault = true,
+                ),
+            )
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = fallbackProviderId,
+                    name = "V81 后续服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v81-fallback-model",
+                    supportsJsonMode = true,
+                    apiKey = "v81-fallback-key",
+                    makeDefault = false,
+                ),
+            )
+
+            val current = OnlineBooksViewModelV36(application, SavedStateHandle())
+            viewModel = current
+            rule.waitUntil(10_000) { current.state.value.aiProviderLabel == attemptLabel }
+            rule.setContent {
+                val state by current.state.collectAsState()
+                AiBookSourceScreenV50(
+                    state = state,
+                    siteUrl = base,
+                    testBookName = "原创小说",
+                    onBack = {},
+                    onSiteUrlChange = {},
+                    onTestBookNameChange = {},
+                    onConfigureAi = {},
+                    onStart = { _, _ -> },
+                    onStartWithBrowser = { _, _ -> },
+                    onCancel = current::cancelAi,
+                    onSave = {},
+                )
+            }
+
+            BookSourceBrowserV38.withFixtureSiteV56(
+                pages = { request ->
+                    assertTrue(request.url.startsWith(base))
+                    enteredFixture.countDown()
+                    check(releaseFixture.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                        "V81 fixture was not released"
+                    }
+                    "<html><head><title>V81 原创站点</title></head><body>" +
+                        "<form action='/search'><input name='q'></form></body></html>"
+                },
+            ) {
+                current.buildWithAi(base, "原创小说", useBrowser = true)
+                assertTrue(
+                    "The accepted attempt must resolve before its service is removed",
+                    enteredFixture.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                )
+                assertEquals(attemptLabel, current.state.value.aiAttemptProviderLabel)
+
+                runBlocking {
+                    repository.deleteProvider(attemptProviderId)
+                    repository.setDefaultProvider(fallbackProviderId)
+                }
+                rule.waitUntil(10_000) {
+                    !current.state.value.aiRunning && current.state.value.aiError == providerChangedMessage
+                }
+
+                val observed = current.state.value
+                assertFalse(observed.aiStopped)
+                assertNull(observed.aiAttemptProviderLabel)
+                assertFalse(observed.aiCanResumeValidatedRules)
+                assertNull(observed.aiValidationRetryInput)
+                assertEquals(true, observed.aiLastUseBrowser)
+                assertEquals(fallbackLabel, displayedAiProviderLabelV80(observed))
+                rule.onNodeWithText(providerChangedMessage).assertIsDisplayed()
+                rule.onNodeWithText(fallbackLabel).assertIsDisplayed()
+                rule.onNodeWithText(attemptLabel).assertDoesNotExist()
+                deviceWindowEvidenceV46("v81-ai-provider-deleted-stops-attempt")
+            }
+        } finally {
+            releaseFixture.countDown()
+            viewModel?.let { current ->
+                current.cancelAi()
+                current.viewModelScope.cancel()
+            }
+            repository.deleteProvider(attemptProviderId)
+            repository.deleteProvider(fallbackProviderId)
+            previousProviders.firstOrNull { it.isDefault }?.let { previous ->
+                repository.setDefaultProvider(previous.id)
+            }
+        }
+    }
+
     private fun waitForNode(text: String): android.view.accessibility.AccessibilityNodeInfo {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         // WebView exposes virtual descendants that platform text search can omit.

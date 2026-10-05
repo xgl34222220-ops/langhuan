@@ -54,6 +54,8 @@ data class StoredAiProvider(
     val supportsJsonMode: Boolean,
     val isDefault: Boolean,
     val hasApiKey: Boolean,
+    /** Monotonic database identity for invalidating an accepted in-memory attempt after edits. */
+    val revision: Long = 0L,
 )
 
 data class ProviderSaveRequest(
@@ -72,6 +74,7 @@ data class ResolvedAiProviderV80(
     val id: String,
     val label: String,
     val config: AiProviderConfig,
+    val revision: Long,
 )
 
 internal fun aiProviderLabelV80(name: String, model: String): String =
@@ -269,7 +272,7 @@ class PersistentStoryRepository(context: Context) {
     suspend fun saveProvider(request: ProviderSaveRequest): StoredAiProvider {
         val id = request.id ?: UUID.randomUUID().toString()
         val existing = providerDao.getById(id)
-        val now = System.currentTimeMillis()
+        val now = maxOf(System.currentTimeMillis(), (existing?.updatedAt ?: -1L) + 1L)
         val shouldDefault = request.makeDefault || existing?.isDefault == true || providerDao.count() == 0
         val entity = AiProviderEntity(
             id = id,
@@ -349,6 +352,7 @@ class PersistentStoryRepository(context: Context) {
             id = provider.id,
             label = aiProviderLabelV80(provider.name, provider.model),
             config = provider.toConfig(),
+            revision = provider.updatedAt,
         )
     }
 
@@ -518,6 +522,7 @@ class PersistentStoryRepository(context: Context) {
         supportsJsonMode = supportsJsonMode,
         isDefault = isDefault,
         hasApiKey = keyStore.has(id),
+        revision = updatedAt,
     )
 
     private fun ChapterVersionEntity.toStored() = StoredChapterVersion(
