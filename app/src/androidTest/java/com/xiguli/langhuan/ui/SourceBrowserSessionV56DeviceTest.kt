@@ -502,6 +502,96 @@ class SourceBrowserSessionV56DeviceTest {
         }
     }
 
+    @Test fun staleProviderObservationDoesNotStopANewlyResolvedRevision(): Unit = runBlocking {
+        val application = InstrumentationRegistry.getInstrumentation()
+            .targetContext.applicationContext as Application
+        val repository = PersistentStoryRepository(application)
+        val previousProviders = repository.observeProviders().first()
+        val providerId = "provider-v82-${UUID.randomUUID()}"
+        val initialLabel = "V82 旧观察服务 · v82-old-model"
+        val resolvedLabel = "V82 当前服务 · v82-current-model"
+        val enteredFixture = java.util.concurrent.CountDownLatch(1)
+        val releaseFixture = java.util.concurrent.CountDownLatch(1)
+        var viewModel: OnlineBooksViewModelV36? = null
+        try {
+            val staleProvider = repository.saveProvider(
+                ProviderSaveRequest(
+                    id = providerId,
+                    name = "V82 旧观察服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v82-old-model",
+                    supportsJsonMode = true,
+                    apiKey = "v82-old-key",
+                    makeDefault = true,
+                ),
+            )
+            val current = OnlineBooksViewModelV36(application, SavedStateHandle())
+            viewModel = current
+            rule.waitUntil(10_000) { current.state.value.aiProviderLabel == initialLabel }
+
+            val resolvedProvider = repository.saveProvider(
+                ProviderSaveRequest(
+                    id = providerId,
+                    name = "V82 当前服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v82-current-model",
+                    supportsJsonMode = true,
+                    apiKey = "v82-current-key",
+                    makeDefault = true,
+                ),
+            )
+            assertTrue(resolvedProvider.revision > staleProvider.revision)
+            rule.waitUntil(10_000) { current.state.value.aiProviderLabel == resolvedLabel }
+
+            // Hold an older Flow value without advancing its sequence. The repository still reads
+            // the current Room snapshot, so this cache must not cancel the newly accepted attempt.
+            OnlineBooksViewModelV36::class.java
+                .getDeclaredField("observedProviders")
+                .apply { isAccessible = true }
+                .set(current, listOf(staleProvider))
+
+            BookSourceBrowserV38.withFixtureSiteV56(
+                pages = { request ->
+                    assertTrue(request.url.startsWith(base))
+                    enteredFixture.countDown()
+                    check(releaseFixture.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                        "V82 fixture was not released"
+                    }
+                    "<html><head><title>V82 原创站点</title></head><body>" +
+                        "<form action='/search'><input name='q'></form></body></html>"
+                },
+            ) {
+                current.buildWithAi(base, "原创小说", useBrowser = true)
+                assertTrue(
+                    "The current database revision must reach its real browser request",
+                    enteredFixture.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                )
+                val observed = current.state.value
+                assertTrue(observed.aiRunning)
+                assertNull(observed.aiError)
+                assertEquals(resolvedLabel, observed.aiAttemptProviderLabel)
+                assertEquals(resolvedLabel, displayedAiProviderLabelV80(observed))
+                deviceWindowEvidenceV46("v82-ai-provider-stale-observation-accepted")
+
+                releaseFixture.countDown()
+                current.cancelAi()
+                assertTrue(current.state.value.aiStopped)
+            }
+        } finally {
+            releaseFixture.countDown()
+            viewModel?.let { current ->
+                current.cancelAi()
+                current.viewModelScope.cancel()
+            }
+            repository.deleteProvider(providerId)
+            previousProviders.firstOrNull { it.isDefault }?.let { previous ->
+                repository.setDefaultProvider(previous.id)
+            }
+        }
+    }
+
     private fun waitForNode(text: String): android.view.accessibility.AccessibilityNodeInfo {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         // WebView exposes virtual descendants that platform text search can omit.

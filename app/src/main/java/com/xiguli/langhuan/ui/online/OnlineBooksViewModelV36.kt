@@ -53,6 +53,19 @@ internal fun aiProviderAttemptStillCurrentV81(
     provider.id == attempt.id && provider.revision == attempt.revision
 }
 
+/**
+ * A cached Flow value may predate the database snapshot that resolved this attempt. Only an
+ * observation delivered while resolution was in flight can invalidate that newly resolved
+ * identity here; later Flow emissions are still handled continuously by the collector.
+ */
+internal fun aiProviderObservationInvalidatesResolvedAttemptV82(
+    attempt: AiProviderAttemptRevisionV81,
+    providers: List<com.xiguli.langhuan.data.StoredAiProvider>,
+    observationVersionAtResolutionStart: Long,
+    currentObservationVersion: Long,
+): Boolean = currentObservationVersion != observationVersionAtResolutionStart &&
+    !aiProviderAttemptStillCurrentV81(attempt, providers)
+
 internal fun aiValidationRetryInputV77(
     siteUrl: String,
     keyword: String,
@@ -231,12 +244,14 @@ internal class OnlineBooksViewModelV36(
     private var activeProviderId: String? = null
     private var activeProviderPriorityIds: List<String> = emptyList()
     private var observedProviders: List<com.xiguli.langhuan.data.StoredAiProvider>? = null
+    private var providerObservationVersion: Long = 0L
     private var aiAttemptProviderRevision: AiProviderAttemptRevisionV81? = null
 
     init {
         if (restoredAiSavedSource == null) clearAiSavedSourceCheckpoint()
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
+                providerObservationVersion++
                 observedProviders = providers
                 val selected = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
                 activeProviderPriorityIds = providers.map { it.id }
@@ -304,6 +319,7 @@ internal class OnlineBooksViewModelV36(
         // only if the database priority identity is still the same when the attempt resolves.
         val preferredProviderId = activeProviderId
         val observedProviderPriorityIds = activeProviderPriorityIds
+        val providerObservationVersionAtResolutionStart = providerObservationVersion
         aiAttemptProviderRevision = null
         clearAiSavedSourceCheckpoint()
         _state.update { aiSourceStartingStateV67(it, useBrowser) }
@@ -329,7 +345,15 @@ internal class OnlineBooksViewModelV36(
                 }
                 val providerRevision = AiProviderAttemptRevisionV81(provider.id, provider.revision)
                 aiAttemptProviderRevision = providerRevision
-                if (observedProviders?.let { !aiProviderAttemptStillCurrentV81(providerRevision, it) } == true) {
+                if (observedProviders?.let { providers ->
+                        aiProviderObservationInvalidatesResolvedAttemptV82(
+                            attempt = providerRevision,
+                            providers = providers,
+                            observationVersionAtResolutionStart = providerObservationVersionAtResolutionStart,
+                            currentObservationVersion = providerObservationVersion,
+                        )
+                    } == true
+                ) {
                     stopAiForProviderChangeV81()
                     return@launch
                 }
