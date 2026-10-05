@@ -194,12 +194,14 @@ internal class OnlineBooksViewModelV36(
     private var aiValidationCheckpoint = AiValidationCheckpointV76()
     private val repository = com.xiguli.langhuan.data.PersistentStoryRepository(application)
     private var activeProviderId: String? = null
+    private var activeProviderPriorityIds: List<String> = emptyList()
 
     init {
         if (restoredAiSavedSource == null) clearAiSavedSourceCheckpoint()
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
                 val selected = providers.firstOrNull { it.isDefault } ?: providers.firstOrNull()
+                activeProviderPriorityIds = providers.map { it.id }
                 activeProviderId = selected?.id
                 _state.update { it.copy(aiProviderLabel = selected?.let { provider ->
                     listOf(provider.name, provider.model).filter(String::isNotBlank).joinToString(" · ")
@@ -246,14 +248,18 @@ internal class OnlineBooksViewModelV36(
             aiRetryKey = retryKey
         }
         val generation = aiGeneration.incrementAndGet()
-        // Capture the observed preference with this attempt; resolution below still falls back to
-        // the current database priority if the first Flow value is pending or this id was removed.
+        // Capture one coherent main-thread observation. The repository will retain this preference
+        // only if the database priority identity is still the same when the attempt resolves.
         val preferredProviderId = activeProviderId
+        val observedProviderPriorityIds = activeProviderPriorityIds
         clearAiSavedSourceCheckpoint()
         _state.update { aiSourceStartingStateV67(it, useBrowser) }
         aiJob = viewModelScope.launch {
             try {
-                val config = repository.activeProviderConfig(preferredProviderId)
+                val config = repository.activeProviderConfigV79(
+                    preferredId = preferredProviderId,
+                    observedProviderIdsInPriorityOrder = observedProviderPriorityIds,
+                )
                 currentCoroutineContext().ensureActive()
                 if (config == null) {
                     val hasValidatedRules = aiValidationCheckpoint.hasValidatedRules()

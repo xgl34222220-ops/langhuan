@@ -198,6 +198,95 @@ class SourceBrowserSessionV56DeviceTest {
         }
     }
 
+    @Test fun currentDefaultWinsWhenObservedProviderPriorityIsStale(): Unit = runBlocking {
+        val application = InstrumentationRegistry.getInstrumentation()
+            .targetContext.applicationContext as Application
+        val repository = PersistentStoryRepository(application)
+        val previousProviders = repository.observeProviders().first()
+        val oldProviderId = "provider-v79-old-${UUID.randomUUID()}"
+        val currentProviderId = "provider-v79-current-${UUID.randomUUID()}"
+        var viewModel: OnlineBooksViewModelV36? = null
+        try {
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = oldProviderId,
+                    name = "V79 旧默认服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v79-old-model",
+                    supportsJsonMode = true,
+                    apiKey = "v79-old-key",
+                    makeDefault = true,
+                ),
+            )
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = currentProviderId,
+                    name = "V79 当前默认服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v79-current-model",
+                    supportsJsonMode = true,
+                    apiKey = "v79-current-key",
+                    makeDefault = false,
+                ),
+            )
+            repository.setDefaultProvider(currentProviderId)
+
+            val resolved = repository.activeProviderConfigV79(
+                preferredId = oldProviderId,
+                observedProviderIdsInPriorityOrder = listOf(oldProviderId, currentProviderId),
+            )
+            assertEquals("v79-current-model", resolved?.model)
+
+            val current = OnlineBooksViewModelV36(application, SavedStateHandle())
+            viewModel = current
+            BookSourceBrowserV38.withFixtureSiteV56(
+                pages = { request ->
+                    assertTrue(request.url.startsWith(base))
+                    "<html><head><title>V79 原创站点</title></head><body>" +
+                        "<form action='/search'><input name='q'></form></body></html>"
+                },
+            ) {
+                // Override immediately before the synchronous attempt capture so a real Flow
+                // callback cannot turn this deliberately stale observation into a trivial pass.
+                OnlineBooksViewModelV36::class.java
+                    .getDeclaredField("activeProviderId")
+                    .apply { isAccessible = true }
+                    .set(current, oldProviderId)
+                OnlineBooksViewModelV36::class.java
+                    .getDeclaredField("activeProviderPriorityIds")
+                    .apply { isAccessible = true }
+                    .set(current, listOf(oldProviderId, currentProviderId))
+                current.buildWithAi(base, "原创小说", useBrowser = true)
+                val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+                while (
+                    current.state.value.aiSteps.isEmpty() &&
+                    current.state.value.aiError == null &&
+                    android.os.SystemClock.uptimeMillis() < deadline
+                ) {
+                    Thread.sleep(25)
+                }
+                val observed = current.state.value
+                assertNull(observed.aiError)
+                assertEquals("读取网站首页", observed.aiSteps.firstOrNull()?.label)
+
+                current.cancelAi()
+                assertTrue(current.state.value.aiStopped)
+            }
+        } finally {
+            viewModel?.let { current ->
+                current.cancelAi()
+                current.viewModelScope.cancel()
+            }
+            repository.deleteProvider(oldProviderId)
+            repository.deleteProvider(currentProviderId)
+            previousProviders.firstOrNull { it.isDefault }?.let { previous ->
+                repository.setDefaultProvider(previous.id)
+            }
+        }
+    }
+
     private fun waitForNode(text: String): android.view.accessibility.AccessibilityNodeInfo {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         // WebView exposes virtual descendants that platform text search can omit.

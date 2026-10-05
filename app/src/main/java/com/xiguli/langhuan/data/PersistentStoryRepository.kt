@@ -74,6 +74,19 @@ internal fun selectAiProviderIdV78(
 ): String? = preferredId?.takeIf(providerIdsInPriorityOrder::contains)
     ?: providerIdsInPriorityOrder.firstOrNull()
 
+/**
+ * A Flow-derived preference is fresh only while the priority identity snapshot still matches.
+ * If default selection changed before the Flow callback arrives, the database snapshot wins.
+ */
+internal fun selectAiProviderIdV79(
+    currentProviderIdsInPriorityOrder: List<String>,
+    observedProviderIdsInPriorityOrder: List<String>,
+    preferredId: String?,
+): String? = preferredId?.takeIf {
+    observedProviderIdsInPriorityOrder == currentProviderIdsInPriorityOrder &&
+        currentProviderIdsInPriorityOrder.contains(it)
+} ?: currentProviderIdsInPriorityOrder.firstOrNull()
+
 class PersistentStoryRepository(context: Context) {
     private val db = LanghuanDatabase.get(context)
     private val storyDao = db.storyStateDao()
@@ -288,6 +301,23 @@ class PersistentStoryRepository(context: Context) {
     suspend fun activeProviderConfig(preferredId: String?): AiProviderConfig? {
         val providers = providerDao.allByPriority()
         val selectedId = selectAiProviderIdV78(providers.map { it.id }, preferredId) ?: return null
+        return providers.first { it.id == selectedId }.toConfig()
+    }
+
+    /**
+     * Resolve a Flow-derived preference only when its observed priority identity is still current.
+     * A default switch changes that order, so an accepted attempt cannot silently use the old service.
+     */
+    suspend fun activeProviderConfigV79(
+        preferredId: String?,
+        observedProviderIdsInPriorityOrder: List<String>,
+    ): AiProviderConfig? {
+        val providers = providerDao.allByPriority()
+        val selectedId = selectAiProviderIdV79(
+            currentProviderIdsInPriorityOrder = providers.map { it.id },
+            observedProviderIdsInPriorityOrder = observedProviderIdsInPriorityOrder,
+            preferredId = preferredId,
+        ) ?: return null
         return providers.first { it.id == selectedId }.toConfig()
     }
 
