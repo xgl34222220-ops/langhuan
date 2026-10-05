@@ -190,7 +190,7 @@ internal fun AiBookSourceScreenV50(
                                 state.aiSavedSourceId?.let(onOpenSavedSource) ?: onBack()
                             },
                         )
-                        aiSourceStartActionsV67(state).forEach { action ->
+                        aiSourceStartActionsV67(state, siteUrl, testBookName).forEach { action ->
                             AiSourceMainButtonV50(
                                 icon = Icons.Rounded.AutoAwesome,
                                 text = action.label,
@@ -207,7 +207,7 @@ internal fun AiBookSourceScreenV50(
 
                 else -> {
                     Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
-                        aiSourceStartActionsV67(state).forEachIndexed { index, action ->
+                        aiSourceStartActionsV67(state, siteUrl, testBookName).forEachIndexed { index, action ->
                             AiSourceMainButtonV50(
                                 icon = Icons.Rounded.AutoAwesome,
                                 text = action.label,
@@ -236,8 +236,20 @@ internal data class AiSourceStartActionV67(
     val useBrowser: Boolean,
 )
 
-/** Keeps the failed attempt's transport as the primary retry without hiding the other mode. */
-internal fun aiSourceStartActionsV67(state: OnlineBooksStateV36): List<AiSourceStartActionV67> =
+internal fun aiCanResumeValidatedRulesV77(
+    state: OnlineBooksStateV36,
+    siteUrl: String,
+    testBookName: String,
+    useBrowser: Boolean,
+): Boolean = state.aiCanResumeValidatedRules &&
+    state.aiValidationRetryInput == aiValidationRetryInputV77(siteUrl, testBookName, useBrowser)
+
+/** Keeps the failed attempt's transport first and promises rule reuse only for its exact input. */
+internal fun aiSourceStartActionsV67(
+    state: OnlineBooksStateV36,
+    siteUrl: String,
+    testBookName: String,
+): List<AiSourceStartActionV67> =
     when {
         state.aiError.isNullOrBlank() || state.aiLastUseBrowser == null -> listOf(
             AiSourceStartActionV67("开始生成", useBrowser = false),
@@ -246,7 +258,7 @@ internal fun aiSourceStartActionsV67(state: OnlineBooksStateV36): List<AiSourceS
 
         state.aiLastUseBrowser == true -> listOf(
             AiSourceStartActionV67(
-                if (state.aiCanResumeValidatedRules) "保留已通过规则重试（浏览器）" else "重试浏览器模式",
+                if (aiCanResumeValidatedRulesV77(state, siteUrl, testBookName, useBrowser = true)) "保留已通过规则重试（浏览器）" else "重试浏览器模式",
                 useBrowser = true,
             ),
             AiSourceStartActionV67("改用普通模式", useBrowser = false),
@@ -254,7 +266,7 @@ internal fun aiSourceStartActionsV67(state: OnlineBooksStateV36): List<AiSourceS
 
         else -> listOf(
             AiSourceStartActionV67(
-                if (state.aiCanResumeValidatedRules) "保留已通过规则重试（普通）" else "重试普通模式",
+                if (aiCanResumeValidatedRulesV77(state, siteUrl, testBookName, useBrowser = false)) "保留已通过规则重试（普通）" else "重试普通模式",
                 useBrowser = false,
             ),
             AiSourceStartActionV67("改用浏览器模式", useBrowser = true),

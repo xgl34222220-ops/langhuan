@@ -33,6 +33,23 @@ internal data class OnlineDownloadV36(val done: Int, val total: Int, val failed:
 
 internal data class OnlineSourceFailureV57(val sourceId: String, val sourceName: String, val reason: String)
 
+/** Exact transient input identity for rules which passed live validation in this process. */
+internal data class AiValidationRetryInputV77(
+    val siteUrl: String,
+    val keyword: String,
+    val useBrowser: Boolean,
+)
+
+internal fun aiValidationRetryInputV77(
+    siteUrl: String,
+    keyword: String,
+    useBrowser: Boolean,
+): AiValidationRetryInputV77 = AiValidationRetryInputV77(
+    siteUrl = siteUrl.trim(),
+    keyword = keyword.trim(),
+    useBrowser = useBrowser,
+)
+
 internal data class OnlineBooksStateV36(
     val sources: List<BookSourceV36> = emptyList(),
     val sourceStorageError: String? = null,
@@ -75,6 +92,8 @@ internal data class OnlineBooksStateV36(
     val aiLastUseBrowser: Boolean? = null,
     /** Same-input retry can reuse rules which already passed live extraction. */
     val aiCanResumeValidatedRules: Boolean = false,
+    /** Input identity backing [aiCanResumeValidatedRules]; never persisted across processes. */
+    val aiValidationRetryInput: AiValidationRetryInputV77? = null,
     /** Last source confirmed written by the AI flow; cleared by the next attempt or explicit stop. */
     val aiSavedSourceId: String? = null,
     val aiSavedSourceName: String? = null,
@@ -112,6 +131,7 @@ internal fun aiSourceStartingStateV67(
     aiStopped = false,
     aiLastUseBrowser = useBrowser,
     aiCanResumeValidatedRules = false,
+    aiValidationRetryInput = null,
     aiSavedSourceId = null,
     aiSavedSourceName = null,
 )
@@ -124,6 +144,7 @@ internal fun aiSourceStoppedStateV65(state: OnlineBooksStateV36): OnlineBooksSta
         aiError = null,
         aiStopped = true,
         aiCanResumeValidatedRules = false,
+        aiValidationRetryInput = null,
         aiSavedSourceId = null,
         aiSavedSourceName = null,
     )
@@ -138,6 +159,7 @@ internal fun aiSourceSavedStateV68(
     aiError = null,
     aiStopped = false,
     aiCanResumeValidatedRules = false,
+    aiValidationRetryInput = null,
     aiSavedSourceId = source.id,
     aiSavedSourceName = source.name,
 )
@@ -168,8 +190,7 @@ internal class OnlineBooksViewModelV36(
     private var detailJob: Job? = null
     private val detailGeneration = java.util.concurrent.atomic.AtomicLong()
     private var aiJob: Job? = null
-    private data class AiRetryKeyV76(val siteUrl: String, val keyword: String, val useBrowser: Boolean)
-    private var aiRetryKey: AiRetryKeyV76? = null
+    private var aiRetryKey: AiValidationRetryInputV77? = null
     private var aiValidationCheckpoint = AiValidationCheckpointV76()
     private val repository = com.xiguli.langhuan.data.PersistentStoryRepository(application)
     private var activeProviderId: String? = null
@@ -209,17 +230,17 @@ internal class OnlineBooksViewModelV36(
         if (!sourceStorageReady()) {
             clearAiValidationRetryV76()
             clearAiSavedSourceCheckpoint()
-            _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiCanResumeValidatedRules = false, aiSavedSourceId = null, aiSavedSourceName = null) }
+            _state.update { it.copy(aiError = it.sourceStorageError, aiStopped = false, aiCanResumeValidatedRules = false, aiValidationRetryInput = null, aiSavedSourceId = null, aiSavedSourceName = null) }
             return
         }
         if (aiJob?.isActive == true) return
         if (siteUrl.isBlank() || keyword.isBlank()) {
             clearAiValidationRetryV76()
             clearAiSavedSourceCheckpoint()
-            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false, aiCanResumeValidatedRules = false, aiSavedSourceId = null, aiSavedSourceName = null) }
+            _state.update { it.copy(aiError = "请填写网站链接和一本该站能搜到的书名", aiStopped = false, aiCanResumeValidatedRules = false, aiValidationRetryInput = null, aiSavedSourceId = null, aiSavedSourceName = null) }
             return
         }
-        val retryKey = AiRetryKeyV76(siteUrl.trim(), keyword.trim(), useBrowser)
+        val retryKey = aiValidationRetryInputV77(siteUrl, keyword, useBrowser)
         if (aiRetryKey != retryKey) {
             aiValidationCheckpoint.clear()
             aiRetryKey = retryKey
@@ -235,6 +256,7 @@ internal class OnlineBooksViewModelV36(
                         aiRunning = false,
                         aiError = "请先在设置里添加并启用一个 AI 服务",
                         aiCanResumeValidatedRules = aiValidationCheckpoint.hasValidatedRules(),
+                        aiValidationRetryInput = retryKey.takeIf { aiValidationCheckpoint.hasValidatedRules() },
                     ) }
                     return@launch
                 }
@@ -250,7 +272,7 @@ internal class OnlineBooksViewModelV36(
                     .onSuccess { report ->
                         if (aiGeneration.get() == generation) {
                             clearAiValidationRetryV76()
-                            _state.update { it.copy(aiRunning = false, aiReport = report, aiCanResumeValidatedRules = false) }
+                            _state.update { it.copy(aiRunning = false, aiReport = report, aiCanResumeValidatedRules = false, aiValidationRetryInput = null) }
                         }
                     }
                     .onFailure { e ->
@@ -259,6 +281,7 @@ internal class OnlineBooksViewModelV36(
                             aiRunning = false,
                             aiError = e.message ?: "生成失败",
                             aiCanResumeValidatedRules = aiValidationCheckpoint.hasValidatedRules(),
+                            aiValidationRetryInput = retryKey.takeIf { aiValidationCheckpoint.hasValidatedRules() },
                         ) else it }
                     }
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -268,6 +291,7 @@ internal class OnlineBooksViewModelV36(
                 _state.update { if (aiGeneration.get() == generation) it.copy(
                     aiError = error.message ?: "AI 书源生成失败，请重试",
                     aiCanResumeValidatedRules = aiValidationCheckpoint.hasValidatedRules(),
+                    aiValidationRetryInput = retryKey.takeIf { aiValidationCheckpoint.hasValidatedRules() },
                 ) else it }
             } finally {
                 _state.update { if (aiGeneration.get() == generation) it.copy(aiRunning = false) else it }

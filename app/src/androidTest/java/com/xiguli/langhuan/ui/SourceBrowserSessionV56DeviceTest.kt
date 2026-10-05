@@ -418,6 +418,7 @@ class SourceBrowserSessionV56DeviceTest {
                     aiError = "目录规则未通过，已保留通过验证的搜索规则",
                     aiLastUseBrowser = true,
                     aiCanResumeValidatedRules = true,
+                    aiValidationRetryInput = aiValidationRetryInputV77(base, "原创小说", true),
                 ),
                 siteUrl = base,
                 testBookName = "原创小说",
@@ -440,6 +441,49 @@ class SourceBrowserSessionV56DeviceTest {
         rule.onNodeWithText("保留已通过规则重试（浏览器）").performClick()
         rule.onNodeWithText("改用普通模式").performClick()
         rule.runOnIdle { assertEquals(listOf(true, false), starts) }
+    }
+
+    @Test fun editedValidationInputRemovesTheCheckpointPromiseBeforeRetry() {
+        val siteUrl = androidx.compose.runtime.mutableStateOf(base)
+        val bookName = androidx.compose.runtime.mutableStateOf("原创小说")
+        val starts = mutableListOf<Triple<Boolean, String, String>>()
+        rule.setContent {
+            AiBookSourceScreenV50(
+                state = OnlineBooksStateV36(
+                    aiProviderLabel = "合成测试模型",
+                    aiError = "目录规则未通过，已保留通过验证的搜索规则",
+                    aiLastUseBrowser = true,
+                    aiCanResumeValidatedRules = true,
+                    aiValidationRetryInput = aiValidationRetryInputV77(base, "原创小说", true),
+                ),
+                siteUrl = siteUrl.value,
+                testBookName = bookName.value,
+                onBack = {},
+                onSiteUrlChange = { siteUrl.value = it },
+                onTestBookNameChange = { bookName.value = it },
+                onConfigureAi = {},
+                onStart = { site, book -> starts += Triple(false, site, book) },
+                onStartWithBrowser = { site, book -> starts += Triple(true, site, book) },
+                onCancel = {},
+                onSave = {},
+            )
+        }
+
+        rule.onNode(hasSetTextAction() and hasText("原创小说"))
+            .performTextReplacement("另一部原创小说")
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("重试浏览器模式"))
+        rule.onNodeWithText("保留已通过规则重试（浏览器）").assertDoesNotExist()
+        rule.onNodeWithText("重试浏览器模式").assertIsDisplayed().assertIsEnabled()
+        rule.onNodeWithText("改用普通模式").assertIsDisplayed().assertIsEnabled()
+        deviceWindowEvidenceV46("v77-ai-validation-edited-input-retry")
+
+        rule.onNodeWithText("重试浏览器模式").performClick()
+        rule.runOnIdle {
+            assertEquals(
+                listOf(Triple(true, base, "另一部原创小说")),
+                starts,
+            )
+        }
     }
 
     @Test fun failedAiSourceSaveShowsRetryThenAConfirmedSavedState() {

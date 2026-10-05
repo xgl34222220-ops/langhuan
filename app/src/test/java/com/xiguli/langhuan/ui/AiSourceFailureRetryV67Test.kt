@@ -34,6 +34,8 @@ class AiSourceFailureRetryV67Test {
     fun terminalFailureRetriesTheSameTransportFirstAndKeepsTheAlternative() {
         val browser = aiSourceStartActionsV67(
             OnlineBooksStateV36(aiError = "动态正文验证失败", aiLastUseBrowser = true),
+            "https://example.com",
+            "测试书",
         )
         assertEquals(
             listOf(
@@ -45,6 +47,8 @@ class AiSourceFailureRetryV67Test {
 
         val normal = aiSourceStartActionsV67(
             OnlineBooksStateV36(aiError = "目录规则验证失败", aiLastUseBrowser = false),
+            "https://example.com",
+            "测试书",
         )
         assertEquals(
             listOf(
@@ -54,7 +58,7 @@ class AiSourceFailureRetryV67Test {
             normal,
         )
 
-        val initial = aiSourceStartActionsV67(OnlineBooksStateV36())
+        val initial = aiSourceStartActionsV67(OnlineBooksStateV36(), "https://example.com", "测试书")
         assertEquals("开始生成", initial.first().label)
         assertEquals("浏览器模式生成", initial.last().label)
 
@@ -63,7 +67,10 @@ class AiSourceFailureRetryV67Test {
                 aiError = "正文验证失败",
                 aiLastUseBrowser = true,
                 aiCanResumeValidatedRules = true,
+                aiValidationRetryInput = aiValidationRetryInputV77("https://example.com", "测试书", true),
             ),
+            "https://example.com",
+            "测试书",
         )
         assertEquals("保留已通过规则重试（浏览器）", checkpoint.first().label)
         assertEquals(true, checkpoint.first().useBrowser)
@@ -73,6 +80,8 @@ class AiSourceFailureRetryV67Test {
             aiSourceStoppedStateV65(
                 OnlineBooksStateV36(aiLastUseBrowser = true, aiRunning = true),
             ),
+            "https://example.com",
+            "测试书",
         )
         assertEquals("开始生成", stopped.first().label)
         assertEquals("浏览器模式生成", stopped.last().label)
