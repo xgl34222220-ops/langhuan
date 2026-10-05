@@ -475,8 +475,6 @@ class SourceBrowserSessionV56DeviceTest {
         rule.onNodeWithText("保留已通过规则重试（浏览器）").assertDoesNotExist()
         rule.onNodeWithText("重试浏览器模式").assertIsDisplayed().assertIsEnabled()
         rule.onNodeWithText("改用普通模式").assertIsDisplayed().assertIsEnabled()
-        deviceWindowEvidenceV46("v77-ai-validation-edited-input-retry")
-
         rule.onNodeWithText("重试浏览器模式").performClick()
         rule.runOnIdle {
             assertEquals(
@@ -484,6 +482,9 @@ class SourceBrowserSessionV56DeviceTest {
                 starts,
             )
         }
+        // Preserve the already-asserted screen only after the real click/callback contract.
+        // Evidence shell I/O must not sit between a semantics assertion and its touch action.
+        deviceWindowEvidenceV46("v77-ai-validation-edited-input-retry")
     }
 
     @Test fun failedAiSourceSaveShowsRetryThenAConfirmedSavedState() {

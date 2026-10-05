@@ -57,3 +57,21 @@ identity, and V3 layout are unchanged.
 This does not persist unfinished rules across process death, validate a real AI account, bypass site
 verification, retry failures automatically, prove a physical device, or fix historical emulator
 disconnects and Compose first-layout races.
+
+## Validation history before the final commit
+
+- Reader run [37275857219 attempt 1](https://github.com/xgl34222220-ops/langhuan/actions/runs/37275857219/attempts/1)
+  passed the 22 reader prechecks, 2 editor tests and 11 creative tests, then lost the emulator
+  during the unfiltered group with `AdbCommandRejectedException: device offline`. It completed 96
+  tests successfully before the empty infrastructure failure; 64 tests and EPUB process recovery
+  did not run. Artifact `11331270788` is 50,000,208 bytes with SHA-256
+  `d4d8279a54484c47648d1712017f0d7ae45e01934812fe51dd790cf9b2208a03`.
+- Attempt 2 executed all 160 unfiltered tests: 159 passed and the new V77 device method failed only
+  after its screenshot/window evidence had already proved the downgraded label visible and enabled.
+  The evidence helper's shell-copy work was followed by the test Activity being replaced and
+  destroyed, so the next Compose touch lookup found no host node. Artifact `11334012632` is
+  64,136,428 bytes with SHA-256
+  `bac17c11ab7e0bbc236ca41bb2757bf1965b5e55e2e83f78bd42085f56996f5a`.
+  The synchronization correction moves evidence capture after the unchanged real click and callback
+  assertion; it changes no product code, removes no assertion, and narrows no suite.
+
