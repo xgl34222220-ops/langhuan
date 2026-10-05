@@ -362,7 +362,7 @@ class SourceBrowserSessionV56DeviceTest {
                     "The accepted attempt must reach its real browser request",
                     enteredFixture.await(10, java.util.concurrent.TimeUnit.SECONDS),
                 )
-                repository.setDefaultProvider(nextProviderId)
+                runBlocking { repository.setDefaultProvider(nextProviderId) }
                 rule.waitUntil(10_000) { current.state.value.aiProviderLabel == nextLabel }
 
                 val observed = current.state.value
