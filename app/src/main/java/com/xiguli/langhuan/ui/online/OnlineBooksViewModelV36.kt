@@ -246,21 +246,27 @@ internal class OnlineBooksViewModelV36(
             aiRetryKey = retryKey
         }
         val generation = aiGeneration.incrementAndGet()
+        // Capture the observed preference with this attempt; resolution below still falls back to
+        // the current database priority if the first Flow value is pending or this id was removed.
+        val preferredProviderId = activeProviderId
         clearAiSavedSourceCheckpoint()
         _state.update { aiSourceStartingStateV67(it, useBrowser) }
         aiJob = viewModelScope.launch {
             try {
-                val config = activeProviderId?.let { repository.providerConfig(it) }
+                val config = repository.activeProviderConfig(preferredProviderId)
+                currentCoroutineContext().ensureActive()
                 if (config == null) {
-                    _state.update { it.copy(
-                        aiRunning = false,
-                        aiError = "请先在设置里添加并启用一个 AI 服务",
-                        aiCanResumeValidatedRules = aiValidationCheckpoint.hasValidatedRules(),
-                        aiValidationRetryInput = retryKey.takeIf { aiValidationCheckpoint.hasValidatedRules() },
-                    ) }
+                    val hasValidatedRules = aiValidationCheckpoint.hasValidatedRules()
+                    _state.update {
+                        if (aiGeneration.get() == generation) it.copy(
+                            aiRunning = false,
+                            aiError = "请先在设置里添加并启用一个 AI 服务",
+                            aiCanResumeValidatedRules = hasValidatedRules,
+                            aiValidationRetryInput = retryKey.takeIf { hasValidatedRules },
+                        ) else it
+                    }
                     return@launch
                 }
-                currentCoroutineContext().ensureActive()
                 val builder = BookSourceAiBuilderV37(
                     com.xiguli.langhuan.engine.UniversalAiGateway(config),
                     onSteps = { steps ->

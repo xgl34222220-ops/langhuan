@@ -68,6 +68,12 @@ data class ProviderSaveRequest(
     val makeDefault: Boolean = true,
 )
 
+internal fun selectAiProviderIdV78(
+    providerIdsInPriorityOrder: List<String>,
+    preferredId: String?,
+): String? = preferredId?.takeIf(providerIdsInPriorityOrder::contains)
+    ?: providerIdsInPriorityOrder.firstOrNull()
+
 class PersistentStoryRepository(context: Context) {
     private val db = LanghuanDatabase.get(context)
     private val storyDao = db.storyStateDao()
@@ -272,17 +278,27 @@ class PersistentStoryRepository(context: Context) {
 
     suspend fun apiKey(id: String): String? = keyStore.get(id)
 
-    suspend fun providerConfig(id: String): AiProviderConfig? {
-        val entity = providerDao.getById(id) ?: return null
-        return AiProviderConfig(
-            baseUrl = entity.baseUrl,
-            apiKey = keyStore.get(id).orEmpty(),
-            model = entity.model,
-            protocol = entity.protocol.toProtocol(),
-            temperature = entity.temperature,
-            supportsJsonMode = entity.supportsJsonMode,
-        )
+    suspend fun providerConfig(id: String): AiProviderConfig? =
+        providerDao.getById(id)?.toConfig()
+
+    /**
+     * Resolve against one current database snapshot. The observed UI id is only a preference:
+     * its first Flow value can still be pending, and a provider may be replaced before collection.
+     */
+    suspend fun activeProviderConfig(preferredId: String?): AiProviderConfig? {
+        val providers = providerDao.allByPriority()
+        val selectedId = selectAiProviderIdV78(providers.map { it.id }, preferredId) ?: return null
+        return providers.first { it.id == selectedId }.toConfig()
     }
+
+    private fun AiProviderEntity.toConfig() = AiProviderConfig(
+        baseUrl = baseUrl,
+        apiKey = keyStore.get(id).orEmpty(),
+        model = model,
+        protocol = protocol.toProtocol(),
+        temperature = temperature,
+        supportsJsonMode = supportsJsonMode,
+    )
 
     private suspend fun persistStory(snapshot: StorySnapshot, draft: ChapterDraft, now: Long) {
         storyDao.upsert(

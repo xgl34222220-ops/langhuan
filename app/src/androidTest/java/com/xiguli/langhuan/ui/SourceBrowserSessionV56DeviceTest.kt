@@ -12,11 +12,15 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.xiguli.langhuan.data.PersistentStoryRepository
+import com.xiguli.langhuan.data.ProviderSaveRequest
 import com.xiguli.langhuan.domain.GeneratedChapter
 import com.xiguli.langhuan.engine.AiGateway
+import com.xiguli.langhuan.engine.ApiProtocol
 import com.xiguli.langhuan.engine.PromptBundle
 import java.util.UUID
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
@@ -127,6 +131,73 @@ class SourceBrowserSessionV56DeviceTest {
         val doc = browser.fixtureDocument(source, SourceRequestV36("$base/retry"), "<h1>重试完成</h1>")
         assertEquals("重试完成", doc.selectFirst("h1")?.text())
     }
+    @Test fun configuredProviderIsResolvedImmediatelyWhenObservedIdIsStale(): Unit = runBlocking {
+        val application = InstrumentationRegistry.getInstrumentation()
+            .targetContext.applicationContext as Application
+        val repository = PersistentStoryRepository(application)
+        val previousProviders = repository.observeProviders().first()
+        val providerId = "provider-v78-${UUID.randomUUID()}"
+        var viewModel: OnlineBooksViewModelV36? = null
+        try {
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = providerId,
+                    name = "V78 隔离服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v78-isolated-model",
+                    supportsJsonMode = true,
+                    apiKey = "v78-isolated-key",
+                    makeDefault = true,
+                ),
+            )
+            val resolved = repository.activeProviderConfig("already-removed-provider")
+            assertEquals("v78-isolated-model", resolved?.model)
+            assertEquals("https://127.0.0.1:1/v1", resolved?.baseUrl)
+
+            val current = OnlineBooksViewModelV36(application, SavedStateHandle())
+            viewModel = current
+            val activeProvider = OnlineBooksViewModelV36::class.java
+                .getDeclaredField("activeProviderId")
+                .apply { isAccessible = true }
+            activeProvider.set(current, "already-removed-provider")
+
+            BookSourceBrowserV38.withFixtureSiteV56(
+                fixture = { request ->
+                    assertTrue(request.url.startsWith(base))
+                    "<html><head><title>V78 原创站点</title></head><body>" +
+                        "<form action='/search'><input name='q'></form></body></html>"
+                },
+            ) {
+                current.buildWithAi(base, "原创小说", useBrowser = true)
+                val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+                while (
+                    current.state.value.aiSteps.isEmpty() &&
+                    current.state.value.aiError == null &&
+                    android.os.SystemClock.uptimeMillis() < deadline
+                ) {
+                    Thread.sleep(25)
+                }
+                val observed = current.state.value
+                assertNotEquals("请先在设置里添加并启用一个 AI 服务", observed.aiError)
+                assertEquals("读取网站首页", observed.aiSteps.firstOrNull()?.label)
+
+                current.cancelAi()
+                assertTrue(current.state.value.aiStopped)
+                assertNull(current.state.value.aiError)
+            }
+        } finally {
+            viewModel?.let { current ->
+                current.cancelAi()
+                current.viewModelScope.cancel()
+            }
+            repository.deleteProvider(providerId)
+            previousProviders.firstOrNull { it.isDefault }?.let { previous ->
+                repository.setDefaultProvider(previous.id)
+            }
+        }
+    }
+
     private fun waitForNode(text: String): android.view.accessibility.AccessibilityNodeInfo {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         // WebView exposes virtual descendants that platform text search can omit.

@@ -152,6 +152,9 @@ interface AiProviderDao {
     @Query("SELECT * FROM ai_providers ORDER BY isDefault DESC, updatedAt DESC")
     fun observeAll(): Flow<List<AiProviderEntity>>
 
+    @Query("SELECT * FROM ai_providers ORDER BY isDefault DESC, updatedAt DESC")
+    suspend fun allByPriority(): List<AiProviderEntity>
+
     @Query("SELECT * FROM ai_providers WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): AiProviderEntity?
 
