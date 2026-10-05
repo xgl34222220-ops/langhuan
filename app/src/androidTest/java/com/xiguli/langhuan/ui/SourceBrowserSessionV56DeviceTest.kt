@@ -529,6 +529,22 @@ class SourceBrowserSessionV56DeviceTest {
             val current = OnlineBooksViewModelV36(application, SavedStateHandle())
             viewModel = current
             rule.waitUntil(10_000) { current.state.value.aiProviderLabel == initialLabel }
+            rule.setContent {
+                val state by current.state.collectAsState()
+                AiBookSourceScreenV50(
+                    state = state,
+                    siteUrl = base,
+                    testBookName = "原创小说",
+                    onBack = {},
+                    onSiteUrlChange = {},
+                    onTestBookNameChange = {},
+                    onConfigureAi = {},
+                    onStart = { _, _ -> },
+                    onStartWithBrowser = { _, _ -> },
+                    onCancel = current::cancelAi,
+                    onSave = {},
+                )
+            }
 
             val resolvedProvider = repository.saveProvider(
                 ProviderSaveRequest(
@@ -573,6 +589,10 @@ class SourceBrowserSessionV56DeviceTest {
                 assertNull(observed.aiError)
                 assertEquals(resolvedLabel, observed.aiAttemptProviderLabel)
                 assertEquals(resolvedLabel, displayedAiProviderLabelV80(observed))
+                rule.onNodeWithText(resolvedLabel).assertIsDisplayed()
+                rule.onNodeWithText(initialLabel).assertDoesNotExist()
+                rule.onNodeWithText("停止生成").assertIsDisplayed().assertIsEnabled()
+                rule.waitUntil(10_000) { renderedWindowHasBodyInk() }
                 deviceWindowEvidenceV46("v82-ai-provider-stale-observation-accepted")
 
                 releaseFixture.countDown()

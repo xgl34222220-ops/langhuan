@@ -18,7 +18,7 @@ V81 会在活动请求使用的精确服务被删除或重配时停止后续 AI 
 - `AiProviderResolutionObservationV82Test#observationDeliveredDuringResolutionStillStopsADeletedOrReconfiguredService`
 - `SourceBrowserSessionV56DeviceTest#staleProviderObservationDoesNotStopANewlyResolvedRevision`
 
-设备回归使用隔离 Room 服务和原创 HTML 站点，先保存旧 revision、再真实重配服务，并只把 ViewModel 的缓存观察回退为旧值。请求必须从数据库解析并显示新服务身份、进入真实网站读取，不能出现 V81 的服务变更停止提示。测试随后显式取消，确保没有扩大后台工作或网络权限。
+设备回归使用隔离 Room 服务和原创 HTML 站点，先保存旧 revision、再真实重配服务，并只把 ViewModel 的缓存观察回退为旧值。请求必须从数据库解析并在真实 Compose 页面显示新服务身份、进入真实网站读取，不能出现 V81 的服务变更停止提示；取证前还要求实际窗口中部存在足量正文像素，防止把未挂载 UI 的空白宿主误作视觉证据。测试随后显式取消，确保没有扩大后台工作或网络权限。
 
 ## 明确限制
 
