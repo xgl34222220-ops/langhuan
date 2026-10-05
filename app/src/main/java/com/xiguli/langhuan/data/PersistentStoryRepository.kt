@@ -68,6 +68,15 @@ data class ProviderSaveRequest(
     val makeDefault: Boolean = true,
 )
 
+data class ResolvedAiProviderV80(
+    val id: String,
+    val label: String,
+    val config: AiProviderConfig,
+)
+
+internal fun aiProviderLabelV80(name: String, model: String): String =
+    listOf(name, model).filter(String::isNotBlank).joinToString(" · ")
+
 internal fun selectAiProviderIdV78(
     providerIdsInPriorityOrder: List<String>,
     preferredId: String?,
@@ -319,6 +328,28 @@ class PersistentStoryRepository(context: Context) {
             preferredId = preferredId,
         ) ?: return null
         return providers.first { it.id == selectedId }.toConfig()
+    }
+
+    /**
+     * Resolve configuration and user-visible identity from the same database snapshot. The caller
+     * can therefore keep one accepted attempt honest even if the default Flow changes mid-call.
+     */
+    suspend fun activeProviderV80(
+        preferredId: String?,
+        observedProviderIdsInPriorityOrder: List<String>,
+    ): ResolvedAiProviderV80? {
+        val providers = providerDao.allByPriority()
+        val selectedId = selectAiProviderIdV79(
+            currentProviderIdsInPriorityOrder = providers.map { it.id },
+            observedProviderIdsInPriorityOrder = observedProviderIdsInPriorityOrder,
+            preferredId = preferredId,
+        ) ?: return null
+        val provider = providers.first { it.id == selectedId }
+        return ResolvedAiProviderV80(
+            id = provider.id,
+            label = aiProviderLabelV80(provider.name, provider.model),
+            config = provider.toConfig(),
+        )
     }
 
     private fun AiProviderEntity.toConfig() = AiProviderConfig(

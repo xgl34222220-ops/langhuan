@@ -287,6 +287,110 @@ class SourceBrowserSessionV56DeviceTest {
         }
     }
 
+
+    @Test fun activeAttemptKeepsItsResolvedProviderIdentityDuringDefaultSwitch(): Unit = runBlocking {
+        val application = InstrumentationRegistry.getInstrumentation()
+            .targetContext.applicationContext as Application
+        val repository = PersistentStoryRepository(application)
+        val previousProviders = repository.observeProviders().first()
+        val attemptProviderId = "provider-v80-attempt-${UUID.randomUUID()}"
+        val nextProviderId = "provider-v80-next-${UUID.randomUUID()}"
+        val attemptLabel = "V80 尝试服务 · v80-attempt-model"
+        val nextLabel = "V80 新默认服务 · v80-next-model"
+        val enteredFixture = java.util.concurrent.CountDownLatch(1)
+        val releaseFixture = java.util.concurrent.CountDownLatch(1)
+        var viewModel: OnlineBooksViewModelV36? = null
+        try {
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = attemptProviderId,
+                    name = "V80 尝试服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v80-attempt-model",
+                    supportsJsonMode = true,
+                    apiKey = "v80-attempt-key",
+                    makeDefault = true,
+                ),
+            )
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = nextProviderId,
+                    name = "V80 新默认服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v80-next-model",
+                    supportsJsonMode = true,
+                    apiKey = "v80-next-key",
+                    makeDefault = false,
+                ),
+            )
+
+            val current = OnlineBooksViewModelV36(application, SavedStateHandle())
+            viewModel = current
+            rule.waitUntil(10_000) { current.state.value.aiProviderLabel == attemptLabel }
+            rule.setContent {
+                val state by current.state.collectAsState()
+                AiBookSourceScreenV50(
+                    state = state,
+                    siteUrl = base,
+                    testBookName = "原创小说",
+                    onBack = {},
+                    onSiteUrlChange = {},
+                    onTestBookNameChange = {},
+                    onConfigureAi = {},
+                    onStart = { _, _ -> },
+                    onStartWithBrowser = { _, _ -> },
+                    onCancel = current::cancelAi,
+                    onSave = {},
+                )
+            }
+
+            BookSourceBrowserV38.withFixtureSiteV56(
+                pages = { request ->
+                    assertTrue(request.url.startsWith(base))
+                    enteredFixture.countDown()
+                    check(releaseFixture.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                        "V80 fixture was not released"
+                    }
+                    "<html><head><title>V80 原创站点</title></head><body>" +
+                        "<form action='/search'><input name='q'></form></body></html>"
+                },
+            ) {
+                current.buildWithAi(base, "原创小说", useBrowser = true)
+                assertTrue(
+                    "The accepted attempt must reach its real browser request",
+                    enteredFixture.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                )
+                repository.setDefaultProvider(nextProviderId)
+                rule.waitUntil(10_000) { current.state.value.aiProviderLabel == nextLabel }
+
+                val observed = current.state.value
+                assertTrue(observed.aiRunning)
+                assertEquals(attemptLabel, observed.aiAttemptProviderLabel)
+                assertEquals(attemptLabel, displayedAiProviderLabelV80(observed))
+                rule.onNodeWithText(attemptLabel).assertIsDisplayed()
+                rule.onNodeWithText(nextLabel).assertDoesNotExist()
+
+                current.cancelAi()
+                assertTrue(current.state.value.aiStopped)
+                assertNull(current.state.value.aiAttemptProviderLabel)
+                assertEquals(nextLabel, displayedAiProviderLabelV80(current.state.value))
+            }
+        } finally {
+            releaseFixture.countDown()
+            viewModel?.let { current ->
+                current.cancelAi()
+                current.viewModelScope.cancel()
+            }
+            repository.deleteProvider(attemptProviderId)
+            repository.deleteProvider(nextProviderId)
+            previousProviders.firstOrNull { it.isDefault }?.let { previous ->
+                repository.setDefaultProvider(previous.id)
+            }
+        }
+    }
+
     private fun waitForNode(text: String): android.view.accessibility.AccessibilityNodeInfo {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         // WebView exposes virtual descendants that platform text search can omit.

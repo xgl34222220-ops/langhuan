@@ -100,7 +100,7 @@ internal fun AiBookSourceScreenV50(
 
         item("ai-source-provider") {
             AiSourceProviderCardV50(
-                providerLabel = state.aiProviderLabel,
+                providerLabel = displayedAiProviderLabelV80(state),
                 enabled = !state.aiRunning,
                 onConfigureAi = onConfigureAi,
             )
