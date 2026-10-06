@@ -164,8 +164,8 @@ interface AiProviderDao {
     @Upsert
     suspend fun upsert(entity: AiProviderEntity)
 
-    @Query("UPDATE ai_providers SET isDefault = CASE WHEN id = :id THEN 1 ELSE 0 END, updatedAt = CASE WHEN id = :id THEN :now ELSE updatedAt END")
-    suspend fun markDefault(id: String, now: Long)
+    @Query("UPDATE ai_providers SET isDefault = CASE WHEN id = :id THEN 1 ELSE 0 END")
+    suspend fun markDefault(id: String)
 
     @Query("DELETE FROM ai_providers WHERE id = :id")
     suspend fun delete(id: String)

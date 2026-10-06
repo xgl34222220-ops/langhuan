@@ -391,6 +391,118 @@ class SourceBrowserSessionV56DeviceTest {
         }
     }
 
+    @Test fun defaultSwitchRoundTripKeepsTheAcceptedProviderRevision(): Unit = runBlocking {
+        val application = InstrumentationRegistry.getInstrumentation()
+            .targetContext.applicationContext as Application
+        val repository = PersistentStoryRepository(application)
+        val previousProviders = repository.observeProviders().first()
+        val attemptProviderId = "provider-v83-attempt-${UUID.randomUUID()}"
+        val alternateProviderId = "provider-v83-alternate-${UUID.randomUUID()}"
+        val attemptLabel = "V83 活动服务 · v83-attempt-model"
+        val alternateLabel = "V83 临时默认服务 · v83-alternate-model"
+        val enteredFixture = java.util.concurrent.CountDownLatch(1)
+        val releaseFixture = java.util.concurrent.CountDownLatch(1)
+        var viewModel: OnlineBooksViewModelV36? = null
+        try {
+            val acceptedProvider = repository.saveProvider(
+                ProviderSaveRequest(
+                    id = attemptProviderId,
+                    name = "V83 活动服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v83-attempt-model",
+                    supportsJsonMode = true,
+                    apiKey = "v83-attempt-key",
+                    makeDefault = true,
+                ),
+            )
+            repository.saveProvider(
+                ProviderSaveRequest(
+                    id = alternateProviderId,
+                    name = "V83 临时默认服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v83-alternate-model",
+                    supportsJsonMode = true,
+                    apiKey = "v83-alternate-key",
+                    makeDefault = false,
+                ),
+            )
+
+            val current = OnlineBooksViewModelV36(application, SavedStateHandle())
+            viewModel = current
+            rule.waitUntil(10_000) { current.state.value.aiProviderLabel == attemptLabel }
+            rule.setContent {
+                val state by current.state.collectAsState()
+                AiBookSourceScreenV50(
+                    state = state,
+                    siteUrl = base,
+                    testBookName = "原创小说",
+                    onBack = {},
+                    onSiteUrlChange = {},
+                    onTestBookNameChange = {},
+                    onConfigureAi = {},
+                    onStart = { _, _ -> },
+                    onStartWithBrowser = { _, _ -> },
+                    onCancel = current::cancelAi,
+                    onSave = {},
+                )
+            }
+
+            BookSourceBrowserV38.withFixtureSiteV56(
+                pages = { request ->
+                    assertTrue(request.url.startsWith(base))
+                    enteredFixture.countDown()
+                    check(releaseFixture.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                        "V83 fixture was not released"
+                    }
+                    "<html><head><title>V83 原创站点</title></head><body>" +
+                        "<form action='/search'><input name='q'></form></body></html>"
+                },
+            ) {
+                current.buildWithAi(base, "原创小说", useBrowser = true)
+                assertTrue(
+                    "The accepted attempt must resolve before the default round trip",
+                    enteredFixture.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                )
+                assertEquals(attemptLabel, current.state.value.aiAttemptProviderLabel)
+
+                runBlocking { repository.setDefaultProvider(alternateProviderId) }
+                rule.waitUntil(10_000) { current.state.value.aiProviderLabel == alternateLabel }
+                Thread.sleep(20)
+                runBlocking { repository.setDefaultProvider(attemptProviderId) }
+                rule.waitUntil(10_000) { current.state.value.aiProviderLabel == attemptLabel }
+
+                val afterRoundTrip = runBlocking { repository.observeProviders().first() }
+                    .single { it.id == attemptProviderId }
+                assertEquals(acceptedProvider.revision, afterRoundTrip.revision)
+                val observed = current.state.value
+                assertTrue(observed.aiRunning)
+                assertNull(observed.aiError)
+                assertEquals(attemptLabel, observed.aiAttemptProviderLabel)
+                assertEquals(attemptLabel, displayedAiProviderLabelV80(observed))
+                rule.onNodeWithText(attemptLabel).assertIsDisplayed()
+                rule.onNodeWithText("停止生成").assertIsDisplayed().assertIsEnabled()
+                rule.waitUntil(10_000) { renderedWindowHasBodyInk() }
+                deviceWindowEvidenceV46("v83-ai-provider-default-round-trip")
+
+                current.cancelAi()
+                assertTrue(current.state.value.aiStopped)
+            }
+        } finally {
+            releaseFixture.countDown()
+            viewModel?.let { current ->
+                current.cancelAi()
+                current.viewModelScope.cancel()
+            }
+            repository.deleteProvider(attemptProviderId)
+            repository.deleteProvider(alternateProviderId)
+            previousProviders.firstOrNull { it.isDefault }?.let { previous ->
+                repository.setDefaultProvider(previous.id)
+            }
+        }
+    }
+
     @Test fun deletingTheResolvedProviderStopsBeforeLaterAiStages(): Unit = runBlocking {
         val application = InstrumentationRegistry.getInstrumentation()
             .targetContext.applicationContext as Application

@@ -288,12 +288,14 @@ class PersistentStoryRepository(context: Context) {
         )
         providerDao.upsert(entity)
         if (request.apiKey.isNotBlank()) keyStore.put(id, request.apiKey)
-        if (shouldDefault) providerDao.markDefault(id, now)
+        if (shouldDefault) providerDao.markDefault(id)
         return (providerDao.getById(id) ?: entity).toStored()
     }
 
     suspend fun setDefaultProvider(id: String) {
-        providerDao.markDefault(id, System.currentTimeMillis())
+        // Default selection is routing metadata, not a configuration edit. Keep updatedAt as the
+        // configuration revision so an active request is not invalidated by A -> B -> A switching.
+        providerDao.markDefault(id)
     }
 
     suspend fun deleteProvider(id: String) {
