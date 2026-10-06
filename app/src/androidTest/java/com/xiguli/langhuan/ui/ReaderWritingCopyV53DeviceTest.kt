@@ -34,12 +34,13 @@ class ReaderWritingCopyV53DeviceTest {
             rule.runOnUiThread { vm.openReader(1) }
             rule.waitUntil(15000) { vm.state.value.readingChapter!=null }
             rule.setContent { ReaderEngineV30(vm,StudioUiState(original.snapshot,original.draft),{}, { opened.set(it) },{_,_->},{},startOnInfo=true) }
-            rule.onNodeWithText("AI 创作").performClick()
+            rule.onNodeWithContentDescription("阅读菜单：更多").performClick()
+            rule.onNodeWithText("AI 创作").performScrollTo().assertIsDisplayed().performClick()
             rule.onNodeWithText("从本章开始 AI 创作").assertIsDisplayed()
             rule.onNodeWithText("取消").performClick()
             assertNull(opened.get())
             assertEquals(original,projects.loadStory(id))
-            rule.onNodeWithText("AI 创作").performClick()
+            rule.onNodeWithText("AI 创作").performScrollTo().assertIsDisplayed().performClick()
             rule.onNodeWithText("创建副本并进入").performClick()
             rule.waitUntil(15000) { opened.get()!=null }
             rule.onNodeWithText("从本章开始 AI 创作").assertDoesNotExist()

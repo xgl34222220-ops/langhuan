@@ -54,6 +54,8 @@ data class StoredAiProvider(
     val supportsJsonMode: Boolean,
     val isDefault: Boolean,
     val hasApiKey: Boolean,
+    /** Monotonic database identity for invalidating an accepted in-memory attempt after edits. */
+    val revision: Long = 0L,
 )
 
 data class ProviderSaveRequest(
@@ -67,6 +69,52 @@ data class ProviderSaveRequest(
     val apiKey: String,
     val makeDefault: Boolean = true,
 )
+
+data class ResolvedAiProviderV80(
+    val id: String,
+    val label: String,
+    val config: AiProviderConfig,
+    val revision: Long,
+)
+
+/**
+ * A provider revision represents configuration/credential identity, not a save-button press.
+ * Blank credentials retain the encrypted key, matching the provider editor's existing contract.
+ */
+internal fun aiProviderConfigurationUnchangedV84(
+    existing: AiProviderEntity?,
+    request: ProviderSaveRequest,
+    storedApiKey: String?,
+): Boolean = existing != null &&
+    existing.name == request.name.ifBlank { request.protocol.label } &&
+    existing.baseUrl == request.baseUrl.trimEnd('/') &&
+    existing.protocol == request.protocol.name &&
+    existing.model == request.model.trim() &&
+    existing.temperature == request.temperature &&
+    existing.supportsJsonMode == request.supportsJsonMode &&
+    (request.apiKey.isBlank() || request.apiKey == storedApiKey.orEmpty())
+
+internal fun aiProviderLabelV80(name: String, model: String): String =
+    listOf(name, model).filter(String::isNotBlank).joinToString(" · ")
+
+internal fun selectAiProviderIdV78(
+    providerIdsInPriorityOrder: List<String>,
+    preferredId: String?,
+): String? = preferredId?.takeIf(providerIdsInPriorityOrder::contains)
+    ?: providerIdsInPriorityOrder.firstOrNull()
+
+/**
+ * A Flow-derived preference is fresh only while the priority identity snapshot still matches.
+ * If default selection changed before the Flow callback arrives, the database snapshot wins.
+ */
+internal fun selectAiProviderIdV79(
+    currentProviderIdsInPriorityOrder: List<String>,
+    observedProviderIdsInPriorityOrder: List<String>,
+    preferredId: String?,
+): String? = preferredId?.takeIf {
+    observedProviderIdsInPriorityOrder == currentProviderIdsInPriorityOrder &&
+        currentProviderIdsInPriorityOrder.contains(it)
+} ?: currentProviderIdsInPriorityOrder.firstOrNull()
 
 class PersistentStoryRepository(context: Context) {
     private val db = LanghuanDatabase.get(context)
@@ -241,7 +289,13 @@ class PersistentStoryRepository(context: Context) {
     suspend fun saveProvider(request: ProviderSaveRequest): StoredAiProvider {
         val id = request.id ?: UUID.randomUUID().toString()
         val existing = providerDao.getById(id)
-        val now = System.currentTimeMillis()
+        val configurationUnchanged = aiProviderConfigurationUnchangedV84(
+            existing = existing,
+            request = request,
+            storedApiKey = existing?.let { keyStore.get(id) },
+        )
+        val now = if (configurationUnchanged) checkNotNull(existing).updatedAt else
+            maxOf(System.currentTimeMillis(), (existing?.updatedAt ?: -1L) + 1L)
         val shouldDefault = request.makeDefault || existing?.isDefault == true || providerDao.count() == 0
         val entity = AiProviderEntity(
             id = id,
@@ -257,12 +311,14 @@ class PersistentStoryRepository(context: Context) {
         )
         providerDao.upsert(entity)
         if (request.apiKey.isNotBlank()) keyStore.put(id, request.apiKey)
-        if (shouldDefault) providerDao.markDefault(id, now)
+        if (shouldDefault) providerDao.markDefault(id)
         return (providerDao.getById(id) ?: entity).toStored()
     }
 
     suspend fun setDefaultProvider(id: String) {
-        providerDao.markDefault(id, System.currentTimeMillis())
+        // Default selection is routing metadata, not a configuration edit. Keep updatedAt as the
+        // configuration revision so an active request is not invalidated by A -> B -> A switching.
+        providerDao.markDefault(id)
     }
 
     suspend fun deleteProvider(id: String) {
@@ -272,17 +328,67 @@ class PersistentStoryRepository(context: Context) {
 
     suspend fun apiKey(id: String): String? = keyStore.get(id)
 
-    suspend fun providerConfig(id: String): AiProviderConfig? {
-        val entity = providerDao.getById(id) ?: return null
-        return AiProviderConfig(
-            baseUrl = entity.baseUrl,
-            apiKey = keyStore.get(id).orEmpty(),
-            model = entity.model,
-            protocol = entity.protocol.toProtocol(),
-            temperature = entity.temperature,
-            supportsJsonMode = entity.supportsJsonMode,
+    suspend fun providerConfig(id: String): AiProviderConfig? =
+        providerDao.getById(id)?.toConfig()
+
+    /**
+     * Resolve against one current database snapshot. The observed UI id is only a preference:
+     * its first Flow value can still be pending, and a provider may be replaced before collection.
+     */
+    suspend fun activeProviderConfig(preferredId: String?): AiProviderConfig? {
+        val providers = providerDao.allByPriority()
+        val selectedId = selectAiProviderIdV78(providers.map { it.id }, preferredId) ?: return null
+        return providers.first { it.id == selectedId }.toConfig()
+    }
+
+    /**
+     * Resolve a Flow-derived preference only when its observed priority identity is still current.
+     * A default switch changes that order, so an accepted attempt cannot silently use the old service.
+     */
+    suspend fun activeProviderConfigV79(
+        preferredId: String?,
+        observedProviderIdsInPriorityOrder: List<String>,
+    ): AiProviderConfig? {
+        val providers = providerDao.allByPriority()
+        val selectedId = selectAiProviderIdV79(
+            currentProviderIdsInPriorityOrder = providers.map { it.id },
+            observedProviderIdsInPriorityOrder = observedProviderIdsInPriorityOrder,
+            preferredId = preferredId,
+        ) ?: return null
+        return providers.first { it.id == selectedId }.toConfig()
+    }
+
+    /**
+     * Resolve configuration and user-visible identity from the same database snapshot. The caller
+     * can therefore keep one accepted attempt honest even if the default Flow changes mid-call.
+     */
+    suspend fun activeProviderV80(
+        preferredId: String?,
+        observedProviderIdsInPriorityOrder: List<String>,
+    ): ResolvedAiProviderV80? {
+        val providers = providerDao.allByPriority()
+        val selectedId = selectAiProviderIdV79(
+            currentProviderIdsInPriorityOrder = providers.map { it.id },
+            observedProviderIdsInPriorityOrder = observedProviderIdsInPriorityOrder,
+            preferredId = preferredId,
+        ) ?: return null
+        val provider = providers.first { it.id == selectedId }
+        return ResolvedAiProviderV80(
+            id = provider.id,
+            label = aiProviderLabelV80(provider.name, provider.model),
+            config = provider.toConfig(),
+            revision = provider.updatedAt,
         )
     }
+
+    private fun AiProviderEntity.toConfig() = AiProviderConfig(
+        baseUrl = baseUrl,
+        apiKey = keyStore.get(id).orEmpty(),
+        model = model,
+        protocol = protocol.toProtocol(),
+        temperature = temperature,
+        supportsJsonMode = supportsJsonMode,
+    )
 
     private suspend fun persistStory(snapshot: StorySnapshot, draft: ChapterDraft, now: Long) {
         storyDao.upsert(
@@ -441,6 +547,7 @@ class PersistentStoryRepository(context: Context) {
         supportsJsonMode = supportsJsonMode,
         isDefault = isDefault,
         hasApiKey = keyStore.has(id),
+        revision = updatedAt,
     )
 
     private fun ChapterVersionEntity.toStored() = StoredChapterVersion(

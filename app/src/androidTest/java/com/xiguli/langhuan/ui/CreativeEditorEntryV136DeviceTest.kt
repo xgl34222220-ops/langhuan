@@ -32,11 +32,11 @@ class CreativeEditorEntryV136DeviceTest {
         exercise(fromWriting = true)
     }
 
-    private fun readerDetails() {
+    private fun readerBookActions() {
         if (rule.onAllNodesWithText("详情").fetchSemanticsNodes().isEmpty()) {
             rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
         }
-        rule.onNodeWithText("详情").performClick()
+        rule.onNodeWithText("更多").performClick()
     }
 
     private fun enterEditor(fromWriting: Boolean) {
@@ -55,8 +55,8 @@ class CreativeEditorEntryV136DeviceTest {
             }
             rule.onNodeWithText(label).assertIsDisplayed().assertIsEnabled().performClick()
         } else {
-            readerDetails()
-            rule.onNodeWithText("编辑本章").assertIsDisplayed().performClick()
+            readerBookActions()
+            rule.onNodeWithText("编辑当前章节").performScrollTo().assertIsDisplayed().performClick()
         }
     }
 
@@ -90,8 +90,8 @@ class CreativeEditorEntryV136DeviceTest {
             rule.waitUntil(20_000) { library.state.value.readingChapter?.content == initial }
             if (fromWriting) {
                 phase = "enter Writing through reader"
-                readerDetails()
-                rule.onNodeWithText("AI 创作").assertIsDisplayed().performClick()
+                readerBookActions()
+                rule.onNodeWithText("AI 创作").performScrollTo().assertIsDisplayed().performClick()
                 rule.onNodeWithText("创建副本并进入").performClick()
                 rule.waitUntil(20_000) { writing.state.value.ready && writing.state.value.novelId != sourceId }
                 targetId = writing.state.value.novelId

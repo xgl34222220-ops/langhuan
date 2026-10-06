@@ -81,6 +81,8 @@ internal data class EpubReaderUiStateV50(
     val pageCount: Int = 0,
     val bookProgress: Float = 0f,
     val loaded: Boolean = false,
+    val canContinueAfterRestoreFailure: Boolean = false,
+    val canRestartAfterRendererExit: Boolean = false,
     val statusMessage: String = "正在打开 EPUB 原版…",
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
@@ -116,6 +118,8 @@ internal fun EpubReaderScreenV50(
     onNavigateTo: (Link) -> Unit,
     onToggleBookmark: () -> Unit,
     onRelinkOriginal: () -> Unit,
+    onContinueAfterRestoreFailure: () -> Unit,
+    onRestartAfterRendererExit: () -> Unit,
     onClearSelection: () -> Unit,
     onNoteSaved: () -> Unit = {},
     onHighlightChanged: () -> Unit = {},
@@ -177,6 +181,8 @@ internal fun EpubReaderScreenV50(
                     EpubReaderStatusOverlayV50(
                         message = state.statusMessage,
                         onRelinkOriginal = onRelinkOriginal,
+                        onContinue = onContinueAfterRestoreFailure.takeIf { state.canContinueAfterRestoreFailure },
+                        onRestart = onRestartAfterRendererExit.takeIf { state.canRestartAfterRendererExit },
                     )
                 }
 
@@ -599,6 +605,8 @@ private fun EpubPageButtonV50(
 private fun EpubReaderStatusOverlayV50(
     message: String,
     onRelinkOriginal: () -> Unit,
+    onContinue: (() -> Unit)? = null,
+    onRestart: (() -> Unit)? = null,
 ) {
     val t = LocalLanghuanUiTokens.current
     Box(
@@ -609,7 +617,7 @@ private fun EpubReaderStatusOverlayV50(
             modifier = Modifier.fillMaxWidth().padding(horizontal = t.space6),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            CircularProgressIndicator(
+            if (onContinue == null && onRestart == null) CircularProgressIndicator(
                 modifier = Modifier.size(28.dp),
                 color = t.primary,
                 strokeWidth = 2.dp,
@@ -621,6 +629,14 @@ private fun EpubReaderStatusOverlayV50(
                 color = t.secondaryForeground,
                 textAlign = TextAlign.Center,
             )
+            if (onContinue != null) {
+                Spacer(Modifier.height(t.space3))
+                androidx.compose.material3.TextButton(onClick = onContinue) { Text("从当前页继续") }
+            }
+            if (onRestart != null) {
+                Spacer(Modifier.height(t.space3))
+                androidx.compose.material3.TextButton(onClick = onRestart) { Text("重新打开原版") }
+            }
             Spacer(Modifier.height(t.space4))
             val shape = RoundedCornerShape(t.radiusMd)
             Row(

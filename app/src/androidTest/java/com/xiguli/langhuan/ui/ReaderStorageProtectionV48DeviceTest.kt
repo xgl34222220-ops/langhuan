@@ -2,6 +2,7 @@ package com.xiguli.langhuan.ui
 
 import android.app.Application
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.cancel
 import android.content.ContextWrapper
@@ -110,7 +111,7 @@ class ReaderStorageProtectionV48DeviceTest {
         var vm: OnlineBooksViewModelV36? = null
         try {
             BookSourceStoreV36.save(app, listOf(source))
-            InstrumentationRegistry.getInstrumentation().runOnMainSync { vm = OnlineBooksViewModelV36(app) }
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { vm = OnlineBooksViewModelV36(app, SavedStateHandle()) }
             val changed = source.copy(name = "Newer fixture")
             BookSourceStoreV36.save(app, listOf(changed))
             InstrumentationRegistry.getInstrumentation().runOnMainSync { vm!!.toggleSource(source.id) }

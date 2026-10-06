@@ -230,7 +230,8 @@ class ReaderProgressV42DeviceTest {
         rule.waitUntil(20000) { bodyReady() }
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
         assertEquals(1200, saved().textOffset)
-        rule.onNodeWithText("目录待补全，暂不能计算全书进度").assertIsDisplayed()
+        rule.onNodeWithText("详情").performClick()
+        rule.onNodeWithText("目录待补全，暂不能计算全书进度", useUnmergedTree = true).assertIsDisplayed()
         deviceWindowEvidenceV46("v53-incomplete-catalogue-test-data")
         rule.runOnUiThread {
             val missing = (16..984).map { chapter.copy(id = "inserted-$it", chapterNumber = it + 1000, title = "第${it}章", content = "新章节正文", readingOrder = it) }

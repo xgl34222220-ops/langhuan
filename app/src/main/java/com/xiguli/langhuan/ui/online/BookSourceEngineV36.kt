@@ -85,6 +85,8 @@ internal data class BookSourceV36(
     val exploreIntro: String = "",
     val exploreLatest: String = "",
     val exploreBookUrl: String = "",
+    /** Explicitly selected by the user; rendering never enables executable source rules. */
+    val useBrowser: Boolean = false,
 )
 
 internal data class OnlineBookV36(
@@ -432,7 +434,7 @@ internal fun resolveUrlV36(base: String, target: String): String {
     return runCatching { URL(URL(base), clean).toString() }.getOrDefault(clean)
 }
 
-/** A single boundary for sources, covers and imported source files. No WebView or page JavaScript. */
+/** Static HTTP boundary for sources, covers and imports. Explicit browser mode is routed separately. */
 internal const val MAX_SOURCE_BYTES_V36 = 4 * 1024 * 1024
 
 internal fun publicSourceUrlV36(raw: String): HttpUrl {
@@ -532,7 +534,7 @@ internal fun readSourceErrorPrefixV44(input: InputStream, maxBytes: Int = MAX_SO
     return out.toByteArray()
 }
 
-internal class SourceHttpStatusExceptionV44(val statusCode: Int, val origin: String, detail: String,
+internal class SourceHttpStatusExceptionV44(val statusCode: Int, val origin: String, val detail: String,
     val retryAfterMillis: Long? = null, val browserChallenge: Boolean = false) :
     IOException("网站返回 HTTP $statusCode（$origin）：$detail")
 
@@ -667,6 +669,7 @@ internal fun fetchSourceBytesV36(url: String, maxBytes: Int = MAX_SOURCE_BYTES_V
     fetchSourceResponseV36(null, SourceRequestV36(url), maxBytes).bytes
 
 internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36): Document {
+    if (source.useBrowser) return BookSourceBrowserV38.document(source, request)
     val response = fetchSourceResponseV36(source, request, MAX_SOURCE_BYTES_V36)
     return parseSourceDocumentV44(response.bytes, response.url, request.charset, response.type, response.mitigationHeader)
 }

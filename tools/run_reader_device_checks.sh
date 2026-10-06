@@ -30,15 +30,24 @@ reader_cleanup() {
   exit "$reader_exit"
 }
 trap reader_cleanup EXIT
+# Recheck original failures and browser/search/catalogue recovery before the full gates.
+# These focused results never replace the complete suite or process-restoration gates.
+reader_regression_cases="com.xiguli.langhuan.ui.ReaderBookmarkV49DeviceTest#legacyRecoveryRequiresAnExplicitChoiceAndCancelKeepsAllData,com.xiguli.langhuan.ui.ReaderProgressV42DeviceTest#insertingMissingChaptersKeepsTheSameChapterAndSentence,com.xiguli.langhuan.ui.ReaderRecreationV42DeviceTest#longChapterAndChangedFontStayInReaderAfterActivityRecreation,com.xiguli.langhuan.ui.ReaderWritingCopyV53DeviceTest#readerAiActionCreatesIndependentDraftAndCancelLeavesNoProject,com.xiguli.langhuan.ui.SourceEditingV41DeviceTest#sourceDraftSurvivesActivityRecreationAndCancelDoesNotWrite,com.xiguli.langhuan.ui.CreativeStoryV135DeviceTest#clearingChatWhileHttpReplyIsDelayedCannotResurrectIt,com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest#verificationRecreationWaitsForTheUserAndKeepsTheResultingCookie,com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest#rendererExitWhileVerifyingReleasesTheWaitAndRetryKeepsTheProfile,com.xiguli.langhuan.ui.SourceSearchRecoveryV57DeviceTest,com.xiguli.langhuan.ui.SourceCatalogueRecoveryV58DeviceTest,com.xiguli.langhuan.ui.EpubOriginalReaderDeviceTest#reflowRendererExitKeepsConfirmedLocatorAndManualRetryRestoresSecureArtwork,com.xiguli.langhuan.ui.EpubOriginalReaderDeviceTest#fixedRendererExitKeepsConfirmedPageAndRecreationWaitsForManualRetry"
+gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url" -Pandroid.testInstrumentationRunnerArguments.class="$reader_regression_cases"
+mkdir -p reader-qa/reader-regression-focused
+cp -R app/build/reports/androidTests reader-qa/reader-regression-focused/
+cp -R app/build/outputs/androidTest-results reader-qa/reader-regression-focused/
 # Exercise the editor profile/save transaction before the existing complete gates.
 gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url" -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.CreativeEditorProfileSaveV137DeviceTest
 mkdir -p reader-qa/editor-profile-focused
 cp -R app/build/reports/androidTests reader-qa/editor-profile-focused/
+cp -R app/build/outputs/androidTest-results reader-qa/editor-profile-focused/
 # Fail early on the full creation chain, editor reentry and Room fault/cancellation checks.
 # A successful focused check never substitutes for the original full-suite/process gates below.
 gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url" -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.CreativeWritingV135DeviceTest,com.xiguli.langhuan.ui.CreativeEditorEntryV136DeviceTest,com.xiguli.langhuan.data.CreativeEditorAtomicityV136DeviceTest
 mkdir -p reader-qa/creative-focused
 cp -R app/build/reports/androidTests reader-qa/creative-focused/
+cp -R app/build/outputs/androidTest-results reader-qa/creative-focused/
 gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url"
 python3 tools/verify_epub_process_death.py --evidence reader-qa/epub-process
 adb pull /sdcard/Android/data/com.xiguli.langhuan/files/epub-evidence reader-qa/epub-artwork

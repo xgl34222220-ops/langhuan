@@ -943,7 +943,7 @@ private fun ReaderCoreSlider(
         Row(Modifier.fillMaxWidth()) {
             Text(label, style = MaterialTheme.typography.bodyMedium, color = t.foreground, fontWeight = FontWeight.Medium)
             Spacer(Modifier.weight(1f))
-            Text(String.format("%.1f", value), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+            Text(stableOneDecimalV61(value.toDouble()), style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
         }
         Slider(
             value = value.coerceIn(range.start, range.endInclusive),

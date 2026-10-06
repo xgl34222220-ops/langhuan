@@ -11,7 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +30,15 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -70,6 +76,8 @@ import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -85,10 +93,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -117,6 +132,11 @@ private data class ReaderSearchHitV30(
 )
 
 private enum class ReaderDirectoryModeV30 { CHAPTERS, BOOKMARKS }
+
+@Composable
+private fun readerMenuWindowHeightV63() = with(LocalDensity.current) {
+    LocalWindowInfo.current.containerSize.height.toDp()
+}
 
 
 /* -------------------------------------------------------------------------- */
@@ -162,38 +182,36 @@ internal fun ReaderMenuV30(
 ) {
     if (!visible) return
     val t = LocalLanghuanUiTokens.current
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
+    val maxHeight = readerMenuWindowHeightV63() * 0.88f
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        // Own the insets in Compose so the measured root and visible window agree
+        // after API 35 landscape cutout fitting. Keep controls inside safe edges below.
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.30f))
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                    onClick = onDismiss,
-                ),
+                .pointerInput(onDismiss) { detectTapGestures(onTap = { onDismiss() }) }
+                .semantics { dismiss { onDismiss(); true } },
             contentAlignment = Alignment.BottomCenter,
         ) {
             val panelShape = RoundedCornerShape(t.radiusXl)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                     .padding(horizontal = t.space3).padding(bottom = t.space2)
                     .navigationBarsPadding()
                     .imePadding()
                     .heightIn(max = maxHeight)
                     .background(color = t.background, shape = panelShape)
                     .border(width = 1.dp, color = t.border, shape = panelShape)
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() },
-                        onClick = {},
-                    ),
+                    // Swallow backdrop taps without merging the body's scroll viewport
+                    // or unrelated text into one large clickable accessibility node.
+                    .pointerInput(Unit) { detectTapGestures(onTap = {}) },
             ) {
                 ReaderMenuHandleV30()
 
@@ -212,6 +230,9 @@ internal fun ReaderMenuV30(
                 ReaderMenuDividerV30()
 
                 AnimatedContent(
+                    // Reserve the fixed bottom tabs before sizing the scrollable body.
+                    // Landscape has less height; a body measured first can hide every tab.
+                    modifier = Modifier.weight(1f).clipToBounds(),
                     targetState = panel to tab,
                     transitionSpec = {
                         val oldPanel = initialState.first
@@ -233,7 +254,7 @@ internal fun ReaderMenuV30(
                             }
                             else -> fadeIn(tween(150)) togetherWith fadeOut(tween(110))
                         }
-                        transition using SizeTransform(clip = false)
+                        transition using SizeTransform(clip = true)
                     },
                     label = "readerMenuV3",
                 ) { (currentPanel, currentTab) ->
@@ -377,7 +398,8 @@ private fun ReaderMenuPrimaryActionsV30(
         ReaderPrimaryActionV30(
             icon = if (bookmarked) Icons.Outlined.Bookmark
             else Icons.Outlined.BookmarkBorder,
-            label = if (bookmarked) "已加书签" else "这一页加书签",
+            label = if (bookmarked) "已加书签" else "本章加书签",
+            description = if (bookmarked) "取消本章书签" else "添加本章书签",
             selected = bookmarked,
             gold = bookmarked,
             modifier = Modifier.weight(1f),
@@ -397,6 +419,7 @@ private fun ReaderMenuPrimaryActionsV30(
 private fun ReaderPrimaryActionV30(
     icon: ImageVector,
     label: String,
+    description: String = label,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     gold: Boolean = false,
@@ -416,6 +439,7 @@ private fun ReaderPrimaryActionV30(
     }
     Column(
         modifier = modifier
+            .semantics { contentDescription = description }
             .height(72.dp)
             .background(color = background, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
@@ -426,7 +450,7 @@ private fun ReaderPrimaryActionV30(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = label,
+            contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = foreground,
         )
@@ -460,6 +484,7 @@ private fun ReaderDetailsTabV30(
     onSizePanel: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     val chapter = chapters.getOrNull(chapterIndex)
     val fraction = when {
         pageCount <= 1 -> 0f
@@ -468,10 +493,14 @@ private fun ReaderDetailsTabV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.58f).dp)
+            .heightIn(max = windowHeight * 0.58f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4, vertical = t.space3),
     ) {
+        if (book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null) {
+            Text("目录待补全，暂不能计算全书进度", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(t.space2))
+        }
         ReaderSectionTitleV30(title = "当前阅读")
         Spacer(Modifier.height(t.space2))
         ReaderBookInfoCardV30(
@@ -698,6 +727,7 @@ private fun ReaderDirectoryTabV30(
                 ReaderLegacyBookmarkListV30(
                     chapters = chapters,
                     bookmarks = legacyBookmarkedChapters,
+                    restoredBookmarks = bookmarkedChapters,
                     onRestore = onRestoreLegacyBookmark,
                     onJumpChapter = onJumpChapter,
                 )
@@ -721,6 +751,7 @@ private fun ReaderChapterListV30(
     onJumpChapter: (Int, Int) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     if (chapters.isEmpty()) {
         ReaderMenuEmptyV30(title = "暂无章节", description = "这本书还没有可阅读的章节。")
         return
@@ -728,7 +759,7 @@ private fun ReaderChapterListV30(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+            .heightIn(max = windowHeight * 0.44f),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -754,6 +785,7 @@ private fun ReaderBookmarkListV30(
     onJumpChapter: (Int, Int) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     val rows = chapters.filter { it.chapterNumber in bookmarks }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
@@ -765,7 +797,7 @@ private fun ReaderBookmarkListV30(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+            .heightIn(max = windowHeight * 0.44f),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -786,11 +818,30 @@ private fun ReaderBookmarkListV30(
 private fun ReaderLegacyBookmarkListV30(
     chapters: List<ChapterDraft>,
     bookmarks: Set<Int>,
+    restoredBookmarks: Set<Int>,
     onRestore: (Int) -> Unit,
     onJumpChapter: (Int, Int) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
+    var selected by remember { mutableStateOf<ChapterDraft?>(null) }
     val rows = chapters.filter { it.chapterNumber in bookmarks }
+    selected?.let { chapter ->
+        val restored = chapter.chapterNumber in restoredBookmarks
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text("旧版书签暂存") },
+            text = { Column {
+                Text("旧版书签未区分书籍。请核对这条书签属于本书后再归入；暂存数据会保留。")
+                Text(readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber))
+                val outside = bookmarks.count { number -> chapters.none { it.chapterNumber == number } }
+                if (outside > 0) Text("另有 $outside 条超出本书目录，仍保留在暂存中。")
+                if (restored) Text("已归入")
+            } },
+            confirmButton = { TextButton(onClick = { onRestore(chapter.chapterNumber) }, enabled = !restored) { Text("归入本书") } },
+            dismissButton = { TextButton(onClick = { selected = null }) { Text("关闭") } },
+        )
+    }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
             title = "没有可恢复的旧版书签",
@@ -801,7 +852,7 @@ private fun ReaderLegacyBookmarkListV30(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.44f).dp),
+            .heightIn(max = windowHeight * 0.44f),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -819,9 +870,7 @@ private fun ReaderLegacyBookmarkListV30(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(
-                    modifier = Modifier.weight(1f).clickable {
-                        onJumpChapter(index, 0)
-                    },
+                    modifier = Modifier.weight(1f).clickable { selected = chapter },
                 ) {
                     Text(
                         text = readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
@@ -839,7 +888,7 @@ private fun ReaderLegacyBookmarkListV30(
                 }
                 ReaderInlineTextActionV30(
                     text = "归入本书",
-                    onClick = { onRestore(chapter.chapterNumber) },
+                    onClick = { selected = chapter },
                 )
             }
         }
@@ -924,6 +973,7 @@ private fun ReaderMoreTabV30(
     onDeleteLastChapter: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     val currentChapter = chapters.getOrNull(chapterIndex)
     var renameOpen by remember { mutableStateOf(false) }
     var deleteOpen by remember { mutableStateOf(false) }
@@ -931,7 +981,7 @@ private fun ReaderMoreTabV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.58f).dp)
+            .heightIn(max = windowHeight * 0.58f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4, vertical = t.space3),
     ) {
@@ -1550,6 +1600,7 @@ private fun ReaderSearchPanelV30(
     onBack: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     var query by rememberSaveable { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<ReaderSearchHitV30>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -1670,7 +1721,7 @@ private fun ReaderSearchPanelV30(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.42f).dp),
+                .heightIn(max = windowHeight * 0.42f),
             verticalArrangement = Arrangement.spacedBy(t.space2),
         ) {
             items(items = hits, key = { "${it.chapterIndex}:${it.offset}" }) { hit ->
@@ -1714,10 +1765,11 @@ private fun ReaderStatsPanelV30(
     onBack: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val windowHeight = readerMenuWindowHeightV63()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.62f).dp)
+            .heightIn(max = windowHeight * 0.62f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
@@ -1878,7 +1930,8 @@ private fun ReaderMenuTabsV30(
                         color = if (selected) t.border else Color.Transparent,
                         shape = shape,
                     )
-                    .clickable { onTab(item) },
+                    .selectable(selected = selected, role = Role.Tab) { onTab(item) }
+                    .semantics { contentDescription = "阅读菜单：$label" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -2070,7 +2123,8 @@ private fun ReaderStepperButtonV30(
             .height(46.dp)
             .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = if (text == "A+") "增大阅读字号" else "减小阅读字号" },
         contentAlignment = Alignment.Center,
     ) {
         Text(

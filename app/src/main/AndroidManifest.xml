@@ -22,6 +22,14 @@
             android:name=".ui.epub.EpubReaderActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.BookSourceBrowserActivityV56"
+            android:process=":book_source_browser"
+            android:exported="false" />
+        <service
+            android:name=".ui.BookSourceBrowserServiceV56"
+            android:process=":book_source_browser"
+            android:exported="false" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize"

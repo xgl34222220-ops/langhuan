@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +61,7 @@ internal fun BookSourceManageScreenV50(
     sources: List<BookSourceV36>,
     sourceStorageError: String? = null,
     browserVerificationSourceIds: Set<String> = emptySet(),
+    focusSourceId: String? = null,
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
     onOpenSource: (BookSourceV36) -> Unit,
@@ -66,15 +70,29 @@ internal fun BookSourceManageScreenV50(
     onAiGenerateSource: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var query by rememberSaveable { mutableStateOf("") }
     var group by rememberSaveable { mutableStateOf(SourceManageGroupV50.ALL) }
+
+    LaunchedEffect(focusSourceId) {
+        if (focusSourceId != null) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            query = ""
+            group = SourceManageGroupV50.ALL
+        }
+    }
 
     val filtered = remember(sources, query, group) {
         sources.filter { source ->
             sourceManageMatchesQueryV50(source = source, query = query) &&
                 sourceManageMatchesGroupV50(source = source, group = group)
         }
+    }
+    val ordered = remember(filtered, focusSourceId) {
+        sourceManageFocusOrderV74(filtered, focusSourceId)
     }
 
     Column(
@@ -172,7 +190,7 @@ internal fun BookSourceManageScreenV50(
                 item("manage-empty") {
                     SourceManageEmptyV50()
                 }
-            } else if (filtered.isEmpty()) {
+            } else if (ordered.isEmpty()) {
                 item("manage-no-match") {
                     Text(
                         text = "没有匹配的书源",
@@ -185,11 +203,12 @@ internal fun BookSourceManageScreenV50(
                 }
             } else {
                 items(
-                    items = filtered,
+                    items = ordered,
                     key = { it.id },
                 ) { source ->
                     SourceManageCardV50(
                         source = source,
+                        recentlySaved = source.id == focusSourceId,
                         browserVerificationRequired =
                             source.id in browserVerificationSourceIds,
                         onToggle = { onToggleSource(source.id) },
@@ -235,6 +254,16 @@ internal fun BookSourceManageScreenV50(
             )
         }
     }
+}
+
+/** Keeps a confirmed write visible without changing the durable source order. */
+internal fun sourceManageFocusOrderV74(
+    sources: List<BookSourceV36>,
+    focusSourceId: String?,
+): List<BookSourceV36> = if (focusSourceId == null) {
+    sources
+} else {
+    sources.sortedByDescending { it.id == focusSourceId }
 }
 
 
@@ -335,6 +364,7 @@ private fun SourceManageSearchV50(
 private fun SourceManageCardV50(
     source: BookSourceV36,
     browserVerificationRequired: Boolean,
+    recentlySaved: Boolean,
     onToggle: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -389,14 +419,30 @@ private fun SourceManageCardV50(
             }
             Spacer(Modifier.width(t.space3))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = source.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = t.foreground,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = source.name,
+                        modifier = Modifier.weight(1f, fill = false),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = t.foreground,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (recentlySaved) {
+                        Spacer(Modifier.width(t.space2))
+                        Text(
+                            text = "刚保存",
+                            modifier = Modifier
+                                .background(t.accent, RoundedCornerShape(t.radiusSm))
+                                .border(1.dp, t.primary, RoundedCornerShape(t.radiusSm))
+                                .padding(horizontal = t.space2, vertical = t.space1),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = t.accentForeground,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
                 Spacer(Modifier.height(t.space1))
                 Text(
                     text = buildString {

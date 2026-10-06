@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,7 +40,8 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
  * AI 生成书源 V50。
  *
  * AI 执行状态直接复用 OnlineBooksStateV36：
- * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError。
+ * aiProviderLabel / aiSteps / aiRunning / aiReport / aiError / aiStopped / aiLastUseBrowser /
+ * aiSavedSourceId / aiSavedSourceName。
  *
  * 真正生成由 OnlineBooksViewModelV36.buildWithAi() 完成。
  */
@@ -53,11 +56,19 @@ internal fun AiBookSourceScreenV50(
     onTestBookNameChange: (String) -> Unit,
     onConfigureAi: () -> Unit,
     onStart: (String, String) -> Unit,
+    onStartWithBrowser: (String, String) -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
+    onOpenSavedSource: (String) -> Unit = { onBack() },
 ) {
     val t = LocalLanghuanUiTokens.current
     val editable = !state.aiRunning && state.aiReport == null
+
+    val leaveScreen = {
+        if (state.aiRunning) onCancel()
+        onBack()
+    }
+    BackHandler(onBack = leaveScreen)
 
     LazyColumn(
         modifier = modifier
@@ -74,7 +85,7 @@ internal fun AiBookSourceScreenV50(
         verticalArrangement = Arrangement.spacedBy(t.space4),
     ) {
         item("ai-source-header") {
-            AiSourceHeaderV50(onBack = onBack)
+            AiSourceHeaderV50(onBack = leaveScreen)
         }
 
         item("ai-source-inputs") {
@@ -89,7 +100,7 @@ internal fun AiBookSourceScreenV50(
 
         item("ai-source-provider") {
             AiSourceProviderCardV50(
-                providerLabel = state.aiProviderLabel,
+                providerLabel = displayedAiProviderLabelV80(state),
                 enabled = !state.aiRunning,
                 onConfigureAi = onConfigureAi,
             )
@@ -112,6 +123,18 @@ internal fun AiBookSourceScreenV50(
                     AiSourceErrorCardV50(message = error)
                 }
             }
+
+        if (state.aiStopped) {
+            item("ai-source-stopped") {
+                AiSourceStoppedCardV65()
+            }
+        }
+
+        state.aiSavedSourceName?.let { sourceName ->
+            item("ai-source-saved") {
+                AiSourceSavedCardV68(sourceName)
+            }
+        }
 
         state.aiReport?.let { report ->
             item("ai-source-report") {
@@ -137,11 +160,7 @@ internal fun AiBookSourceScreenV50(
                     ) {
                         AiSourceMainButtonV50(
                             icon = Icons.Rounded.Check,
-                            text = if (state.aiReport.source.enabledExplore) {
-                                "保存书源"
-                            } else {
-                                "保存搜索书源"
-                            },
+                            text = aiSourceSaveActionLabelV68(state),
                             primary = true,
                             enabled = true,
                             onClick = onSave,
@@ -152,25 +171,112 @@ internal fun AiBookSourceScreenV50(
                             primary = false,
                             enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
                             onClick = {
+                                val browser = state.aiReport.source.useBrowser
                                 onCancel()
-                                onStart(siteUrl, testBookName)
+                                if (browser) onStartWithBrowser(siteUrl, testBookName) else onStart(siteUrl, testBookName)
                             },
                         )
                     }
                 }
 
+                state.aiSavedSourceName != null -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
+                        AiSourceMainButtonV50(
+                            icon = Icons.Rounded.Source,
+                            text = "返回书源管理查看",
+                            primary = true,
+                            enabled = true,
+                            onClick = {
+                                state.aiSavedSourceId?.let(onOpenSavedSource) ?: onBack()
+                            },
+                        )
+                        aiSourceStartActionsV67(state, siteUrl, testBookName).forEach { action ->
+                            AiSourceMainButtonV50(
+                                icon = Icons.Rounded.AutoAwesome,
+                                text = action.label,
+                                primary = false,
+                                enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
+                                onClick = {
+                                    if (action.useBrowser) onStartWithBrowser(siteUrl, testBookName)
+                                    else onStart(siteUrl, testBookName)
+                                },
+                            )
+                        }
+                    }
+                }
+
                 else -> {
-                    AiSourceMainButtonV50(
-                        icon = Icons.Rounded.AutoAwesome,
-                        text = "开始生成",
-                        primary = true,
-                        enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
-                        onClick = { onStart(siteUrl, testBookName) },
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
+                        aiSourceStartActionsV67(state, siteUrl, testBookName).forEachIndexed { index, action ->
+                            AiSourceMainButtonV50(
+                                icon = Icons.Rounded.AutoAwesome,
+                                text = action.label,
+                                primary = index == 0,
+                                enabled = siteUrl.isNotBlank() && testBookName.isNotBlank(),
+                                onClick = {
+                                    if (action.useBrowser) onStartWithBrowser(siteUrl, testBookName)
+                                    else onStart(siteUrl, testBookName)
+                                },
+                            )
+                        }
+                        Text(
+                            "网站需要网页验证或动态加载时，可使用浏览器模式；验证通过后自动继续。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+internal data class AiSourceStartActionV67(
+    val label: String,
+    val useBrowser: Boolean,
+)
+
+internal fun aiCanResumeValidatedRulesV77(
+    state: OnlineBooksStateV36,
+    siteUrl: String,
+    testBookName: String,
+    useBrowser: Boolean,
+): Boolean = state.aiCanResumeValidatedRules &&
+    state.aiValidationRetryInput == aiValidationRetryInputV77(siteUrl, testBookName, useBrowser)
+
+/** Keeps the failed attempt's transport first and promises rule reuse only for its exact input. */
+internal fun aiSourceStartActionsV67(
+    state: OnlineBooksStateV36,
+    siteUrl: String,
+    testBookName: String,
+): List<AiSourceStartActionV67> =
+    when {
+        state.aiError.isNullOrBlank() || state.aiLastUseBrowser == null -> listOf(
+            AiSourceStartActionV67("开始生成", useBrowser = false),
+            AiSourceStartActionV67("浏览器模式生成", useBrowser = true),
+        )
+
+        state.aiLastUseBrowser == true -> listOf(
+            AiSourceStartActionV67(
+                if (aiCanResumeValidatedRulesV77(state, siteUrl, testBookName, useBrowser = true)) "保留已通过规则重试（浏览器）" else "重试浏览器模式",
+                useBrowser = true,
+            ),
+            AiSourceStartActionV67("改用普通模式", useBrowser = false),
+        )
+
+        else -> listOf(
+            AiSourceStartActionV67(
+                if (aiCanResumeValidatedRulesV77(state, siteUrl, testBookName, useBrowser = false)) "保留已通过规则重试（普通）" else "重试普通模式",
+                useBrowser = false,
+            ),
+            AiSourceStartActionV67("改用浏览器模式", useBrowser = true),
+        )
+    }
+
+internal fun aiSourceSaveActionLabelV68(state: OnlineBooksStateV36): String {
+    val report = state.aiReport ?: return "保存书源"
+    val base = if (report.source.enabledExplore) "保存书源" else "保存搜索书源"
+    return if (state.aiError.isNullOrBlank()) base else "重试$base"
 }
 
 
@@ -559,6 +665,75 @@ private fun AiSourceReportCardV50(report: AiSourceReportV37) {
                 text = warning,
                 style = MaterialTheme.typography.labelSmall,
                 color = t.mutedForeground,
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun AiSourceStoppedCardV65() {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(t.accent, RoundedCornerShape(t.radiusMd))
+            .border(1.dp, t.border, RoundedCornerShape(t.radiusMd))
+            .padding(t.space3),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Stop,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = t.primary,
+        )
+        Spacer(Modifier.width(t.space2))
+        Column(verticalArrangement = Arrangement.spacedBy(t.space1)) {
+            Text(
+                text = "生成已停止",
+                style = MaterialTheme.typography.labelLarge,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "网站地址和测试书名已保留，可重新选择普通或浏览器模式。",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.secondaryForeground,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiSourceSavedCardV68(sourceName: String) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(t.accent, RoundedCornerShape(t.radiusMd))
+            .border(1.dp, t.border, RoundedCornerShape(t.radiusMd))
+            .padding(t.space3),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = t.primary,
+        )
+        Spacer(Modifier.width(t.space2))
+        Column(verticalArrangement = Arrangement.spacedBy(t.space1)) {
+            Text(
+                text = "书源已保存",
+                style = MaterialTheme.typography.labelLarge,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "“$sourceName”已写入书源管理，可继续生成或返回使用。",
+                style = MaterialTheme.typography.bodySmall,
+                color = t.secondaryForeground,
             )
         }
     }

@@ -8,6 +8,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import org.junit.Rule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.Lifecycle
@@ -25,6 +28,7 @@ import org.readium.r2.shared.publication.Locator
 
 /** This test must run on an Android WebView. JVM extraction tests do not prove rendered artwork. */
 class EpubOriginalReaderDeviceTest {
+    @get:Rule val compose = createEmptyComposeRule()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
@@ -137,6 +141,110 @@ class EpubOriginalReaderDeviceTest {
         }
     }
 
+    @Test fun reflowRendererExitKeepsConfirmedLocatorAndManualRetryRestoresSecureArtwork() {
+        verifyRealRendererRecovery("original-reflow.epub", "epub-device-renderer-reflow", reflow = true)
+    }
+
+    @Test fun fixedRendererExitKeepsConfirmedPageAndRecreationWaitsForManualRetry() {
+        verifyRealRendererRecovery("original-fixed.epub", "epub-device-renderer-fixed", reflow = false)
+    }
+
+    private fun verifyRealRendererRecovery(file: String, key: String, reflow: Boolean) {
+        assertTrue("Real renderer termination requires the API 35 CI emulator", android.os.Build.VERSION.SDK_INT >= 29)
+        val id = seed(file, key)
+        val store = EpubReaderEntry.store(context)
+        val digest = requireNotNull(store.digest(id))
+        val original = requireNotNull(store.original(id)).readBytes()
+        val appPid = android.os.Process.myPid()
+        withReader(id) { scenario ->
+            waitForArt(scenario)
+            if (reflow) {
+                evaluate(scenario, "document.querySelector('a[href=\"two.xhtml#second\"]').click(); true")
+            } else scenario.onActivity { nav(it).goForward(animated = false) }
+            waitForPage(scenario, "two.xhtml")
+            if (reflow) {
+                scenario.onActivity { nav(it).goForward(animated = false) }
+                waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 }
+            }
+            val before = requireNotNull(current(scenario))
+            waitUntil { store.loadLocator(id, digest) == before.toJSON().toString() }
+            val persisted = requireNotNull(store.loadLocator(id, digest))
+            val readerData = context.getSharedPreferences("reader_qingmo_v9", 0).all.toMap()
+            var retired: EpubNavigatorFragment? = null
+            var retiredViews: List<WebView> = emptyList()
+            scenario.onActivity { activity ->
+                retired = nav(activity)
+                retiredViews = webViews(activity.window.decorView)
+                assertTrue("The fixture must exercise multiple real Readium page views", retiredViews.size >= 2)
+                assertEquals("Confirmed Locator changed before fault injection", persisted, store.loadLocator(id, digest))
+                val visible = retiredViews.first { it.isShown && it.url?.substringBefore('#')?.endsWith("/two.xhtml") == true }
+                assertTrue("The actual Android renderer must accept termination", requireNotNull(visible.webViewRenderProcess).terminate())
+            }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("重新打开原版").fetchSemanticsNodes().size == 1
+            }
+            compose.onNodeWithText("重新打开原版").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText("从当前页继续").assertDoesNotExist()
+            assertFalse("A failed renderer must not accept navigation", readerAcceptsNavigation(scenario))
+            assertEquals("Renderer termination must not kill the application", appPid, android.os.Process.myPid())
+            assertEquals("Renderer failure must retain the confirmed Locator exactly", persisted, store.loadLocator(id, digest))
+            scenario.onActivity { activity ->
+                assertNull(activity.supportFragmentManager.findFragmentByTag("epub_original_navigator"))
+                assertTrue("Failed Navigator still has WebViews in the window", webViews(activity.window.decorView).isEmpty())
+            }
+            instrumentation.uiAutomation.waitForIdle(300, 5_000)
+            deviceWindowEvidenceV46("v60-${if (reflow) "reflow" else "fixed"}-renderer-stopped")
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            if (!reflow) scenario.recreate()
+            compose.onNodeWithText("重新打开原版").assertIsDisplayed().assertIsEnabled()
+            assertFalse("Resume/recreation must not automatically retry a renderer fault", readerAcceptsNavigation(scenario))
+            assertEquals(persisted, store.loadLocator(id, digest))
+            assertEquals(readerData, context.getSharedPreferences("reader_qingmo_v9", 0).all)
+            compose.onNodeWithText("重新打开原版").performClick()
+            waitForPage(scenario, "two.xhtml")
+            val after = requireNotNull(current(scenario))
+            assertEquals(before.href.removeFragment(), after.href.removeFragment())
+            assertEquals("Manual retry must restore the confirmed page", before.locations.progression ?: 0.0, after.locations.progression ?: 0.0, 0.08)
+            scenario.onActivity { activity ->
+                assertNotSame("Retry must create a fresh Readium Navigator", retired, nav(activity))
+                val replacements = webViews(activity.window.decorView)
+                assertTrue(replacements.isNotEmpty())
+                assertTrue("Retry reused a retired WebView", replacements.none { replacement -> retiredViews.any { it === replacement } })
+                replacements.forEach { view ->
+                    assertFalse(view.settings.allowFileAccess)
+                    assertFalse(view.settings.allowContentAccess)
+                    assertTrue(view.settings.blockNetworkLoads)
+                    assertEquals(WebSettings.MIXED_CONTENT_NEVER_ALLOW, view.settings.mixedContentMode)
+                }
+            }
+            assertEquals("true", evaluate(scenario, "document.documentElement.getAttribute('data-langhuan-secure-readium') === '3' && !window.bookScriptExecuted && !window.bookEventExecuted && !window.svgScriptExecuted"))
+            assertEquals("The original association changed during recovery", digest, store.digest(id))
+            assertArrayEquals("Renderer recovery changed the original EPUB bytes", original, requireNotNull(store.original(id)).readBytes())
+            assertEquals("Original/text bookmarks and text-reader settings changed", readerData, context.getSharedPreferences("reader_qingmo_v9", 0).all)
+            assertEquals(appPid, android.os.Process.myPid())
+            // Loaded SDK state can precede the Compose frame which removes the overlay.
+            // A recovery screenshot must show the page, not the preceding loading frame.
+            compose.waitForIdle()
+            compose.onNodeWithText("正在打开 EPUB 原版…").assertDoesNotExist()
+            compose.onNodeWithText("正在恢复原版阅读位置…").assertDoesNotExist()
+            compose.onNodeWithText("重新打开原版").assertDoesNotExist()
+            instrumentation.uiAutomation.waitForIdle(300, 5_000)
+            deviceWindowEvidenceV46("v60-${if (reflow) "reflow" else "fixed"}-renderer-restored")
+            val proof = JSONObject().put("fixture", file).put("realRendererTerminated", true)
+                .put("pidBefore", appPid).put("pidAfter", android.os.Process.myPid())
+                .put("retiredWebViews", retiredViews.size).put("locatorBefore", before.toJSON())
+                .put("locatorAfter", after.toJSON()).put("originalDigest", digest)
+            File(context.getExternalFilesDir(null), "reader-qa/v60-$key-renderer-proof.json")
+                .apply { parentFile!!.mkdirs() }.writeText(proof.toString(2))
+            scenario.onActivity { nav(it).go(requireNotNull(Locator.fromJSON(JSONObject("""{"href":"OPS/one.xhtml","type":"application/xhtml+xml","locations":{"progression":0.0}}"""))), animated = false) }
+            waitForArt(scenario)
+            compose.waitForIdle()
+            instrumentation.uiAutomation.waitForIdle(300, 5_000)
+            deviceWindowEvidenceV46("v60-${if (reflow) "reflow" else "fixed"}-renderer-artwork")
+        }
+    }
+
     @Test fun fixedLayoutDrawsOriginalIllustrations() {
         val id = seed("original-fixed.epub", "epub-device-fixed")
         withReader(id) { scenario ->
@@ -205,7 +313,7 @@ class EpubOriginalReaderDeviceTest {
             while (android.os.SystemClock.uptimeMillis() < backgroundDeadline) {
                 scenario.onActivity { activity ->
                     assertFalse(activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-                    val failure = textViews(activity.window.decorView).any { it.text.contains("可重新关联原文件，或继续阅读文字版") }
+                    val failure = (EpubReaderActivity::class.java.getDeclaredField("readerUiState\$delegate").apply { isAccessible = true }.get(activity) as androidx.compose.runtime.State<*>).value.let { (it as EpubReaderUiStateV50).statusMessage.contains("可重新关联原文件，或继续阅读文字版") }
                     assertFalse("Background open reported an attachment error", failure)
                 }
                 Thread.sleep(100)
@@ -263,11 +371,12 @@ class EpubOriginalReaderDeviceTest {
                 EpubReaderActivity::class.java.getDeclaredMethod("restorePendingPosition").apply { isAccessible = true }.invoke(activity)
                 EpubReaderActivity::class.java.getDeclaredMethod("showRestoreFailure", String::class.java).apply { isAccessible = true }
                     .invoke(activity, "合成恢复失败")
-                val notice = textViews(activity.window.decorView).single { it.text.contains("从当前页继续") }
-                assertTrue(notice.performClick())
-                assertNull(EpubReaderActivity::class.java.getDeclaredField("restoreTarget").apply { isAccessible = true }.get(activity))
-                textViews(activity.window.decorView).single { it.text == "下一页" }.performClick()
             }
+            compose.onNodeWithText("从当前页继续").assertIsDisplayed().performClick()
+            scenario.onActivity { activity ->
+                assertNull(EpubReaderActivity::class.java.getDeclaredField("restoreTarget").apply { isAccessible = true }.get(activity))
+            }
+            compose.onNodeWithContentDescription("下一页").assertIsEnabled().performClick()
             waitUntil { (current(scenario)?.locations?.progression ?: 0.0) > 0.0 &&
                 evaluate(scenario, "window.scrollX > 0 || window.scrollY > 0") == "true" }
             val selected = requireNotNull(current(scenario))
@@ -312,7 +421,7 @@ class EpubOriginalReaderDeviceTest {
     }
 
     private fun restoreProcessDeath(requireNewProcess: Boolean) {
-        val id = "epub-device-process-death"
+        val id = requireNotNull(context.getSharedPreferences("epub_device_fixture_v56", 0).getString("epub-device-process-death", null))
         val store = EpubReaderEntry.store(context)
         assertTrue("Restore requires a successful seed; this test never skips", store.hasOriginal(id))
         val evidence = context.getSharedPreferences("epub_process_test_evidence", 0)
@@ -345,7 +454,8 @@ class EpubOriginalReaderDeviceTest {
         instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /sdcard/Download/reader-qa/${file.name}").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
     }
 
-    private fun seed(file: String, id: String): String {
+    private fun seed(file: String, key: String): String {
+        val id = epubShelfFixtureV56(context, key)
         val store = EpubReaderEntry.store(context)
         val prepared = instrumentation.context.assets.open("epub/$file").use { store.prepare(it) }
         store.associate(id, prepared)
@@ -394,9 +504,8 @@ class EpubOriginalReaderDeviceTest {
         scenario.onActivity { activity ->
             // initialLocator is observable before the first layout. The SDK can accept direct
             // test calls while the app still blocks navigation behind its restore overlay.
-            val controlsReady = textViews(activity.window.decorView).single { it.text == "下一页" }.isEnabled
-            val status = EpubReaderActivity::class.java.getDeclaredField("status").apply { isAccessible = true }.get(activity) as View
-            ready = controlsReady && status.visibility == View.GONE
+            val loaded = EpubReaderActivity::class.java.getDeclaredField("loaded").apply { isAccessible = true }.getBoolean(activity)
+            ready = loaded
         }
         return ready
     }
@@ -414,12 +523,9 @@ class EpubOriginalReaderDeviceTest {
         }
     }
     private fun waitUntil(test: () -> Boolean) {
-        val deadline = android.os.SystemClock.uptimeMillis() + 25_000
-        while (android.os.SystemClock.uptimeMillis() < deadline) {
-            if (runCatching(test).getOrDefault(false)) return
-            Thread.sleep(100)
-        }
-        assertTrue("EPUB rendering or navigation did not become ready", test())
+        // The V50 shell collects Room state in Compose. Advance its test frame clock while
+        // the real WebView/Readium renderer continues on Android's ordinary clock.
+        compose.waitUntil(25_000) { runCatching(test).getOrDefault(false) }
     }
     private fun countPixels(bitmap: Bitmap, color: Int): Int {
         var count = 0

@@ -46,6 +46,38 @@ internal data class AiSourceReportV37(
     val readingWarnings: List<String> = emptyList(),
 )
 
+internal enum class AiValidatedStageV76 { SEARCH, TOC, CONTENT }
+
+internal data class AiValidatedRulesV76(
+    val source: BookSourceV36,
+    val bookUrl: String,
+    val chapterUrl: String? = null,
+)
+
+/**
+ * In-memory checkpoint for one user-directed retry chain.
+ *
+ * Only rules which completed a live extraction check enter this object. A retry still fetches and
+ * validates every page again; it merely avoids asking the model to regenerate earlier valid rules.
+ */
+internal class AiValidationCheckpointV76 {
+    private val validated = linkedMapOf<AiValidatedStageV76, AiValidatedRulesV76>()
+
+    fun get(stage: AiValidatedStageV76): AiValidatedRulesV76? = validated[stage]
+
+    fun record(stage: AiValidatedStageV76, value: AiValidatedRulesV76) {
+        validated[stage] = value
+    }
+
+    fun invalidateFrom(stage: AiValidatedStageV76) {
+        validated.keys.filter { it.ordinal >= stage.ordinal }.forEach(validated::remove)
+    }
+
+    fun clear() = validated.clear()
+
+    fun hasValidatedRules(): Boolean = validated.isNotEmpty()
+}
+
 /**
  * Writes a book source for a site the user names.
  *
@@ -55,6 +87,7 @@ internal data class AiSourceReportV37(
 internal class BookSourceAiBuilderV37(
     private val gateway: AiGateway,
     private val onSteps: (List<AiSourceStepV37>) -> Unit,
+    private val validationCheckpoint: AiValidationCheckpointV76? = null,
     private val fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
 ) {
     private val network = SourceRequestSessionV46(minimumGapMillis = 500, fetch = fetchDocument)
@@ -79,16 +112,16 @@ internal class BookSourceAiBuilderV37(
         error(detail)
     }
 
-    suspend fun build(siteUrl: String, keyword: String): AiSourceReportV37 = withContext(Dispatchers.IO) {
+    suspend fun build(siteUrl: String, keyword: String, useBrowser: Boolean = false): AiSourceReportV37 = withContext(Dispatchers.IO) {
         network.reset()
         steps.clear()
         generationCalls.clear()
         try {
-            buildSource(siteUrl, keyword)
+            buildSource(siteUrl, keyword, useBrowser)
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) {
-            val detail = error.message.orEmpty().ifBlank { "书源生成失败，请稍后重试" }.take(500)
+            val detail = sourceFailureMessageV69(error, "书源生成失败，请稍后重试").take(500)
             val last = steps.lastOrNull()
             if (last?.completed == true && last.ok == false && last.detail == detail) {
                 // fail() already published this exact failure.
@@ -101,10 +134,10 @@ internal class BookSourceAiBuilderV37(
         }
     }
 
-    private suspend fun buildSource(siteUrl: String, keyword: String): AiSourceReportV37 {
+    private suspend fun buildSource(siteUrl: String, keyword: String, useBrowser: Boolean): AiSourceReportV37 {
         val home = normalizeSiteV37(siteUrl)
         val enteredOrigin = canonicalOriginV37(home)
-        var source = BookSourceV36(id = enteredOrigin, name = URL(home).host, baseUrl = enteredOrigin)
+        var source = BookSourceV36(id = enteredOrigin, name = URL(home).host, baseUrl = enteredOrigin, useBrowser = useBrowser)
 
         // 1. Home page and search entry
         step("读取网站首页")
@@ -120,7 +153,7 @@ internal class BookSourceAiBuilderV37(
                     }
                     fail("首页读取失败：${dns.message.orEmpty()}", trace)
                 }
-                fail("首页读取失败：${error.message.orEmpty().take(220)}")
+                fail("首页读取失败：${sourceFailureMessageV69(error)}")
             }
 
         // The typed domain may be only a legacy doorway. Use the final URL after redirects as the
@@ -134,7 +167,10 @@ internal class BookSourceAiBuilderV37(
         finish(true, if (finalOrigin != enteredOrigin) "${source.name} · 已跳转到 $finalOrigin" else source.name)
 
         step("识别搜索入口")
-        val searchUrl = detectSearchUrlV37(homeDoc) ?: askSearchUrl(homeDoc, finalOrigin)
+        val cachedSearch = validationCheckpoint?.get(AiValidatedStageV76.SEARCH)
+            ?.takeIf { it.source.baseUrl == finalOrigin && it.source.useBrowser == useBrowser }
+        val searchUrl = cachedSearch?.source?.searchUrl
+            ?: detectSearchUrlV37(homeDoc) ?: askSearchUrl(homeDoc, finalOrigin)
             ?: fail("首页没有找到搜索框。可以换成网站的搜索页链接再试")
         source = source.copy(searchUrl = searchUrl)
         require(sameSourceOriginV36(publicSourceUrlV36(finalOrigin), publicSourceUrlV36(buildSearchRequestV36(source, keyword).url))) {
@@ -145,30 +181,40 @@ internal class BookSourceAiBuilderV37(
         // 2. Search results
         step("分析搜索结果页")
         val searchDoc = sourceAttemptV36 { fetchAiDocumentV37(source, buildSearchRequestV36(source, keyword)) }
-            .getOrElse { fail("搜索请求失败：${it.message.orEmpty().take(80)}") }
-        var rules = askRules(SEARCH_TASK, searchDoc, keyword, feedback = null)
+            .getOrElse { fail("搜索请求失败：${sourceFailureMessageV69(it)}") }
+        var rules = cachedSearch?.source?.searchRulesV76()
+            ?: askRules(SEARCH_TASK, searchDoc, keyword, feedback = null)
         source = source.withSearch(rules)
         var results = extractionAttemptV55 { searchAiSourceV37(source, keyword) }.getOrDefault(emptyList())
         if (results.isEmpty()) {
+            validationCheckpoint?.invalidateFrom(AiValidatedStageV76.SEARCH)
             rules = askRules(SEARCH_TASK, searchDoc, keyword, feedback = "上次规则 ${rules.compact()} 在这个页面上一个结果都没取到。请对照页面结构重新写，列表规则要能选中每一本书的外层元素。")
             source = source.withSearch(rules)
             results = extractionAttemptV55 { searchAiSourceV37(source, keyword) }.getOrDefault(emptyList())
         }
         if (results.isEmpty()) fail("搜索结果页的规则没能取到书。请确认测试书名在该站能搜到")
         val picked = results.firstOrNull { it.name == keyword } ?: results.firstOrNull { it.name.contains(keyword) } ?: results.first()
+        validationCheckpoint?.record(
+            AiValidatedStageV76.SEARCH,
+            AiValidatedRulesV76(source, picked.bookUrl),
+        )
         finish(true, "找到 ${results.size} 本，选中《${picked.name}》")
 
         // 3. Book page + table of contents
         step("分析书籍页与目录")
         val bookDoc = sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(picked.bookUrl)) }
-            .getOrElse { fail("书籍页打不开：${it.message.orEmpty().take(80)}") }
-        rules = askRules(TOC_TASK, bookDoc, picked.name, feedback = null)
+            .getOrElse { fail("书籍页打不开：${sourceFailureMessageV69(it)}") }
+        val cachedToc = validationCheckpoint?.get(AiValidatedStageV76.TOC)
+            ?.takeIf { it.bookUrl == picked.bookUrl && it.source.baseUrl == finalOrigin && it.source.useBrowser == useBrowser }
+        rules = cachedToc?.source?.tocRulesV76()
+            ?: askRules(TOC_TASK, bookDoc, picked.name, feedback = null)
         source = source.withToc(rules)
         var catalogueAttempt = extractionAttemptV55 { loadAiBookV37(source, picked) }
         if (catalogueAttempt.isFailure) {
+            validationCheckpoint?.invalidateFrom(AiValidatedStageV76.TOC)
             // Preserve the reason: a partial/latest-only catalogue is not an empty selector.
             network.checkActive()
-            val problem = catalogueAttempt.exceptionOrNull()?.message.orEmpty().take(240)
+            val problem = catalogueAttempt.exceptionOrNull()?.let { sourceFailureMessageV69(it) }.orEmpty()
             val tocPage = ruleStringV36(bookDoc, source.infoTocUrl).takeIf { it.isNotBlank() }
                 ?.let { sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(resolveUrlV36(bookDoc.location(), it))) }.getOrNull() }
             val evidence = tocPage ?: bookDoc
@@ -182,33 +228,45 @@ internal class BookSourceAiBuilderV37(
             source = source.withToc(rules, keepTocUrl = tocPage != null)
             catalogueAttempt = extractionAttemptV55 { loadAiBookV37(source, picked) }
         }
-        val catalogue = catalogueAttempt.getOrElse { fail("目录检查未通过：${it.message.orEmpty().take(260)}") }
+        val catalogue = catalogueAttempt.getOrElse { fail("目录检查未通过：${sourceFailureMessageV69(it)}") }
         val toc = catalogue.chapters
         if (toc.isEmpty()) fail("没能取到目录")
+        validationCheckpoint?.record(
+            AiValidatedStageV76.TOC,
+            AiValidatedRulesV76(source, catalogue.book.bookUrl),
+        )
         finish(true, sourceCatalogueSummaryV50(toc.size, catalogue.proof))
 
         // 4. Validate the selected chapter and retain the provenance of the actual sample.
         step("分析正文页")
         val first = toc.first()
         val chapterDoc = sourceAttemptV36 { fetchAiDocumentV37(source, SourceRequestV36(first.url)) }
-            .getOrElse { fail("正文页打不开：${it.message.orEmpty().take(80)}") }
+            .getOrElse { fail("正文页打不开：${sourceFailureMessageV69(it)}") }
         val chapterHint = "《${catalogue.book.name}》 · ${first.title}"
-        rules = askRules(CONTENT_TASK, chapterDoc, chapterHint, feedback = null)
+        val cachedContent = validationCheckpoint?.get(AiValidatedStageV76.CONTENT)
+            ?.takeIf { it.bookUrl == catalogue.book.bookUrl && it.chapterUrl == first.url && it.source.baseUrl == finalOrigin && it.source.useBrowser == useBrowser }
+        rules = cachedContent?.source?.contentRulesV76()
+            ?: askRules(CONTENT_TASK, chapterDoc, chapterHint, feedback = null)
         source = source.withContent(rules)
         val tocUrls = toc.map { it.url }.toSet()
         var chapterAttempt = extractionAttemptV55 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
         if (!aiChapterSampleAcceptedV50(chapterAttempt.getOrNull())) {
+            validationCheckpoint?.invalidateFrom(AiValidatedStageV76.CONTENT)
             network.checkActive()
-            val problem = chapterAttempt.exceptionOrNull()?.message?.take(240)
+            val problem = chapterAttempt.exceptionOrNull()?.let { sourceFailureMessageV69(it) }
                 ?: "仅取到 ${chapterAttempt.getOrNull()?.text.orEmpty().length} 个字"
             rules = askRules(CONTENT_TASK, chapterDoc, chapterHint,
                 feedback = "上次规则 ${rules.compact()} 未通过正文检查：$problem。请核对当前书名、章节标题及正文容器，不要选择导航、目录、推荐、简介或其他文章，也不要仅按字数最多选择。")
             source = source.withContent(rules)
             chapterAttempt = extractionAttemptV55 { loadAiChapterV37(source, catalogue.book, first, tocUrls) }
         }
-        val chapter = chapterAttempt.getOrElse { fail("正文检查未通过：${it.message.orEmpty().take(260)}") }
+        val chapter = chapterAttempt.getOrElse { fail("正文检查未通过：${sourceFailureMessageV69(it)}") }
         val text = chapter.text
         if (!aiChapterSampleAcceptedV50(chapter)) fail("本次正文抽样不足 60 字且缺少书名或章名证据，暂未确认规则可用；可以换一章核对")
+        validationCheckpoint?.record(
+            AiValidatedStageV76.CONTENT,
+            AiValidatedRulesV76(source, catalogue.book.bookUrl, first.url),
+        )
         finish(true, "抽样「${first.title}」${text.length} 字 · " +
             if (chapter.proof.identityVerified) "页面书名与章节已核对" else "页面身份信息不足，需人工核对")
 
@@ -257,7 +315,7 @@ internal class BookSourceAiBuilderV37(
             }
             val doc = pageAttempt.getOrNull()
             if (doc == null) {
-                warnings += "${link.label} · 页面读取失败：${pageAttempt.exceptionOrNull()?.message.orEmpty().take(100)}"
+                warnings += "${link.label} · 页面读取失败：${pageAttempt.exceptionOrNull()?.let { sourceFailureMessageV69(it) }.orEmpty()}"
                 continue
             }
             network.checkActive()
@@ -340,7 +398,7 @@ internal class BookSourceAiBuilderV37(
                 catalogue to content
             }
             if (reading.isFailure) {
-                warnings += "${link.label}：详情/目录/正文验证失败，未添加（${reading.exceptionOrNull()?.message.orEmpty().take(100)}）"
+                warnings += "${link.label}：详情/目录/正文验证失败，未添加（${reading.exceptionOrNull()?.let { sourceFailureMessageV69(it) }.orEmpty()}）"
                 continue
             }
             val (catalogue, content) = reading.getOrThrow()
@@ -508,6 +566,34 @@ internal class BookSourceAiBuilderV37(
     }
 
     private fun Map<String, String>.compact(): String = entries.joinToString("；") { "${it.key}=${it.value}" }.take(400)
+
+    private fun BookSourceV36.searchRulesV76() = mapOf(
+        "searchList" to searchList,
+        "searchName" to searchName,
+        "searchAuthor" to searchAuthor,
+        "searchCover" to searchCover,
+        "searchIntro" to searchIntro,
+        "searchLatest" to searchLatest,
+        "searchBookUrl" to searchBookUrl,
+    )
+
+    private fun BookSourceV36.tocRulesV76() = mapOf(
+        "infoName" to infoName,
+        "infoAuthor" to infoAuthor,
+        "infoCover" to infoCover,
+        "infoIntro" to infoIntro,
+        "infoTocUrl" to infoTocUrl,
+        "tocList" to tocList,
+        "tocName" to tocName,
+        "tocUrl" to tocUrl,
+        "tocNext" to tocNext,
+    )
+
+    private fun BookSourceV36.contentRulesV76() = mapOf(
+        "contentText" to contentText,
+        "contentNext" to contentNext,
+        "contentReplace" to contentReplace,
+    )
 
     private fun BookSourceV36.withSearch(r: Map<String, String>) = copy(
         searchList = r["searchList"].orEmpty(),

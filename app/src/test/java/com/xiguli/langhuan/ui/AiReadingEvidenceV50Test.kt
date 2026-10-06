@@ -44,7 +44,7 @@ class AiReadingEvidenceV50Test {
             }
             return Jsoup.parse(html, request.url)
         }
-        suspend fun build() = BookSourceAiBuilderV37(gateway, { steps = it }, ::fetch).build(BASE, BOOK)
+        suspend fun build() = BookSourceAiBuilderV37(gateway, { steps = it }, fetchDocument = ::fetch).build(BASE, BOOK)
         fun count(stage: String) = prompts.count { it.user.startsWith("任务：为“$stage”") }
     }
 

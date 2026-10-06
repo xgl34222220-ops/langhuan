@@ -5,7 +5,10 @@ import com.xiguli.langhuan.engine.AiGateway
 import com.xiguli.langhuan.engine.PromptBundle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import java.net.ConnectException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLHandshakeException
 import org.jsoup.Jsoup
 import org.junit.Assert.*
 import org.junit.Test
@@ -59,7 +62,30 @@ class AiRuleTransportV55Test {
     @Test fun uncachedSearchTimeoutMustNotBecomeSelectorCorrection() {
         val e = run(SocketTimeoutException("synthetic timeout"))
         assertEquals("Transport timeout must not consume a second model call",1,e.calls)
-        assertTrue(e.error!!.message!!.contains("timeout"))
+        assertTrue(e.error!!.message!!.contains(SOURCE_TIMEOUT_MESSAGE_V69))
+        assertFalse("Raw transport diagnostics must not leak into UI copy", e.error!!.message!!.contains("synthetic timeout"))
+    }
+    @Test fun uncachedSearchTlsFailureMustNotBecomeSelectorCorrection() {
+        val e = run(SSLHandshakeException("certificate_unknown: CN=private.books.example"))
+        val failure = requireNotNull(e.error)
+        assertEquals("TLS validation failure must not consume a second model call",1,e.calls)
+        assertTrue(failure.message!!.contains(SOURCE_TLS_MESSAGE_V70))
+        assertFalse("Certificate details must not leak into UI copy", failure.message!!.contains("private.books.example"))
+    }
+    @Test fun uncachedSearchDnsFailureMustNotBecomeSelectorCorrection() {
+        val e = run(UnknownHostException("Unable to resolve host private.books.example"))
+        val failure = requireNotNull(e.error)
+        assertEquals("DNS lookup failure must not consume a second model call",1,e.calls)
+        assertTrue(failure.message!!.contains(SOURCE_DNS_LOOKUP_MESSAGE_V71))
+        assertFalse("Resolved host details must not leak into UI copy", failure.message!!.contains("private.books.example"))
+    }
+    @Test fun uncachedSearchRefusedConnectionMustNotBecomeSelectorCorrection() {
+        val e = run(ConnectException("Failed to connect to private.books.example/203.0.113.7:65535"))
+        val failure = requireNotNull(e.error)
+        assertEquals("Refused connection must not consume a second model call",1,e.calls)
+        assertTrue(failure.message!!.contains(SOURCE_CONNECTION_MESSAGE_V72))
+        assertFalse("Endpoint details must not leak into UI copy", failure.message!!.contains("private.books.example"))
+        assertFalse("Endpoint addresses must not leak into UI copy", failure.message!!.contains("203.0.113.7"))
     }
     @Test fun uncachedSearchCancellationStillPropagates() {
         val e = run(CancellationException("synthetic cancel"))
@@ -104,7 +130,8 @@ class AiRuleTransportV55Test {
         assertEquals(if(content) 3 else 2,modelCalls)
         val failure = requireNotNull(result.exceptionOrNull())
         assertTrue(failure.message.orEmpty(),generateSequence(failure as Throwable) { it.cause }.take(12).any { it is java.io.IOException })
-        assertTrue(failure.message.orEmpty(),failure.message.orEmpty().contains(if(content) "synthetic content timeout" else "403"))
+        assertTrue(failure.message.orEmpty(),failure.message.orEmpty().contains(if(content) SOURCE_TIMEOUT_MESSAGE_V69 else "403"))
+        if (content) assertFalse(failure.message.orEmpty().contains("synthetic content timeout"))
     }
 
 }

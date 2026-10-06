@@ -65,4 +65,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Langhuan-verification-reports
-          path: app/build/reports
+          path: |
+            app/build/reports
+            app/build/test-results/testDebugUnitTest/*.xml

@@ -141,6 +141,7 @@ internal fun OnlineBooksScreenV50(
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     onStopSearch: () -> Unit,
+    onRetrySearch: () -> Unit,
 
     onRecentSearch: (String) -> Unit,
     onClearRecentSearches: () -> Unit,
@@ -151,6 +152,8 @@ internal fun OnlineBooksScreenV50(
     onOpenBook: (OnlineBookV36) -> Unit,
 
     onCloseDetail: () -> Unit,
+    onRetryDetail: () -> Unit,
+    onStopDetail: () -> Unit,
     onViewSource: (String) -> Unit,
     onAddToShelf: () -> Unit,
     onRead: () -> Unit,
@@ -166,7 +169,12 @@ internal fun OnlineBooksScreenV50(
             loading = state.detailLoading,
             adding = state.addingToShelf,
             download = state.download,
+            catalogueError = state.detailError,
+            catalogueStopped = state.detailStopped,
+            operationError = state.error?.takeUnless { it == state.detailError },
             onBack = onCloseDetail,
+            onRetryCatalogue = onRetryDetail,
+            onStopCatalogue = onStopDetail,
             onViewSource = { onViewSource(detail.book.sourceId) },
             onRead = onRead,
             onAdd = onAddToShelf,
@@ -179,6 +187,8 @@ internal fun OnlineBooksScreenV50(
     }
 
     val t = LocalLanghuanUiTokens.current
+    val searchIncomplete = state.query.isNotBlank() && state.discoverySection == null &&
+        (state.searchStopped || state.searchFailures.isNotEmpty())
 
     var discoveryGroup by rememberSaveable {
         mutableStateOf(OnlineDiscoveryGroupV50.ALL)
@@ -282,6 +292,29 @@ internal fun OnlineBooksScreenV50(
             }
 
             /* Errors */
+            if (searchIncomplete) {
+                item(key = "search-recovery") {
+                    val reasons = state.searchFailures.take(3).joinToString("\n") {
+                        "${it.sourceName.take(48)}：${it.reason}"
+                    }
+                    val summary = buildString {
+                        append("「${state.query.take(60)}」")
+                        append(if (state.searchStopped) "已停止搜索，已完成结果保留。" else "${state.failedSources} 个书源请求失败，已完成结果保留。")
+                        if (state.pendingSearchSourceIds.isNotEmpty()) append("还有 ${state.pendingSearchSourceIds.size} 个书源未完成。")
+                        if (reasons.isNotEmpty()) append('\n').append(reasons)
+                        if (state.searchFailures.size > 3) append("\n另有 ${state.searchFailures.size - 3} 个书源失败。")
+                    }
+                    val canRetry = !state.searching && (state.pendingSearchSourceIds.isNotEmpty() || state.searchFailures.isNotEmpty())
+                    OnlineMessageCardV50(
+                        icon = if (state.searchStopped) Icons.Rounded.Stop else Icons.Rounded.ErrorOutline,
+                        title = if (state.searchStopped) "搜索已停止" else "书源搜索未完成",
+                        body = summary,
+                        destructive = state.searchFailures.isNotEmpty(),
+                        action = if (canRetry) "重试未完成书源" else null,
+                        onAction = if (canRetry) onRetrySearch else null,
+                    )
+                }
+            }
             state.sourceStorageError?.let {
                 item(key = "storage-error") {
                     OnlineMessageCardV50(
@@ -345,7 +378,7 @@ internal fun OnlineBooksScreenV50(
                 }
             }
 
-            if (state.results.isEmpty() && !state.searching) {
+            if (state.results.isEmpty() && !state.searching && !searchIncomplete) {
                 item(key = "empty-results") {
                     OnlineStoreEmptyV50(
                         hasSources = state.sources.any { it.enabled },
@@ -1053,7 +1086,12 @@ internal fun OnlineBookDetailScreenV50(
     loading: Boolean,
     adding: Boolean,
     download: OnlineDownloadV36?,
+    catalogueError: String?,
+    catalogueStopped: Boolean,
+    operationError: String?,
     onBack: () -> Unit,
+    onRetryCatalogue: () -> Unit,
+    onStopCatalogue: () -> Unit,
     onViewSource: () -> Unit,
     onRead: () -> Unit,
     onAdd: () -> Unit,
@@ -1097,6 +1135,9 @@ internal fun OnlineBookDetailScreenV50(
                 text = "书源",
                 onClick = onViewSource,
             )
+            if (loading) {
+                OnlineTextButtonV50(icon = Icons.Rounded.Stop, text = "停止加载", onClick = onStopCatalogue)
+            }
         }
 
         LazyColumn(
@@ -1113,6 +1154,25 @@ internal fun OnlineBookDetailScreenV50(
                 OnlineDetailHeroV50(book = book, loading = loading)
             }
 
+            if (catalogueError != null || catalogueStopped) {
+                item(key = "detail-recovery") {
+                    OnlineMessageCardV50(
+                        icon = if (catalogueStopped) Icons.Rounded.Stop else Icons.Rounded.ErrorOutline,
+                        title = if (catalogueStopped) "目录加载已停止" else "目录读取失败",
+                        body = catalogueError ?: "当前书籍保留，可以继续加载目录。",
+                        destructive = catalogueError != null,
+                        action = if (catalogueStopped) "继续加载目录" else "重试目录",
+                        onAction = onRetryCatalogue,
+                    )
+                }
+            }
+            operationError?.let { message ->
+                item(key = "detail-operation-error") {
+                    OnlineMessageCardV50(icon = Icons.Rounded.ErrorOutline, title = "操作未完成",
+                        body = message, destructive = true)
+                }
+            }
+
             if (book.intro.isNotBlank()) {
                 item(key = "detail-intro") {
                     OnlineDetailSectionV50(title = "简介") {
@@ -1125,14 +1185,29 @@ internal fun OnlineBookDetailScreenV50(
                 }
             }
 
-            item(key = "detail-actions") {
+            if (download != null && (loading || detail.chapters.isEmpty())) {
+                item(key = "detail-pending-download") {
+                    OnlineDownloadProgressV50(download = download, onCancel = onCancelDownload)
+                }
+            }
+            if (!loading && detail.chapters.isNotEmpty()) item(key = "detail-actions") {
+                val shelfReady = detail.shelfStoryId != null
                 Column(verticalArrangement = Arrangement.spacedBy(t.space2)) {
-                    OnlinePrimaryButtonV50(text = "开始阅读", onClick = onRead)
+                    if (!shelfReady) {
+                        Text(
+                            text = if (adding) "正在加入书架，完成后可阅读或离线缓存。"
+                            else "先加入书架，再开始阅读或离线缓存。仅保存目录，正文按需加载。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
+                    }
+                    OnlinePrimaryButtonV50(text = "开始阅读", onClick = onRead, enabled = shelfReady)
                     Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
                         OnlineSecondaryButtonV50(
-                            text = "加入书架",
+                            text = if (shelfReady) "已在书架" else "加入书架",
                             onClick = onAdd,
                             loading = adding,
+                            enabled = !shelfReady,
                             modifier = Modifier.weight(1f),
                         )
                         if (download != null) {
@@ -1145,6 +1220,7 @@ internal fun OnlineBookDetailScreenV50(
                             OnlineSecondaryButtonV50(
                                 text = "离线下载",
                                 onClick = onDownload,
+                                enabled = shelfReady,
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -1156,6 +1232,12 @@ internal fun OnlineBookDetailScreenV50(
                 OnlineDetailSectionV50(title = "目录") {
                     if (loading) {
                         OnlineCatalogueSkeletonV50()
+                    } else if (catalogueError != null || catalogueStopped) {
+                        Text(
+                            text = "目录尚未完成加载",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
                     } else if (detail.chapters.isEmpty()) {
                         Text(
                             text = "暂无目录",
@@ -1579,6 +1661,7 @@ private fun OnlinePrimaryButtonV50(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusMd)
@@ -1586,14 +1669,14 @@ private fun OnlinePrimaryButtonV50(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
-            .background(color = t.primary, shape = shape)
-            .clickable(onClick = onClick),
+            .background(color = if (enabled) t.primary else t.input, shape = shape)
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.titleSmall,
-            color = t.card,
+            color = if (enabled) t.card else t.mutedForeground,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -1605,6 +1688,7 @@ private fun OnlineSecondaryButtonV50(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusMd)
@@ -1613,7 +1697,7 @@ private fun OnlineSecondaryButtonV50(
             .height(48.dp)
             .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(enabled = !loading, onClick = onClick),
+            .clickable(enabled = enabled && !loading, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (loading) {
@@ -1626,7 +1710,7 @@ private fun OnlineSecondaryButtonV50(
             Text(
                 text = text,
                 style = MaterialTheme.typography.titleSmall,
-                color = t.foreground,
+                color = if (enabled) t.foreground else t.mutedForeground,
                 fontWeight = FontWeight.SemiBold,
             )
         }

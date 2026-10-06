@@ -1,0 +1,65 @@
+name: AI source browser QA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/src/main/java/com/xiguli/langhuan/ui/online/**'
+      - 'app/src/main/java/com/xiguli/langhuan/ui/LanghuanRootV4.kt'
+      - 'app/src/main/java/com/xiguli/langhuan/ui/reader/**'
+      - 'app/src/main/java/com/xiguli/langhuan/LanghuanApplication.kt'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/androidTest/java/com/xiguli/langhuan/ui/SourceBrowserSessionV56DeviceTest.kt'
+      - 'app/src/androidTest/java/com/xiguli/langhuan/ui/SourceSearchRecoveryV57DeviceTest.kt'
+      - 'app/src/androidTest/java/com/xiguli/langhuan/ui/SourceCatalogueRecoveryV58DeviceTest.kt'
+      - 'app/src/androidTest/java/com/xiguli/langhuan/ui/ReaderRecreationV42DeviceTest.kt'
+      - '.github/workflows/ai-source-browser-qa.yml'
+      - 'tools/verify_browser_process_death.py'
+      - 'tools/run_browser_device_checks.sh'
+      - 'tools/verify_epub_process_death.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Compile browser tests
+        run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7
+          disable-animations: true
+          script: bash tools/run_browser_device_checks.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-source-browser-qa
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            browser-tested-apk.sha256
+            browser-qa
+            app/build/reports/androidTests
+            app/build/outputs/androidTest-results

@@ -65,11 +65,12 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
     val appContext = LocalContext.current.applicationContext
     val projectConversationStore = remember(appContext) { ProjectConversationStore(appContext) }
 
-    // Configuration recreation must keep an open reader on screen. Other tools retain their
-    // existing shelf fallback; their transient editors are not reconstructed from only a route.
+    // Retained reader/online ViewModels own their configuration-recreation state, including
+    // an unsaved source draft. Restoring the online route is also safe with a fresh ViewModel.
+    // Other transient tools still need more than a saved route to reconstruct their editors.
     var route by rememberSaveable(stateSaver = Saver<RootRouteV4, String>(
-        save = { if (it == RootRouteV4.BOOK) "book" else "shelf" },
-        restore = { if (it == "book") RootRouteV4.BOOK else RootRouteV4.SHELF },
+        save = { when (it) { RootRouteV4.BOOK -> "book"; RootRouteV4.ONLINE -> "online"; else -> "shelf" } },
+        restore = { when (it) { "book" -> RootRouteV4.BOOK; "online" -> RootRouteV4.ONLINE; else -> RootRouteV4.SHELF } },
     )) { mutableStateOf(RootRouteV4.SHELF) }
     LaunchedEffect(route, libraryState.libraryLoaded, libraryState.openedBook) {
         // After process death the ViewModel may no longer hold the book. Return to a usable
@@ -566,6 +567,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     val recentSearches = remember { mutableStateListOf<String>() }
                     var aiSiteUrl by rememberSaveable { mutableStateOf("") }
                     var aiTestBook by rememberSaveable { mutableStateOf("") }
+                    var sourceManageFocusId by rememberSaveable { mutableStateOf<String?>(null) }
                     var importDialogOpen by remember { mutableStateOf(false) }
                     var importText by remember { mutableStateOf("") }
                     val clipboard = LocalClipboardManager.current
@@ -597,6 +599,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 Column {
                                     TextField(
                                         value = onlineState.sourceEditDraft,
+                                        label = { Text("书源 JSON") },
                                         onValueChange = onlineVm::updateSourceEditDraft,
                                         modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
                                     )
@@ -698,11 +701,21 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                             BookSourceManageScreenV50(
                                 sources = onlineState.sources,
                                 sourceStorageError = onlineState.sourceStorageError,
-                                onBack = { onlineSub = "main" },
-                                onOpenSource = { browseSourceId = it.id },
+                                focusSourceId = sourceManageFocusId,
+                                onBack = {
+                                    sourceManageFocusId = null
+                                    onlineSub = "main"
+                                },
+                                onOpenSource = {
+                                    sourceManageFocusId = null
+                                    browseSourceId = it.id
+                                },
                                 onToggleSource = onlineVm::toggleSource,
                                 onImportSource = { importDialogOpen = true },
-                                onAiGenerateSource = { onlineSub = "ai" },
+                                onAiGenerateSource = {
+                                    sourceManageFocusId = null
+                                    onlineSub = "ai"
+                                },
                             )
                         }
                         onlineSub == "ai" -> {
@@ -710,13 +723,21 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 state = onlineState,
                                 siteUrl = aiSiteUrl,
                                 testBookName = aiTestBook,
-                                onBack = { onlineSub = "manage" },
+                                onBack = {
+                                    sourceManageFocusId = null
+                                    onlineSub = "manage"
+                                },
                                 onSiteUrlChange = { aiSiteUrl = it },
                                 onTestBookNameChange = { aiTestBook = it },
                                 onConfigureAi = { openAiSetup(RootRouteV4.ONLINE) },
                                 onStart = { url, keyword -> onlineVm.buildWithAi(url, keyword) },
+                                onStartWithBrowser = { url, keyword -> onlineVm.buildWithAi(url, keyword, useBrowser = true) },
                                 onCancel = onlineVm::cancelAi,
                                 onSave = { onlineVm.saveAiSource() },
+                                onOpenSavedSource = { sourceId ->
+                                    sourceManageFocusId = sourceId
+                                    onlineSub = "manage"
+                                },
                             )
                         }
                         else -> {
@@ -738,6 +759,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                     onlineVm.search(q)
                                 },
                                 onStopSearch = onlineVm::stopSearch,
+                                onRetrySearch = onlineVm::retrySearch,
                                 onRecentSearch = { q ->
                                     onlineQuery = q
                                     onlineVm.search(q)
@@ -747,6 +769,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                                 onLoadMore = onlineVm::loadMoreDiscovery,
                                 onOpenBook = onlineVm::openDetail,
                                 onCloseDetail = onlineVm::closeDetail,
+                                onRetryDetail = onlineVm::retryDetail,
+                                onStopDetail = onlineVm::stopDetail,
                                 onViewSource = { id -> browseSourceId = id },
                                 onAddToShelf = onlineVm::addToShelf,
                                 onRead = onlineVm::readAddedBook,

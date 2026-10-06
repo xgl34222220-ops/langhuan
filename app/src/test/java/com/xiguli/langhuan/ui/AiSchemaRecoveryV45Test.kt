@@ -361,7 +361,7 @@ class AiSchemaRecoveryV45Test {
             return Jsoup.parse(html, request.url)
         }
 
-        suspend fun build() = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it) }, ::fetch)
+        suspend fun build() = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it) }, fetchDocument = ::fetch)
             .build("$base/", "示例小说1")
 
         fun assertVerified(report: AiSourceReportV37, labels: List<String>) {
@@ -422,7 +422,7 @@ class AiSchemaRecoveryV45Test {
             return Jsoup.parse(html, request.url)
         }
 
-        suspend fun build() = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it); snapshots += it }, ::fetch)
+        suspend fun build() = BookSourceAiBuilderV37(gateway, { steps.clear(); steps.addAll(it); snapshots += it }, fetchDocument = ::fetch)
             .build("$base/", "示例小说")
 
         fun assertReadingJourney(report: AiSourceReportV37) {
