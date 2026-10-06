@@ -77,6 +77,23 @@ data class ResolvedAiProviderV80(
     val revision: Long,
 )
 
+/**
+ * A provider revision represents configuration/credential identity, not a save-button press.
+ * Blank credentials retain the encrypted key, matching the provider editor's existing contract.
+ */
+internal fun aiProviderConfigurationUnchangedV84(
+    existing: AiProviderEntity?,
+    request: ProviderSaveRequest,
+    storedApiKey: String?,
+): Boolean = existing != null &&
+    existing.name == request.name.ifBlank { request.protocol.label } &&
+    existing.baseUrl == request.baseUrl.trimEnd('/') &&
+    existing.protocol == request.protocol.name &&
+    existing.model == request.model.trim() &&
+    existing.temperature == request.temperature &&
+    existing.supportsJsonMode == request.supportsJsonMode &&
+    (request.apiKey.isBlank() || request.apiKey == storedApiKey.orEmpty())
+
 internal fun aiProviderLabelV80(name: String, model: String): String =
     listOf(name, model).filter(String::isNotBlank).joinToString(" · ")
 
@@ -272,7 +289,13 @@ class PersistentStoryRepository(context: Context) {
     suspend fun saveProvider(request: ProviderSaveRequest): StoredAiProvider {
         val id = request.id ?: UUID.randomUUID().toString()
         val existing = providerDao.getById(id)
-        val now = maxOf(System.currentTimeMillis(), (existing?.updatedAt ?: -1L) + 1L)
+        val configurationUnchanged = aiProviderConfigurationUnchangedV84(
+            existing = existing,
+            request = request,
+            storedApiKey = existing?.let { keyStore.get(id) },
+        )
+        val now = if (configurationUnchanged) checkNotNull(existing).updatedAt else
+            maxOf(System.currentTimeMillis(), (existing?.updatedAt ?: -1L) + 1L)
         val shouldDefault = request.makeDefault || existing?.isDefault == true || providerDao.count() == 0
         val entity = AiProviderEntity(
             id = id,

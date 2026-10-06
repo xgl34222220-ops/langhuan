@@ -503,6 +503,112 @@ class SourceBrowserSessionV56DeviceTest {
         }
     }
 
+    @Test fun unchangedProviderSaveKeepsTheAcceptedAttemptRunning(): Unit = runBlocking {
+        val application = InstrumentationRegistry.getInstrumentation()
+            .targetContext.applicationContext as Application
+        val repository = PersistentStoryRepository(application)
+        val previousProviders = repository.observeProviders().first()
+        val providerId = "provider-v84-unchanged-${UUID.randomUUID()}"
+        val providerLabel = "V84 原样保存服务 · v84-stable-model"
+        val enteredFixture = java.util.concurrent.CountDownLatch(1)
+        val releaseFixture = java.util.concurrent.CountDownLatch(1)
+        var viewModel: OnlineBooksViewModelV36? = null
+        try {
+            val acceptedProvider = repository.saveProvider(
+                ProviderSaveRequest(
+                    id = providerId,
+                    name = "V84 原样保存服务",
+                    baseUrl = "https://127.0.0.1:1/v1",
+                    protocol = ApiProtocol.AUTO,
+                    model = "v84-stable-model",
+                    supportsJsonMode = true,
+                    apiKey = "v84-stable-key",
+                    makeDefault = true,
+                ),
+            )
+            val current = OnlineBooksViewModelV36(application, SavedStateHandle())
+            viewModel = current
+            rule.waitUntil(10_000) { current.state.value.aiProviderLabel == providerLabel }
+            rule.setContent {
+                val state by current.state.collectAsState()
+                AiBookSourceScreenV50(
+                    state = state,
+                    siteUrl = base,
+                    testBookName = "原创小说",
+                    onBack = {},
+                    onSiteUrlChange = {},
+                    onTestBookNameChange = {},
+                    onConfigureAi = {},
+                    onStart = { _, _ -> },
+                    onStartWithBrowser = { _, _ -> },
+                    onCancel = current::cancelAi,
+                    onSave = {},
+                )
+            }
+
+            BookSourceBrowserV38.withFixtureSiteV56(
+                pages = { request ->
+                    assertTrue(request.url.startsWith(base))
+                    enteredFixture.countDown()
+                    check(releaseFixture.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                        "V84 fixture was not released"
+                    }
+                    "<html><head><title>V84 原创站点</title></head><body>" +
+                        "<form action='/search'><input name='q'></form></body></html>"
+                },
+            ) {
+                current.buildWithAi(base, "原创小说", useBrowser = true)
+                assertTrue(
+                    "The accepted attempt must resolve before the unchanged save",
+                    enteredFixture.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                )
+                assertEquals(providerLabel, current.state.value.aiAttemptProviderLabel)
+
+                val savedAgain = runBlocking {
+                    repository.saveProvider(
+                        ProviderSaveRequest(
+                            id = providerId,
+                            name = "V84 原样保存服务",
+                            baseUrl = "https://127.0.0.1:1/v1/",
+                            protocol = ApiProtocol.AUTO,
+                            model = "v84-stable-model",
+                            supportsJsonMode = true,
+                            apiKey = "",
+                            makeDefault = true,
+                        ),
+                    )
+                }
+                assertEquals(acceptedProvider.revision, savedAgain.revision)
+                rule.waitUntil(10_000) {
+                    current.state.value.aiRunning &&
+                        current.state.value.aiAttemptProviderLabel == providerLabel
+                }
+
+                val observed = current.state.value
+                assertTrue(observed.aiRunning)
+                assertNull(observed.aiError)
+                assertEquals(providerLabel, displayedAiProviderLabelV80(observed))
+                rule.onNodeWithText(providerLabel).assertIsDisplayed()
+                rule.onNodeWithText("停止生成").assertIsDisplayed().assertIsEnabled()
+                rule.waitUntil(10_000) { renderedWindowHasBodyInk() }
+                deviceWindowEvidenceV46("v84-ai-provider-unchanged-save")
+
+                current.cancelAi()
+                assertTrue(current.state.value.aiStopped)
+            }
+        } finally {
+            releaseFixture.countDown()
+            viewModel?.let { current ->
+                current.cancelAi()
+                current.viewModelScope.cancel()
+            }
+            repository.deleteProvider(providerId)
+            previousProviders.firstOrNull { it.isDefault }?.let { previous ->
+                repository.setDefaultProvider(previous.id)
+            }
+        }
+    }
+
     @Test fun deletingTheResolvedProviderStopsBeforeLaterAiStages(): Unit = runBlocking {
         val application = InstrumentationRegistry.getInstrumentation()
             .targetContext.applicationContext as Application
