@@ -922,11 +922,26 @@ internal fun ReaderSessionV30(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(book.id) {
-        while (true) {
-            delay(30_000)
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                ReaderStatsV35.addSeconds(context, 30)
+    LaunchedEffect(book.id, lifecycleOwner) {
+        // Count only foreground reading time, including the partial interval before the
+        // reader is paused, and do not wake up every 30 s while the app is in the background.
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            var countedUntil = android.os.SystemClock.elapsedRealtime()
+            fun flushReadingTime() {
+                val now = android.os.SystemClock.elapsedRealtime()
+                val seconds = (now - countedUntil).coerceAtLeast(0L) / 1_000L
+                if (seconds > 0L) {
+                    ReaderStatsV35.addSeconds(context, seconds)
+                    countedUntil += seconds * 1_000L
+                }
+            }
+            try {
+                while (true) {
+                    delay(30_000)
+                    flushReadingTime()
+                }
+            } finally {
+                flushReadingTime()
             }
         }
     }

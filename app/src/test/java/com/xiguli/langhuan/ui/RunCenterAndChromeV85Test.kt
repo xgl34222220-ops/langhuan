@@ -76,4 +76,12 @@ class RunCenterAndChromeV85Test {
         assertTrue(reader.contains("chromeLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED)"))
         assertFalse(reader.contains("delay(20_000)"))
     }
+
+    @Test
+    fun readingTimeIsCountedOnlyWhileResumedAndFlushedOnPause() {
+        val reader = source("ui/reader/ReaderScreenV30.kt")
+        assertTrue(reader.contains("lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED)"))
+        assertTrue(reader.contains("flushReadingTime()"))
+        assertFalse(reader.contains("ReaderStatsV35.addSeconds(context, 30)"))
+    }
 }
