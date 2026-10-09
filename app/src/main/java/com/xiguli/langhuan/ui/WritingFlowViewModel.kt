@@ -34,6 +34,8 @@ import com.xiguli.langhuan.engine.WorkspaceAiEngine
 import com.xiguli.langhuan.engine.WritingFlowEngine
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -113,7 +115,8 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         )
         requests.launch(viewModelScope, request) {
             runCatching {
-                val loaded = projects.loadStory(novelId) ?: error("找不到这本小说")
+                // Story JSON decode for long novels must not block the first frame of the workspace.
+                val loaded = withContext(Dispatchers.IO) { projects.loadStory(novelId) } ?: error("找不到这本小说")
                 requests.ensureCurrent(request)
                 val providers = repository.observeProviders().first()
                 requests.ensureCurrent(request)
@@ -121,7 +124,7 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
                 Triple(loaded, provider?.name.orEmpty(), provider?.id)
             }.onSuccess { (loaded, label, _) ->
                 requests.ensureCurrent(request)
-                val binding = referenceDna.summary(novelId)
+                val binding = withContext(Dispatchers.IO) { referenceDna.summary(novelId) }
                 updateRequest(request) {
                     it.copy(
                         snapshot = loaded.snapshot, draft = loaded.draft,
@@ -354,13 +357,17 @@ class WritingFlowViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
-        val recovery = chapterRuns.recover(snapshot, draft) ?: return
-        val plan = if (recovery.policy == RunResumePolicy.RESUME_REVIEW) {
-            ProjectRuntimeSkillPlanner.manualReview(snapshot, draft)
-        } else {
-            ProjectRuntimeSkillPlanner.build(snapshot, draft, referenceDna.summary(snapshot.novel.id).count)
-        }
+    private suspend fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
+        // Checkpoint recovery and the DNA lookup touch SharedPreferences/disk; keep them off main.
+        val (recovery, plan) = withContext(Dispatchers.IO) {
+            val recovery = chapterRuns.recover(snapshot, draft) ?: return@withContext null
+            val plan = if (recovery.policy == RunResumePolicy.RESUME_REVIEW) {
+                ProjectRuntimeSkillPlanner.manualReview(snapshot, draft)
+            } else {
+                ProjectRuntimeSkillPlanner.build(snapshot, draft, referenceDna.summary(snapshot.novel.id).count)
+            }
+            recovery to plan
+        } ?: return
         val phases = when (recovery.policy) {
             RunResumePolicy.RESUME_REVIEW -> setOf(ProjectRuntimePhase.MANUAL_REVIEW)
             RunResumePolicy.RESUME_POST_COMMIT -> setOf(ProjectRuntimePhase.GENERATION, ProjectRuntimePhase.POST_COMMIT)

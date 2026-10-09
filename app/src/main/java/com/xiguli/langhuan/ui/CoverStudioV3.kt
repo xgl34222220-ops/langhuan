@@ -384,11 +384,12 @@ private fun CoverHistoryRow(
 }
 
 @Composable
-fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier) {
+fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier, targetWidthPx: Int = 720) {
     val t = LocalLanghuanUiTokens.current
     // Decoded off the main thread and downsampled through the shared cover cache; decoding a
     // full-resolution cover per history row in composition caused visible stalls while scrolling.
-    val bitmap = rememberLanghuanCoverV30(path, 720)
+    val bitmap = rememberLanghuanCoverV30(path, targetWidthPx)
+    val fileExists = remember(path) { path.isNotBlank() && File(path).exists() }
     if (bitmap != null) {
         Image(
             bitmap = bitmap,
@@ -396,7 +397,7 @@ fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier) {
             modifier = modifier.clip(RoundedCornerShape(t.radiusSm)),
             contentScale = ContentScale.Crop,
         )
-    } else if (path.isNotBlank() && File(path).exists()) {
+    } else if (fileExists) {
         LanghuanSkeletonV31(modifier, RoundedCornerShape(t.radiusSm))
     } else {
         Box(

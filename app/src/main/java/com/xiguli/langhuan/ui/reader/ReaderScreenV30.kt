@@ -91,6 +91,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -1631,10 +1632,15 @@ internal fun ReaderSessionV30(
                     } else {
                         "正在朗读"
                     },
-                    modifier = Modifier.padding(
-                        start = v3Tokens.space2,
-                        end = v3Tokens.space3,
-                    ),
+                    modifier = Modifier
+                        .padding(
+                            start = v3Tokens.space2,
+                            end = v3Tokens.space3,
+                        )
+                        // TalkBack announces 等待正文 / 朗读已暂停 changes without refocusing.
+                        .semantics {
+                            liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
+                        },
                     color = v3Tokens.foreground,
                     fontSize = 13.sp,
                 )
@@ -1642,7 +1648,13 @@ internal fun ReaderSessionV30(
                     text = "${ttsRate}x",
                     modifier = Modifier
                         .clip(RoundedCornerShape(v3Tokens.radiusSm))
-                        .clickable {
+                        .semantics {
+                            contentDescription = "朗读语速 ${ttsRate} 倍"
+                        }
+                        .clickable(
+                            onClickLabel = "切换朗读语速",
+                            role = androidx.compose.ui.semantics.Role.Button,
+                        ) {
                             val rates = listOf(0.8f, 1f, 1.25f, 1.5f, 2f)
                             ttsRate = rates[
                                 (rates.indexOf(ttsRate).coerceAtLeast(0) + 1) % rates.size
