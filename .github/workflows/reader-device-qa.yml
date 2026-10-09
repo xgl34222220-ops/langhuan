@@ -9,6 +9,7 @@ on:
       - 'app/src/androidTest/**'
       - 'tools/run_reader_device_checks.sh'
       - 'tools/verify_epub_process_death.py'
+      - 'tools/reader_device_retry_plan.py'
       - '.github/workflows/reader-device-qa.yml'
   workflow_dispatch:
 permissions:
@@ -16,7 +17,7 @@ permissions:
 jobs:
   device:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -37,6 +38,7 @@ jobs:
       - name: Build device tests
         run: |
           python3 -m unittest tools/test_instrumentation_verifier.py
+          python3 -m unittest tools/test_reader_device_retry_plan.py
           gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
       - uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -45,7 +47,16 @@ jobs:
           target: google_apis
           profile: pixel_7
           disable-animations: true
+          ram-size: 4096M
+          emulator-boot-timeout: 900
           script: |
+            # Let the freshly booted emulator settle before any device configuration or tests.
+            timeout 120s adb wait-for-device
+            timeout 300s bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ] && adb shell pm path android >/dev/null 2>&1; do sleep 2; done'
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 0
+            sleep 15
             adb shell wm size 1080x2400
             adb shell wm density 420
             adb shell settings put secure immersive_mode_confirmations confirmed

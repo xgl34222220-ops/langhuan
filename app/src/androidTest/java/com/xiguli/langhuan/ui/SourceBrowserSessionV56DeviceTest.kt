@@ -1174,10 +1174,20 @@ class SourceBrowserSessionV56DeviceTest {
 
         rule.onNode(hasSetTextAction() and hasText("原创小说"))
             .performTextReplacement("另一部原创小说")
-        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("重试浏览器模式"))
+        // The edited field keeps the IME open; with adjustResize/imePadding the shrinking list can
+        // push the retry buttons out of view. Close the keyboard and settle before each assertion.
+        rule.runOnUiThread {
+            ViewCompat.getWindowInsetsController(rule.activity.window.decorView)
+                ?.hide(WindowInsetsCompat.Type.ime())
+        }
+        rule.waitUntil(5_000) { !keyboardVisible() }
+        rule.waitForIdle()
         rule.onNodeWithText("保留已通过规则重试（浏览器）").assertDoesNotExist()
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("重试浏览器模式"))
         rule.onNodeWithText("重试浏览器模式").assertIsDisplayed().assertIsEnabled()
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("改用普通模式"))
         rule.onNodeWithText("改用普通模式").assertIsDisplayed().assertIsEnabled()
+        rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("重试浏览器模式"))
         rule.onNodeWithText("重试浏览器模式").performClick()
         rule.runOnIdle {
             assertEquals(
