@@ -1,6 +1,5 @@
 package com.xiguli.langhuan.ui
 
-import com.xiguli.langhuan.ui.reader.readerChromeTickDelayMsV85
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
