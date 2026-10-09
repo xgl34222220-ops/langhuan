@@ -1,6 +1,5 @@
 package com.xiguli.langhuan.ui
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +62,10 @@ import com.xiguli.langhuan.engine.ReferenceDistillationJobs
 import com.xiguli.langhuan.engine.ReferenceDistillationSourceStore
 import com.xiguli.langhuan.ui.design.LanghuanOrb
 import com.xiguli.langhuan.ui.design.LanghuanSpatialHero
+import com.xiguli.langhuan.ui.design.rememberLanghuanCoverV30
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -484,58 +486,75 @@ private fun rememberReferenceDistillationTasks(): List<ReferenceDistillationTask
     val sourceStore = remember(context) { ReferenceDistillationSourceStore(context) }
     var tasks by remember { mutableStateOf<List<ReferenceDistillationTaskUi>>(emptyList()) }
 
-    LaunchedEffect(workManager, sourceStore) {
-        while (isActive) {
-            val infos = withContext(Dispatchers.IO) {
-                runCatching { workManager.getWorkInfosByTag(ReferenceDistillationJobs.TAG).get() }
-                    .getOrDefault(emptyList())
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(workManager, sourceStore, lifecycle) {
+        // Poll WorkManager only while the shelf is visible (STARTED). In the background the loop is
+        // cancelled, and it restarts with an immediate refresh when the user returns.
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                // WorkManager future + SharedPreferences-backed source store: all on IO.
+                val next = withContext(Dispatchers.IO) {
+                    loadReferenceDistillationTasksV86(workManager, sourceStore)
+                }
+                if (next != tasks) tasks = next
+                delay(referenceDistillationPollDelayMsV86(next.any { it.active }))
             }
-            tasks = infos
-                .filter { info ->
-                    info.state != WorkInfo.State.CANCELLED && !sourceStore.isDismissed(info.id.toString())
-                }
-                .map { info ->
-                    val progressData = info.progress
-                    val output = info.outputData
-                    val source = sourceStore.load(info.id.toString())
-                    ReferenceDistillationTaskUi(
-                        id = info.id.toString(),
-                        state = info.state,
-                        progress = when (info.state) {
-                            WorkInfo.State.SUCCEEDED -> 100
-                            else -> progressData.getInt("progress", 0)
-                        },
-                        stage = progressData.getString("stage").orEmpty(),
-                        batch = progressData.getInt("batch", 0),
-                        batches = progressData.getInt("batches", 0).takeIf { it > 0 }
-                            ?: output.getInt("batches", 0),
-                        title = progressData.getString("title").orEmpty().ifBlank { output.getString("title").orEmpty() },
-                        provider = progressData.getString("provider").orEmpty().ifBlank { output.getString("provider").orEmpty() },
-                        model = progressData.getString("model").orEmpty().ifBlank { output.getString("model").orEmpty() },
-                        error = output.getString("error").orEmpty(),
-                        chapters = output.getInt("chapters", 0),
-                        samples = output.getInt("samples", 0),
-                        runAttemptCount = info.runAttemptCount,
-                        sourcePath = source?.path.orEmpty(),
-                        sourceName = source?.displayName.orEmpty(),
-                        resumable = output.getBoolean("resumable", false),
-                        completedBatches = output.getInt("completedBatches", 0),
-                        completedAggregateGroups = output.getInt("completedAggregateGroups", 0),
-                        aggregateGroups = output.getInt("aggregateGroups", 0),
-                        fingerprint = output.getString("fingerprint").orEmpty(),
-                    )
-                }
-                .sortedWith(
-                    compareByDescending<ReferenceDistillationTaskUi> { it.active }
-                        .thenByDescending { it.state == WorkInfo.State.FAILED && it.resumable }
-                        .thenByDescending { it.state == WorkInfo.State.SUCCEEDED }
-                )
-                .take(5)
-            delay(if (tasks.any { it.active }) 1_000L else 4_000L)
         }
     }
     return tasks
 }
+
+private fun loadReferenceDistillationTasksV86(
+    workManager: WorkManager,
+    sourceStore: ReferenceDistillationSourceStore,
+): List<ReferenceDistillationTaskUi> {
+    val infos = runCatching { workManager.getWorkInfosByTag(ReferenceDistillationJobs.TAG).get() }
+        .getOrDefault(emptyList())
+    return infos
+        .filter { info ->
+            info.state != WorkInfo.State.CANCELLED && !sourceStore.isDismissed(info.id.toString())
+        }
+        .map { info ->
+            val progressData = info.progress
+            val output = info.outputData
+            val source = sourceStore.load(info.id.toString())
+            ReferenceDistillationTaskUi(
+                id = info.id.toString(),
+                state = info.state,
+                progress = when (info.state) {
+                    WorkInfo.State.SUCCEEDED -> 100
+                    else -> progressData.getInt("progress", 0)
+                },
+                stage = progressData.getString("stage").orEmpty(),
+                batch = progressData.getInt("batch", 0),
+                batches = progressData.getInt("batches", 0).takeIf { it > 0 }
+                    ?: output.getInt("batches", 0),
+                title = progressData.getString("title").orEmpty().ifBlank { output.getString("title").orEmpty() },
+                provider = progressData.getString("provider").orEmpty().ifBlank { output.getString("provider").orEmpty() },
+                model = progressData.getString("model").orEmpty().ifBlank { output.getString("model").orEmpty() },
+                error = output.getString("error").orEmpty(),
+                chapters = output.getInt("chapters", 0),
+                samples = output.getInt("samples", 0),
+                runAttemptCount = info.runAttemptCount,
+                sourcePath = source?.path.orEmpty(),
+                sourceName = source?.displayName.orEmpty(),
+                resumable = output.getBoolean("resumable", false),
+                completedBatches = output.getInt("completedBatches", 0),
+                completedAggregateGroups = output.getInt("completedAggregateGroups", 0),
+                aggregateGroups = output.getInt("aggregateGroups", 0),
+                fingerprint = output.getString("fingerprint").orEmpty(),
+            )
+        }
+        .sortedWith(
+            compareByDescending<ReferenceDistillationTaskUi> { it.active }
+                .thenByDescending { it.state == WorkInfo.State.FAILED && it.resumable }
+                .thenByDescending { it.state == WorkInfo.State.SUCCEEDED }
+        )
+        .take(5)
+}
+
+/** Active distillation tasks refresh every second; idle shelves only every 4 s (and never in background). */
+internal fun referenceDistillationPollDelayMsV86(anyActive: Boolean): Long = if (anyActive) 1_000L else 4_000L
 
 @Composable
 private fun AiShelfBookCard(book: ReaderBookUi, onClick: () -> Unit) {
@@ -579,11 +598,8 @@ private fun AiShelfBookCard(book: ReaderBookUi, onClick: () -> Unit) {
 
 @Composable
 private fun AiShelfCover(book: ReaderBookUi, modifier: Modifier) {
-    val bitmap = remember(book.coverPath) {
-        book.coverPath.takeIf { it.isNotBlank() }
-            ?.let(BitmapFactory::decodeFile)
-            ?.asImageBitmap()
-    }
+    // Decoded off the main thread and downsampled through the shared cover cache.
+    val bitmap = rememberLanghuanCoverV30(book.coverPath, 240)
     if (bitmap != null) {
         Image(
             bitmap = bitmap,

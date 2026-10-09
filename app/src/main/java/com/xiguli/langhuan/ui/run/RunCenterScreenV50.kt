@@ -435,7 +435,9 @@ internal fun RunCenterScreenV50(
                 }
             }
 
-            state.items.isEmpty() -> {
+            // A failed checkpoint read must not claim "no tasks"; the error card below explains it.
+            state.items.isEmpty() &&
+                state.error.isNullOrBlank() -> {
                 item(
                     key =
                         "run-center-empty",

@@ -32,6 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.ui.design.LanghuanBadge
 import com.xiguli.langhuan.ui.design.LanghuanCard
@@ -109,6 +114,12 @@ fun AiProviderSetupPage(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(t.radiusMd))
                                     .background(rowBg)
+                                    // TalkBack: announce the row as one selectable option with its state.
+                                    .semantics(mergeDescendants = true) {
+                                        role = Role.RadioButton
+                                        selected = active
+                                        stateDescription = if (active) "当前使用" else "未使用"
+                                    }
                                     .springClickV31(pressedScale = .98f) { vm.activateProvider(provider.id) }
                                     .padding(horizontal = 6.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -205,7 +216,12 @@ fun AiProviderSetupPage(
                         depth = 0,
                         onClick = { showRouting = !showRouting },
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.semantics(mergeDescendants = true) {
+                                stateDescription = if (showRouting) "已展开" else "已收起"
+                            },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Surface(
                                 modifier = Modifier.size(40.dp),
                                 shape = RoundedCornerShape(t.radiusSm),

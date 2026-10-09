@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -197,9 +200,14 @@ fun LanghuanHomeV4(
     val sort = LuoShelfSortV33.of(sortKey)
     val layout = HomeLayoutV4.fromKey(layoutKey)
 
-    val availableBooks = state.stories.filterNot { it.id in pendingBatchDeleteIds }
-    val writingBooks = availableBooks.filter { isWritingBookV4(it) }
-    val followingBooks = availableBooks.filter { isFollowingBookV4(it) }
+    // Derived shelf lists are cached so unrelated recompositions (search typing, sheet toggles,
+    // import progress) do not re-filter the whole library every frame.
+    val availableBooks = remember(state.stories, pendingBatchDeleteIds) {
+        state.stories.filterNot { it.id in pendingBatchDeleteIds }
+    }
+    val writingBooks = remember(availableBooks) { availableBooks.filter { isWritingBookV4(it) } }
+    val followingBooks = remember(availableBooks) { availableBooks.filter { isFollowingBookV4(it) } }
+    val availableIds = remember(availableBooks) { availableBooks.mapTo(HashSet()) { it.id } }
 
     val tabs = buildList {
         add(HomeShelfTabV4(HOME_TAB_ALL_V4, "全部", availableBooks.size))
@@ -210,9 +218,7 @@ fun LanghuanHomeV4(
                 HomeShelfTabV4(
                     key = customShelfKeyV4(shelf),
                     label = shelf,
-                    count = assignments.count {
-                        it.value == shelf && availableBooks.any { book -> book.id == it.key }
-                    },
+                    count = assignments.count { it.value == shelf && it.key in availableIds },
                 ),
             )
         }
@@ -257,6 +263,8 @@ fun LanghuanHomeV4(
         books = availableBooks,
         progressPrefs = progressPrefs,
     )
+    // The shelf is edge-to-edge: keep the last row clear of the gesture/navigation bar.
+    val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
     BackHandler(enabled = organizeOpen && !searchOpen) { organizeOpen = false }
@@ -332,7 +340,7 @@ fun LanghuanHomeV4(
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(
-                            start = t.space4, end = t.space4, bottom = t.space6,
+                            start = t.space4, end = t.space4, bottom = t.space6 + navigationBottom,
                         ),
                         verticalArrangement = Arrangement.spacedBy(t.space2),
                     ) {
@@ -371,7 +379,7 @@ fun LanghuanHomeV4(
                         columns = GridCells.Fixed(3),
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(
-                            start = t.space4, end = t.space4, bottom = t.space6,
+                            start = t.space4, end = t.space4, bottom = t.space6 + navigationBottom,
                         ),
                         horizontalArrangement = Arrangement.spacedBy(t.space3),
                         verticalArrangement = Arrangement.spacedBy(t.space4),
@@ -1107,6 +1115,7 @@ private fun HomeBookGridItemV4(
                 path = book.coverPath,
                 title = book.title,
                 modifier = Modifier.fillMaxSize(),
+                targetWidthPx = HOME_GRID_COVER_PX_V86,
             )
             Box(
                 modifier = Modifier
@@ -1184,9 +1193,17 @@ private fun HomeBookCoverV4(
             path = book.coverPath,
             title = book.title,
             modifier = Modifier.fillMaxSize(),
+            targetWidthPx = HOME_LIST_COVER_PX_V86,
         )
     }
 }
+
+/**
+ * Shelf thumbnails are 50–58 dp wide in the list and ~1/3 screen in the grid. Decoding them at the
+ * 720 px detail size wasted ~8x memory and evicted the 24 MB cover cache while scrolling.
+ */
+internal const val HOME_LIST_COVER_PX_V86 = 240
+internal const val HOME_GRID_COVER_PX_V86 = 400
 
 
 /* -------------------------------------------------------------------------- */

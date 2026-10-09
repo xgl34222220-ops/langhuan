@@ -64,6 +64,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 data class SavedProviderUi(
@@ -191,24 +193,10 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         viewModelScope.launch {
-            repository.seedIfNeeded(demo)
-            val storedPreferredId = projects.activeStoryId()
-            val localImportPrefs = getApplication<Application>().getSharedPreferences("local_book_meta_v1", Application.MODE_PRIVATE)
-            // Older builds incorrectly made reader-only imports the persisted Studio project.
-            // Ignore that stale pointer on startup so one imported book cannot boot-loop the app.
-            val preferredId = storedPreferredId
-                ?.takeUnless { localImportPrefs.contains("imported_$it") }
-                ?: demo.snapshot.novel.id
-            if (storedPreferredId != null && preferredId != storedPreferredId) projects.clearActiveStoryId()
-
-            val loaded = runCatching { projects.loadStory(preferredId) }.getOrNull()
-                ?: runCatching {
-                    repository.loadStory(
-                        demo.snapshot.novel.id,
-                        PersistedStory(demo.snapshot, demo.currentDraft),
-                    )
-                }.getOrNull()
-                ?: PersistedStory(demo.snapshot, demo.currentDraft)
+            // Startup restore: Room/SharedPreferences reads and the (potentially multi-MB) story JSON
+            // decode run on a background dispatcher. State is still published on the main thread in
+            // the same order as before (demo snapshot first, then the restored project).
+            val loaded = withContext(Dispatchers.IO) { loadStartupStoryV86() }
 
             val restored = runCatching {
                 _state.update { it.copy(snapshot = loaded.snapshot, draft = loaded.draft) }
@@ -216,9 +204,9 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 refreshWorkspace()
             }
             if (restored.isSuccess) {
-                projects.setActiveStoryId(loaded.snapshot.novel.id)
+                withContext(Dispatchers.IO) { projects.setActiveStoryId(loaded.snapshot.novel.id) }
             } else {
-                projects.clearActiveStoryId()
+                withContext(Dispatchers.IO) { projects.clearActiveStoryId() }
                 _state.update {
                     it.copy(
                         snapshot = demo.snapshot,
@@ -233,9 +221,11 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         viewModelScope.launch {
-            projects.observeStories().collect { stories ->
-                _state.update { state -> state.copy(stories = stories.map { it.toUi() }) }
-            }
+            // Shelf rows decode each story header; keep that work off the main thread.
+            projects.observeStories()
+                .map { stories -> stories.map { it.toUi() } }
+                .flowOn(Dispatchers.IO)
+                .collect { stories -> _state.update { state -> state.copy(stories = stories) } }
         }
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
@@ -256,7 +246,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         if (current.snapshot.novel.id == id || busy(current)) return
         viewModelScope.launch {
             runCatching {
-                val loaded = projects.loadStory(id) ?: error("找不到这个项目")
+                val loaded = withContext(Dispatchers.IO) { projects.loadStory(id) } ?: error("找不到这个项目")
                 _state.update {
                     it.copy(
                         snapshot = loaded.snapshot,
@@ -276,7 +266,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 restoreOrAttachRun(loaded.snapshot, loaded.draft)
                 refreshWorkspace()
                 // Persist only after the whole Studio restore path succeeds.
-                projects.setActiveStoryId(id)
+                withContext(Dispatchers.IO) { projects.setActiveStoryId(id) }
             }.onFailure { error ->
                 _state.update { it.copy(error = error.message ?: "项目恢复失败，已保留当前页面") }
             }
@@ -315,7 +305,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         val current = _state.value
         if (current.draft.chapterNumber == number || busy(current)) return
         viewModelScope.launch {
-            runCatching { projects.selectChapter(current.snapshot.novel.id, number) }
+            runCatching { withContext(Dispatchers.IO) { projects.selectChapter(current.snapshot.novel.id, number) } }
                 .onSuccess { persisted ->
                     if (persisted != null) {
                         _state.update {
@@ -1073,15 +1063,18 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun restoreOrAttachRun(snapshot: StorySnapshot, draft: ChapterDraft) {
+    private suspend fun restoreOrAttachRun(snapshot: StorySnapshot, draft: ChapterDraft) {
         val live = runtime.state.value
         val hasRuntimeState = live.matches(snapshot.novel.id, draft.chapterNumber) &&
             (live.active || live.result != null || live.review != null || live.message != null || live.error != null)
         if (hasRuntimeState) syncRuntimeState(live) else restoreDurableRun(snapshot, draft)
     }
 
-    private fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
-        val recovery = chapterRuns.recover(snapshot, draft) ?: return
+    private suspend fun restoreDurableRun(snapshot: StorySnapshot, draft: ChapterDraft) {
+        // Checkpoint recovery reads (and may rewrite) SharedPreferences JSON; do it off the main thread.
+        val recovery = withContext(Dispatchers.IO) { chapterRuns.recover(snapshot, draft) } ?: return
+        val now = _state.value
+        if (now.snapshot.novel.id != snapshot.novel.id || now.draft.chapterNumber != draft.chapterNumber) return
         _state.update {
             it.copy(
                 streamPreview = recovery.preview,
@@ -1108,8 +1101,11 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun refreshWorkspace() {
         val current = _state.value
-        val chapterDrafts = projects.chapterDrafts(current.snapshot.novel.id)
-        val versions = repository.chapterVersions(current.snapshot.novel.id, current.draft.chapterNumber).map { it.toUi() }
+        // Decoding every chapter of a long imported novel used to happen on the main thread here.
+        val (chapterDrafts, versions) = withContext(Dispatchers.IO) {
+            projects.chapterDrafts(current.snapshot.novel.id) to
+                repository.chapterVersions(current.snapshot.novel.id, current.draft.chapterNumber).map { it.toUi() }
+        }
         _state.update { state ->
             if (state.snapshot.novel.id != current.snapshot.novel.id || state.draft.chapterNumber != current.draft.chapterNumber) state
             else state.copy(
@@ -1117,6 +1113,28 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 versions = versions,
             )
         }
+    }
+
+    /** Resolves which project to open at startup. Must be called off the main thread. */
+    private suspend fun loadStartupStoryV86(): PersistedStory {
+        repository.seedIfNeeded(demo)
+        val storedPreferredId = projects.activeStoryId()
+        val localImportPrefs = getApplication<Application>().getSharedPreferences("local_book_meta_v1", Application.MODE_PRIVATE)
+        // Older builds incorrectly made reader-only imports the persisted Studio project.
+        // Ignore that stale pointer on startup so one imported book cannot boot-loop the app.
+        val preferredId = storedPreferredId
+            ?.takeUnless { localImportPrefs.contains("imported_$it") }
+            ?: demo.snapshot.novel.id
+        if (storedPreferredId != null && preferredId != storedPreferredId) projects.clearActiveStoryId()
+
+        return runCatching { projects.loadStory(preferredId) }.getOrNull()
+            ?: runCatching {
+                repository.loadStory(
+                    demo.snapshot.novel.id,
+                    PersistedStory(demo.snapshot, demo.currentDraft),
+                )
+            }.getOrNull()
+            ?: PersistedStory(demo.snapshot, demo.currentDraft)
     }
 
     private fun busy(state: StudioUiState): Boolean =
