@@ -478,6 +478,13 @@ private fun OnlineSearchFieldV50(
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusLg)
+    // Submitting a search drops the keyboard so the result list (or its empty/error state) is
+    // visible instead of staying hidden behind the IME.
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val submit = {
+        keyboard?.hide()
+        onSearch()
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -520,7 +527,7 @@ private fun OnlineSearchFieldV50(
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                     onSearch = {
-                        if (query.isNotBlank() && !searching) onSearch()
+                        if (query.isNotBlank() && !searching) submit()
                     },
                 ),
             )
@@ -547,7 +554,7 @@ private fun OnlineSearchFieldV50(
                     color = if (searchEnabled) t.primary else t.border,
                     shape = searchShape,
                 )
-                .clickable(enabled = searchEnabled, onClick = onSearch)
+                .clickable(enabled = searchEnabled, role = androidx.compose.ui.semantics.Role.Button, onClick = submit)
                 .padding(horizontal = t.space3),
             contentAlignment = Alignment.Center,
         ) {
