@@ -98,6 +98,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
@@ -574,11 +575,17 @@ internal fun ReaderSessionV30(
     /* ---------------------------- Page chrome ---------------------------- */
     var clock by remember { mutableStateOf(readerClockV30()) }
     var battery by remember { mutableIntStateOf(readerBatteryV30(context)) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            clock = readerClockV30()
-            battery = readerBatteryV30(context)
-            delay(20_000)
+    val chromeLifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(chromeLifecycle) {
+        // Refresh immediately when the reader returns to the foreground, then tick on minute
+        // boundaries so the status clock is never up to 20 seconds stale. Nothing runs while
+        // the reader is in the background.
+        chromeLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                clock = readerClockV30()
+                battery = readerBatteryV30(context)
+                delay(readerChromeTickDelayMsV85(System.currentTimeMillis()))
+            }
         }
     }
 
@@ -2045,6 +2052,15 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIntoReaderChrom
 /* -------------------------------------------------------------------------- */
 /*                                 Helpers                                    */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Delay until just after the next wall-clock minute, capped at 20 s so battery level still
+ * refreshes at the previous cadence. Always positive.
+ */
+internal fun readerChromeTickDelayMsV85(nowMillis: Long): Long {
+    val untilNextMinute = 60_000L - Math.floorMod(nowMillis, 60_000L) + 50L
+    return untilNextMinute.coerceIn(50L, 20_000L)
+}
 
 private fun readerClockV30(): String {
     return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())

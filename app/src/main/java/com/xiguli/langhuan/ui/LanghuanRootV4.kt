@@ -32,7 +32,10 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiguli.langhuan.engine.ProjectConversationStore
 import com.xiguli.langhuan.LanghuanApplication
@@ -53,6 +56,9 @@ private enum class RootRouteV4 {
     SKILLS,
     ONLINE,
 }
+
+/** Run Center checkpoint polling while the screen is visible. */
+internal const val RUN_CENTER_REFRESH_INTERVAL_MS_V85 = 3_000L
 
 @Composable
 fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportCoordinatorV1? = null) {
@@ -508,6 +514,22 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     val runCenterState by runCenterVm.state.collectAsStateWithLifecycle()
                     val appContext2 = LocalContext.current.applicationContext as LanghuanApplication
                     val runtimeState by appContext2.chapterRunRuntime.state.collectAsStateWithLifecycle()
+                    val runCenterLifecycle = LocalLifecycleOwner.current.lifecycle
+                    // Load saved checkpoints on entry, then keep them fresh only while visible.
+                    // Silent refreshes re-read checkpoints but reuse cached book/chapter titles.
+                    LaunchedEffect(runCenterVm, runCenterLifecycle) {
+                        runCenterVm.refresh()
+                        runCenterLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                            while (true) {
+                                kotlinx.coroutines.delay(RUN_CENTER_REFRESH_INTERVAL_MS_V85)
+                                runCenterVm.refresh(silent = true)
+                            }
+                        }
+                    }
+                    // A run starting, finishing or failing rewrites its checkpoint immediately.
+                    LaunchedEffect(runCenterVm, runtimeState.active, runtimeState.chapterNumber) {
+                        runCenterVm.refresh(silent = true)
+                    }
                     LaunchedEffect(runCenterState.openRequest?.token) {
                         runCenterState.openRequest?.let { request ->
                             runCenterVm.consumeOpenRequest()

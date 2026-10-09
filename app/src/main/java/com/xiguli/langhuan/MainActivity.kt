@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,6 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -89,6 +96,9 @@ private fun StartupDatabaseRoot(externalBooks: ExternalBookImportCoordinatorV1) 
                     error = error.message ?: error::class.java.simpleName,
                 )
             }
+        // Read the persisted theme once before the first themed frame, not on every
+        // recomposition of the launcher root.
+        if (status.ready) LanghuanThemeModeStateV50.init(context)
         launcherState = if (status.ready) LauncherState.Ready(status) else LauncherState.Failed(status)
     }
 
@@ -97,7 +107,6 @@ private fun StartupDatabaseRoot(externalBooks: ExternalBookImportCoordinatorV1) 
         is LauncherState.Failed -> LauncherFailureScreen(state.status)
         is LauncherState.Ready -> {
             // Visual styling and noncritical background work begin only after startup is proven safe.
-            LanghuanThemeModeStateV50.init(context)
             LanghuanStableTheme(themeMode = LanghuanThemeModeStateV50.current) {
                 LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
                 val studioViewModel: StudioViewModel = viewModel()
@@ -113,7 +122,9 @@ private fun LauncherCheckingScreen() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(28.dp),
+                .safeDrawingPadding()
+                .padding(28.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -133,7 +144,11 @@ private fun LauncherFailureScreen(status: StartupDatabaseStatus) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(28.dp),
+                .safeDrawingPadding()
+                // Long SQLite errors and backup paths must stay readable on small screens.
+                .verticalScroll(rememberScrollState())
+                .padding(28.dp)
+                .semantics { liveRegion = LiveRegionMode.Assertive },
             verticalArrangement = Arrangement.Center,
         ) {
             Text("琅嬛启动诊断", style = MaterialTheme.typography.headlineSmall)
@@ -142,17 +157,22 @@ private fun LauncherFailureScreen(status: StartupDatabaseStatus) {
                 modifier = Modifier.padding(top = 12.dp),
                 style = MaterialTheme.typography.bodyLarge,
             )
-            Text(
-                text = status.error.ifBlank { "未知数据库错误" },
-                modifier = Modifier.padding(top = 12.dp),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (status.backupPath.isNotBlank()) {
-                Text(
-                    text = "旧数据库备份：${status.backupPath}",
-                    modifier = Modifier.padding(top = 12.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            // Selectable so the diagnosis and backup path can be copied into a bug report.
+            SelectionContainer {
+                Column {
+                    Text(
+                        text = status.error.ifBlank { "未知数据库错误" },
+                        modifier = Modifier.padding(top = 12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (status.backupPath.isNotBlank()) {
+                        Text(
+                            text = "旧数据库备份：${status.backupPath}",
+                            modifier = Modifier.padding(top = 12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
         }
     }
