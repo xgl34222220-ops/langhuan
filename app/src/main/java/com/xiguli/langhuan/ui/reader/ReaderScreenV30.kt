@@ -144,6 +144,7 @@ internal fun ReaderEngineV30(
     onOpenAiSetup: () -> Unit,
     startOnInfo: Boolean = false,
     interactionEnabled: Boolean = true,
+    onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val book = state.openedBook ?: return
@@ -300,6 +301,7 @@ internal fun ReaderEngineV30(
                 }
             },
             onStory = { storyMode = true },
+            onOpenOriginalEdition = onOpenOriginalEdition,
             chapterOps = remember(book.id) {
                 ReaderChapterOpsV35(
                     rename = { number, title ->
@@ -338,6 +340,7 @@ internal fun ReaderSessionV30(
     onRefreshCatalogue: () -> Unit = {},
     refreshingCatalogue: Boolean = false,
     catalogueMessage: String? = null,
+    onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -1824,6 +1827,13 @@ internal fun ReaderSessionV30(
             onBack = {
                 persist()
                 onBack()
+            },
+            onOpenOriginalEdition = onOpenOriginalEdition?.let { open ->
+                {
+                    menuVisible = false
+                    persist()
+                    open()
+                }
             },
             onToggleBookmark = {
                 val number = currentChapter?.chapterNumber

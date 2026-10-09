@@ -508,6 +508,19 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
+    /** Renames a book on the shelf. The Room flow republishes the shelf and the opened book. */
+    fun renameBook(id: String, title: String) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { projects.renameBook(id, title) } }
+                .onSuccess { saved ->
+                    _state.update {
+                        if (saved == null) it.copy(error = "书名不能为空") else it.copy(message = "书名已修改")
+                    }
+                }
+                .onFailure { e -> _state.update { it.copy(error = e.message ?: "修改书名失败") } }
+        }
+    }
+
     fun renameChapter(id: String, chapterNumber: Int, title: String) =
         chapterOp(id, "章节已重命名") { projects.renameChapter(id, chapterNumber, title) }
 

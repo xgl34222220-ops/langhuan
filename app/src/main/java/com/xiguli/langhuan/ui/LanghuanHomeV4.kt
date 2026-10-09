@@ -86,6 +86,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -160,6 +169,7 @@ fun LanghuanHomeV4(
     onRunCenter: () -> Unit,
     onSkills: () -> Unit,
     onOnline: () -> Unit = {},
+    onRenameBook: (String, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val t = LocalLanghuanUiTokens.current
@@ -193,6 +203,7 @@ fun LanghuanHomeV4(
     var batchOrganizerOpen by remember { mutableStateOf(false) }
     var actionBook by remember { mutableStateOf<ReaderBookUi?>(null) }
     var deleteBook by remember { mutableStateOf<ReaderBookUi?>(null) }
+    var renameBook by remember { mutableStateOf<ReaderBookUi?>(null) }
     var pendingBatchDeleteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     val customShelves = remember(shelfRevision) { loadOrderedShelvesV4(shelfPrefs) }
@@ -476,6 +487,18 @@ fun LanghuanHomeV4(
                 actionBook = null
             },
             onDelete = { actionBook = null; deleteBook = book },
+            onRename = { actionBook = null; renameBook = book },
+        )
+    }
+
+    renameBook?.let { book ->
+        HomeRenameBookDialogV4(
+            book = book,
+            onDismiss = { renameBook = null },
+            onConfirm = { title ->
+                renameBook = null
+                if (title != book.title) onRenameBook(book.id, title)
+            },
         )
     }
 
@@ -486,6 +509,9 @@ fun LanghuanHomeV4(
             onConfirm = {
                 deleteBook = null
                 LuoShelfAssignmentsV33.forget(prefs = shelfPrefs, bookId = book.id)
+                com.xiguli.langhuan.ui.epub.ReaderEditionPreferenceV90.forget(
+                    com.xiguli.langhuan.ui.epub.ReaderEditionPreferenceV90.prefs(context), book.id,
+                )
                 shelfRevision++
                 onDeleteBook(book.id)
             },
@@ -1424,6 +1450,7 @@ private fun HomeBookActionsV4(
     onTavern: () -> Unit,
     onMove: (String?) -> Unit,
     onDelete: () -> Unit,
+    onRename: () -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
     var moveOpen by remember { mutableStateOf(false) }
@@ -1470,6 +1497,12 @@ private fun HomeBookActionsV4(
                 icon = Icons.Rounded.AutoAwesome,
                 title = "进入酒馆",
                 onClick = onTavern,
+            )
+            Spacer(Modifier.height(t.space2))
+            HomeDialogActionV4(
+                icon = Icons.Rounded.Edit,
+                title = "修改书名",
+                onClick = onRename,
             )
             Spacer(Modifier.height(t.space2))
             HomeDialogActionV4(
@@ -1564,11 +1597,12 @@ private fun HomePrimaryButtonV4(
     text: String,
     onClick: () -> Unit,
     icon: ImageVector? = null,
+    modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusMd)
     Row(
-        modifier = Modifier
+        modifier = modifier
             .height(46.dp)
             .background(color = t.primary, shape = shape)
             .border(width = 1.dp, color = t.primary, shape = shape)
@@ -1711,6 +1745,86 @@ private fun HomeMoveTargetV4(
                 modifier = Modifier.size(18.dp),
                 tint = t.primary,
             )
+        }
+    }
+}
+
+@Composable
+private fun HomeRenameBookDialogV4(
+    book: ReaderBookUi,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    var text by remember(book.id) {
+        mutableStateOf(TextFieldValue(book.title, selection = TextRange(0, book.title.length)))
+    }
+    val clean = com.xiguli.langhuan.data.normalizeBookTitleV90(text.text)
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(t.radiusXl)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = t.card, shape = shape)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(t.space4),
+        ) {
+            Text(
+                text = "修改书名",
+                style = MaterialTheme.typography.titleLarge,
+                color = t.foreground,
+            )
+            Spacer(Modifier.height(t.space3))
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 46.dp)
+                    .focusRequester(focus)
+                    .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
+                    .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
+                    .padding(horizontal = t.space3, vertical = t.space3)
+                    .semantics { contentDescription = "书名" },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = t.foreground),
+                cursorBrush = SolidColor(t.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { clean?.let(onConfirm) }),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (text.text.isEmpty()) {
+                            Text(
+                                text = "输入新的书名",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = t.mutedForeground,
+                            )
+                        }
+                        inner()
+                    }
+                },
+            )
+            Spacer(Modifier.height(t.space2))
+            Text(
+                text = if (clean == null) "书名不能为空" else "只修改书架与阅读器显示的书名，正文与进度不变。",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (clean == null) t.destructive else t.mutedForeground,
+            )
+            Spacer(Modifier.height(t.space4))
+            Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    HomeSecondaryButtonV4(text = "取消", onClick = onDismiss)
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    HomePrimaryButtonV4(
+                        text = "保存",
+                        onClick = { clean?.let(onConfirm) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
     }
 }

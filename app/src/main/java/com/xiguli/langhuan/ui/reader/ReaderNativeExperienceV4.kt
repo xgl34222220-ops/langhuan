@@ -29,6 +29,8 @@ fun ReaderNativeExperienceV4(
     onOpenEditor: (String, Int) -> Unit,
     onOpenAiSetup: () -> Unit,
     startOnInfo: Boolean = false,
+    /** Non-null for EPUB books: switch this book back to the 原版 renderer. */
+    onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var resumeRequested by remember {
@@ -78,6 +80,7 @@ fun ReaderNativeExperienceV4(
         onOpenAiSetup = onOpenAiSetup,
         startOnInfo = startOnInfo,
         interactionEnabled = readerMounted,
+        onOpenOriginalEdition = onOpenOriginalEdition,
     )
 }
 

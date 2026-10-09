@@ -186,7 +186,12 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
             toast = "找不到这本小说，请刷新书架" to true
             return
         }
-        if (com.xiguli.langhuan.ui.epub.EpubReaderEntry.isEpub(appContext, id)) {
+        val epub = com.xiguli.langhuan.ui.epub.EpubReaderEntry.isEpub(appContext, id)
+        val editionPrefs = com.xiguli.langhuan.ui.epub.ReaderEditionPreferenceV90.prefs(appContext)
+        if (epub && com.xiguli.langhuan.ui.epub.ReaderEditionPreferenceV90.opensAsText(editionPrefs, id)) {
+            // The reader last chose 文字版 for this book: reopen it there instead of 原版.
+            requestBook(id, RootRouteV4.BOOK, showInfo = false)
+        } else if (epub) {
             pendingBookId = null
             pendingBookRoute = null
             pendingBookFreshReload = false
@@ -198,6 +203,19 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                 toast = "无法打开 EPUB 原版：${error.message.orEmpty()}" to true
             }
         } else requestBook(id, RootRouteV4.BOOK, showInfo = false)
+    }
+
+    /** Text reader → 原版: remember the choice, leave the text reader and open the EPUB renderer. */
+    fun openOriginalEdition(id: String) {
+        com.xiguli.langhuan.ui.epub.ReaderEditionPreferenceV90.save(
+            com.xiguli.langhuan.ui.epub.ReaderEditionPreferenceV90.prefs(appContext),
+            id,
+            com.xiguli.langhuan.ui.epub.ReaderEditionV90.ORIGINAL,
+        )
+        libraryVm.closeBook()
+        editorChapter = null
+        route = RootRouteV4.SHELF
+        openBook(id)
     }
 
     LaunchedEffect(pendingOnlineOpen, libraryState.stories) {
@@ -375,6 +393,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                         onRunCenter = { route = RootRouteV4.RUN_CENTER },
                         onSkills = { openSkills(RootRouteV4.SHELF) },
                         onOnline = { route = RootRouteV4.ONLINE },
+                        onRenameBook = libraryVm::renameBook,
                     )
                 }
 
@@ -402,6 +421,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                             },
                             onOpenAiSetup = { openAiSetup(RootRouteV4.BOOK) },
                             startOnInfo = openBookOnInfo,
+                            onOpenOriginalEdition = remember(libraryState.openedBook?.id) {
+                                libraryState.openedBook?.id
+                                    ?.takeIf { com.xiguli.langhuan.ui.epub.EpubReaderEntry.isEpub(appContext, it) }
+                            }?.let { id -> { openOriginalEdition(id) } },
                         )
                     }
                 }

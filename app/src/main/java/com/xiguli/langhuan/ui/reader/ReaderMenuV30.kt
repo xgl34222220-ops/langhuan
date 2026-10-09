@@ -37,6 +37,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -179,6 +181,7 @@ internal fun ReaderMenuV30(
     onRefreshCatalogue: () -> Unit,
     refreshingCatalogue: Boolean,
     catalogueMessage: String?,
+    onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     if (!visible) return
     val t = LocalLanghuanUiTokens.current
@@ -311,6 +314,7 @@ internal fun ReaderMenuV30(
                                         onRenameChapter = onRenameChapter,
                                         onAppendChapter = onAppendChapter,
                                         onDeleteLastChapter = onDeleteLastChapter,
+                                        onOpenOriginalEdition = onOpenOriginalEdition,
                                     )
                                 }
                             }
@@ -657,7 +661,9 @@ private fun ReaderDirectoryTabV30(
     var mode by rememberSaveable { mutableStateOf(ReaderDirectoryModeV30.CHAPTERS) }
     var legacy by rememberSaveable { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    // Fill the whole menu body: the panel is always laid out at its max height (weighted
+    // body), so a list capped at a fraction of the window left a large blank band below it.
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -721,6 +727,7 @@ private fun ReaderDirectoryTabV30(
                     chapterIndex = chapterIndex,
                     bookmarkedChapters = bookmarkedChapters,
                     onJumpChapter = onJumpChapter,
+                    modifier = Modifier.weight(1f),
                 )
             }
             legacy -> {
@@ -730,6 +737,7 @@ private fun ReaderDirectoryTabV30(
                     restoredBookmarks = bookmarkedChapters,
                     onRestore = onRestoreLegacyBookmark,
                     onJumpChapter = onJumpChapter,
+                    modifier = Modifier.weight(1f),
                 )
             }
             else -> {
@@ -737,6 +745,7 @@ private fun ReaderDirectoryTabV30(
                     chapters = chapters,
                     bookmarks = bookmarkedChapters,
                     onJumpChapter = onJumpChapter,
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -749,23 +758,25 @@ private fun ReaderChapterListV30(
     chapterIndex: Int,
     bookmarkedChapters: Set<Int>,
     onJumpChapter: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val windowHeight = readerMenuWindowHeightV63()
     if (chapters.isEmpty()) {
         ReaderMenuEmptyV30(title = "暂无章节", description = "这本书还没有可阅读的章节。")
         return
     }
+    // Open with the current chapter in view (two rows of context above it).
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = readerTocInitialIndexV90(chapterIndex, chapters.size),
+    )
     LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = windowHeight * 0.44f),
+        state = listState,
+        modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
     ) {
-        items(items = chapters, key = { it.id }) { chapter ->
-            val index = chapters.indexOf(chapter)
+        itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
             val current = index == chapterIndex
             val marked = chapter.chapterNumber in bookmarkedChapters
             ReaderChapterRowV30(
@@ -778,14 +789,18 @@ private fun ReaderChapterListV30(
     }
 }
 
+/** First visible row when the directory opens: the current chapter with two rows above it. */
+internal fun readerTocInitialIndexV90(chapterIndex: Int, chapterCount: Int): Int =
+    if (chapterCount <= 0) 0 else (chapterIndex - 2).coerceIn(0, chapterCount - 1)
+
 @Composable
 private fun ReaderBookmarkListV30(
     chapters: List<ChapterDraft>,
     bookmarks: Set<Int>,
     onJumpChapter: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val windowHeight = readerMenuWindowHeightV63()
     val rows = chapters.filter { it.chapterNumber in bookmarks }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
@@ -795,9 +810,7 @@ private fun ReaderBookmarkListV30(
         return
     }
     LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = windowHeight * 0.44f),
+        modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -821,9 +834,9 @@ private fun ReaderLegacyBookmarkListV30(
     restoredBookmarks: Set<Int>,
     onRestore: (Int) -> Unit,
     onJumpChapter: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val windowHeight = readerMenuWindowHeightV63()
     var selected by remember { mutableStateOf<ChapterDraft?>(null) }
     val rows = chapters.filter { it.chapterNumber in bookmarks }
     selected?.let { chapter ->
@@ -850,9 +863,7 @@ private fun ReaderLegacyBookmarkListV30(
         return
     }
     LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = windowHeight * 0.44f),
+        modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
@@ -971,6 +982,7 @@ private fun ReaderMoreTabV30(
     onRenameChapter: (Int, String) -> Unit,
     onAppendChapter: () -> Unit,
     onDeleteLastChapter: () -> Unit,
+    onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     val t = LocalLanghuanUiTokens.current
     val windowHeight = readerMenuWindowHeightV63()
@@ -1015,6 +1027,16 @@ private fun ReaderMoreTabV30(
                 label = "定位",
                 modifier = Modifier.weight(1f),
                 onClick = onLocate,
+            )
+        }
+        if (onOpenOriginalEdition != null) {
+            Spacer(Modifier.height(t.space3))
+            // This EPUB opens in 文字版 because that was the last choice; offer the way back.
+            ReaderSettingsNavigationRowV30(
+                icon = Icons.Rounded.AutoStories,
+                title = "切换到原版",
+                value = "EPUB 原版排版",
+                onClick = onOpenOriginalEdition,
             )
         }
         Spacer(Modifier.height(t.space5))

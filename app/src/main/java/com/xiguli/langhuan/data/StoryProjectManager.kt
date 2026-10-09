@@ -488,6 +488,21 @@ class StoryProjectManager internal constructor(context: Context, private val db:
         return PersistedStory(normalized, draft)
     }
 
+    /**
+     * Renames the book itself. Only `novel.title` in the stored snapshot changes; the chapter
+     * bodies, progress keys and the shelf order (updatedAt) are left as they were.
+     * Returns the saved title, or null when the title is blank or the book is gone.
+     */
+    suspend fun renameBook(novelId: String, title: String): String? {
+        val clean = normalizeBookTitleV90(title) ?: return null
+        val header = storyDao.getHeader(novelId) ?: return null
+        val json = renameSnapshotJsonV90(header.snapshotJson, clean)
+        // Validate before writing so a malformed result can never replace a readable project.
+        ProjectJson.decodeFromString(StorySnapshot.serializer(), json)
+        storyDao.updateSnapshot(novelId, json, header.updatedAt)
+        return clean
+    }
+
     /** Renames one chapter in both the outline and its draft, using CursorWindow-safe reads. */
     suspend fun renameChapter(novelId: String, chapterNumber: Int, title: String): PersistedStory? {
         val clean = title.trim().take(40)

@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import kotlin.math.roundToInt
 
 /**
  * V30 reader layout engine.
@@ -199,6 +200,13 @@ internal fun readerAlignFullPageV41(
 internal fun readerAlignmentLimitV43(fontSizePx: Float, lineHeightPx: Float): Float =
     minOf(fontSizePx * .10f, lineHeightPx * .06f).coerceAtLeast(0f)
 
+/** Largest extra space a line gap may receive from vertical justification. */
+internal fun readerVerticalLineCapV90(lineHeightPx: Float): Float = (lineHeightPx * .12f).coerceAtLeast(0f)
+
+/** Largest extra space a paragraph gap may receive from vertical justification. */
+internal fun readerVerticalParagraphCapV90(lineHeightPx: Float, paragraphGapPx: Float): Float =
+    (lineHeightPx * .5f + paragraphGapPx.coerceAtLeast(0f) * .5f).coerceAtLeast(0f)
+
 /** The requested line height is a baseline advance. A taller fallback font must still fit. */
 internal fun readerLineGapV43(
     previousDescent: Float,
@@ -225,9 +233,15 @@ internal fun readerTextPaintV30(sizePx: Float, fontKey: String, weight: Int, let
         isLinearText = false
     }
 
-private fun readerStaticLayoutV30(text: String, paint: TextPaint, width: Int): StaticLayout =
+private fun readerStaticLayoutV30(
+    text: String,
+    paint: TextPaint,
+    width: Int,
+    leftIndents: IntArray? = null,
+): StaticLayout =
     StaticLayout.Builder.obtain(text, 0, text.length, paint, width.coerceAtLeast(1))
         .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+        .setIndents(leftIndents, null)
         .setIncludePad(false)
         .setUseLineSpacingFromFallbacks(true)
         .setLineSpacing(0f, 1f)
@@ -283,31 +297,132 @@ internal fun readerJustifyUnitsV30(text: String): List<String> {
     return units
 }
 
+/** Opening punctuation whose blank leading half is removed at the start of a line (CLREQ). */
+private const val READER_OPENING_PUNCT_V90 = "\u201C\u2018\u300C\u300E\uFF08\u300A\u3008\u3010\u3014\u3016\uFF3B\uFF5B"
+
+/** Closing punctuation whose blank trailing half may hang at the end of a justified line. */
+private const val READER_CLOSING_PUNCT_V90 =
+    "\u201D\u2019\u300D\u300F\uFF09\u300B\u3009\u3011\u3015\u3017\uFF3D\uFF5D\uFF0C\u3002\u3001\uFF1B\uFF1A\uFF01\uFF1F"
+
+internal fun readerIsOpeningPunctV90(unit: String): Boolean = unit.length == 1 && unit[0] in READER_OPENING_PUNCT_V90
+internal fun readerIsClosingPunctV90(unit: String): Boolean = unit.length == 1 && unit[0] in READER_CLOSING_PUNCT_V90
+
 /**
- * Distributes the free space of a full line evenly between units. Leading ideographic spaces
- * (the first-line indent) keep their natural width so indents line up down the page.
+ * Places one body line on the measure.
+ *
+ * * [startX] is the exact first-line indent (two ideographic advances) or 0.
+ * * A full-width opening quote/bracket at the start of the line drops its blank left half, so
+ *   its ink starts on the same rail as the text of every other line.
+ * * On a justified line a full-width closing mark at the end drops its blank right half, so the
+ *   ink of the last glyph meets the right margin like a plain character does.
+ * * Justified lines spread the remaining space evenly between units; the last line of a
+ *   paragraph keeps natural spacing. A gap wider than 0.9 em means a forced break (long URL),
+ *   which is left unstretched.
+ *
+ * [widths] are the measured advances of [units]; the function is pure so it is unit tested.
  */
-private fun readerJustifyV30(text: String, paint: TextPaint, width: Float): Pair<Array<String>, FloatArray>? {
-    val units = readerJustifyUnitsV30(text)
-    if (units.size < 2) return null
-    var fixed = 0
-    while (fixed < units.size && units[fixed] == "\u3000") fixed++
-    val widths = FloatArray(units.size) { paint.measureText(units[it]) }
-    val total = widths.sum()
-    val free = width - total
-    val flexibleGaps = (units.size - 1 - fixed).coerceAtLeast(0)
-    if (flexibleGaps <= 0 || free <= 0.5f) return null
-    val gap = free / flexibleGaps
-    // A huge gap means the line break was forced (for example a long URL); do not stretch it.
-    if (gap > paint.textSize * 0.9f) return null
+internal fun readerPlaceUnitsV90(
+    units: List<String>,
+    widths: FloatArray,
+    measure: Float,
+    startX: Float,
+    justify: Boolean,
+    fontSizePx: Float,
+): FloatArray {
     val xs = FloatArray(units.size)
-    var x = 0f
+    if (units.isEmpty()) return xs
+    val fullWidth = fontSizePx * 0.7f
+    val leadShift = if (readerIsOpeningPunctV90(units.first()) && widths[0] >= fullWidth) widths[0] / 2f else 0f
+    val trailTrim = if (justify && units.size > 1 && readerIsClosingPunctV90(units.last()) &&
+        widths[units.lastIndex] >= fullWidth) widths[units.lastIndex] / 2f else 0f
+    var gap = 0f
+    if (justify && units.size > 1) {
+        val content = widths.sum() - leadShift - trailTrim
+        val free = (measure - startX) - content
+        val candidate = free / (units.size - 1)
+        // Small negative values only absorb float rounding of the line breaker.
+        if (free > -1f && candidate <= fontSizePx * 0.9f) gap = candidate
+    }
+    var x = startX - leadShift
     for (k in units.indices) {
         xs[k] = x
         x += widths[k]
-        if (k >= fixed && k < units.lastIndex) x += gap
+        if (k < units.lastIndex) x += gap
     }
+    return xs
+}
+
+private fun readerPlaceLineV90(
+    text: String,
+    paint: TextPaint,
+    measure: Float,
+    startX: Float,
+    justify: Boolean,
+): Pair<Array<String>, FloatArray>? {
+    if (text.isEmpty()) return null
+    val units = readerJustifyUnitsV30(text)
+    if (units.isEmpty()) return null
+    val widths = FloatArray(units.size) { paint.measureText(units[it]) }
+    val xs = readerPlaceUnitsV90(units, widths, measure, startX, justify, paint.textSize)
     return units.toTypedArray() to xs
+}
+
+/** Two ideographic advances of [paint], rounded to whole pixels so line breaking and drawing agree. */
+internal fun readerIndentPxV90(ideographAdvance: Float, fontSizePx: Float): Int {
+    val advance = if (ideographAdvance.isFinite() && ideographAdvance > 0f) ideographAdvance else fontSizePx
+    return (advance * 2f).roundToInt().coerceAtLeast(0)
+}
+
+/**
+ * Vertical justification of a full page: the leftover space below the last line is spread over
+ * the gaps between body lines, so the last line of every full page sits on the bottom margin.
+ * Paragraph gaps take a larger share than line gaps (weights 3:1), and every gap has a cap so a
+ * sparse page (huge type, or a page broken before an oversized slot) is not visibly distorted.
+ * The top rail and every gap marked not [stretchable] (title lines, title→body gap) stay fixed.
+ *
+ * [stretchable] and [paragraph] are indexed by the line that follows the gap (index 0 unused).
+ */
+internal fun readerJustifyPageVerticallyV90(
+    page: ReaderPackedPageV30,
+    pageHeight: Float,
+    stretchable: BooleanArray,
+    paragraph: BooleanArray,
+    lineCapPx: Float,
+    paragraphCapPx: Float,
+): ReaderPackedPageV30 {
+    val n = page.tops.size
+    val remainder = pageHeight - page.used
+    if (n < 2 || remainder <= 0.01f || !remainder.isFinite()) return page
+    val weight = FloatArray(n)
+    val cap = FloatArray(n)
+    for (k in 1 until n) {
+        if (!stretchable.getOrElse(k) { false }) continue
+        val para = paragraph.getOrElse(k) { false }
+        weight[k] = if (para) 3f else 1f
+        cap[k] = (if (para) paragraphCapPx else lineCapPx).coerceAtLeast(0f)
+    }
+    val extra = FloatArray(n)
+    var left = remainder
+    repeat(4) {
+        var active = 0f
+        for (k in 1 until n) if (weight[k] > 0f && extra[k] < cap[k] - 1e-4f) active += weight[k]
+        if (active <= 0f || left <= 1e-3f) return@repeat
+        val share = left / active
+        for (k in 1 until n) {
+            if (weight[k] <= 0f || extra[k] >= cap[k] - 1e-4f) continue
+            val add = minOf(weight[k] * share, cap[k] - extra[k])
+            extra[k] += add
+            left -= add
+        }
+    }
+    val added = remainder - left
+    if (added <= 0.01f) return page
+    var shift = 0f
+    val tops = FloatArray(n) { index ->
+        shift += extra[index]
+        page.tops[index] + shift
+    }
+    return page.copy(tops = tops, used = page.used + added)
 }
 
 /**
@@ -349,7 +464,12 @@ internal fun readerPaginateChapterV30(
         }
     }
 
-    val prefix = if (spec.indent) "\u3000\u3000" else ""
+    // The first-line indent is an exact two-ideograph measure given to the line breaker as a
+    // pixel indent (not as U+3000 characters whose width depends on the fallback font).
+    val indentPx = if (spec.indent) readerIndentPxV90(bodyPaint.measureText("\u4E2D"), spec.fontSizePx)
+        .coerceAtMost(width / 2) else 0
+    val firstLineIndents = if (indentPx > 0) intArrayOf(indentPx, 0) else null
+    val paragraphStarts = ArrayList<Boolean>()
     var start = 0
     var firstParagraph = true
     val source = body.ifBlank { "本章暂无正文。" }
@@ -360,43 +480,55 @@ internal fun readerPaginateChapterV30(
         val leading = paragraph.indexOfFirst { !it.isWhitespace() && it != '\u3000' }
         if (leading >= 0) {
             val content = paragraph.substring(leading).trimEnd()
-            val display = prefix + content
-            val layout = readerStaticLayoutV30(display, bodyPaint, width)
+            val layout = readerStaticLayoutV30(content, bodyPaint, width, firstLineIndents)
             for (li in 0 until layout.lineCount) {
                 val ls = layout.getLineStart(li)
                 val le = layout.getLineEnd(li)
-                val text = display.substring(ls, le).trimEnd('\n', ' ')
+                val text = content.substring(ls, le).trimEnd('\n', ' ')
                 val isLast = li == layout.lineCount - 1
-                val justified = if (isLast) null else readerJustifyV30(text, bodyPaint, width.toFloat())
+                val startX = if (li == 0) indentPx.toFloat() else 0f
+                val placed = readerPlaceLineV90(text, bodyPaint, width.toFloat(), startX, justify = !isLast)
                 val ascent = layout.getLineAscent(li).toFloat()
                 val descent = layout.getLineDescent(li).toFloat()
                 val previous = raws.lastOrNull()
+                val paragraphStart = li == 0 && !firstParagraph
                 val gap = when {
                     previous == null -> 0f
                     previous.title -> spec.titleGapPx.coerceAtLeast(0f)
                     else -> readerLineGapV43(previous.descent, ascent, spec.lineHeightPx,
-                        if (li == 0 && !firstParagraph) spec.paragraphGapPx else 0f)
+                        if (paragraphStart) spec.paragraphGapPx else 0f)
                 }
-                val offset = start + leading + (ls - prefix.length).coerceAtLeast(0)
-                raws += Raw(text, false, offset, justified, ascent, descent, ReaderSlotV30(descent - ascent, gap))
+                val offset = start + leading + ls
+                raws += Raw(text, false, offset, placed, ascent, descent, ReaderSlotV30(descent - ascent, gap))
+                paragraphStarts += paragraphStart || (li == 0 && firstParagraph)
             }
             firstParagraph = false
         }
         if (newline < 0) break
         start = end + 1
     }
+    val titleCount = raws.size - paragraphStarts.size
 
     val alignmentLimit = readerAlignmentLimitV43(spec.fontSizePx, spec.lineHeightPx)
     val packed = readerPackSlotsV30(raws.map { it.slot }, spec.bodyHeightPx.toFloat(),
-        maxCompressionPerGapPx = alignmentLimit, naturalPrefixSlots = raws.takeWhile { it.title }.size)
+        maxCompressionPerGapPx = alignmentLimit, naturalPrefixSlots = titleCount)
+    val lineCap = readerVerticalLineCapV90(spec.lineHeightPx)
+    val paragraphCap = readerVerticalParagraphCapV90(spec.lineHeightPx, spec.paragraphGapPx)
     val pages = packed.mapIndexed { pageIndex, naturalPage ->
-        val packedPage = readerAlignFullPageV41(
-            naturalPage,
-            spec.bodyHeightPx.toFloat(),
-            isFullBodyPage = pageIndex < packed.lastIndex &&
-                (naturalPage.first..naturalPage.last).none { raws[it].title },
-            maxExtraPerGapPx = alignmentLimit,
-        )
+        // Every page except the chapter's last is a full page; its last line meets the bottom
+        // margin. Title lines and the title→body gap stay natural; only body gaps stretch.
+        val packedPage = if (pageIndex < packed.lastIndex) {
+            val count = naturalPage.last - naturalPage.first + 1
+            val stretchable = BooleanArray(count) { k ->
+                k > 0 && !raws[naturalPage.first + k].title && !raws[naturalPage.first + k - 1].title
+            }
+            val paragraph = BooleanArray(count) { k ->
+                val raw = naturalPage.first + k
+                raw >= titleCount && paragraphStarts[raw - titleCount]
+            }
+            readerJustifyPageVerticallyV90(naturalPage, spec.bodyHeightPx.toFloat(), stretchable, paragraph,
+                lineCap, paragraphCap)
+        } else naturalPage
         val lines = (packedPage.first..packedPage.last).mapIndexed { k, rawIndex ->
             val raw = raws[rawIndex]
             val top = packedPage.tops[k]
