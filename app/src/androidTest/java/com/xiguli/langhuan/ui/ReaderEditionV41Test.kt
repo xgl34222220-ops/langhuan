@@ -97,8 +97,13 @@ class ReaderEditionV41Test {
                     val requested = maxOf(spec.lineHeightPx, previous.descent - line.ascent) +
                         if (paragraph) spec.paragraphGapPx else 0f
                     val actual = line.baseline - previous.baseline
+                    // Full pages are vertically justified (V90): a gap may grow up to its cap so
+                    // the last line meets the bottom margin, or shrink by the packer's squeeze.
+                    val stretch = if (paragraph) readerVerticalParagraphCapV90(spec.lineHeightPx, spec.paragraphGapPx)
+                        else readerVerticalLineCapV90(spec.lineHeightPx)
                     assertTrue("page ${page.index}: advance=$actual, requested=$requested",
-                        abs(actual - requested) <= spec.lineHeightPx * .06f + .6f)
+                        actual - requested <= stretch + .6f &&
+                            requested - actual <= spec.lineHeightPx * .06f + .6f)
                 }
             }
         }

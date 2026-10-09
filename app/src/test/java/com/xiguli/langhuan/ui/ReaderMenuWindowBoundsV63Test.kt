@@ -17,7 +17,10 @@ class ReaderMenuWindowBoundsV63Test {
         ).readText()
 
         assertTrue(source.contains("LocalWindowInfo.current.containerSize.height.toDp()"))
-        assertEquals(9, Regex("readerMenuWindowHeightV63\\(\\)").findAll(source).count())
+        // V90: the directory/bookmark lists fill the weighted menu body instead of capping
+        // themselves at a fraction of the window (that cap left a blank band under the TOC).
+        assertEquals(6, Regex("readerMenuWindowHeightV63\\(\\)").findAll(source).count())
+        assertFalse(source.contains("heightIn(max = windowHeight * 0.44f)"))
         assertFalse(source.contains("LocalConfiguration"))
         assertFalse(source.contains("screenHeightDp"))
     }

@@ -340,6 +340,8 @@ class EpubReaderActivity : FragmentActivity() {
         // 会沿现有 requestBook() -> ReaderProgressStoreV11.load() 路径恢复
         // 文字版自己的阅读位置。
         saveCurrentLocator()
+        // Remember 文字版 for this book so the shelf reopens it in the text reader next time.
+        ReaderEditionPreferenceV90.save(ReaderEditionPreferenceV90.prefs(this), bookId, ReaderEditionV90.TEXT)
         setResult(
             RESULT_TEXT_READER,
             Intent().putExtra(EXTRA_BOOK_ID, bookId),

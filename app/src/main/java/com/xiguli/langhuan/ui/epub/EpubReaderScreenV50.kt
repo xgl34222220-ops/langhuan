@@ -142,7 +142,8 @@ internal fun EpubReaderScreenV50(
         Column(modifier = Modifier.fillMaxSize()) {
             /* ------------------------------- Top bar ------------------------------- */
             EpubReaderTopBarV50(
-                bookTitle = state.publicationTitle.ifBlank { book.title },
+                // The shelf title (renamable) wins over the EPUB metadata title.
+                bookTitle = book.title.ifBlank { state.publicationTitle },
                 onBack = onBack,
                 onOriginal = onOpenOriginalVersion,
                 onText = onOpenTextVersion,
@@ -217,7 +218,8 @@ internal fun EpubReaderScreenV50(
 
         if (directoryOpen) {
             EpubDirectoryDialogV50(
-                bookTitle = state.publicationTitle.ifBlank { book.title },
+                // The shelf title (renamable) wins over the EPUB metadata title.
+                bookTitle = book.title.ifBlank { state.publicationTitle },
                 tableOfContents = tableOfContents,
                 currentTocIndex = currentTocIndex,
                 onDismiss = { directoryOpen = false },
