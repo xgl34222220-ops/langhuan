@@ -1284,9 +1284,9 @@ private fun ReaderThemeOptionV30(
 ) {
     val t = LocalLanghuanUiTokens.current
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(t.radiusMd))
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        // Keep the original click node: ReaderRecreationV42 validates the landscape Details tab
+        // accessibility tree, and extra RadioButton nodes here left its font stepper bounds stale.
+        modifier = modifier.clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val shape = RoundedCornerShape(t.radiusMd)
