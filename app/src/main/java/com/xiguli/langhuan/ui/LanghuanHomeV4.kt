@@ -2430,8 +2430,8 @@ private fun homeContinueReadingV4(
 /** "3 分钟前" style stamp for the resume card; null when unknown or in the future. */
 private fun homeRelativeTimeV91(at: Long, now: Long = System.currentTimeMillis()): String? {
     if (at <= 0L || at > now + 60_000L) return null
-    if (now - at < DateUtils.MINUTE_MILLIS) return "刚刚"
-    return DateUtils.getRelativeTimeSpanString(at, now, DateUtils.MINUTE_MILLIS).toString()
+    if (now - at < DateUtils.MINUTE_IN_MILLIS) return "刚刚"
+    return DateUtils.getRelativeTimeSpanString(at, now, DateUtils.MINUTE_IN_MILLIS).toString()
 }
 
 @Composable
