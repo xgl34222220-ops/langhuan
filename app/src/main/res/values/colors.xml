@@ -2,8 +2,9 @@
 <resources>
     <!-- Window surface matches the app's paper background (LanghuanLightUiTokens.background). -->
     <color name="langhuan_window_v95">#F7F5F0</color>
-    <!-- V96 brand: ink-wash bamboo (墨竹) on rice paper (宣纸) with a vermilion seal dot. -->
-    <color name="splash_paper_v96">#F4EFE4</color>
-    <color name="splash_ink_v96">#1A1917</color>
-    <color name="splash_seal_v96">#CB3A24</color>
+    <!-- V97 brand: frosted-glass books + leaf on an emerald → mint gradient. Launch surface is a
+         pale mint paper (deep emerald at night); ink/accent colour the slow-start screen. -->
+    <color name="splash_bg_v97">#EEF5F1</color>
+    <color name="splash_ink_v97">#17392E</color>
+    <color name="splash_accent_v97">#1F7A5C</color>
 </resources>

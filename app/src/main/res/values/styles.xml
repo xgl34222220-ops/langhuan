@@ -8,13 +8,13 @@
         <item name="android:statusBarColor">@color/langhuan_window_v95</item>
     </style>
 
-    <!-- V96 launch screen (androidx SplashScreen: system splash on API 31+, emulated below):
-         rice-paper surface (deep ink at night) with the small ink bamboo sprig and seal dot.
-         The starting window background is the same paper so nothing flashes white. -->
+    <!-- V97 launch screen (androidx SplashScreen: system splash on API 31+, emulated below):
+         pale mint surface (deep emerald at night) with the glass-books icon tile centred.
+         The starting window background is the same colour so nothing flashes white. -->
     <style name="Theme.Langhuan.Starting" parent="Theme.SplashScreen">
-        <item name="android:windowBackground">@color/splash_paper_v96</item>
-        <item name="windowSplashScreenBackground">@color/splash_paper_v96</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_bamboo_v96</item>
+        <item name="android:windowBackground">@color/splash_bg_v97</item>
+        <item name="windowSplashScreenBackground">@color/splash_bg_v97</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_glass_v97</item>
         <item name="windowSplashScreenAnimationDuration">300</item>
         <item name="postSplashScreenTheme">@style/Theme.Langhuan</item>
     </style>

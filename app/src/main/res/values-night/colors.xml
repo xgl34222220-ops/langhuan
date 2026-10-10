@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="langhuan_window_v95">#141311</color>
-    <color name="splash_paper_v96">#151412</color>
-    <color name="splash_ink_v96">#ECE6D8</color>
-    <color name="splash_seal_v96">#D65C42</color>
+    <color name="splash_bg_v97">#0F2A22</color>
+    <color name="splash_ink_v97">#DDEEE6</color>
+    <color name="splash_accent_v97">#6FC195</color>
 </resources>

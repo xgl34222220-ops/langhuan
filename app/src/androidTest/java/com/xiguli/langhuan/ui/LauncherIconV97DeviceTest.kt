@@ -20,18 +20,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * V96 brand (ink-wash bamboo): the painted sprig and its vermilion seal must stay inside the
- * adaptive-icon safe zone (66 dp circle) so no launcher mask clips them, the rice-paper background
- * must be a solid cream, the monochrome layer must exist for themed icons, and the splash must be
- * ink-on-paper in light mode and paper-white-on-ink in dark mode with a matching starting-window
- * background (no white flash). Writes preview sheets for the PR.
+ * V97 brand (frosted-glass books on an emerald gradient): the glass art must stay inside the
+ * adaptive-icon safe zone (66 dp circle) so no launcher mask clips it, the background must be an
+ * opaque emerald → mint gradient, the monochrome layer must exist for themed icons, and the splash
+ * must show the emerald icon tile on the pale-mint (light) / deep-emerald (dark) surface with a
+ * matching starting-window background (no white flash). Writes preview sheets for the PR.
  */
-class LauncherIconV96DeviceTest {
+class LauncherIconV97DeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
     @Test @SdkSuppress(minSdkVersion = 33)
-    fun inkSprigFitsSafeZoneOnEveryMaskAndHasThemedLayer() {
+    fun glassBooksFitSafeZoneOnEveryMaskAndHaveThemedLayer() {
         val icon = context.getDrawable(R.mipmap.ic_launcher) as AdaptiveIconDrawable
         val round = context.getDrawable(R.mipmap.ic_launcher_round) as AdaptiveIconDrawable
         assertNotNull(icon.monochrome)
@@ -40,8 +40,7 @@ class LauncherIconV96DeviceTest {
         icon.setBounds(0, 0, size, size)
         val fg = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         icon.foreground.draw(Canvas(fg))
-        var ink = 0
-        var seal = 0
+        var glass = 0
         var outsideSafeZone = 0
         // AdaptiveIconDrawable bounds are the visible 72 dp viewport (layers are drawn 1.5x around
         // it), so the 66 dp safe-zone circle has radius 33/72 of the bounds.
@@ -50,30 +49,33 @@ class LauncherIconV96DeviceTest {
             val c = fg.getPixel(x, y)
             val a = Color.alpha(c)
             if (a < 40) continue
-            if (a > 200 && Color.red(c) < 80 && Color.green(c) < 80 && Color.blue(c) < 80) ink++
-            if (a > 200 && Color.red(c) > 150 && Color.green(c) < 120 && Color.blue(c) < 100) seal++
+            if (a > 100 && Color.red(c) > 170 && Color.green(c) > 170 && Color.blue(c) > 170) glass++
             val dx = x - size / 2f
             val dy = y - size / 2f
             if (dx * dx + dy * dy > safeRadius * safeRadius) outsideSafeZone++
         }
-        assertTrue("Ink bamboo leaves must be clearly visible ($ink px)", ink > 6000)
-        assertTrue("Vermilion seal dot must be visible ($seal px)", seal > 300)
-        assertEquals("Painted sprig must stay inside the 66 dp safe zone", 0, outsideSafeZone)
+        assertTrue("Frosted-glass books must be clearly visible ($glass px)", glass > 20000)
+        assertEquals("Glass art must stay inside the 66 dp safe zone", 0, outsideSafeZone)
         assertEquals(0, Color.alpha(fg.getPixel(0, 0)))
         fg.recycle()
 
-        // Background layer: opaque warm rice paper.
+        // Background layer: opaque emerald gradient, deep at bottom-left, mint at top-right.
         val bg = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         icon.background.draw(Canvas(bg))
-        val p = bg.getPixel(size / 4, size / 4)
-        assertEquals(255, Color.alpha(p))
-        assertTrue("paper is cream, not white or grey: $p", Color.red(p) in 225..250 && Color.blue(p) in 200..235 && Color.red(p) > Color.blue(p))
+        val mid = bg.getPixel(size / 4, size / 4)
+        val deep = bg.getPixel(size / 8, size * 7 / 8)
+        val mint = bg.getPixel(size * 7 / 8, size / 8)
+        assertEquals(255, Color.alpha(mid))
+        for (p in listOf(mid, deep, mint)) {
+            assertTrue("background is emerald green: $p", Color.green(p) > Color.red(p) + 40 && Color.green(p) > Color.blue(p))
+        }
+        assertTrue("gradient runs deep → mint: ${lum(deep)} vs ${lum(mint)}", lum(mint) - lum(deep) > 40)
         bg.recycle()
 
         val cell = 432
         val sheet = Bitmap.createBitmap(cell * 4, cell + 56, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(sheet)
-        canvas.drawColor(Color.rgb(236, 233, 226))
+        canvas.drawColor(Color.rgb(236, 240, 237))
         val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(34, 34, 31); textSize = 24f; textAlign = Paint.Align.CENTER }
         val names = listOf("Circle", "Squircle", "Rounded", "Themed")
         repeat(4) { i ->
@@ -99,49 +101,47 @@ class LauncherIconV96DeviceTest {
             canvas.drawText(names[i], cell / 2f, cell + 38f, label)
             canvas.restore()
         }
-        save(sheet, "v96-launcher-masks.png")
+        save(sheet, "v97-launcher-masks.png")
     }
 
     @Test
-    fun splashIsInkOnPaperAndPaperOnInkWithMatchingWindow() {
+    fun splashShowsEmeraldTileOnMintAndEmeraldWithMatchingWindow() {
         val w = 540
         val h = 960
         val sheet = Bitmap.createBitmap(w * 2, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(sheet)
+        val expected = listOf(Color.rgb(0xEE, 0xF5, 0xF1), Color.rgb(0x0F, 0x2A, 0x22))
         listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES).forEachIndexed { i, night ->
             val cfg = Configuration(context.resources.configuration).apply {
                 uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or night
             }
             val themed = context.createConfigurationContext(cfg)
-            val bg = themed.getColor(R.color.splash_paper_v96)
-            // The starting window paints the same paper as the splash: no white flash.
+            val bg = themed.getColor(R.color.splash_bg_v97)
+            assertEquals("splash surface colour (mode $night)", expected[i], bg)
+            // The starting window paints the same colour as the splash: no white flash.
             val starting = ContextThemeWrapper(themed, R.style.Theme_Langhuan_Starting)
             val attrs = starting.obtainStyledAttributes(intArrayOf(android.R.attr.windowBackground))
             val window = attrs.getDrawable(0)
             attrs.recycle()
-            assertTrue("starting window background is the splash paper", window is ColorDrawable && window.color == bg)
+            assertTrue("starting window background is the splash colour", window is ColorDrawable && window.color == bg)
 
             canvas.drawRect((i * w).toFloat(), 0f, ((i + 1) * w).toFloat(), h.toFloat(), Paint().apply { color = bg })
-            val mark = themed.getDrawable(R.drawable.splash_bamboo_v96)!!
+            val mark = themed.getDrawable(R.drawable.splash_glass_v97)!!
             val s = 378 // 288 dp icon canvas at the sheet's scale
             val left = i * w + (w - s) / 2
             val top = (h - s) / 2
             mark.setBounds(left, top, left + s, top + s)
             mark.draw(canvas)
-            var strokes = 0
-            var vermilion = 0
-            val bgLum = lum(bg)
+            var emerald = 0
             for (y in top until top + s step 2) for (x in left until left + s step 2) {
                 val c = sheet.getPixel(x, y)
-                if (Color.red(c) > 170 && Color.green(c) < 130 && Color.blue(c) < 110) vermilion++
-                val d = lum(c) - bgLum
-                // Light: leaves darker than paper. Dark: leaves lighter than ink.
-                if (if (night == Configuration.UI_MODE_NIGHT_NO) d < -120 else d > 120) strokes++
+                if (Color.green(c) > Color.red(c) + 40 && Color.green(c) > Color.blue(c) + 5 && Color.green(c) > 80) emerald++
             }
-            assertTrue("bamboo leaves visible (mode $night): $strokes", strokes > 400)
-            assertTrue("seal dot visible (mode $night): $vermilion", vermilion > 10)
+            assertTrue("emerald icon tile visible (mode $night): $emerald", emerald > 3000)
+            val centre = sheet.getPixel(left + s / 2, top + s / 2)
+            assertTrue("glass books at the centre of the tile (mode $night): $centre", lum(centre) > 150)
         }
-        save(sheet, "v96-splash-light-dark.png")
+        save(sheet, "v97-splash-light-dark.png")
     }
 
     private fun lum(c: Int) = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000

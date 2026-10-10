@@ -12,8 +12,7 @@ import androidx.compose.ui.unit.dp
 /**
  * V96 custom tab glyphs for 书架 / 书城 / 创作 / 我的, drawn on a 24-unit grid with a 1.5 stroke
  * and round caps/joins (SF Symbols "regular" weight at 24 dp). 书架 = books on a shelf, 书城 = a
- * storefront under a scalloped awning, 创作 = a calligraphy brush (毛笔, echoing the ink-bamboo
- * brand), 我的 = a person. Each destination has an outline glyph (unselected) and a filled glyph
+ * storefront under a scalloped awning, 创作 = a calligraphy brush (毛笔), 我的 = a person. Each destination has an outline glyph (unselected) and a filled glyph
  * (selected) with exactly the same silhouette: filled shapes are filled *and* stroked with the same
  * 1.5 line, so the swap reads as ink flooding the outline, never as a size jump. Paint is black;
  * callers tint (Icon does). Source of truth for the shapes: tools/brand/tab_icons_v96.py.

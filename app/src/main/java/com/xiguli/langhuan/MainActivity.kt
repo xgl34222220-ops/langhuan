@@ -159,8 +159,8 @@ private fun StartupDatabaseRoot(
 
 @Composable
 private fun LauncherCheckingScreen() {
-    // Same paper surface and mark as the launch screen, so a slow check continues it seamlessly.
-    Surface(Modifier.fillMaxSize(), color = colorResource(R.color.splash_paper_v96)) {
+    // Same surface and icon tile as the launch screen, so a slow check continues it seamlessly.
+    Surface(Modifier.fillMaxSize(), color = colorResource(R.color.splash_bg_v97)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -170,24 +170,24 @@ private fun LauncherCheckingScreen() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Same 288 dp canvas as the system splash icon, nudged so the sprig stays exactly where
+            // Same 288 dp canvas as the system splash icon, nudged so the icon stays exactly where
             // the launch screen drew it while the progress line appears underneath.
             Spacer(Modifier.height(40.dp))
             Image(
-                painter = painterResource(R.drawable.splash_bamboo_v96),
+                painter = painterResource(R.drawable.splash_glass_v97),
                 contentDescription = null,
                 modifier = Modifier.size(288.dp),
             )
             LinearProgressIndicator(
                 modifier = Modifier.padding(top = 4.dp).width(96.dp).height(2.dp),
-                color = colorResource(R.color.splash_ink_v96),
-                trackColor = colorResource(R.color.splash_ink_v96).copy(alpha = .16f),
+                color = colorResource(R.color.splash_accent_v97),
+                trackColor = colorResource(R.color.splash_accent_v97).copy(alpha = .16f),
             )
             Text(
                 text = "正在检查琅嬛数据…",
                 modifier = Modifier.padding(top = 14.dp),
                 style = MaterialTheme.typography.bodyMedium,
-                color = colorResource(R.color.splash_ink_v96).copy(alpha = .72f),
+                color = colorResource(R.color.splash_ink_v97).copy(alpha = .72f),
             )
         }
     }
