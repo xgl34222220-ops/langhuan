@@ -149,7 +149,8 @@ class ReaderSessionV27Test {
         // The 在写 tab keeps only the user's own works; the imported novel leaves the list.
         rule.onNodeWithText("在写").performClick()
         rule.waitUntil(5000) { rule.onAllNodesWithText("山中来信").fetchSemanticsNodes().isEmpty() }
-        rule.onNodeWithText("夜航记").assertIsDisplayed()
+        // The book can show both in the continue-reading card and its shelf row.
+        rule.onAllNodesWithText("夜航记").onFirst().assertIsDisplayed()
         screenshot("05-library")
         rule.onNodeWithText("全部").performClick()
         rule.onNodeWithText("山中来信").performClick()
