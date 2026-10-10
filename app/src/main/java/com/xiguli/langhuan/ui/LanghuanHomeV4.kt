@@ -1349,7 +1349,7 @@ private fun HomeBookGridItemV4(
             .semantics(mergeDescendants = true) { if (!showTitle) contentDescription = book.title }
             .combinedClickable(
                 interactionSource = interaction,
-                indication = null,
+                indication = LocalIndication.current,
                 onClick = onOpen,
                 onLongClick = onMore,
                 onClickLabel = "打开",
