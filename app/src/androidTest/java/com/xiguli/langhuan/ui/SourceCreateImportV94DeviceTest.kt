@@ -102,7 +102,8 @@ class SourceCreateImportV94DeviceTest {
             rule.waitUntil(10000) { rule.onAllNodesWithText("手工测试书源").fetchSemanticsNodes().isNotEmpty() }
             screenshot("v94-source-list")
 
-            // 导入：paste a Legado array with single-quoted request options and one script-only source.
+            // 导入：paste a Legado array with single-quoted request options and one source whose script calls a Java class
+            // (sandboxed scripts import since V95; Java-class scripts are still skipped).
             rule.onNodeWithText("导入").performClick()
             rule.onNodeWithText("导入书源").assertIsDisplayed()
             val legado = """[
@@ -111,7 +112,7 @@ class SourceCreateImportV94DeviceTest {
                "ruleSearch":{"bookList":"class.item","name":"tag.a@text","bookUrl":"tag.a@href","coverUrl":"tag.img@src@js:result"}},
               {"bookSourceName":"导入乙V94","bookSourceUrl":"${importedIds[1]}","searchUrl":"/s?q={{key}}",
                "ruleSearch":{"bookList":"li","name":"a@text","bookUrl":"a@href"}},
-              {"bookSourceName":"脚本源V94","bookSourceUrl":"https://script-v94.example","searchUrl":"@js:java.ajax('x')",
+              {"bookSourceName":"脚本源V94","bookSourceUrl":"https://script-v94.example","searchUrl":"@js:org.jsoup.Jsoup.connect('https://script-v94.example').get()",
                "ruleSearch":{"bookList":"$.data","name":"$.name"}}
             ]"""
             rule.onNodeWithTag("source-import-text").performTextInput(legado)
@@ -128,7 +129,8 @@ class SourceCreateImportV94DeviceTest {
             screenshot("v94-source-import-report")
             val imported = vm.state.value.sources.first { it.id == importedIds[0] }
             assertEquals("POST", buildSearchRequestV36(imported, "长夜").method)
-            assertEquals("", imported.searchCover)
+            // Since V95 the @js: cover rule is kept and runs in the sandbox.
+            assertEquals("tag.img@src@js:result", imported.searchCover)
             // The dynamic group chip comes from the imported source.
             rule.onAllNodesWithText("测试").fetchSemanticsNodes().isNotEmpty().let(::assertTrue)
             // Back from 书源管理 returns to the store page, which brings the bottom bar back.
