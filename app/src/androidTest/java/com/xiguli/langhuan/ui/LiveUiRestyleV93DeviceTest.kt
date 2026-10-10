@@ -101,14 +101,18 @@ class LiveUiRestyleV93DeviceTest {
                 .putFloat("fraction_${night.id}", 0.4f)
                 .commit()
             var opened = ""
+            // V94: 我的 is a bottom-bar tab; the rule allows one setContent, so the page is state.
+            val page = androidx.compose.runtime.mutableStateOf(0)
             rule.setContent {
                 LanghuanStableTheme {
-                    LanghuanHomeV4(
+                    if (page.value == 0) LanghuanHomeV4(
                         state = LibraryExperienceState(stories = books, libraryLoaded = true),
                         importState = LocalBookImportUiStateV1(),
                         onOpenBook = {}, onImportLocal = {}, onDeleteBook = {}, onCreate = {},
-                        onOpenTavern = {}, onAiSetup = { opened += "ai," }, onRunCenter = { opened += "run," },
-                        onSkills = {}, runCenterActive = false,
+                        onOpenTavern = {},
+                    ) else MineTabV94(
+                        bookCount = books.size, finishedCount = 0, sourceCount = 3, enabledSourceCount = 2,
+                        aiLabel = null, onSources = { opened += "sources," }, onImportLocal = {}, onAiSetup = { opened += "ai," },
                     )
                 }
             }
@@ -120,19 +124,15 @@ class LiveUiRestyleV93DeviceTest {
             assertTrue("cover grid row $tops", tops.max() - tops.min() < 4f)
             screenshot("v93-shelf")
 
-            rule.onNodeWithContentDescription("更多功能").performClick()
-            rule.onNodeWithText("运行中心").assertIsDisplayed()
+            rule.runOnIdle { page.value = 1 }
+            rule.onNodeWithText("书源管理").assertIsDisplayed()
+            rule.onNodeWithText("2/3 已启用").assertIsDisplayed()
             rule.onNodeWithText("AI 与模型").assertIsDisplayed()
             screenshot("v93-profile")
-
-            rule.onNodeWithText("书架设置").performClick()
-            rule.onNodeWithText("封面网格").assertIsDisplayed()
-            val toggle = rule.onAllNodesWithText("封面网格").onFirst().fetchSemanticsNode()
-            assertTrue(toggle.config.getOrNull(SemanticsProperties.Text) != null)
-            screenshot("v93-settings")
-            rule.onNodeWithContentDescription("返回").performClick()
-            rule.onNodeWithContentDescription("返回书架").performClick()
-            rule.waitUntil(5000) { rule.onAllNodesWithText("书架设置").fetchSemanticsNodes().isEmpty() }
+            rule.onNodeWithText("书源管理").performClick()
+            rule.runOnIdle { assertTrue(opened, opened.contains("sources,")) }
+            rule.runOnIdle { page.value = 0 }
+            rule.waitUntil(10000) { rule.onAllNodesWithText("旧桥").fetchSemanticsNodes().isNotEmpty() }
 
             rule.onAllNodesWithContentDescription("书籍菜单").onFirst().performClick()
             rule.onNodeWithText("图书详情").assertIsDisplayed()

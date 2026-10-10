@@ -49,44 +49,48 @@ class LiveUiPolishV91DeviceTest {
         ).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
     }
 
-    private fun home(
-        state: LibraryExperienceState,
-        aiSetup: () -> Unit = {},
-        runCenter: () -> Unit = {},
-        skills: () -> Unit = {},
-    ) {
+    @Test fun shelfOrganizerAndCreateTabHostRunCenterAndSkills() {
+        var opened = ""
+        // V94: AI 与模型、运行中心、写作技能 moved from the shelf's 「更多功能」 page to the 创作/我的 tabs.
+        val page = mutableStateOf(0)
         rule.setContent {
             LanghuanStableTheme {
-                LanghuanHomeV4(
-                    state = state,
-                    importState = LocalBookImportUiStateV1(),
-                    onOpenBook = {}, onImportLocal = {}, onDeleteBook = {}, onCreate = {},
-                    onOpenTavern = {}, onAiSetup = aiSetup, onRunCenter = runCenter, onSkills = skills,
-                )
+                when (page.value) {
+                    0 -> LanghuanHomeV4(
+                        state = LibraryExperienceState(stories = listOf(book, other), libraryLoaded = true),
+                        importState = LocalBookImportUiStateV1(),
+                        onOpenBook = {}, onImportLocal = {}, onDeleteBook = {}, onCreate = {}, onOpenTavern = {},
+                    )
+                    1 -> CreateTabV94(
+                        books = listOf(book, other), libraryLoaded = true, aiReady = false, runActive = false,
+                        onNewAiBook = {}, onNewBlankBook = { _, _ -> }, onContinueWriting = { opened += "write:$it," },
+                        onRunCenter = { opened += "run," }, onSkills = { opened += "skills," },
+                    )
+                    else -> MineTabV94(
+                        bookCount = 2, finishedCount = 0, sourceCount = 0, enabledSourceCount = 0, aiLabel = null,
+                        onSources = { opened += "sources," }, onImportLocal = {}, onAiSetup = { opened += "ai," },
+                    )
+                }
             }
         }
-    }
-
-    @Test fun shelfMoreMenuRestoresAiRunCenterAndSkills() {
-        var opened = ""
-        home(
-            LibraryExperienceState(stories = listOf(book, other), libraryLoaded = true),
-            aiSetup = { opened += "ai," }, runCenter = { opened += "run," }, skills = { opened += "skills," },
-        )
         rule.waitUntil(10000) { rule.onAllNodesWithText("山中来信").fetchSemanticsNodes().isNotEmpty() }
         screenshot("v91-home-shelf")
         rule.onNodeWithContentDescription("整理书架").performClick()
         rule.onNodeWithText("批量整理").assertIsDisplayed()
         screenshot("v91-home-organizer")
-        rule.onNodeWithContentDescription("整理书架").performClick()
-        rule.onNodeWithContentDescription("更多功能").performClick()
+        rule.runOnIdle { page.value = 1 }
         rule.onNodeWithText("运行中心").assertIsDisplayed()
-        rule.onNodeWithText("AI 与模型").assertIsDisplayed()
         rule.onNodeWithText("写作技能").assertIsDisplayed()
+        // Only the user's own work is listed under 在写的书; the imported novel is not.
+        rule.onNodeWithText("夜航记").assertIsDisplayed()
+        assertTrue(rule.onAllNodesWithText("山中来信").fetchSemanticsNodes().isEmpty())
         screenshot("v91-home-more")
         rule.onNodeWithText("运行中心").performClick()
+        rule.onNodeWithText("夜航记").performClick()
+        rule.runOnIdle { page.value = 2 }
+        rule.onNodeWithText("AI 与模型").performClick()
         rule.waitForIdle()
-        assertTrue(opened, opened.contains("run,"))
+        assertTrue(opened, opened.contains("run,") && opened.contains("write:v91-night,") && opened.contains("ai,"))
     }
 
     @Test fun shelfShowsPlaceholdersBeforeTheFirstLoadAndOneImportActionWhenEmpty() {
@@ -97,7 +101,7 @@ class LiveUiPolishV91DeviceTest {
                     state = state.value,
                     importState = LocalBookImportUiStateV1(),
                     onOpenBook = {}, onImportLocal = {}, onDeleteBook = {}, onCreate = {},
-                    onOpenTavern = {}, onAiSetup = {}, onRunCenter = {}, onSkills = {},
+                    onOpenTavern = {},
                 )
             }
         }

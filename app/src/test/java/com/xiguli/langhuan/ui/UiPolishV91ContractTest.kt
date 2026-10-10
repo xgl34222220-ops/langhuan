@@ -17,20 +17,19 @@ class UiPolishV91ContractTest {
         File(root, "src/main/java/com/xiguli/langhuan/$path").readText()
 
     @Test
-    fun shelfMoreMenuWiresEveryRootCallback() {
+    fun bottomTabsWireEveryFormerMoreMenuCallback() {
         val home = source("ui/LanghuanHomeV4.kt")
-        // The three callbacks used to be accepted and silently dropped.
         assertFalse(home.contains("@Suppress(\"UNUSED_PARAMETER\")"))
-        assertTrue(home.contains("contentDescription = \"更多功能\""))
-        // V93: 「更多功能」 opens the 「我的」 page; its rows close it and call the root callbacks.
-        assertTrue(home.contains("onAiSetup = { moreOpen = false; onAiSetup() }"))
-        assertTrue(home.contains("onRunCenter = { moreOpen = false; onRunCenter() }"))
-        assertTrue(home.contains("onSkills = { moreOpen = false; onSkills() }"))
-        assertTrue(home.contains("HomeMinePageV93("))
-        // Existing device tests open the online store through this description.
-        assertTrue(home.contains("contentDescription = \"在线书城\""))
+        // V94: 「更多功能」 and the 我的 overlay are gone from the shelf; 我的 is a bottom tab.
+        assertFalse(home.contains("contentDescription = \"更多功能\""))
+        assertFalse(home.contains("HomeMinePageV93("))
         val router = source("ui/LanghuanRootV4.kt")
         assertTrue(router.contains("onCancelImport = localImportVm::cancelImport"))
+        assertTrue(router.contains("onRunCenter = {\n                            returnAfterRunCenter = RootRouteV4.CREATE_HUB"))
+        assertTrue(router.contains("onSkills = { openSkills(RootRouteV4.CREATE_HUB) }"))
+        assertTrue(router.contains("onAiSetup = { openAiSetup(RootRouteV4.MINE) }"))
+        assertTrue(router.contains("onNewBlankBook = libraryVm::createBlankStory"))
+        assertTrue(router.contains("LanghuanBottomBarV94("))
     }
 
     @Test

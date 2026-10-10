@@ -137,9 +137,7 @@ class ReaderSessionV27Test {
                     state = LibraryExperienceState(stories = listOf(book, other), libraryLoaded = true),
                     importState = LocalBookImportUiStateV1(),
                     onOpenBook = { opened += "open:$it," }, onImportLocal = {}, onDeleteBook = {},
-                    onCreate = {}, onOpenTavern = {}, onAiSetup = { opened += "ai," },
-                    onRunCenter = {}, onSkills = {}, onOnline = { opened += "online," },
-                    runCenterActive = false,
+                    onCreate = {}, onOpenTavern = {}, onOnline = { opened += "online," },
                 )
             }
         }
@@ -155,12 +153,9 @@ class ReaderSessionV27Test {
         rule.onNodeWithText("全部").performClick()
         rule.onNodeWithText("山中来信").performClick()
         rule.runOnIdle { assertTrue(opened, opened.contains("open:other,")) }
-        rule.onNodeWithContentDescription("在线书城").performClick()
-        rule.runOnIdle { assertTrue(opened, opened.contains("online,")) }
-        rule.onNodeWithContentDescription("更多功能").performClick()
-        rule.onNodeWithText("AI 与模型").assertIsDisplayed()
+        // V94: 在线书城 and 我的 are bottom-bar tabs owned by the root, not shelf header buttons.
+        assertTrue(rule.onAllNodesWithContentDescription("更多功能").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithContentDescription("整理书架").assertIsDisplayed()
         screenshot("07-settings")
-        rule.onNodeWithText("AI 与模型").performClick()
-        rule.runOnIdle { assertTrue(opened, opened.contains("ai,")) }
     }
 }

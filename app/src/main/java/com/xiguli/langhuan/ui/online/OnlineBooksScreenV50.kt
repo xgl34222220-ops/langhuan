@@ -95,25 +95,6 @@ private enum class OnlineDiscoveryGroupV50(
 }
 
 
-private data class OnlinePrototypeCategoryV50(
-    val label: String,
-    val ranking: Boolean = false,
-)
-
-
-private val OnlinePrototypeCategoriesV50 = listOf(
-    OnlinePrototypeCategoryV50("悬疑"),
-    OnlinePrototypeCategoryV50("仙侠"),
-    OnlinePrototypeCategoryV50("武侠"),
-    OnlinePrototypeCategoryV50("青春"),
-    OnlinePrototypeCategoryV50("月票榜", ranking = true),
-    OnlinePrototypeCategoryV50("完结榜", ranking = true),
-    OnlinePrototypeCategoryV50("科幻"),
-    OnlinePrototypeCategoryV50("古言"),
-    OnlinePrototypeCategoryV50("历史"),
-)
-
-
 /* -------------------------------------------------------------------------- */
 /*                                  Screen                                    */
 /* -------------------------------------------------------------------------- */
@@ -254,22 +235,17 @@ internal fun OnlineBooksScreenV50(
                 }
             }
 
-            /* Discovery entry */
-            item(key = "discovery-entry") {
-                OnlineDiscoveryEntryV50(
-                    selected = discoveryGroup,
-                    onSelect = { discoveryGroup = it },
-                )
-            }
-
-            /* Categories */
-            item(key = "discovery-categories") {
-                OnlineCategorySectionV50(
-                    discoveries = discoveries,
-                    selected = state.discoverySection,
-                    group = discoveryGroup,
-                    onDiscover = onDiscover,
-                )
+            /* Discovery: only real categories from enabled sources (V94; the old fixed chips did nothing). */
+            if (discoveries.isNotEmpty()) {
+                item(key = "discovery-categories") {
+                    OnlineCategorySectionV50(
+                        discoveries = discoveries,
+                        selected = state.discoverySection,
+                        group = discoveryGroup,
+                        onGroup = { discoveryGroup = it },
+                        onDiscover = onDiscover,
+                    )
+                }
             }
 
             /* Search / discovery status */
@@ -430,7 +406,7 @@ private fun OnlineStoreHeaderV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, vertical = t.space3),
+            .then(if (embedded) Modifier.height(52.dp).padding(start = 20.dp, end = t.space2) else Modifier.padding(horizontal = t.space4, vertical = t.space3)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!embedded) {
@@ -441,20 +417,15 @@ private fun OnlineStoreHeaderV50(
             )
             Spacer(Modifier.width(t.space3))
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "在线书城",
-                style = MaterialTheme.typography.headlineLarge,
-                color = t.foreground,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "从已启用书源发现新的故事",
-                modifier = Modifier.padding(top = t.space1),
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-            )
-        }
+        Text(
+            // V94: as a bottom-bar tab the store uses the same small bold title as 书架.
+            text = if (embedded) "书城" else "在线书城",
+            modifier = Modifier.weight(1f),
+            style = if (embedded) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,
+            color = t.foreground,
+            fontWeight = if (embedded) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1,
+        )
         OnlineTextButtonV50(
             icon = Icons.Rounded.Source,
             text = "书源管理",
@@ -635,77 +606,6 @@ private fun OnlineRecentSearchesV50(
 /*                            Discovery Entry                                 */
 /* -------------------------------------------------------------------------- */
 
-@Composable
-private fun OnlineDiscoveryEntryV50(
-    selected: OnlineDiscoveryGroupV50,
-    onSelect: (OnlineDiscoveryGroupV50) -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "发现",
-            style = MaterialTheme.typography.titleMedium,
-            color = t.foreground,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(t.space2))
-        Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
-            OnlineDiscoveryGroupV50.entries.forEach { group ->
-                OnlineDiscoveryCardV50(
-                    group = group,
-                    selected = group == selected,
-                    onClick = { onSelect(group) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RowScope.OnlineDiscoveryCardV50(
-    group: OnlineDiscoveryGroupV50,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    val icon = when (group) {
-        OnlineDiscoveryGroupV50.ALL -> Icons.Rounded.AutoStories
-        OnlineDiscoveryGroupV50.RANKING -> Icons.Rounded.TrendingUp
-        OnlineDiscoveryGroupV50.CATEGORY -> Icons.Rounded.ManageSearch
-    }
-    Column(
-        modifier = Modifier
-            .weight(1f)
-            .background(
-                color = if (selected) t.primary else t.card,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
-            .padding(t.space3),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (selected) t.card else t.primary,
-        )
-        Spacer(Modifier.height(t.space1))
-        Text(
-            text = group.label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) t.card else t.foreground,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-
 /* -------------------------------------------------------------------------- */
 /*                              Categories                                    */
 /* -------------------------------------------------------------------------- */
@@ -715,94 +615,64 @@ private fun OnlineCategorySectionV50(
     discoveries: List<SourceDiscoveryV41>,
     selected: SourceDiscoveryV41?,
     group: OnlineDiscoveryGroupV50,
+    onGroup: (OnlineDiscoveryGroupV50) -> Unit,
     onDiscover: (SourceDiscoveryV41) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val prototypeCategories = OnlinePrototypeCategoriesV50.filter {
+    val hasRanking = discoveries.any { onlineIsRankingLabelV50(it.label) }
+    val hasCategory = discoveries.any { !onlineIsRankingLabelV50(it.label) }
+    val filtered = discoveries.filter {
         when (group) {
             OnlineDiscoveryGroupV50.ALL -> true
-            OnlineDiscoveryGroupV50.RANKING -> it.ranking
-            OnlineDiscoveryGroupV50.CATEGORY -> !it.ranking
+            OnlineDiscoveryGroupV50.RANKING -> onlineIsRankingLabelV50(it.label)
+            OnlineDiscoveryGroupV50.CATEGORY -> !onlineIsRankingLabelV50(it.label)
         }
-    }
+    }.ifEmpty { discoveries }
+    // Two sources can both call a category 「玄幻」: keep both, name the source on the second.
+    val duplicateLabels = filtered.groupBy { it.label }.filterValues { it.size > 1 }.keys
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(t.space4),
         ) {
             Text(
-                text = when (group) {
-                    OnlineDiscoveryGroupV50.ALL -> "分类"
-                    OnlineDiscoveryGroupV50.RANKING -> "排行榜"
-                    OnlineDiscoveryGroupV50.CATEGORY -> "分类"
-                },
+                text = "发现",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
                 color = t.foreground,
                 fontWeight = FontWeight.SemiBold,
             )
+            if (hasRanking && hasCategory) {
+                OnlineDiscoveryGroupV50.entries.forEach { item ->
+                    Text(
+                        text = item.label,
+                        modifier = Modifier
+                            .clickable { onGroup(item) }
+                            .padding(vertical = t.space1),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (item == group) t.primary else t.mutedForeground,
+                        fontWeight = if (item == group) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(t.space2))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(t.space2),
         ) {
             items(
-                items = prototypeCategories,
-                key = { it.label },
-            ) { category ->
-                val matched = onlineFindDiscoveryV50(discoveries, category)
+                items = filtered,
+                key = { "${it.sourceId}::${it.template}" },
+            ) { discovery ->
+                val label = if (discovery.label in duplicateLabels) {
+                    "${discovery.label}·${discovery.sourceId.substringAfter("://").substringBefore('/').removePrefix("www.").take(10)}"
+                } else discovery.label
                 OnlineChipV50(
-                    text = category.label,
-                    selected = selected?.label == category.label,
-                    onClick = {
-                        val target = matched
-                        if (target != null) onDiscover(target)
-                    },
+                    text = label,
+                    selected = selected?.sourceId == discovery.sourceId && selected.template == discovery.template,
+                    onClick = { onDiscover(discovery) },
                 )
-            }
-        }
-        if (discoveries.isNotEmpty()) {
-            Spacer(Modifier.height(t.space2))
-            Text(
-                text = "已启用书源的发现入口",
-                style = MaterialTheme.typography.labelMedium,
-                color = t.mutedForeground,
-            )
-            Spacer(Modifier.height(t.space1))
-            discoveries.forEach { discovery ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = { onDiscover(discovery) })
-                        .padding(vertical = t.space1),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = if (onlineIsRankingLabelV50(discovery.label)) {
-                            Icons.Rounded.TrendingUp
-                        } else {
-                            Icons.Rounded.FolderOpen
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = t.mutedForeground,
-                    )
-                    Spacer(Modifier.width(t.space2))
-                    Text(
-                        text = discovery.label,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = t.foreground,
-                    )
-                    if (selected?.label == discovery.label) {
-                        Icon(
-                            imageVector = Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = t.primary,
-                        )
-                    }
-                }
             }
         }
     }
@@ -1729,13 +1599,6 @@ private fun OnlineSecondaryButtonV50(
 /* -------------------------------------------------------------------------- */
 /*                                Helpers                                     */
 /* -------------------------------------------------------------------------- */
-
-private fun onlineFindDiscoveryV50(
-    discoveries: List<SourceDiscoveryV41>,
-    category: OnlinePrototypeCategoryV50,
-): SourceDiscoveryV41? {
-    return discoveries.firstOrNull { it.label == category.label }
-}
 
 private fun onlineIsRankingLabelV50(label: String): Boolean {
     return label.contains("榜") || label.contains("排行")

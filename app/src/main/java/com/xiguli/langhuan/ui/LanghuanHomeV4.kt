@@ -229,18 +229,17 @@ fun LanghuanHomeV4(
     onDeleteBook: (String) -> Unit,
     onCreate: () -> Unit,
     onOpenTavern: (String) -> Unit,
-    onAiSetup: () -> Unit,
-    onRunCenter: () -> Unit,
-    onSkills: () -> Unit,
     onOnline: () -> Unit = {},
     onRenameBook: (String, String) -> Unit = { _, _ -> },
     onCancelImport: () -> Unit = {},
-    /** Test/preview override; null observes the app's chapter-run runtime (if it has started). */
-    runCenterActive: Boolean? = null,
+    /**
+     * V94: the shelf is the first bottom-bar tab. The bar owns the navigation-bar inset, so the
+     * list does not add it again. AI 与模型、运行中心、写作技能 moved to the 创作/我的 tabs.
+     */
+    insideTabs: Boolean = false,
 ) {
     val context = LocalContext.current
     val t = LocalLanghuanUiTokens.current
-    val runActive = runCenterActive ?: rememberRunCenterActiveV92()
 
     val shelfPrefs = remember(context) {
         context.getSharedPreferences(HOME_SHELF_PREFS_V4, Context.MODE_PRIVATE)
@@ -271,9 +270,6 @@ fun LanghuanHomeV4(
     }
     var shelfRevision by rememberSaveable { mutableIntStateOf(0) }
     var addOpen by remember { mutableStateOf(false) }
-    // V93: 「更多功能」 opens the flat 「我的」 page; its 「书架设置」 row opens a settings list.
-    var moreOpen by rememberSaveable { mutableStateOf(false) }
-    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var shelfManagerOpen by remember { mutableStateOf(false) }
     var batchOrganizerOpen by remember { mutableStateOf(false) }
     var actionBook by remember { mutableStateOf<ReaderBookUi?>(null) }
@@ -375,12 +371,10 @@ fun LanghuanHomeV4(
     }
     val libraryEmpty = state.libraryLoaded && availableBooks.isEmpty()
     // The shelf is edge-to-edge: keep the last row clear of the gesture/navigation bar.
-    val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val navigationBottom = if (insideTabs) 0.dp else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
     BackHandler(enabled = organizeOpen && !searchOpen) { organizeOpen = false }
-    BackHandler(enabled = moreOpen && !settingsOpen) { moreOpen = false }
-    BackHandler(enabled = settingsOpen) { settingsOpen = false }
 
     Box(modifier = Modifier.fillMaxSize().background(t.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -399,9 +393,6 @@ fun LanghuanHomeV4(
                     },
                     onOrganize = { organizeOpen = !organizeOpen },
                     onAdd = { addOpen = true },
-                    onOnline = onOnline,
-                    onMore = { moreOpen = true },
-                    runActive = runActive,
                 )
 
                 AnimatedVisibility(
@@ -556,48 +547,6 @@ fun LanghuanHomeV4(
             }
         }
 
-        AnimatedVisibility(
-            visible = moreOpen,
-            enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { it / 5 },
-            exit = fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { it / 5 },
-        ) {
-            HomeMinePageV93(
-                bookCount = if (loadingShelf) null else availableBooks.size,
-                finishedCount = if (loadingShelf) null else finishedBooks.size,
-                runActive = runActive,
-                onBack = { moreOpen = false },
-                onOnline = { moreOpen = false; onOnline() },
-                onImport = { moreOpen = false; onImportLocal() },
-                onShelfManager = { moreOpen = false; shelfManagerOpen = true },
-                onBatch = { moreOpen = false; batchOrganizerOpen = true },
-                onCreate = { moreOpen = false; onCreate() },
-                onAiSetup = { moreOpen = false; onAiSetup() },
-                onRunCenter = { moreOpen = false; onRunCenter() },
-                onSkills = { moreOpen = false; onSkills() },
-                onSettings = { settingsOpen = true },
-            )
-        }
-
-        AnimatedVisibility(
-            visible = settingsOpen,
-            enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { it / 5 },
-            exit = fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { it / 5 },
-        ) {
-            HomeShelfSettingsPageV93(
-                sort = sort,
-                layout = layout,
-                onSort = {
-                    sortKey = it.key
-                    shelfPrefs.edit().putString(HOME_SORT_V4, it.key).apply()
-                },
-                onLayout = {
-                    layoutKey = it.key
-                    shelfPrefs.edit().putString(HOME_LAYOUT_V4, it.key).apply()
-                },
-                onBack = { settingsOpen = false },
-            )
-        }
-
         if (importState.busy) {
             HomeImportOverlayV4(
                 currentFileName = importState.currentFileName,
@@ -703,9 +652,6 @@ private fun HomeShelfHeaderV4(
     onSearch: () -> Unit,
     onOrganize: () -> Unit,
     onAdd: () -> Unit,
-    onOnline: () -> Unit,
-    onMore: () -> Unit,
-    runActive: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
     // V93: a small title on the left and plain line icons on the right, like the reference
@@ -737,23 +683,9 @@ private fun HomeShelfHeaderV4(
         )
         Spacer(Modifier.width(HOME_TOOLBAR_GAP_V91))
         HomeToolbarButtonV4(
-            icon = Icons.Outlined.Explore,
-            contentDescription = "在线书城",
-            onClick = onOnline,
-        )
-        Spacer(Modifier.width(HOME_TOOLBAR_GAP_V91))
-        HomeToolbarButtonV4(
             icon = Icons.Outlined.Add,
             contentDescription = "添加书籍",
             onClick = onAdd,
-        )
-        Spacer(Modifier.width(HOME_TOOLBAR_GAP_V91))
-        // AI 服务、运行中心和写作技能在「我的」页里：书架顶部只保留一层图标按钮。
-        HomeToolbarButtonV4(
-            icon = Icons.Outlined.PersonOutline,
-            contentDescription = "更多功能",
-            badge = runActive,
-            onClick = onMore,
         )
     }
 }
@@ -843,7 +775,7 @@ private fun HomeRunBadgeDotV92(modifier: Modifier = Modifier) {
  * start (keeping cold start side-effect free) and maps its state on a background dispatcher.
  */
 @Composable
-private fun rememberRunCenterActiveV92(): Boolean {
+internal fun rememberRunCenterActiveV92(): Boolean {
     val context = LocalContext.current
     val runtime = remember(context) {
         (context.applicationContext as? com.xiguli.langhuan.LanghuanApplication)?.chapterRunRuntimeIfStarted
@@ -2558,180 +2490,5 @@ private fun HomeBookGridSkeletonV4() {
         LanghuanSkeletonV31(Modifier.fillMaxWidth(0.8f).height(14.dp))
         Spacer(Modifier.height(t.space1))
         LanghuanSkeletonV31(Modifier.fillMaxWidth(0.5f).height(11.dp))
-    }
-}
-
-
-/* -------------------------------------------------------------------------- */
-/*                         V93 · 我的 / 书架设置                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * 「我的」: avatar + name, then flat line-icon rows grouped by whitespace (no cards). Hosts the
- * entries that used to sit in the 「更多功能」 dropdown (AI 与模型、运行中心、写作技能) plus the
- * shelf's own tools, and the 「书架设置」 list.
- */
-@Composable
-private fun HomeMinePageV93(
-    bookCount: Int?,
-    finishedCount: Int?,
-    runActive: Boolean,
-    onBack: () -> Unit,
-    onOnline: () -> Unit,
-    onImport: () -> Unit,
-    onShelfManager: () -> Unit,
-    onBatch: () -> Unit,
-    onCreate: () -> Unit,
-    onAiSetup: () -> Unit,
-    onRunCenter: () -> Unit,
-    onSkills: () -> Unit,
-    onSettings: () -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(t.background)
-            // Swallow taps on blank areas so nothing reaches the shelf underneath.
-            .pointerInput(Unit) { detectTapGestures { } }
-            .statusBarsPadding(),
-    ) {
-        FlatTopBarV93(title = "", onBack = onBack, backDescription = "返回书架")
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = HOME_PAGE_GUTTER_V93)
-                .navigationBarsPadding(),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = t.space2),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(t.foreground.copy(alpha = 0.06f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.PersonOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(30.dp),
-                        tint = t.mutedForeground,
-                    )
-                }
-                Spacer(Modifier.width(t.space4))
-                Column {
-                    Text(
-                        text = "琅嬛读者",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = t.foreground,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = if (bookCount == null) "正在载入书架…"
-                        else "书架 $bookCount 本 · 已读完 ${finishedCount ?: 0} 本",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = t.mutedForeground,
-                    )
-                }
-            }
-            Spacer(Modifier.height(t.space3))
-            FlatListRowV93(title = "在线书城", icon = Icons.Outlined.Explore, onClick = onOnline)
-            FlatListRowV93(title = "导入本地书籍", icon = Icons.Outlined.FileOpen, value = "TXT · EPUB", onClick = onImport)
-            FlatListRowV93(title = "书架管理", icon = Icons.Outlined.FolderOpen, onClick = onShelfManager)
-            FlatListRowV93(title = "批量整理", icon = Icons.Outlined.Checklist, onClick = onBatch)
-            Spacer(Modifier.height(t.space4))
-            FlatListRowV93(title = "开始创作", icon = Icons.Outlined.AutoAwesome, onClick = onCreate)
-            FlatListRowV93(
-                title = "运行中心",
-                icon = Icons.Outlined.Insights,
-                subtitle = if (runActive) HOME_RUN_ACTIVE_LABEL_V92 else "查看 AI 写作任务与日志",
-                subtitleAccent = runActive,
-                badge = runActive,
-                onClick = onRunCenter,
-            )
-            FlatListRowV93(title = "写作技能", icon = Icons.Outlined.Psychology, subtitle = "管理创作 Skill", onClick = onSkills)
-            Spacer(Modifier.height(t.space4))
-            FlatListRowV93(title = "AI 与模型", icon = Icons.Outlined.SettingsSuggest, subtitle = "服务商、模型与任务路由", onClick = onAiSetup)
-            FlatListRowV93(title = "书架设置", icon = Icons.Outlined.Settings, subtitle = "排序与显示方式", onClick = onSettings)
-            Spacer(Modifier.height(t.space6))
-        }
-    }
-}
-
-/** 「书架设置」: flat settings list — title + grey subtitle, switch or check on the right. */
-@Composable
-private fun HomeShelfSettingsPageV93(
-    sort: LuoShelfSortV33,
-    layout: HomeLayoutV4,
-    onSort: (LuoShelfSortV33) -> Unit,
-    onLayout: (HomeLayoutV4) -> Unit,
-    onBack: () -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(t.background)
-            .pointerInput(Unit) { detectTapGestures { } }
-            .statusBarsPadding(),
-    ) {
-        FlatTopBarV93(title = "书架设置", onBack = onBack)
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = HOME_PAGE_GUTTER_V93)
-                .navigationBarsPadding(),
-        ) {
-            FlatSectionLabelV93("显示")
-            FlatSwitchRowV93(
-                title = "封面网格",
-                subtitle = "以三列封面展示书架；关闭后显示为列表",
-                checked = layout == HomeLayoutV4.GRID,
-                onCheckedChange = { onLayout(if (it) HomeLayoutV4.GRID else HomeLayoutV4.LIST) },
-            )
-            FlatSectionLabelV93("排序方式")
-            LuoShelfSortV33.entries.forEach { item ->
-                val selected = sort == item
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 52.dp)
-                        .selectable(selected = selected, role = Role.RadioButton, onClick = { onSort(item) }),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = item.label,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = t.foreground,
-                    )
-                    if (selected) {
-                        Icon(
-                            imageVector = Icons.Outlined.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = t.primary,
-                        )
-                    }
-                }
-            }
-            Text(
-                text = when (sort) {
-                    LuoShelfSortV33.RECENT_READ -> "最近打开的书排在最前。"
-                    LuoShelfSortV33.UPDATED -> "最近更新或导入的书排在最前。"
-                    LuoShelfSortV33.TITLE -> "按书名排列。"
-                    LuoShelfSortV33.PROGRESS -> "读完的书在前，其次按阅读进度，未读的书排在最后。"
-                },
-                modifier = Modifier.padding(top = t.space2),
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-            )
-            Spacer(Modifier.height(t.space6))
-        }
     }
 }

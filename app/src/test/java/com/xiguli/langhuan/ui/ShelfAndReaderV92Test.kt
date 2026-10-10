@@ -103,7 +103,9 @@ class ShelfAndReaderV92Test {
 
     @Test fun liveScreensAreWired() {
         val home = source("ui/LanghuanHomeV4.kt")
-        assertTrue(home.contains("badge = runActive"))
+        // V94: the run badge sits on the 创作 bottom tab; the shelf still owns the observer.
+        assertTrue(source("ui/LanghuanRootV4.kt").contains("badge = runActive"))
+        assertTrue(home.contains("internal fun rememberRunCenterActiveV92()"))
         assertTrue(home.contains("collectAsStateWithLifecycle(initialValue = false)"))
         assertTrue(home.contains(".flowOn(Dispatchers.Default)"))
         assertTrue(home.contains("chapterRunRuntimeIfStarted"))

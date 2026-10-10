@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
@@ -61,15 +62,14 @@ class LiveUiPolishV92DeviceTest {
         ).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
     }
 
-    private fun home(state: LibraryExperienceState, runActive: Boolean = false) {
+    private fun home(state: LibraryExperienceState) {
         rule.setContent {
             LanghuanStableTheme {
                 LanghuanHomeV4(
                     state = state,
                     importState = LocalBookImportUiStateV1(),
                     onOpenBook = {}, onImportLocal = {}, onDeleteBook = {}, onCreate = {},
-                    onOpenTavern = {}, onAiSetup = {}, onRunCenter = {}, onSkills = {},
-                    runCenterActive = runActive,
+                    onOpenTavern = {},
                 )
             }
         }
@@ -100,15 +100,26 @@ class LiveUiPolishV92DeviceTest {
         }
     }
 
-    @Test fun moreButtonShowsARunBadgeWhileATaskIsActive() {
-        home(LibraryExperienceState(stories = listOf(night, mountain), libraryLoaded = true), runActive = true)
-        rule.waitUntil(10000) { rule.onAllNodesWithText("山中来信").fetchSemanticsNodes().isNotEmpty() }
-        val more = rule.onNodeWithContentDescription("更多功能").fetchSemanticsNode()
-        assertEquals(HOME_RUN_ACTIVE_LABEL_V92, more.config.getOrNull(SemanticsProperties.StateDescription))
-        screenshot("v92-home-run-badge")
-        rule.onNodeWithContentDescription("更多功能").performClick()
+    @Test fun createTabShowsARunBadgeWhileATaskIsActive() {
+        // V94: the run badge moved from the shelf's 「更多功能」 button to the 创作 bottom tab.
+        rule.setContent {
+            LanghuanStableTheme {
+                androidx.compose.foundation.layout.Column {
+                    CreateTabV94(
+                        books = listOf(night, mountain), libraryLoaded = true, aiReady = true, runActive = true,
+                        onNewAiBook = {}, onNewBlankBook = { _, _ -> }, onContinueWriting = {}, onRunCenter = {}, onSkills = {},
+                        modifier = androidx.compose.ui.Modifier.weight(1f),
+                    )
+                    com.xiguli.langhuan.ui.design.LanghuanBottomBarV94(
+                        tabs = rootBottomTabsV94(runActive = true), selectedKey = "CREATE_HUB", onSelect = {},
+                    )
+                }
+            }
+        }
+        val tab = rule.onNodeWithTag("bottom-tab-CREATE_HUB").fetchSemanticsNode()
+        assertEquals(HOME_RUN_ACTIVE_LABEL_V92, tab.config.getOrNull(SemanticsProperties.StateDescription))
         rule.onNodeWithText(HOME_RUN_ACTIVE_LABEL_V92).assertIsDisplayed()
-        screenshot("v92-home-run-menu")
+        screenshot("v92-home-run-badge")
     }
 
     @Test fun tabCountsStayHiddenUntilTheLibraryHasLoaded() {
@@ -118,8 +129,7 @@ class LiveUiPolishV92DeviceTest {
                 LanghuanHomeV4(
                     state = state.value, importState = LocalBookImportUiStateV1(),
                     onOpenBook = {}, onImportLocal = {}, onDeleteBook = {}, onCreate = {},
-                    onOpenTavern = {}, onAiSetup = {}, onRunCenter = {}, onSkills = {},
-                    runCenterActive = false,
+                    onOpenTavern = {},
                 )
             }
         }

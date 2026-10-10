@@ -24,6 +24,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,14 +56,17 @@ private enum class RootRouteV4 {
     TAVERN,
     WRITING,
     EDITOR,
-    AGENT,
-    INTELLIGENCE,
     RUN_CENTER,
     AI_SETUP,
-    COVER_STUDIO,
     SKILLS,
     ONLINE,
+    /** V94 bottom-bar tabs: 创作 and 我的 (书架 = SHELF, 书城 = ONLINE). */
+    CREATE_HUB,
+    MINE,
 }
+
+/** V94: the four bottom-bar destinations, in bar order. */
+private val ROOT_TABS_V94 = listOf(RootRouteV4.SHELF, RootRouteV4.ONLINE, RootRouteV4.CREATE_HUB, RootRouteV4.MINE)
 
 /** Run Center checkpoint polling while the screen is visible. */
 internal const val RUN_CENTER_REFRESH_INTERVAL_MS_V85 = 3_000L
@@ -75,8 +86,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
     // an unsaved source draft. Restoring the online route is also safe with a fresh ViewModel.
     // Other transient tools still need more than a saved route to reconstruct their editors.
     var route by rememberSaveable(stateSaver = Saver<RootRouteV4, String>(
-        save = { when (it) { RootRouteV4.BOOK -> "book"; RootRouteV4.ONLINE -> "online"; else -> "shelf" } },
-        restore = { when (it) { "book" -> RootRouteV4.BOOK; "online" -> RootRouteV4.ONLINE; else -> RootRouteV4.SHELF } },
+        save = { when (it) { RootRouteV4.BOOK -> "book"; RootRouteV4.ONLINE -> "online"; RootRouteV4.CREATE_HUB -> "create"; RootRouteV4.MINE -> "mine"; else -> "shelf" } },
+        restore = { when (it) { "book" -> RootRouteV4.BOOK; "online" -> RootRouteV4.ONLINE; "create" -> RootRouteV4.CREATE_HUB; "mine" -> RootRouteV4.MINE; else -> RootRouteV4.SHELF } },
     )) { mutableStateOf(RootRouteV4.SHELF) }
     LaunchedEffect(route, libraryState.libraryLoaded, libraryState.openedBook) {
         // After process death the ViewModel may no longer hold the book. Return to a usable
@@ -86,16 +97,20 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
         }
     }
     com.xiguli.langhuan.ui.design.PaperReaderSystemBarsV44(
-        lightBackground = route in setOf(RootRouteV4.SHELF, RootRouteV4.ONLINE) || !androidx.compose.foundation.isSystemInDarkTheme(),
+        lightBackground = route in ROOT_TABS_V94 || !androidx.compose.foundation.isSystemInDarkTheme(),
         readerActive = route == RootRouteV4.BOOK,
     )
     var returnAfterAiSetup by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterSkills by remember { mutableStateOf(RootRouteV4.SHELF) }
     var returnAfterEditor by remember { mutableStateOf(RootRouteV4.BOOK) }
+    // V94: pages opened from a tab return to that tab instead of always falling back to 书架.
+    var returnAfterRunCenter by remember { mutableStateOf<RootRouteV4?>(null) }
+    var returnAfterWriting by remember { mutableStateOf<RootRouteV4?>(null) }
+    var onlineRootLevel by remember { mutableStateOf(true) }
+    var onlineManageRequest by remember { mutableIntStateOf(0) }
     var writingStoryId by remember { mutableStateOf<String?>(null) }
     var editorStoryId by remember { mutableStateOf<String?>(null) }
     var editorChapter by remember { mutableStateOf<Int?>(null) }
-    var coverStoryId by remember { mutableStateOf<String?>(null) }
     var openBookOnInfo by remember { mutableStateOf(false) }
     var tavernStoryId by remember { mutableStateOf<String?>(null) }
     var pendingBookId by remember { mutableStateOf<String?>(null) }
@@ -104,9 +119,6 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
 
     val localBookLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) localImportVm.importUri(uri)
-    }
-    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) studioVm.exportProjectBackup(uri)
     }
     var pendingExport by remember { mutableStateOf<Pair<String, com.xiguli.langhuan.data.ExportFormat>?>(null) }
     val exportLaunchers = com.xiguli.langhuan.data.ExportFormat.entries.associateWith { format ->
@@ -149,9 +161,6 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
         editorChapter = 1
         returnAfterEditor = RootRouteV4.SHELF
         route = RootRouteV4.EDITOR
-    }
-    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) studioVm.importDocument(uri)
     }
 
     fun requestBook(id: String, target: RootRouteV4, showInfo: Boolean = false) {
@@ -238,9 +247,28 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
         }
     }
 
-    fun backToBook() {
-        val id = libraryState.openedBook?.id ?: writingStoryId
-        if (id != null) openBook(id) else route = RootRouteV4.SHELF
+    /** V94 创作 tab → 继续写: the writing workspace for one of the user's own books. */
+    fun openWriting(id: String) {
+        writingStoryId = id
+        returnAfterWriting = RootRouteV4.CREATE_HUB
+        libraryVm.openBook(id)
+        studioVm.selectStory(id)
+        route = RootRouteV4.WRITING
+    }
+
+    fun closeWriting(id: String) {
+        val back = returnAfterWriting
+        returnAfterWriting = null
+        if (back != null) {
+            libraryVm.closeBook()
+            route = back
+        } else openBook(id)
+    }
+
+    fun leaveRunCenter() {
+        val back = returnAfterRunCenter
+        returnAfterRunCenter = null
+        route = back ?: if (libraryState.openedBook != null) RootRouteV4.BOOK else RootRouteV4.SHELF
     }
 
     fun openAiSetup(from: RootRouteV4) {
@@ -332,7 +360,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                 libraryVm.closeBook()
                 route = RootRouteV4.SHELF
             }
-            RootRouteV4.WRITING -> openBook(writingStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id)
+            RootRouteV4.WRITING -> closeWriting(writingStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id)
             RootRouteV4.EDITOR -> {
                 val id = editorStoryId ?: libraryState.openedBook?.id ?: studioState.snapshot.novel.id
                 when (returnAfterEditor) {
@@ -349,8 +377,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     else -> openBook(id)
                 }
             }
-            RootRouteV4.AGENT, RootRouteV4.INTELLIGENCE -> backToBook()
-            RootRouteV4.RUN_CENTER -> route = if (libraryState.openedBook != null) RootRouteV4.BOOK else RootRouteV4.SHELF
+            RootRouteV4.RUN_CENTER -> leaveRunCenter()
             RootRouteV4.AI_SETUP -> route = when {
                 !studioState.provider.ready && returnAfterAiSetup in setOf(
                     RootRouteV4.CREATION,
@@ -359,18 +386,22 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                 ) -> RootRouteV4.SHELF
                 else -> returnAfterAiSetup
             }
-            RootRouteV4.COVER_STUDIO -> route = RootRouteV4.BOOK
             RootRouteV4.SKILLS -> route = returnAfterSkills
-            RootRouteV4.ONLINE -> route = RootRouteV4.SHELF
+            // Tabs: back returns to 书架 first; from 书架 the system closes the app.
+            RootRouteV4.ONLINE, RootRouteV4.CREATE_HUB, RootRouteV4.MINE -> route = RootRouteV4.SHELF
         }
     }
+
+    val runActiveV94 = rememberRunCenterActiveV92()
+    val bottomBarVisible = route in ROOT_TABS_V94 && (route != RootRouteV4.ONLINE || onlineRootLevel)
 
     val routeStates = rememberSaveableStateHolder()
     if (externalBooks != null) ExternalBookImportHostV1(externalBooks, localImportVm)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+      Column(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = route,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             transitionSpec = { rootRouteTransitionV30(initialState, targetState) },
             label = "rootRoute",
         ) { currentRoute ->
@@ -389,12 +420,10 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                             else openAiSetup(RootRouteV4.CREATION)
                         },
                         onOpenTavern = ::openTavern,
-                        onAiSetup = { openAiSetup(RootRouteV4.SHELF) },
-                        onRunCenter = { route = RootRouteV4.RUN_CENTER },
-                        onSkills = { openSkills(RootRouteV4.SHELF) },
                         onOnline = { route = RootRouteV4.ONLINE },
                         onRenameBook = libraryVm::renameBook,
                         onCancelImport = localImportVm::cancelImport,
+                        insideTabs = true,
                     )
                 }
 
@@ -484,7 +513,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     WritingFlowPage(
                         novelId = id,
                         viewModel = writingVm,
-                        onClose = { openBook(id) },
+                        onClose = { closeWriting(id) },
                         onAiSetup = { writingStoryId = id; openAiSetup(RootRouteV4.WRITING) },
                         onEditChapter = { storyId, chapter ->
                             editorVm.prepareForEntry(storyId, chapter)
@@ -521,18 +550,6 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     )
                 }
 
-                RootRouteV4.AGENT -> {
-                    AgentPage(
-                        state = studioState,
-                        vm = studioVm,
-                        onProjectBackup = { backupLauncher.launch("${studioState.snapshot.novel.title}.lhproj") },
-                        onProjectRestore = { restoreLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) },
-                        onClose = ::backToBook,
-                    )
-                }
-
-                RootRouteV4.INTELLIGENCE -> StoryIntelligencePage(state = studioState, onClose = ::backToBook)
-
                 RootRouteV4.RUN_CENTER -> {
                     val runCenterVm: RunCenterViewModel = viewModel()
                     val runCenterState by runCenterVm.state.collectAsStateWithLifecycle()
@@ -566,7 +583,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     RunCenterScreenV50(
                         state = runCenterState,
                         runtime = runtimeState,
-                        onBack = { route = if (libraryState.openedBook != null) RootRouteV4.BOOK else RootRouteV4.SHELF },
+                        onBack = ::leaveRunCenter,
                         onOpenTask = runCenterVm::open,
                         onRetryTask = runCenterVm::open,
                         onCancelTask = runCenterVm::abandon,
@@ -592,242 +609,65 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     )
                 }
 
-                RootRouteV4.COVER_STUDIO -> {
-                    @Suppress("UNUSED_VARIABLE")
-                    val coverGuard: CoverPersistenceGuardViewModel = viewModel()
-                    val id = coverStoryId ?: libraryState.openedBook?.id
-                    if (id != null) {
-                        CoverStudioV3(
-                            bookId = id,
-                            libraryViewModel = libraryVm,
-                            onClose = { route = RootRouteV4.BOOK },
-                        )
-                    }
+                RootRouteV4.ONLINE -> {
+                    OnlineHostV94(
+                        onlineVm = onlineVm,
+                        onlineState = onlineState,
+                        embedded = true,
+                        onBack = { route = RootRouteV4.SHELF },
+                        onOpenAiSetup = { openAiSetup(RootRouteV4.ONLINE) },
+                        onCreatedStory = { id ->
+                            route = RootRouteV4.SHELF
+                            pendingOnlineOpen = id
+                        },
+                        onToast = { text, error -> toast = text to error },
+                        onRootLevelChange = { onlineRootLevel = it },
+                        openManageRequest = onlineManageRequest,
+                    )
                 }
 
-                RootRouteV4.ONLINE -> {
-                    var onlineSub by rememberSaveable { mutableStateOf("main") }
-                    var browseSourceId by rememberSaveable { mutableStateOf<String?>(null) }
-                    var discoverySourceId by rememberSaveable { mutableStateOf<String?>(null) }
-                    var onlineQuery by rememberSaveable { mutableStateOf("") }
-                    val recentSearches = remember { mutableStateListOf<String>() }
-                    var aiSiteUrl by rememberSaveable { mutableStateOf("") }
-                    var aiTestBook by rememberSaveable { mutableStateOf("") }
-                    var sourceManageFocusId by rememberSaveable { mutableStateOf<String?>(null) }
-                    var importDialogOpen by remember { mutableStateOf(false) }
-                    var importText by remember { mutableStateOf("") }
-                    val clipboard = LocalClipboardManager.current
-                    val importFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                        if (uri != null) {
-                            onlineVm.importFromFile(uri)
-                            importDialogOpen = false
-                        }
-                    }
+                RootRouteV4.CREATE_HUB -> {
+                    CreateTabV94(
+                        books = libraryState.stories,
+                        libraryLoaded = libraryState.libraryLoaded,
+                        aiReady = studioState.provider.ready,
+                        runActive = runActiveV94,
+                        onNewAiBook = {
+                            if (studioState.provider.ready) route = RootRouteV4.CREATION
+                            else openAiSetup(RootRouteV4.CREATION)
+                        },
+                        onNewBlankBook = libraryVm::createBlankStory,
+                        onContinueWriting = ::openWriting,
+                        onRunCenter = {
+                            returnAfterRunCenter = RootRouteV4.CREATE_HUB
+                            route = RootRouteV4.RUN_CENTER
+                        },
+                        onSkills = { openSkills(RootRouteV4.CREATE_HUB) },
+                    )
+                }
 
-                    // 书籍详情"加入书架/开始阅读"后的建书完成流转（替代旧 onOpenCreated 回调）
-                    LaunchedEffect(onlineState.createdStoryId) {
-                        val id = onlineState.createdStoryId ?: return@LaunchedEffect
-                        onlineVm.consumeCreated()
-                        route = RootRouteV4.SHELF
-                        pendingOnlineOpen = id
+                RootRouteV4.MINE -> {
+                    val shelfProgressPrefs = remember(appContext) {
+                        appContext.getSharedPreferences(ShelfReadingProgressStoreV92.PREFS, android.content.Context.MODE_PRIVATE)
                     }
-
-                    val browseSource = browseSourceId?.let { id -> onlineState.sources.firstOrNull { it.id == id } }
-                    val discoverySource = discoverySourceId?.let { id -> onlineState.sources.firstOrNull { it.id == id } }
-
-                    // 书源规则编辑弹窗（旧页同款能力，走 VM 已有 begin/edit/cancel API）
-                    if (onlineState.sourceEditId != null) {
-                        val editId = onlineState.sourceEditId!!
-                        AlertDialog(
-                            onDismissRequest = onlineVm::cancelSourceEdit,
-                            title = { Text("编辑书源规则") },
-                            text = {
-                                Column {
-                                    TextField(
-                                        value = onlineState.sourceEditDraft,
-                                        label = { Text("书源 JSON") },
-                                        onValueChange = onlineVm::updateSourceEditDraft,
-                                        modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
-                                    )
-                                    onlineState.sourceEditError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = { onlineVm.editSource(editId, onlineState.sourceEditDraft) },
-                                    enabled = !onlineState.sourceEditSaving,
-                                ) { Text(if (onlineState.sourceEditSaving) "校验中…" else "保存规则") }
-                            },
-                            dismissButton = { TextButton(onClick = onlineVm::cancelSourceEdit) { Text("取消") } },
-                        )
+                    val finished = remember(libraryState.stories, libraryState.openedBook?.id) {
+                        libraryState.stories.count { ShelfReadingProgressStoreV92.load(shelfProgressPrefs, it.id).finished }
                     }
-
-                    if (importDialogOpen) {
-                        AlertDialog(
-                            onDismissRequest = { importDialogOpen = false },
-                            title = { Text("导入书源") },
-                            text = {
-                                Column {
-                                    Text("粘贴书源 JSON，或输入书源网址。")
-                                    Spacer(Modifier.height(8.dp))
-                                    TextField(
-                                        value = importText,
-                                        onValueChange = { importText = it },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        placeholder = { Text("JSON 或 https://…") },
-                                    )
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(onClick = {
-                                    val t = importText.trim()
-                                    if (t.startsWith("http")) onlineVm.importFromUrl(t) else onlineVm.importSources(t)
-                                    importText = ""
-                                    importDialogOpen = false
-                                }) { Text("导入") }
-                            },
-                            dismissButton = {
-                                Row {
-                                    TextButton(onClick = { importFileLauncher.launch(arrayOf("*/*")) }) { Text("选文件") }
-                                    TextButton(onClick = { importDialogOpen = false }) { Text("取消") }
-                                }
-                            },
-                        )
-                    }
-
-                    when {
-                        browseSource != null -> {
-                            BookSourceBrowseScreenV50(
-                                source = browseSource,
-                                discoveries = sourceDiscoveriesV41(browseSource),
-                                previewBooks = emptyList(),
-                                onBack = { browseSourceId = null },
-                                onEditRules = { onlineVm.beginSourceEdit(browseSource.id) },
-                                onEnabledChange = { onlineVm.toggleSource(browseSource.id) },
-                                onOpenDiscovery = { section ->
-                                    discoverySourceId = browseSource.id
-                                    onlineVm.discover(section)
-                                },
-                                onOpenBook = { book ->
-                                    onlineVm.openDetail(book)
-                                    browseSourceId = null
-                                },
-                                onCopySourceJson = {
-                                    clipboard.setText(AnnotatedString(BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), browseSource)))
-                                    toast = "书源 JSON 已复制" to false
-                                },
-                                onDeleteSource = {
-                                    onlineVm.deleteSource(browseSource.id)
-                                    browseSourceId = null
-                                },
-                            )
-                        }
-                        discoverySource != null -> {
-                            BookSourceDiscoveryScreenV50(
-                                source = discoverySource,
-                                sections = sourceDiscoveriesV41(discoverySource),
-                                selectedSection = onlineState.discoverySection,
-                                books = onlineState.results,
-                                loading = onlineState.searching,
-                                hasMore = onlineState.discoveryHasMore,
-                                pageError = onlineState.discoveryPageError,
-                                onBack = { discoverySourceId = null },
-                                onEditRules = { onlineVm.beginSourceEdit(discoverySource.id) },
-                                onEnabledChange = { onlineVm.toggleSource(discoverySource.id) },
-                                onSelectSection = onlineVm::discover,
-                                onOpenBook = { book ->
-                                    onlineVm.openDetail(book)
-                                    discoverySourceId = null
-                                },
-                                onLoadMore = onlineVm::loadMoreDiscovery,
-                                onStop = onlineVm::stopSearch,
-                            )
-                        }
-                        onlineSub == "manage" -> {
-                            BookSourceManageScreenV50(
-                                sources = onlineState.sources,
-                                sourceStorageError = onlineState.sourceStorageError,
-                                focusSourceId = sourceManageFocusId,
-                                onBack = {
-                                    sourceManageFocusId = null
-                                    onlineSub = "main"
-                                },
-                                onOpenSource = {
-                                    sourceManageFocusId = null
-                                    browseSourceId = it.id
-                                },
-                                onToggleSource = onlineVm::toggleSource,
-                                onImportSource = { importDialogOpen = true },
-                                onAiGenerateSource = {
-                                    sourceManageFocusId = null
-                                    onlineSub = "ai"
-                                },
-                            )
-                        }
-                        onlineSub == "ai" -> {
-                            AiBookSourceScreenV50(
-                                state = onlineState,
-                                siteUrl = aiSiteUrl,
-                                testBookName = aiTestBook,
-                                onBack = {
-                                    sourceManageFocusId = null
-                                    onlineSub = "manage"
-                                },
-                                onSiteUrlChange = { aiSiteUrl = it },
-                                onTestBookNameChange = { aiTestBook = it },
-                                onConfigureAi = { openAiSetup(RootRouteV4.ONLINE) },
-                                onStart = { url, keyword -> onlineVm.buildWithAi(url, keyword) },
-                                onStartWithBrowser = { url, keyword -> onlineVm.buildWithAi(url, keyword, useBrowser = true) },
-                                onCancel = onlineVm::cancelAi,
-                                onSave = { onlineVm.saveAiSource() },
-                                onOpenSavedSource = { sourceId ->
-                                    sourceManageFocusId = sourceId
-                                    onlineSub = "manage"
-                                },
-                            )
-                        }
-                        else -> {
-                            OnlineBooksScreenV50(
-                                state = onlineState,
-                                query = onlineQuery,
-                                recentSearches = recentSearches,
-                                onBack = { route = RootRouteV4.SHELF },
-                                onManageSources = { onlineSub = "manage" },
-                                onQueryChange = { onlineQuery = it },
-                                onSearch = { q ->
-                                    onlineQuery = q
-                                    val key = q.trim()
-                                    if (key.isNotEmpty()) {
-                                        recentSearches.remove(key)
-                                        recentSearches.add(0, key)
-                                        if (recentSearches.size > 10) recentSearches.removeAt(recentSearches.lastIndex)
-                                    }
-                                    onlineVm.search(q)
-                                },
-                                onStopSearch = onlineVm::stopSearch,
-                                onRetrySearch = onlineVm::retrySearch,
-                                onRecentSearch = { q ->
-                                    onlineQuery = q
-                                    onlineVm.search(q)
-                                },
-                                onClearRecentSearches = { recentSearches.clear() },
-                                onDiscover = onlineVm::discover,
-                                onLoadMore = onlineVm::loadMoreDiscovery,
-                                onOpenBook = onlineVm::openDetail,
-                                onCloseDetail = onlineVm::closeDetail,
-                                onRetryDetail = onlineVm::retryDetail,
-                                onStopDetail = onlineVm::stopDetail,
-                                onViewSource = { id -> browseSourceId = id },
-                                onAddToShelf = onlineVm::addToShelf,
-                                onRead = onlineVm::readAddedBook,
-                                onDownload = onlineVm::downloadDetail,
-                                onCancelDownload = onlineVm::cancelDownload,
-                                onChapterClick = { chapter ->
-                                    toast = "「${chapter.title}」先加入书架后再阅读" to false
-                                },
-                            )
-                        }
-                    }
+                    MineTabV94(
+                        bookCount = if (libraryState.libraryLoaded) libraryState.stories.size else null,
+                        finishedCount = finished,
+                        sourceCount = onlineState.sources.size,
+                        enabledSourceCount = onlineState.sources.count { it.enabled },
+                        aiLabel = studioState.provider.activeProvider?.let { provider ->
+                            listOf(provider.name, provider.model).filter(String::isNotBlank).joinToString(" · ")
+                        },
+                        onSources = {
+                            onlineManageRequest++
+                            route = RootRouteV4.ONLINE
+                        },
+                        onImportLocal = { localBookLauncher.launch(arrayOf("*/*")) },
+                        onAiSetup = { openAiSetup(RootRouteV4.MINE) },
+                    )
                 }
 
                 RootRouteV4.SKILLS -> {
@@ -841,6 +681,19 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
           }
           }
         }
+        // V94 bottom navigation: shown on the four tab roots, hidden in the reader and every
+        // full-screen page (editor, writing, settings, source editor/import, book detail...).
+        if (bottomBarVisible) {
+            com.xiguli.langhuan.ui.design.LanghuanBottomBarV94(
+                tabs = rootBottomTabsV94(runActiveV94),
+                selectedKey = route.name,
+                onSelect = { key ->
+                    val target = RootRouteV4.valueOf(key)
+                    route = target
+                },
+            )
+        }
+      }
     }
 
     toast?.let { (text, isError) ->
@@ -890,6 +743,18 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
     }
 }
 
+/** V94 tab bar entries. The run badge sits on 创作, where 运行中心 now lives. */
+internal fun rootBottomTabsV94(runActive: Boolean): List<com.xiguli.langhuan.ui.design.BottomTabV94> = listOf(
+    com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.SHELF.name, "书架", androidx.compose.material.icons.Icons.Outlined.LibraryBooks, androidx.compose.material.icons.Icons.Filled.LibraryBooks),
+    com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.ONLINE.name, "书城", androidx.compose.material.icons.Icons.Outlined.Explore, androidx.compose.material.icons.Icons.Filled.Explore),
+    com.xiguli.langhuan.ui.design.BottomTabV94(
+        RootRouteV4.CREATE_HUB.name, "创作",
+        androidx.compose.material.icons.Icons.Outlined.EditNote, androidx.compose.material.icons.Icons.Filled.EditNote,
+        badge = runActive, badgeDescription = HOME_RUN_ACTIVE_LABEL_V92,
+    ),
+    com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.MINE.name, "我的", androidx.compose.material.icons.Icons.Outlined.PersonOutline, androidx.compose.material.icons.Icons.Filled.Person),
+)
+
 /**
  * App-level route motion. Opening a book zooms the page up out of the shelf; everything else is
  * a short parallax slide. Going back to the shelf always plays the reverse.
@@ -900,17 +765,20 @@ private fun AnimatedContentTransitionScope<RootRouteV4>.rootRouteTransitionV30(
 ): ContentTransform {
     val enterEase = tween<Float>(320, easing = FastOutSlowInEasing)
     return when {
+        // Switching bottom-bar tabs is a quick cross-fade, never a page slide.
+        from in ROOT_TABS_V94 && to in ROOT_TABS_V94 ->
+            fadeIn(tween(160)) togetherWith fadeOut(tween(120))
         to == RootRouteV4.BOOK && from == RootRouteV4.SHELF ->
             (fadeIn(tween(220)) + scaleIn(enterEase, initialScale = .92f)) togetherWith
                 (fadeOut(tween(260)) + scaleOut(tween(320), targetScale = 1.03f))
         from == RootRouteV4.BOOK && to == RootRouteV4.SHELF ->
             (fadeIn(tween(260)) + scaleIn(tween(320), initialScale = 1.03f)) togetherWith
                 (fadeOut(tween(200)) + scaleOut(tween(280), targetScale = .92f))
-        to == RootRouteV4.SHELF ->
+        to in ROOT_TABS_V94 ->
             (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeIn(tween(240))) togetherWith
                 (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 } + fadeOut(tween(200)))
         else ->
             (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(240))) togetherWith
                 (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(200)))
-    }.apply { targetContentZIndex = if (to == RootRouteV4.SHELF) 0f else 1f }
+    }.apply { targetContentZIndex = if (to in ROOT_TABS_V94) 0f else 1f }
 }
