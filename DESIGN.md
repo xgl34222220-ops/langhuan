@@ -260,3 +260,13 @@ AI 入口存在，但不能比“阅读”更醒目。
 5. 从当前章节进入故事。
 6. 阅读设置与阅读进度持久化。
 7. 后续再统一创作页、故事页和 AI 配置页。
+
+## 17. 2026-10 UI refresh tokens
+
+参考 shadcn/ui、transitions.dev、Rare UI、Beautiful UI 的设计语言（只吸收原则，不搬代码）：
+
+- 中性色：zinc 灰阶。浅色 background #FAFAFA / card #FFFFFF / input #F4F4F5 / border #E4E4E7 / 文字 #18181B·#3F3F46·#5C5C66；深色 #09090B / #131316 / #202024 / #2A2A2F / 文字 #FAFAFA·#D4D4D8·#A1A1AA。所有文字 token 在 background/card/input 上 ≥ 4.5:1（单测守护）。
+- 强调色：仍只有玉青一套（主操作、进度、焦点环、当前章节标记）；赤金只用于书签 / 继续阅读等稀有语义；选中态优先用“墨色胶囊”（foreground 底 + background 字），不再到处铺玉青。
+- 圆角 8 / 12 / 16 / 24 + 胶囊；间距 4 / 8 / 12 / 16 / 24 / 32；层级用 1px hairline，不加投影。
+- 动效 token（`LanghuanMotion`）：100 / 160 / 220 / 300ms；进入 ease-out cubic(0.23,1,0.32,1)，退出 ease-in 且约为进入的 2/3；按压缩放 0.97；页面 fade-through / 1/10 宽度共享轴位移；系统“移除动画”时全部退化为 snap（`LocalLanghuanReducedMotion`）。
+- 只动 alpha / translation / scale（graphicsLayer）；阅读正文排版与分页（ReaderLayoutEngineV30）不受影响。

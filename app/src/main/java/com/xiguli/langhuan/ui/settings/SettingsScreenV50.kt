@@ -3,6 +3,15 @@ package com.xiguli.langhuan.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import com.xiguli.langhuan.ui.design.LanghuanMotion
+import com.xiguli.langhuan.ui.design.LocalLanghuanReducedMotion
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -399,7 +409,7 @@ private fun SettingsThemeBlockV50(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
+                .height(48.dp)
                 .background(color = t.input, shape = segmentShape)
                 .border(width = 1.dp, color = t.border, shape = segmentShape)
                 .padding(t.space1),
@@ -436,26 +446,30 @@ private fun SettingsThemeSegmentV50(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val reduced = LocalLanghuanReducedMotion.current
     val shape = RoundedCornerShape(t.radiusSm)
+    val fill by animateColorAsState(
+        targetValue = if (selected) t.card else t.input,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "themeSegmentFill",
+    )
+    val outline by animateColorAsState(
+        targetValue = if (selected) t.border else t.input,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "themeSegmentOutline",
+    )
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                color = if (selected) t.card else Color.Transparent,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else Color.Transparent,
-                shape = shape,
-            )
-            .clickable(onClick = onClick),
+            .background(color = fill, shape = shape)
+            .border(width = 1.dp, color = outline, shape = shape)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            color = if (selected) t.primary else t.secondaryForeground,
+            color = if (selected) t.foreground else t.mutedForeground,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
@@ -480,7 +494,8 @@ private fun SettingsNavigationRowV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .heightIn(min = 56.dp)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(vertical = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -548,7 +563,9 @@ private fun SettingsSwitchRowV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .heightIn(min = 56.dp)
+            // Exposes on/off state and the Switch role to TalkBack instead of a bare click.
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
             .padding(vertical = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -631,10 +648,10 @@ private fun SettingsRowIconV50(
     gold: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
+    val shape = RoundedCornerShape(t.radiusSm)
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(36.dp)
             .background(
                 color = when {
                     gold -> t.goldContainer
@@ -642,18 +659,17 @@ private fun SettingsRowIconV50(
                     else -> t.input
                 },
                 shape = shape,
-            )
-            .border(width = 1.dp, color = t.border, shape = shape),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(18.dp),
             tint = when {
                 gold -> t.goldForeground
                 accent -> t.accentForeground
-                else -> t.secondaryForeground
+                else -> t.foreground
             },
         )
     }
@@ -667,32 +683,37 @@ private fun SettingsRowIconV50(
 @Composable
 private fun SettingsSwitchV50(checked: Boolean) {
     val t = LocalLanghuanUiTokens.current
+    val reduced = LocalLanghuanReducedMotion.current
     val trackShape = CircleShape
+    // Thumb slides via translationX only; track colour cross-fades (motion tokens, snap when reduced).
+    val position by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = LanghuanMotion.standard(LanghuanMotion.DURATION_STANDARD, reduced),
+        label = "settingsSwitchThumb",
+    )
+    val track by animateColorAsState(
+        targetValue = if (checked) t.primary else t.input,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "settingsSwitchTrack",
+    )
+    val thumb by animateColorAsState(
+        targetValue = if (checked) t.primaryForeground else t.mutedForeground,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "settingsSwitchThumbColor",
+    )
     Box(
         modifier = Modifier
             .width(44.dp)
             .height(24.dp)
-            .background(
-                color = if (checked) t.primary else t.input,
-                shape = trackShape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (checked) t.primary else t.border,
-                shape = trackShape,
-            ),
+            .background(color = track, shape = trackShape)
+            .border(width = 1.dp, color = if (checked) track else t.border, shape = trackShape),
     ) {
         Box(
             modifier = Modifier
-                .padding(
-                    start = if (checked) 20.dp else 2.dp,
-                    top = 2.dp,
-                )
+                .padding(start = 2.dp, top = 2.dp)
+                .graphicsLayer { translationX = position * 20.dp.toPx() }
                 .size(20.dp)
-                .background(
-                    color = if (checked) t.card else t.mutedForeground,
-                    shape = CircleShape,
-                ),
+                .background(color = thumb, shape = CircleShape),
         )
     }
 }
@@ -725,24 +746,29 @@ private fun SettingsIconButtonV50(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
     Box(
         modifier = Modifier
-            .size(40.dp)
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            .size(48.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                role = Role.Button,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(20.dp),
-            tint = t.secondaryForeground,
-        )
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(color = t.input, shape = CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(20.dp),
+                tint = t.foreground,
+            )
+        }
     }
 }

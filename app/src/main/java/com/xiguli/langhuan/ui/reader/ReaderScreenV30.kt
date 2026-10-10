@@ -1516,6 +1516,7 @@ internal fun ReaderSessionV30(
         }
 
         /* ------------------------------- Loading ------------------------------- */
+        val readerReducedMotionV91 = com.xiguli.langhuan.ui.design.LocalLanghuanReducedMotion.current
         AnimatedVisibility(
             visible = shownLayout == null,
             modifier = Modifier.align(Alignment.Center),
@@ -1585,8 +1586,11 @@ internal fun ReaderSessionV30(
         AnimatedVisibility(
             visible = edgeHint != null,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 72.dp),
-            enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = 0.92f),
-            exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.96f),
+            // Toast-style hint: pop in with the ease-out token, leave faster with ease-in.
+            enter = com.xiguli.langhuan.ui.design.LanghuanMotion.popEnter(readerReducedMotionV91),
+            exit = if (readerReducedMotionV91) androidx.compose.animation.ExitTransition.None
+            else fadeOut(com.xiguli.langhuan.ui.design.LanghuanMotion.exit(com.xiguli.langhuan.ui.design.LanghuanMotion.DURATION_QUICK)) +
+                scaleOut(com.xiguli.langhuan.ui.design.LanghuanMotion.exit(com.xiguli.langhuan.ui.design.LanghuanMotion.DURATION_QUICK), targetScale = 0.96f),
         ) {
             val shape = RoundedCornerShape(v3Tokens.radiusLg)
             Box(
@@ -1607,8 +1611,8 @@ internal fun ReaderSessionV30(
             visible = listening && !menuVisible,
             modifier = Modifier.align(Alignment.BottomCenter)
                 .navigationBarsPadding().padding(bottom = 34.dp),
-            enter = androidx.compose.animation.slideInVertically { it } + fadeIn(),
-            exit = androidx.compose.animation.slideOutVertically { it } + fadeOut(),
+            enter = com.xiguli.langhuan.ui.design.LanghuanMotion.sheetEnter(readerReducedMotionV91),
+            exit = com.xiguli.langhuan.ui.design.LanghuanMotion.sheetExit(readerReducedMotionV91),
         ) {
             val shape = RoundedCornerShape(v3Tokens.radiusXl)
             Row(

@@ -1346,6 +1346,8 @@ fun LanghuanEmptyState(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // Empty states rise in once (motion tokens); instant when animations are removed.
+            .langhuanEnterOnMount(rise = LanghuanMotion.RISE, initialScale = 1f)
             .padding(
                 horizontal = t.space5,
                 vertical = t.space6,
@@ -1382,6 +1384,7 @@ fun LanghuanEmptyState(
             text = title,
             style = LanghuanTextStyles.sectionTitle,
             color = t.foreground,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
 
         Spacer(Modifier.height(t.space2))
@@ -1390,6 +1393,7 @@ fun LanghuanEmptyState(
             text = description,
             style = LanghuanTextStyles.secondary,
             color = t.secondaryForeground,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
 
         if (action != null) {

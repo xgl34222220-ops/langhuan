@@ -24,9 +24,9 @@ class LuoShuUiFoundationContractTest {
     fun activeThemeUsesV3GeometryAndWarmBackground() {
         val theme = source("src/main/java/com/xiguli/langhuan/ui/theme/LanghuanStableTheme.kt")
         val tokens = source("src/main/java/com/xiguli/langhuan/ui/design/LanghuanDesignTokens.kt")
-        // v3：暖纸底 #F7F5F0 / 暖墨黑 #141311，圆角仅 8/12/16/24。
-        assertTrue(tokens.contains("background = Color(0xFFF7F5F0)"))
-        assertTrue(tokens.contains("background = Color(0xFF141311)"))
+        // 2026-10 UI refresh：中性色迁移到 zinc 灰阶（#FAFAFA / #09090B），圆角仍仅 8/12/16/24。
+        assertTrue(tokens.contains("background = Color(0xFFFAFAFA)"))
+        assertTrue(tokens.contains("background = Color(0xFF09090B)"))
         assertTrue(theme.contains("extraSmall = RoundedCornerShape(8.dp)"))
         assertTrue(theme.contains("medium = RoundedCornerShape(12.dp)"))
         assertTrue(theme.contains("large = RoundedCornerShape(16.dp)"))

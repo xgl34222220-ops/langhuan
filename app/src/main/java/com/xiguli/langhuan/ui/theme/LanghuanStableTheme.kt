@@ -15,7 +15,9 @@ import androidx.compose.ui.unit.dp
 import com.xiguli.langhuan.ui.design.LanghuanDarkUiTokens
 import com.xiguli.langhuan.ui.design.LanghuanLightUiTokens
 import com.xiguli.langhuan.ui.design.LanghuanTypography
+import com.xiguli.langhuan.ui.design.LocalLanghuanReducedMotion
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.design.rememberLanghuanReducedMotion
 
 /**
  * 琅嬛全局主题模式。
@@ -60,23 +62,11 @@ enum class LanghuanThemeMode {
 
 
 /**
- * Claude v3 浅色主题。
+ * 浅色主题（2026-10 zinc 中性色）。
  *
- * Token：
- *
- * background          #F7F5F0
- * card                #FFFFFF
- * input               #EAE7E0
- * border              #DDDAD3
- * foreground          #22221F
- * secondaryForeground #4B4B46
- * mutedForeground     #666760
- * primary             #1E6A5A
- * accent              #DDE9E4
- * accentForeground    #17513F
- * gold                #A9681C
- * goldContainer       #F3E6D2
- * destructive         #B03A2B
+ * background #FAFAFA · card #FFFFFF · input #F4F4F5 · border #E4E4E7
+ * foreground #18181B · secondary #3F3F46 · muted #5C5C66
+ * primary #1E6A5A（唯一强调色）· gold #A9681C（稀有语义）· destructive #B03A2B
  */
 private val LanghuanLightColorScheme = lightColorScheme(
 
@@ -167,23 +157,11 @@ private val LanghuanLightColorScheme = lightColorScheme(
 
 
 /**
- * Claude v3 深色主题。
+ * 深色主题（2026-10 zinc 中性色）。
  *
- * Token：
- *
- * background          #141311
- * card                #1C1B18
- * input               #262420
- * border              #2C2A26
- * foreground          #ECE8E0
- * secondaryForeground #B5B0A6
- * mutedForeground     #8E897F
- * primary             #7CCAB3
- * accent              #1B3731
- * accentForeground    #A6E0CD
- * gold                #D8A45E
- * goldContainer       #372C1B
- * destructive         #F08C7C
+ * background #09090B · card #131316 · input #202024 · border #2A2A2F
+ * foreground #FAFAFA · secondary #D4D4D8 · muted #A1A1AA
+ * primary #7CCAB3 · gold #D8A45E · destructive #F08C7C
  */
 private val LanghuanDarkColorScheme = darkColorScheme(
 
@@ -415,6 +393,9 @@ fun LanghuanStableTheme(
     )
 
 
+    // 系统「移除动画」只在主题根部读取一次，所有动效 token 据此退化为 snap。
+    val reducedMotion = rememberLanghuanReducedMotion()
+
     MaterialTheme(
         colorScheme = materialColors,
         typography = LanghuanTypography,
@@ -423,6 +404,7 @@ fun LanghuanStableTheme(
         CompositionLocalProvider(
             LocalMiuixTokens provides legacyTokens,
             LocalLanghuanUiTokens provides uiTokens,
+            LocalLanghuanReducedMotion provides reducedMotion,
         ) {
             content()
         }

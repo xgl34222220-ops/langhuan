@@ -6,7 +6,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -366,12 +365,13 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
     }
 
     val routeStates = rememberSaveableStateHolder()
+    val reducedMotion = com.xiguli.langhuan.ui.design.LocalLanghuanReducedMotion.current
     if (externalBooks != null) ExternalBookImportHostV1(externalBooks, localImportVm)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
             targetState = route,
             modifier = Modifier.fillMaxSize(),
-            transitionSpec = { rootRouteTransitionV30(initialState, targetState) },
+            transitionSpec = { rootRouteTransitionV30(initialState, targetState, reducedMotion) },
             label = "rootRoute",
         ) { currentRoute ->
           routeStates.SaveableStateProvider(currentRoute.name) {
@@ -890,26 +890,39 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
 }
 
 /**
- * App-level route motion. Opening a book zooms the page up out of the shelf; everything else is
- * a short parallax slide. Going back to the shelf always plays the reverse.
+ * App-level route motion (2026-10 motion tokens).
+ *
+ * Opening a book is a fade-through: the shelf fades out quickly while the book page fades in
+ * with a subtle 0.96 → 1 scale. Other routes use a short shared-axis slide (1/10 width) so the
+ * page never travels across the whole screen. Exits are ~2/3 of the enter duration and use
+ * ease-in; enters use ease-out. With system animations removed the swap is instant.
  */
 private fun AnimatedContentTransitionScope<RootRouteV4>.rootRouteTransitionV30(
     from: RootRouteV4,
     to: RootRouteV4,
+    reducedMotion: Boolean = false,
 ): ContentTransform {
-    val enterEase = tween<Float>(320, easing = FastOutSlowInEasing)
+    if (reducedMotion) {
+        return (androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None)
+            .apply { targetContentZIndex = if (to == RootRouteV4.SHELF) 0f else 1f }
+    }
+    val m = com.xiguli.langhuan.ui.design.LanghuanMotion
+    val enterMs = m.DURATION_EMPHASIZED
+    val exitMs = m.exitDuration(enterMs)
+    val enterFade = tween<Float>(m.DURATION_STANDARD, delayMillis = exitMs / 3, easing = m.EaseOut)
+    val exitFade = tween<Float>(exitMs / 2, easing = m.EaseIn)
     return when {
         to == RootRouteV4.BOOK && from == RootRouteV4.SHELF ->
-            (fadeIn(tween(220)) + scaleIn(enterEase, initialScale = .92f)) togetherWith
-                (fadeOut(tween(260)) + scaleOut(tween(320), targetScale = 1.03f))
+            (fadeIn(enterFade) + scaleIn(tween(enterMs, easing = m.EaseOut), initialScale = m.POP_INITIAL_SCALE)) togetherWith
+                fadeOut(exitFade)
         from == RootRouteV4.BOOK && to == RootRouteV4.SHELF ->
-            (fadeIn(tween(260)) + scaleIn(tween(320), initialScale = 1.03f)) togetherWith
-                (fadeOut(tween(200)) + scaleOut(tween(280), targetScale = .92f))
+            fadeIn(enterFade) togetherWith
+                (fadeOut(exitFade) + scaleOut(tween(exitMs, easing = m.EaseIn), targetScale = m.POP_INITIAL_SCALE))
         to == RootRouteV4.SHELF ->
-            (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeIn(tween(240))) togetherWith
-                (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 } + fadeOut(tween(200)))
+            (slideInHorizontally(tween(enterMs, easing = m.EaseOut)) { -it / 10 } + fadeIn(enterFade)) togetherWith
+                (slideOutHorizontally(tween(exitMs, easing = m.EaseIn)) { it / 10 } + fadeOut(exitFade))
         else ->
-            (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(240))) togetherWith
-                (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(200)))
+            (slideInHorizontally(tween(enterMs, easing = m.EaseOut)) { it / 10 } + fadeIn(enterFade)) togetherWith
+                (slideOutHorizontally(tween(exitMs, easing = m.EaseIn)) { -it / 10 } + fadeOut(exitFade))
     }.apply { targetContentZIndex = if (to == RootRouteV4.SHELF) 0f else 1f }
 }
