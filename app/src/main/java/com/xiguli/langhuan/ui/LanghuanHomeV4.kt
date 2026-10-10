@@ -38,8 +38,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.lazy.itemsIndexed as lazyItemsIndexed
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.composed
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -90,6 +93,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -102,7 +106,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.xiguli.langhuan.ui.design.LanghuanMotion
 import com.xiguli.langhuan.ui.design.LanghuanMotionV31
+import com.xiguli.langhuan.ui.design.LocalLanghuanReducedMotion
+import com.xiguli.langhuan.ui.design.enterOnceV31
+import com.xiguli.langhuan.ui.design.langhuanEnterOnMount
+import com.xiguli.langhuan.ui.design.langhuanPressScale
+import com.xiguli.langhuan.ui.design.rememberEnterRegistryV31
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.epub.EpubReaderEntry
 import kotlin.math.roundToInt
@@ -277,6 +287,10 @@ fun LanghuanHomeV4(
     // The shelf is edge-to-edge: keep the last row clear of the gesture/navigation bar.
     val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
+    // List items fade + rise in once (staggered, capped); scrolling back never replays it.
+    val enter = rememberEnterRegistryV31()
+    val reducedMotion = LocalLanghuanReducedMotion.current
+
     BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
     BackHandler(enabled = organizeOpen && !searchOpen) { organizeOpen = false }
 
@@ -302,8 +316,8 @@ fun LanghuanHomeV4(
 
                 AnimatedVisibility(
                     visible = searchOpen,
-                    enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { -it / 3 },
-                    exit = fadeOut(tween(120)) + slideOutVertically(tween(140)) { -it / 3 },
+                    enter = LanghuanMotion.revealEnter(reducedMotion),
+                    exit = LanghuanMotion.revealExit(reducedMotion),
                 ) {
                     HomeShelfSearchV4(
                         value = query,
@@ -323,8 +337,8 @@ fun LanghuanHomeV4(
 
                 AnimatedVisibility(
                     visible = organizeOpen,
-                    enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { -it / 4 },
-                    exit = fadeOut(tween(120)) + slideOutVertically(tween(140)) { -it / 4 },
+                    enter = LanghuanMotion.revealEnter(reducedMotion),
+                    exit = LanghuanMotion.revealExit(reducedMotion),
                 ) {
                     HomeShelfOrganizerPanelV4(
                         sort = sort,
@@ -373,13 +387,20 @@ fun LanghuanHomeV4(
                                 )
                             }
                         } else {
-                            lazyItems(items = books, key = { it.id }) { book ->
+                            lazyItemsIndexed(items = books, key = { _, it -> it.id }) { index, book ->
                                 HomeBookListItemV4(
                                     context = context,
                                     state = state,
                                     book = book,
                                     onOpen = { onOpenBook(book.id) },
                                     onMore = { actionBook = book },
+                                    modifier = Modifier
+                                        .animateItem(
+                                            fadeInSpec = null,
+                                            placementSpec = if (reducedMotion) null else tween(LanghuanMotion.DURATION_STANDARD, easing = LanghuanMotion.EaseOut),
+                                            fadeOutSpec = null,
+                                        )
+                                        .enterOnceV31(enter, book.id, index, rise = LanghuanMotion.RISE),
                                 )
                             }
                         }
@@ -421,13 +442,20 @@ fun LanghuanHomeV4(
                                 )
                             }
                         } else {
-                            items(items = books, key = { it.id }) { book ->
+                            itemsIndexed(items = books, key = { _, it -> it.id }) { index, book ->
                                 HomeBookGridItemV4(
                                     context = context,
                                     state = state,
                                     book = book,
                                     onOpen = { onOpenBook(book.id) },
                                     onMore = { actionBook = book },
+                                    modifier = Modifier
+                                        .animateItem(
+                                            fadeInSpec = null,
+                                            placementSpec = if (reducedMotion) null else tween(LanghuanMotion.DURATION_STANDARD, easing = LanghuanMotion.EaseOut),
+                                            fadeOutSpec = null,
+                                        )
+                                        .enterOnceV31(enter, book.id, index, rise = LanghuanMotion.RISE),
                                 )
                             }
                         }
@@ -544,26 +572,24 @@ private fun HomeShelfHeaderV4(
             color = t.foreground,
             fontWeight = FontWeight.SemiBold,
         )
+        // Ghost icon buttons: 48dp touch target, 40dp visual; only the active one gets a fill.
         HomeToolbarButtonV4(
             icon = if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
             contentDescription = if (searchOpen) "关闭搜索" else "搜索书架",
             selected = searchOpen,
             onClick = onSearch,
         )
-        Spacer(Modifier.width(t.space2))
         HomeToolbarButtonV4(
             icon = Icons.Rounded.Tune,
             contentDescription = "整理书架",
             selected = organizeOpen,
             onClick = onOrganize,
         )
-        Spacer(Modifier.width(t.space2))
         HomeToolbarButtonV4(
             icon = Icons.Rounded.Explore,
             contentDescription = "在线书城",
             onClick = onOnline,
         )
-        Spacer(Modifier.width(t.space2))
         HomeToolbarButtonV4(
             icon = Icons.Rounded.Add,
             contentDescription = "添加书籍",
@@ -581,18 +607,19 @@ private fun HomeToolbarButtonV4(
 ) {
     val t = LocalLanghuanUiTokens.current
     val interaction = remember { MutableInteractionSource() }
+    val fill by animateColorAsState(
+        targetValue = if (selected) t.input else Color.Transparent,
+        animationSpec = LanghuanMotion.standard(reduced = LocalLanghuanReducedMotion.current),
+        label = "toolbarFill",
+    )
+    val outline by animateColorAsState(
+        targetValue = if (selected) t.border else Color.Transparent,
+        animationSpec = LanghuanMotion.standard(reduced = LocalLanghuanReducedMotion.current),
+        label = "toolbarOutline",
+    )
     Box(
         modifier = Modifier
-            .size(42.dp)
-            .background(
-                color = if (selected) t.accent else t.card,
-                shape = CircleShape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = CircleShape,
-            )
+            .size(48.dp)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -601,12 +628,21 @@ private fun HomeToolbarButtonV4(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(20.dp),
-            tint = if (selected) t.accentForeground else t.secondaryForeground,
-        )
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .langhuanPressScale(interaction, pressedScale = 0.92f)
+                .background(color = fill, shape = CircleShape)
+                .border(width = 1.dp, color = outline, shape = CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(20.dp),
+                tint = if (selected) t.foreground else t.secondaryForeground,
+            )
+        }
     }
 }
 
@@ -629,7 +665,7 @@ private fun HomeShelfSearchV4(
             .height(48.dp)
             .background(color = t.input, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .padding(horizontal = t.space3),
+            .padding(start = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -661,7 +697,7 @@ private fun HomeShelfSearchV4(
         }
         if (value.isNotEmpty()) {
             Box(
-                modifier = Modifier.size(32.dp).clickable { onValueChange("") },
+                modifier = Modifier.size(48.dp).clickable(role = Role.Button) { onValueChange("") },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -712,64 +748,86 @@ private fun HomeShelfTabChipV4(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    Row(
+    val reduced = LocalLanghuanReducedMotion.current
+    val shape = CircleShape
+    // shadcn-style toggle: the active tab is an ink pill, the rest are hairline outlines.
+    val fill by animateColorAsState(
+        targetValue = if (selected) t.foreground else t.card,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "tabFill",
+    )
+    val content by animateColorAsState(
+        targetValue = if (selected) t.background else t.secondaryForeground,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "tabContent",
+    )
+    val outline by animateColorAsState(
+        targetValue = if (selected) t.foreground else t.border,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "tabOutline",
+    )
+    Box(
         modifier = Modifier
-            .height(38.dp)
-            .background(
-                color = if (selected) t.accent else t.card,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = t.space3),
-        verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = 48.dp)
+            .homePressableV4(role = Role.Tab, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (selected) t.accentForeground else t.secondaryForeground,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        )
-        Spacer(Modifier.width(t.space1))
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) t.primary else t.mutedForeground,
-        )
+        Row(
+            modifier = Modifier
+                .height(36.dp)
+                .background(color = fill, shape = shape)
+                .border(width = 1.dp, color = outline, shape = shape)
+                .padding(horizontal = t.space3 + t.space1),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = content,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                color = content.copy(alpha = if (selected) 0.72f else 1f),
+            )
+        }
     }
 }
 
 @Composable
 private fun HomeNewShelfChipV4(onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    Row(
+    val shape = CircleShape
+    Box(
         modifier = Modifier
-            .height(38.dp)
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = t.space3),
-        verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = 48.dp)
+            .homePressableV4(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.Add,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = t.primary,
-        )
-        Spacer(Modifier.width(t.space1))
-        Text(
-            text = "新建书架",
-            style = MaterialTheme.typography.labelLarge,
-            color = t.primary,
-            fontWeight = FontWeight.Medium,
-        )
+        Row(
+            modifier = Modifier
+                .height(36.dp)
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(horizontal = t.space3),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = t.secondaryForeground,
+            )
+            Spacer(Modifier.width(t.space1))
+            Text(
+                text = "新建书架",
+                style = MaterialTheme.typography.labelLarge,
+                color = t.secondaryForeground,
+                fontWeight = FontWeight.Medium,
+            )
+        }
     }
 }
 
@@ -870,20 +928,24 @@ private fun HomeOrganizerChoiceV4(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val reduced = LocalLanghuanReducedMotion.current
     val shape = RoundedCornerShape(t.radiusMd)
+    val fill by animateColorAsState(
+        targetValue = if (selected) t.foreground else t.input,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "choiceFill",
+    )
+    val content by animateColorAsState(
+        targetValue = if (selected) t.background else t.secondaryForeground,
+        animationSpec = LanghuanMotion.standard(reduced = reduced),
+        label = "choiceContent",
+    )
     Row(
         modifier = modifier
-            .height(42.dp)
-            .background(
-                color = if (selected) t.accent else t.input,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
+            .height(48.dp)
+            .homePressableV4(role = Role.RadioButton, onClick = onClick)
+            .background(color = fill, shape = shape)
+            .border(width = 1.dp, color = if (selected) t.foreground else t.border, shape = shape)
             .padding(horizontal = t.space2),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -893,14 +955,14 @@ private fun HomeOrganizerChoiceV4(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(17.dp),
-                tint = if (selected) t.accentForeground else t.secondaryForeground,
+                tint = content,
             )
             Spacer(Modifier.width(t.space1))
         }
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            color = if (selected) t.accentForeground else t.secondaryForeground,
+            color = content,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
         )
@@ -919,24 +981,24 @@ private fun HomeOrganizerActionV4(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = t.input, shape = shape)
+            .heightIn(min = 56.dp)
+            .homePressableV4(role = Role.Button, onClick = onClick)
+            .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(t.space3),
+            .padding(horizontal = t.space3, vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(38.dp)
-                .background(color = t.accent, shape = RoundedCornerShape(t.radiusMd))
-                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd)),
+                .size(36.dp)
+                .background(color = t.input, shape = RoundedCornerShape(t.radiusSm)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(19.dp),
-                tint = t.accentForeground,
+                modifier = Modifier.size(18.dp),
+                tint = t.foreground,
             )
         }
         Spacer(Modifier.width(t.space3))
@@ -947,13 +1009,18 @@ private fun HomeOrganizerActionV4(
                 color = t.foreground,
                 fontWeight = FontWeight.Medium,
             )
-            Spacer(Modifier.height(t.space1))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = t.mutedForeground,
             )
         }
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = t.mutedForeground,
+        )
     }
 }
 
@@ -972,23 +1039,24 @@ private fun HomeContinueReadingV4(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = t.goldContainer, shape = shape)
+            .homePressableV4(role = Role.Button, onClick = onOpen)
+            .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onOpen)
             .padding(t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Gold stays a rare accent: only the bookmark tile carries it.
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .background(color = t.gold, shape = RoundedCornerShape(t.radiusMd)),
+                .background(color = t.goldContainer, shape = RoundedCornerShape(t.radiusMd)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Rounded.Bookmark,
                 contentDescription = null,
                 modifier = Modifier.size(19.dp),
-                tint = t.card,
+                tint = t.gold,
             )
         }
         Spacer(Modifier.width(t.space3))
@@ -1001,7 +1069,7 @@ private fun HomeContinueReadingV4(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(t.space1))
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = buildString {
                     append("第 ${item.chapterNumber} 章")
@@ -1009,18 +1077,32 @@ private fun HomeContinueReadingV4(
                     if (title != null) { append(" · "); append(title) }
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = t.goldForeground,
+                color = t.mutedForeground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(t.space3))
-        Text(
-            text = "继续阅读",
-            style = MaterialTheme.typography.labelLarge,
-            color = t.goldForeground,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Row(
+            modifier = Modifier
+                .height(32.dp)
+                .background(color = t.foreground, shape = CircleShape)
+                .padding(start = t.space3, end = t.space2),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "继续阅读",
+                style = MaterialTheme.typography.labelMedium,
+                color = t.background,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = t.background,
+            )
+        }
     }
 }
 
@@ -1036,6 +1118,7 @@ private fun HomeBookListItemV4(
     book: ReaderBookUi,
     onOpen: () -> Unit,
     onMore: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
     val isEpub = remember(book.id, book.updatedAt) {
@@ -1044,19 +1127,19 @@ private fun HomeBookListItemV4(
     val isOnline = isFollowingBookV4(book)
     val shape = RoundedCornerShape(t.radiusLg)
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .homePressableV4(onClick = onOpen, onLongClick = onMore)
             .background(color = t.card, shape = shape)
             .border(width = 1.dp, color = t.border, shape = shape)
-            .combinedClickable(onClick = onOpen, onLongClick = onMore)
-            .padding(t.space3),
+            .padding(start = t.space3, top = t.space3, bottom = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HomeBookCoverV4(
             book = book,
-            modifier = Modifier.width(58.dp).height(82.dp),
+            modifier = Modifier.width(56.dp).height(80.dp),
         )
-        Spacer(Modifier.width(t.space3))
+        Spacer(Modifier.width(t.space3 + t.space1))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = book.title,
@@ -1066,7 +1149,7 @@ private fun HomeBookListItemV4(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(t.space1))
+            Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = homeGenreLabelV4(book),
@@ -1088,15 +1171,14 @@ private fun HomeBookListItemV4(
             Spacer(Modifier.height(t.space2))
             Text(
                 text = homeBookProgressLabelV4(context = context, state = state, book = book),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                 color = t.mutedForeground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(t.space2))
         Box(
-            modifier = Modifier.size(38.dp).clickable(onClick = onMore),
+            modifier = Modifier.size(48.dp).clickable(role = Role.Button, onClick = onMore),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -1122,20 +1204,21 @@ private fun HomeBookGridItemV4(
     book: ReaderBookUi,
     onOpen: () -> Unit,
     onMore: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
     val isEpub = remember(book.id, book.updatedAt) {
         EpubReaderEntry.isEpub(context, book.id)
     }
     val online = isFollowingBookV4(book)
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(0.70f)
+                .homePressableV4(onClick = onOpen, onLongClick = onMore)
                 .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
-                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
-                .combinedClickable(onClick = onOpen, onLongClick = onMore),
+                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd)),
         ) {
             CoverPreviewV3(
                 path = book.coverPath,
@@ -1143,22 +1226,28 @@ private fun HomeBookGridItemV4(
                 modifier = Modifier.fillMaxSize(),
                 targetWidthPx = HOME_GRID_COVER_PX_V86,
             )
+            // 48dp touch target around a 28dp visual dot so the cover stays the hero.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(t.space2)
-                    .size(30.dp)
-                    .background(color = t.card.copy(alpha = 0.92f), shape = CircleShape)
-                    .border(width = 1.dp, color = t.border, shape = CircleShape)
-                    .clickable(onClick = onMore),
+                    .size(48.dp)
+                    .clickable(role = Role.Button, onClick = onMore),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MoreHoriz,
-                    contentDescription = "书籍菜单",
-                    modifier = Modifier.size(17.dp),
-                    tint = t.secondaryForeground,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(color = t.card.copy(alpha = 0.92f), shape = CircleShape)
+                        .border(width = 1.dp, color = t.border, shape = CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreHoriz,
+                        contentDescription = "书籍菜单",
+                        modifier = Modifier.size(16.dp),
+                        tint = t.foreground,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(t.space2))
@@ -1170,7 +1259,7 @@ private fun HomeBookGridItemV4(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(t.space1))
+        Spacer(Modifier.height(2.dp))
         Text(
             text = homeGenreLabelV4(book),
             style = MaterialTheme.typography.bodySmall,
@@ -1190,7 +1279,7 @@ private fun HomeBookGridItemV4(
         Spacer(Modifier.height(t.space1))
         Text(
             text = homeBookProgressLabelV4(context = context, state = state, book = book),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
             color = t.mutedForeground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1242,28 +1331,25 @@ private fun HomeSourceBadgeV4(
     gold: Boolean,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusSm)
+    val shape = CircleShape
+    val tint = if (gold) t.goldForeground else t.accentForeground
     Row(
         modifier = Modifier
-            .background(
-                color = if (gold) t.goldContainer else t.accent,
-                shape = shape,
-            )
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .padding(horizontal = t.space2, vertical = t.space1),
+            .background(color = if (gold) t.goldContainer else t.accent, shape = shape)
+            .padding(horizontal = t.space2, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = if (gold) Icons.Rounded.MenuBook else Icons.Rounded.Wifi,
             contentDescription = null,
-            modifier = Modifier.size(13.dp),
-            tint = if (gold) t.goldForeground else t.accentForeground,
+            modifier = Modifier.size(12.dp),
+            tint = tint,
         )
         Spacer(Modifier.width(t.space1))
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = if (gold) t.goldForeground else t.accentForeground,
+            color = tint,
             fontWeight = FontWeight.Medium,
         )
     }
@@ -1281,25 +1367,28 @@ private fun HomeShelfEmptyV4(
     onAdd: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val shape = RoundedCornerShape(t.radiusLg)
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(top = t.space4)
+            .langhuanEnterOnMount(rise = LanghuanMotion.RISE, initialScale = 1f)
+            // shadcn "Empty": a quiet hairline frame instead of a heavy card.
+            .border(width = 1.dp, color = t.border, shape = shape)
             .padding(vertical = t.space6, horizontal = t.space5),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val shape = RoundedCornerShape(t.radiusLg)
         Box(
             modifier = Modifier
-                .size(56.dp)
-                .background(color = t.input, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape),
+                .size(48.dp)
+                .background(color = t.input, shape = RoundedCornerShape(t.radiusMd)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = if (query.isBlank()) Icons.Rounded.LibraryBooks else Icons.Rounded.SearchOff,
                 contentDescription = null,
-                modifier = Modifier.size(26.dp),
-                tint = t.mutedForeground,
+                modifier = Modifier.size(24.dp),
+                tint = t.secondaryForeground,
             )
         }
         Spacer(Modifier.height(t.space4))
@@ -1312,9 +1401,10 @@ private fun HomeShelfEmptyV4(
             },
             style = MaterialTheme.typography.titleMedium,
             color = t.foreground,
+            fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(t.space2))
+        Spacer(Modifier.height(t.space1))
         Text(
             text = if (query.isNotBlank()) "换个书名或分类关键词试试。"
             else "添加一本书，或者把已有作品移动到这里。",
@@ -1323,7 +1413,7 @@ private fun HomeShelfEmptyV4(
             textAlign = TextAlign.Center,
         )
         if (query.isBlank()) {
-            Spacer(Modifier.height(t.space4))
+            Spacer(Modifier.height(t.space5))
             HomePrimaryButtonV4(
                 text = "添加书籍",
                 icon = Icons.Rounded.Add,
@@ -1342,13 +1432,14 @@ private fun HomeShelfEmptyV4(
 private fun HomeImportOverlayV4(currentFileName: String) {
     val t = LocalLanghuanUiTokens.current
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.26f)),
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)),
         contentAlignment = Alignment.Center,
     ) {
         val shape = RoundedCornerShape(t.radiusXl)
         Row(
             modifier = Modifier
                 .padding(t.space5)
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
@@ -1396,9 +1487,10 @@ private fun HomeAddBookDialogV4(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
-                .padding(t.space4),
+                .padding(t.space5),
         ) {
             Text(
                 text = "添加书籍",
@@ -1459,9 +1551,10 @@ private fun HomeBookActionsV4(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
-                .padding(t.space4),
+                .padding(t.space5),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 HomeBookCoverV4(
@@ -1542,46 +1635,60 @@ private fun HomeDialogActionV4(
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusMd)
+    val tint = when {
+        gold -> t.goldForeground
+        destructive -> t.destructive
+        else -> t.foreground
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .homePressableV4(role = Role.Button, onClick = onClick)
             .background(
                 color = when {
-                    gold -> t.goldContainer
-                    destructive -> t.destructive.copy(alpha = 0.08f)
-                    else -> t.input
+                    destructive -> t.destructive.copy(alpha = 0.06f)
+                    else -> t.card
                 },
                 shape = shape,
             )
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(t.space3),
+            .border(
+                width = 1.dp,
+                color = if (destructive) t.destructive.copy(alpha = 0.28f) else t.border,
+                shape = shape,
+            )
+            .padding(horizontal = t.space3, vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = when {
-                gold -> t.goldForeground
-                destructive -> t.destructive
-                else -> t.secondaryForeground
-            },
-        )
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .background(
+                    color = when {
+                        gold -> t.goldContainer
+                        destructive -> t.destructive.copy(alpha = 0.10f)
+                        else -> t.input
+                    },
+                    shape = RoundedCornerShape(t.radiusSm),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = tint,
+            )
+        }
         Spacer(Modifier.width(t.space3))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = when {
-                    destructive -> t.destructive
-                    gold -> t.goldForeground
-                    else -> t.foreground
-                },
+                color = if (destructive) t.destructive else t.foreground,
                 fontWeight = FontWeight.Medium,
             )
             if (!subtitle.isNullOrBlank()) {
-                Spacer(Modifier.height(t.space1))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
@@ -1603,11 +1710,10 @@ private fun HomePrimaryButtonV4(
     val shape = RoundedCornerShape(t.radiusMd)
     Row(
         modifier = modifier
-            .height(46.dp)
+            .height(48.dp)
+            .homePressableV4(role = Role.Button, onClick = onClick)
             .background(color = t.primary, shape = shape)
-            .border(width = 1.dp, color = t.primary, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = t.space4),
+            .padding(horizontal = t.space5),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1616,14 +1722,14 @@ private fun HomePrimaryButtonV4(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = t.card,
+                tint = t.primaryForeground,
             )
             Spacer(Modifier.width(t.space2))
         }
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = t.card,
+            color = t.primaryForeground,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -1639,16 +1745,16 @@ private fun HomeSecondaryButtonV4(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(46.dp)
+            .height(48.dp)
+            .homePressableV4(role = Role.Button, onClick = onClick)
             .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onClick),
+            .border(width = 1.dp, color = t.border, shape = shape),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = t.secondaryForeground,
+            color = t.foreground,
             fontWeight = FontWeight.Medium,
         )
     }
@@ -1668,9 +1774,10 @@ private fun HomeMoveBookDialogV4(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
-                .padding(t.space4),
+                .padding(t.space5),
         ) {
             Text(
                 text = "移动《${book.title}》",
@@ -1710,31 +1817,29 @@ private fun HomeMoveTargetV4(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .background(
-                color = if (selected) t.accent else t.card,
-                shape = shape,
-            )
+            .homePressableV4(role = Role.RadioButton, onClick = onClick)
+            .background(color = if (selected) t.input else t.card, shape = shape)
             .border(
                 width = 1.dp,
-                color = if (selected) t.primary else t.border,
+                color = if (selected) t.foreground else t.border,
                 shape = shape,
             )
-            .clickable(onClick = onClick)
             .padding(horizontal = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Rounded.Folder,
             contentDescription = null,
-            modifier = Modifier.size(19.dp),
-            tint = if (selected) t.accentForeground else t.secondaryForeground,
+            modifier = Modifier.size(18.dp),
+            tint = if (selected) t.foreground else t.secondaryForeground,
         )
         Spacer(Modifier.width(t.space3))
         Text(
             text = label,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyLarge,
-            color = if (selected) t.foreground else t.secondaryForeground,
+            color = t.foreground,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1761,15 +1866,17 @@ private fun HomeRenameBookDialogV4(
     }
     val clean = com.xiguli.langhuan.data.normalizeBookTitleV90(text.text)
     val focus = remember { FocusRequester() }
+    var renameFocused by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     Dialog(onDismissRequest = onDismiss) {
         val shape = RoundedCornerShape(t.radiusXl)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
-                .padding(t.space4),
+                .padding(t.space5),
         ) {
             Text(
                 text = "修改书名",
@@ -1782,10 +1889,19 @@ private fun HomeRenameBookDialogV4(
                 onValueChange = { text = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 46.dp)
+                    .heightIn(min = 48.dp)
                     .focusRequester(focus)
-                    .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
-                    .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
+                    .onFocusChanged { renameFocused = it.isFocused }
+                    .background(color = t.card, shape = RoundedCornerShape(t.radiusMd))
+                    .border(
+                        width = 1.dp,
+                        color = when {
+                            clean == null -> t.destructive
+                            renameFocused -> t.ring
+                            else -> t.border
+                        },
+                        shape = RoundedCornerShape(t.radiusMd),
+                    )
                     .padding(horizontal = t.space3, vertical = t.space3)
                     .semantics { contentDescription = "书名" },
                 singleLine = true,
@@ -1841,9 +1957,10 @@ private fun HomeDeleteBookDialogV4(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
-                .padding(t.space4),
+                .padding(t.space5),
         ) {
             Text(
                 text = "删除《${book.title}》？",
@@ -1879,10 +1996,9 @@ private fun HomeDestructiveButtonV4(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(46.dp)
-            .background(color = t.destructive, shape = shape)
-            .border(width = 1.dp, color = t.destructive, shape = shape)
-            .clickable(onClick = onClick),
+            .height(48.dp)
+            .homePressableV4(role = Role.Button, onClick = onClick)
+            .background(color = t.destructive, shape = shape),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -1918,9 +2034,10 @@ private fun HomeShelfManagerV4(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
-                .padding(t.space4),
+                .padding(t.space5),
         ) {
             Text(
                 text = "书架管理",
@@ -1936,7 +2053,7 @@ private fun HomeShelfManagerV4(
                             onValueChange = { renameText = it },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(48.dp)
                                 .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
                                 .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
                                 .padding(horizontal = t.space3, vertical = t.space2),
@@ -1987,7 +2104,7 @@ private fun HomeShelfManagerV4(
                     onValueChange = { newName = it },
                     modifier = Modifier
                         .weight(1f)
-                        .height(44.dp)
+                        .height(48.dp)
                         .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
                         .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd))
                         .padding(horizontal = t.space3, vertical = t.space2),
@@ -2029,22 +2146,49 @@ private fun HomeMiniActionV4(
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusSm)
-    Text(
-        text = text,
+    Box(
         modifier = Modifier
-            .background(color = t.input, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = t.space2, vertical = t.space1),
-        style = MaterialTheme.typography.labelMedium,
-        color = if (!enabled) {
-            t.mutedForeground.copy(alpha = 0.4f)
-        } else if (destructive) {
-            t.destructive
-        } else {
-            t.secondaryForeground
-        },
-    )
+            .heightIn(min = 48.dp)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier
+                .border(width = 1.dp, color = t.border, shape = shape)
+                .padding(horizontal = t.space2 + 2.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (!enabled) {
+                t.mutedForeground.copy(alpha = 0.55f)
+            } else if (destructive) {
+                t.destructive
+            } else {
+                t.foreground
+            },
+        )
+    }
+}
+
+/**
+ * Press feedback for Home cards, rows and chips: a subtle scale (0.97, motion tokens) instead of
+ * a ripple, plus optional long press. Reduced motion keeps the click and drops the scale.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.homePressableV4(
+    role: Role? = null,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val interaction = remember { MutableInteractionSource() }
+    this
+        .langhuanPressScale(interaction)
+        .combinedClickable(
+            interactionSource = interaction,
+            indication = null,
+            role = role,
+            onLongClick = onLongClick,
+            onClick = onClick,
+        )
 }
 
 

@@ -113,6 +113,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.graphics.graphicsLayer
+import com.xiguli.langhuan.ui.design.LanghuanMotion
+import com.xiguli.langhuan.ui.design.LocalLanghuanReducedMotion
+import com.xiguli.langhuan.ui.design.langhuanEnterOnMount
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.util.Locale
@@ -185,6 +192,7 @@ internal fun ReaderMenuV30(
 ) {
     if (!visible) return
     val t = LocalLanghuanUiTokens.current
+    val reducedMotion = LocalLanghuanReducedMotion.current
     val maxHeight = readerMenuWindowHeightV63() * 0.88f
 
     Dialog(
@@ -196,7 +204,9 @@ internal fun ReaderMenuV30(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.30f))
+                // Scrim fades in; the panel rises 24dp with the ease-out token (snap when reduced).
+                .langhuanEnterOnMount(initialScale = 1f, durationMillis = LanghuanMotion.DURATION_QUICK)
+                .background(Color.Black.copy(alpha = 0.32f))
                 .pointerInput(onDismiss) { detectTapGestures(onTap = { onDismiss() }) }
                 .semantics { dismiss { onDismiss(); true } },
             contentAlignment = Alignment.BottomCenter,
@@ -210,6 +220,7 @@ internal fun ReaderMenuV30(
                     .navigationBarsPadding()
                     .imePadding()
                     .heightIn(max = maxHeight)
+                    .langhuanEnterOnMount(rise = 24.dp, initialScale = 1f)
                     .background(color = t.background, shape = panelShape)
                     .border(width = 1.dp, color = t.border, shape = panelShape)
                     // Swallow backdrop taps without merging the body's scroll viewport
@@ -240,22 +251,31 @@ internal fun ReaderMenuV30(
                     transitionSpec = {
                         val oldPanel = initialState.first
                         val newPanel = targetState.first
+                        val m = LanghuanMotion
+                        val enterMs = m.DURATION_STANDARD
+                        val exitMs = m.exitDuration(enterMs)
+                        // Shared-axis push between the main menu and a sub-panel; tab switches
+                        // are a quick fade-through. Reduced motion swaps instantly.
                         val transition = when {
+                            reducedMotion ->
+                                androidx.compose.animation.EnterTransition.None togetherWith
+                                    androidx.compose.animation.ExitTransition.None
                             oldPanel == ReaderMenuPanelV30.MAIN &&
                                 newPanel != ReaderMenuPanelV30.MAIN -> {
-                                (slideInHorizontally(tween(210)) { it / 4 } +
-                                    fadeIn(tween(160))) togetherWith
-                                    (slideOutHorizontally(tween(180)) { -it / 5 } +
-                                        fadeOut(tween(120)))
+                                (slideInHorizontally(tween(enterMs, easing = m.EaseOut)) { it / 6 } +
+                                    fadeIn(tween(m.DURATION_QUICK, easing = m.EaseOut))) togetherWith
+                                    (slideOutHorizontally(tween(exitMs, easing = m.EaseIn)) { -it / 8 } +
+                                        fadeOut(tween(exitMs, easing = m.EaseIn)))
                             }
                             oldPanel != ReaderMenuPanelV30.MAIN &&
                                 newPanel == ReaderMenuPanelV30.MAIN -> {
-                                (slideInHorizontally(tween(210)) { -it / 4 } +
-                                    fadeIn(tween(160))) togetherWith
-                                    (slideOutHorizontally(tween(180)) { it / 5 } +
-                                        fadeOut(tween(120)))
+                                (slideInHorizontally(tween(enterMs, easing = m.EaseOut)) { -it / 6 } +
+                                    fadeIn(tween(m.DURATION_QUICK, easing = m.EaseOut))) togetherWith
+                                    (slideOutHorizontally(tween(exitMs, easing = m.EaseIn)) { it / 8 } +
+                                        fadeOut(tween(exitMs, easing = m.EaseIn)))
                             }
-                            else -> fadeIn(tween(150)) togetherWith fadeOut(tween(110))
+                            else -> fadeIn(tween(m.DURATION_QUICK, delayMillis = m.DURATION_INSTANT / 2, easing = m.EaseOut)) togetherWith
+                                fadeOut(tween(m.DURATION_INSTANT, easing = m.EaseIn))
                         }
                         transition using SizeTransform(clip = true)
                     },
@@ -918,25 +938,36 @@ private fun ReaderChapterRowV30(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = t.space1)
+            .padding(vertical = 2.dp)
             .background(
-                color = if (current) t.accent else Color.Transparent,
+                color = if (current) t.input else Color.Transparent,
                 shape = shape,
             )
             .border(
                 width = 1.dp,
-                color = if (current) t.primary else Color.Transparent,
+                color = if (current) t.border else Color.Transparent,
                 shape = shape,
             )
             .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
             .padding(horizontal = t.space3, vertical = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (current) {
+            // A 3dp jade rail marks the current chapter; the row itself stays neutral.
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(18.dp)
+                    .background(color = t.primary, shape = CircleShape),
+            )
+            Spacer(Modifier.width(t.space2 + 2.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (current) t.accentForeground else t.foreground,
+                color = if (current) t.foreground else t.secondaryForeground,
                 fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -944,7 +975,7 @@ private fun ReaderChapterRowV30(
             if (current) {
                 Text(
                     text = "正在阅读",
-                    modifier = Modifier.padding(top = t.space1),
+                    modifier = Modifier.padding(top = 2.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = t.primary,
                 )
@@ -1819,6 +1850,7 @@ private fun ReaderRenameChapterDialogV30(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
@@ -1882,6 +1914,7 @@ private fun ReaderDeleteLastChapterDialogV30(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .langhuanEnterOnMount()
                 .background(color = t.card, shape = shape)
                 .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
@@ -1924,44 +1957,67 @@ private fun ReaderMenuTabsV30(
     onTab: (ReaderMenuTabV30) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    Row(
+    val reduced = LocalLanghuanReducedMotion.current
+    val items = listOf(
+        ReaderMenuTabV30.DETAILS to "详情",
+        ReaderMenuTabV30.DIRECTORY to "目录",
+        ReaderMenuTabV30.MORE to "更多",
+    )
+    val selectedIndex = items.indexOfFirst { it.first == tab }.coerceAtLeast(0)
+    // The pill follows the active tab (transitions.dev "tabs sliding"); only translationX animates.
+    val indicator by animateFloatAsState(
+        targetValue = selectedIndex.toFloat(),
+        animationSpec = if (reduced) androidx.compose.animation.core.snap() else tween(LanghuanMotion.DURATION_STANDARD, easing = LanghuanMotion.EaseInOut),
+        label = "readerTabIndicator",
+    )
+    val outerShape = RoundedCornerShape(t.radiusMd)
+    val innerShape = RoundedCornerShape(t.radiusSm)
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .height(56.dp)
             .padding(horizontal = t.space3, vertical = t.space1),
-        horizontalArrangement = Arrangement.spacedBy(t.space1),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        listOf(
-            ReaderMenuTabV30.DETAILS to "详情",
-            ReaderMenuTabV30.DIRECTORY to "目录",
-            ReaderMenuTabV30.MORE to "更多",
-        ).forEach { (item, label) ->
-            val selected = tab == item
-            val shape = RoundedCornerShape(t.radiusMd)
+        val segment = maxWidth / items.size
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(color = t.input, shape = outerShape)
+                .padding(3.dp),
+        ) {
+            val inner = (segment * items.size - 6.dp) / items.size
             Box(
                 modifier = Modifier
-                    .weight(1f)
+                    .width(inner)
                     .fillMaxHeight()
-                    .background(
-                        color = if (selected) t.accent else Color.Transparent,
-                        shape = shape,
+                    .graphicsLayer { translationX = indicator * inner.toPx() }
+                    .background(color = t.card, shape = innerShape)
+                    .border(width = 1.dp, color = t.border, shape = innerShape),
+            )
+            Row(modifier = Modifier.fillMaxSize()) {
+                items.forEach { (item, label) ->
+                    val selected = tab == item
+                    val textColor by animateColorAsState(
+                        targetValue = if (selected) t.foreground else t.mutedForeground,
+                        animationSpec = LanghuanMotion.standard(reduced = reduced),
+                        label = "readerTabText",
                     )
-                    .border(
-                        width = 1.dp,
-                        color = if (selected) t.border else Color.Transparent,
-                        shape = shape,
-                    )
-                    .selectable(selected = selected, role = Role.Tab) { onTab(item) }
-                    .semantics { contentDescription = "阅读菜单：$label" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) t.accentForeground else t.mutedForeground,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .selectable(selected = selected, role = Role.Tab) { onTab(item) }
+                            .semantics { contentDescription = "阅读菜单：$label" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = textColor,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        )
+                    }
+                }
             }
         }
     }
@@ -1981,9 +2037,9 @@ private fun ReaderMenuHandleV30() {
     ) {
         Box(
             modifier = Modifier
-                .width(36.dp)
+                .width(32.dp)
                 .height(4.dp)
-                .background(color = t.border, shape = CircleShape),
+                .background(color = t.mutedForeground.copy(alpha = 0.35f), shape = CircleShape),
         )
     }
 }
@@ -2023,7 +2079,7 @@ private fun ReaderPanelHeaderV30(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(40.dp).clickable(onClick = onBack),
+            modifier = Modifier.size(48.dp).clickable(role = Role.Button, onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

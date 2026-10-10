@@ -113,7 +113,9 @@ fun Modifier.enterOnceV31(
 /** Shrinks slightly while pressed. Pair with an interaction source that has no ripple. */
 fun Modifier.pressScaleV31(interactionSource: MutableInteractionSource, pressedScale: Float = .96f): Modifier = composed {
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) pressedScale else 1f, LanghuanMotionV31.press(), label = "pressScale")
+    // Reduced motion (system animator scale 0): keep the click, drop the scale.
+    val reduced = LocalLanghuanReducedMotion.current
+    val scale by animateFloatAsState(if (pressed && !reduced) pressedScale else 1f, LanghuanMotionV31.press(), label = "pressScale")
     graphicsLayer {
         scaleX = scale
         scaleY = scale
