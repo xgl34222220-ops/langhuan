@@ -253,9 +253,9 @@ internal fun evaluateRuleV95(
     return value
 }
 
-private val PUT_V95 = Regex("@put:(\\{[^{}]*})", RegexOption.IGNORE_CASE)
-private val GET_V95 = Regex("@get:\\{([^{}]+)}", RegexOption.IGNORE_CASE)
-private val JSON_TEMPLATE_V95 = Regex("\\{(\\$[.\\[][^{}]*)}")
+private val PUT_V95 = Regex("@put:(\\{[^\\{\\}]*\\})", RegexOption.IGNORE_CASE)
+private val GET_V95 = Regex("@get:\\{([^\\{\\}]+)\\}", RegexOption.IGNORE_CASE)
+private val JSON_TEMPLATE_V95 = Regex("\\{(\\$[.\\[][^\\{\\}]*)\\}")
 
 private fun applyRuleV95(value: RuleValueV95, rawRule: String, list: Boolean, baseUri: String, keepStructure: Boolean): RuleValueV95 {
     var rule = rawRule.trim()
@@ -265,7 +265,7 @@ private fun applyRuleV95(value: RuleValueV95, rawRule: String, list: Boolean, ba
     PUT_V95.findAll(rule).toList().forEach { match ->
         val text = match.groupValues[1]
         (runCatching { parseSourceOptionsV94(text) }.getOrNull()
-            ?: runCatching { parseSourceOptionsV94(text.replace(Regex("([{,]\\s*)([A-Za-z_\\u4e00-\\u9fff][\\w\\u4e00-\\u9fff]*)\\s*:"), "$1\"$2\":")) }.getOrNull())
+            ?: runCatching { parseSourceOptionsV94(text.replace(Regex("([\\{,]\\s*)([A-Za-z_\\u4e00-\\u9fff][\\w\\u4e00-\\u9fff]*)\\s*:"), "$1\"$2\":")) }.getOrNull())
             ?.forEach { (name, ruleValue) ->
             val putRule = (ruleValue as? JsonPrimitive)?.contentOrNull.orEmpty()
             SourceVariablesV95.put(scope?.source, name, ruleValueStringV95(evaluateRuleV95(value, putRule, false, baseUri)))
@@ -386,14 +386,20 @@ private fun subRuleValuesV95(value: RuleValueV95, rawSub: String, list: Boolean,
         }
         lower.startsWith("@xpath:") || sub.startsWith("/") -> {
             if (lower.startsWith("@xpath:")) sub = sub.substring(7)
-            if (list || keepStructure) xpathElementsV95(element, sub).map { RuleValueV95.Node(it) }
+            // Before a script piece only a node-selecting path keeps its elements; `/@href`, `/text()` give strings.
+            if (list || (keepStructure && XPATH_TAIL_V95.find(sub.trim()) == null)) xpathElementsV95(element, sub).map { RuleValueV95.Node(it) }
             else xpathValuesV95(element, sub).map { RuleValueV95.Text(it) }
         }
         sub.startsWith(":") -> regexAllInOneV95(element, sub.substring(1)).map { RuleValueV95.Text(it) }
         else -> {
             if (lower.startsWith("@@")) sub = sub.substring(2)
-            if (list || keepStructure) basicRuleElementsV36(element, sub).map { RuleValueV95.Node(it) }
-            else listOf(RuleValueV95.Text(basicRuleValuesV36(element, sub).joinToString("\n")))
+            when {
+                list -> basicRuleElementsV36(element, sub).map { RuleValueV95.Node(it) }
+                // `class.x@text@js:…` hands the script a string; `class.x@js:…` hands it the element.
+                keepStructure && selectChainV36(element, sub, valueRule = true).second == null ->
+                    basicRuleElementsV36(element, sub).map { RuleValueV95.Node(it) }
+                else -> listOf(RuleValueV95.Text(basicRuleValuesV36(element, sub).joinToString("\n")))
+            }
         }
     }
 }
@@ -465,8 +471,12 @@ private fun templateValueV95(inner: String, value: RuleValueV95, baseUri: String
 
 private val XPATH_TAIL_V95 = Regex("^(.*?)/(@[\\w:.-]+|text\\(\\)|allText\\(\\)|textNodes\\(\\)|ownText\\(\\)|html\\(\\)|outerHtml\\(\\)|innerHtml\\(\\))$")
 
+/** Like JsoupXpath (Legado), `//x` and `/x` start at the element being read, not at its document. */
+private fun relativeXpathV95(context: Element, path: String): String =
+    if (context !is Document && path.startsWith("/")) ".$path" else path
+
 internal fun xpathElementsV95(context: Element, rawPath: String): List<Element> {
-    val path = rawPath.trim()
+    val path = relativeXpathV95(context, rawPath.trim())
     if (path.isEmpty()) return emptyList()
     val match = XPATH_TAIL_V95.find(path)
     val elementsPath = match?.groupValues?.get(1)?.trimEnd('/')?.ifBlank { "." } ?: path
@@ -474,7 +484,7 @@ internal fun xpathElementsV95(context: Element, rawPath: String): List<Element> 
 }
 
 internal fun xpathValuesV95(context: Element, rawPath: String): List<String> {
-    val path = rawPath.trim()
+    val path = relativeXpathV95(context, rawPath.trim())
     if (path.isEmpty()) return emptyList()
     val match = XPATH_TAIL_V95.find(path)
     val tail = match?.groupValues?.get(2)
@@ -643,7 +653,7 @@ private fun jsonFilterV95(item: JsonElement, expression: String): Boolean {
     if (ors.size > 1) return ors.any { jsonFilterV95(item, it) }
     val ands = expression.split("&&")
     if (ands.size > 1) return ands.all { jsonFilterV95(item, it) }
-    val match = Regex("^\\s*(!?)@([.\\[][^=!<>~]*?)\\s*(==|!=|>=|<=|>|<|=~)?\\s*(.*?)\\s*$").find(expression) ?: return false
+    val match = Regex("^\\s*(!?)@([.\\[][^=!<>~]*)(==|!=|>=|<=|>|<|=~)?\\s*(.*?)\\s*$").find(expression) ?: return false
     val negate = match.groupValues[1] == "!"
     val found = jsonPathV95(item, "$" + match.groupValues[2].trim())
     val operator = match.groupValues[3]
@@ -677,12 +687,19 @@ private val JAVA_CLASS_ACCESS_V95 = Regex(
     "\\bPackages\\.|\\bJavaImporter\\b|\\bimportClass\\b|\\bimportPackage\\b|\\bjava\\.(lang|io|net|util|nio|security|text)\\.|\\bjavax\\.|\\borg\\.(jsoup|json|apache)\\.|\\bandroid\\.|\\bcom\\.(google|github|script)\\.|\\bio\\.legado\\.|\\bThread\\b",
 )
 private val UNSUPPORTED_JAVA_API_V95 = listOf(
-    "java.webView", "java.startBrowser", "java.getVerificationCode", "java.importScript", "java.downloadFile",
+    "java.webView", "java.importScript", "java.downloadFile",
     "java.readFile", "java.readTxtFile", "java.deleteFile", "java.unzipFile", "java.un7zFile", "java.unrarFile",
     "java.unArchiveFile", "java.getTxtInFolder", "java.getZipStringContent", "java.getZipByteArrayContent",
     "java.cacheFile", "java.openUrl", "java.openVideoPlayer", "java.webViewGetSource", "java.webViewGetOverrideUrl",
-    "java.getFile", "java.queryBase64TTF", "java.queryTTF", "java.replaceFont", "java.startBrowserAwait",
+    "java.getFile", "java.queryBase64TTF", "java.queryTTF", "java.replaceFont",
 )
+
+/** Browser hand-offs Legado uses only when a site shows a captcha / challenge; they fail at that moment, not at import. */
+internal val BROWSER_FALLBACK_APIS_V95 = listOf("java.startBrowser", "java.startBrowserAwait", "java.getVerificationCode")
+
+/** A source asked for an interactive browser step (captcha, "verify you are human"). */
+internal class SourceNeedsBrowserV95(api: String) :
+    IllegalStateException("书源要求在浏览器中完成验证（$api），琅嬛暂不支持这一步；可先在浏览器打开该网站完成验证后再试")
 
 /** Why a script cannot run in the sandbox (Java classes, WebView, files), or null when it can. */
 internal fun sourceScriptUnsupportedV95(script: String): String? {

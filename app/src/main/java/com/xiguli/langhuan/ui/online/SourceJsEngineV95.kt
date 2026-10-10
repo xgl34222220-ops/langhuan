@@ -44,6 +44,9 @@ import org.mozilla.javascript.json.JsonParser
 
 internal class SourceJsTimeoutV95(message: String) : Error(message)
 
+/** A script ran past its time budget (or was cancelled while running). Never swallowed as an empty value. */
+internal class SourceJsTimeoutExceptionV95(message: String?, cause: Throwable) : IllegalStateException(message, cause)
+
 internal class SourceJsNetworkDisabledV95 : IllegalStateException("此处的书源脚本不能联网（发现分类在本机计算，不发请求）")
 
 internal object SourceJsEngineV95 {
@@ -92,7 +95,7 @@ internal object SourceJsEngineV95 {
             return block(cx)
         } catch (e: SourceJsTimeoutV95) {
             if (Thread.currentThread().isInterrupted) throw CancellationException("书源脚本已取消").apply { initCause(e) }
-            throw IllegalStateException(e.message, e)
+            throw SourceJsTimeoutExceptionV95(e.message, e)
         } finally {
             Context.exit()
             depth.set(level)
@@ -118,6 +121,13 @@ internal object SourceJsEngineV95 {
         eval(code, result, content, baseUri, emptyMap())
     } catch (e: RhinoException) {
         lastError.set(e.details().take(200))
+        RuleValueV95.Text("")
+    } catch (e: RuntimeException) {
+        // A failing helper (bad url, crypto error) empties this value like Legado does; timeouts,
+        // cancellation and "no network here" still stop the whole operation.
+        if (e is CancellationException || e is SourceJsTimeoutExceptionV95 || e is SourceJsNetworkDisabledV95 || e is SourceNeedsBrowserV95 ||
+            Thread.currentThread().isInterrupted) throw e
+        lastError.set(e.message?.take(200))
         RuleValueV95.Text("")
     }
 
@@ -349,17 +359,20 @@ private class HostV95(val rules: SourceRuleScopeV95?) {
         fn(java, "t2s") { _, _, a -> s.str(a, 0) }
         fn(java, "s2t") { _, _, a -> s.str(a, 0) }
         fn(java, "getCookie") { _, _, _ -> "" }
+        listOf("startBrowser", "startBrowserAwait", "getVerificationCode").forEach { api ->
+            fn(java, api) { _, _, _ -> throw SourceNeedsBrowserV95("java.$api") }
+        }
         ScriptableObject.putProperty(global, "java", java)
 
         // source
         val sourceObj = cx.newObject(global)
         val src = source
-        ScriptableObject.putProperty(sourceObj, "bookSourceUrl", src?.baseUrl.orEmpty())
+        ScriptableObject.putProperty(sourceObj, "bookSourceUrl", src?.legadoKey?.ifBlank { null } ?: src?.baseUrl.orEmpty())
         ScriptableObject.putProperty(sourceObj, "bookSourceName", src?.name.orEmpty())
-        ScriptableObject.putProperty(sourceObj, "key", src?.baseUrl.orEmpty())
+        ScriptableObject.putProperty(sourceObj, "key", src?.legadoKey?.ifBlank { null } ?: src?.baseUrl.orEmpty())
         ScriptableObject.putProperty(sourceObj, "loginUrl", src?.loginUrl.orEmpty())
         ScriptableObject.putProperty(sourceObj, "jsLib", src?.jsLib.orEmpty())
-        fn(sourceObj, "getKey") { _, _, _ -> src?.baseUrl.orEmpty() }
+        fn(sourceObj, "getKey") { _, _, _ -> src?.legadoKey?.ifBlank { null } ?: src?.baseUrl.orEmpty() }
         fn(sourceObj, "getVariable") { _, _, _ -> SourceVariablesV95.get(src, "__source_variable") }
         fn(sourceObj, "setVariable") { _, _, a -> SourceVariablesV95.put(src, "__source_variable", s.str(a, 0)); "" }
         fn(sourceObj, "put") { _, _, a -> s.str(a, 1).also { SourceVariablesV95.put(src, s.str(a, 0), it) } }
@@ -408,7 +421,7 @@ private class HostV95(val rules: SourceRuleScopeV95?) {
     }
 
     private fun rethrowFatal(error: Throwable) {
-        if (error is SourceJsTimeoutV95 || error is CancellationException || error is SourceJsNetworkDisabledV95 || error is InterruptedException) throw error
+        if (error is SourceJsTimeoutV95 || error is SourceJsTimeoutExceptionV95 || error is CancellationException || error is SourceJsNetworkDisabledV95 || error is InterruptedException) throw error
         if (Thread.currentThread().isInterrupted) throw CancellationException("书源脚本已取消")
     }
 

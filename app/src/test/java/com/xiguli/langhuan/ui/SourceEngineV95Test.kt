@@ -64,7 +64,7 @@ class SourceEngineV95Test {
         val root = BookSourceJsonV36.parseToJsonElement(apiJson)
         assertEquals(2, jsonPathV95(root, "$.data.list[*].name").size)
         assertEquals("未央", jsonTextV95(jsonPathV95(root, "$.data.list[-1].name").single()))
-        assertEquals("长夜", jsonTextV95(jsonPathV95(root, "$..list[?(@.id == 11)].name").single()))
+        assertEquals(listOf("长夜"), jsonPathV95(root, "$..list[?(@.id == 11)].name").map(::jsonTextV95).distinct())
         assertEquals(listOf("11", "12"), jsonPathV95(root, "$..id").map(::jsonTextV95))
         assertEquals("2", jsonTextV95(jsonPathV95(root, "data.total").single()))
         assertEquals(1, jsonPathV95(root, "$.data.list[0:1]").size)

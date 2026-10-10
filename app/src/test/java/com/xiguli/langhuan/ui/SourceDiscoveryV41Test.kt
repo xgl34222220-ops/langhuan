@@ -93,10 +93,18 @@ class SourceDiscoveryV41Test {
 
     @Test fun unsupportedDiscoveryAndRuntimeDependenciesAreNamedOnImport() {
         val base = "\"bookSourceUrl\":\"https://books.example\",\"searchUrl\":\"/search?q={{key}}\",\"ruleSearch\":{\"bookList\":\"li\"}"
-        for (field in listOf("jsLib", "mainJs", "loginCheckJs", "coverDecodeJs", "exploreScreen")) {
+        // V95: a jsLib string runs in the script sandbox; a remote jsLib map and mainJs are still refused by name.
+        assertEquals("function f(){return 1}", parseBookSourcesV36("{$base,\"jsLib\":\"function f(){return 1}\"}").sources.single().jsLib)
+        val remoteLib = parseBookSourcesV36("{$base,\"jsLib\":{\"lib\":\"https://cdn.example/lib.js\"}}")
+        assertTrue(remoteLib.sources.isEmpty())
+        assertTrue(remoteLib.skipped.single().contains("jsLib"))
+        val mainJs = parseBookSourcesV36("{$base,\"mainJs\":\"script\"}")
+        assertTrue(mainJs.skipped.single().contains("mainJs"))
+        // Optional runtime hooks no longer drop the whole source; the import says what is ignored.
+        for (field in listOf("loginCheckJs", "coverDecodeJs", "exploreScreen")) {
             val imported = parseBookSourcesV36("{$base,\"$field\":\"script\"}")
-            assertTrue(imported.sources.isEmpty())
-            assertTrue(imported.skipped.single().contains(field))
+            assertEquals(1, imported.sources.size)
+            assertTrue(imported.warnings.toString(), imported.warnings.single().contains(field))
         }
         val invalid = sourceDiscoveryCatalogV41(source.copy(exploreUrl = "榜单::/rank,{\"webView\":true}"))
         assertTrue(invalid.sections.isEmpty())

@@ -94,6 +94,8 @@ internal data class BookSourceV36(
     val infoInit: String = "",
     /** Legado loginUrl: often a block of helper functions scripts `eval`; no login UI is offered. */
     val loginUrl: String = "",
+    /** The Legado bookSourceUrl as written (may carry `#注释`); scripts read it through source.getKey(). */
+    val legadoKey: String = "",
 )
 
 internal data class OnlineBookV36(
@@ -178,6 +180,9 @@ internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
                 sources += source
                 sanitized.notices.forEach { warnings += "$name：$it" }
                 if (legado) ignoredLegadoCapabilitiesV95(obj).takeIf { it.isNotEmpty() }?.let { warnings += "$name：已忽略 ${it.joinToString("、")}" }
+                if (legado && BROWSER_FALLBACK_APIS_V95.any { obj.toString().contains(it) }) {
+                    warnings += "$name：遇到人机验证时需要在浏览器中完成（startBrowser），琅嬛暂不支持这一步"
+                }
             }
         }
     }
@@ -267,6 +272,7 @@ private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
         searchBookUrl = search?.string("bookUrl").orEmpty(),
         jsLib = obj.string("jsLib"),
         loginUrl = obj.string("loginUrl"),
+        legadoKey = obj.string("bookSourceUrl").trim().takeIf { it.contains('#') }.orEmpty(),
         infoInit = info?.string("init").orEmpty(),
         infoName = info?.string("name").orEmpty(),
         infoAuthor = info?.string("author").orEmpty(),
@@ -433,7 +439,7 @@ private fun isAttrSegmentV36(segment: String): Boolean = segment in VALUE_ATTRS 
 
 private fun applySegmentV36(element: Element, rawSegment: String): List<Element> {
     // Legado list index: tag.li[0], tag.li[-1], tag.li[1:3], tag.li[!0]
-    val bracket = Regex("^(.*?)\\[(!?)([-\\d:,\\s]+)]$").find(rawSegment)
+    val bracket = Regex("^(.*?)\\[(!?)([-\\d:,\\s]+)\\]$").find(rawSegment)
     if (bracket != null && bracket.groupValues[1].isNotEmpty()) {
         val found = applySegmentV36(element, bracket.groupValues[1])
         val picked = LinkedHashSet<Int>()

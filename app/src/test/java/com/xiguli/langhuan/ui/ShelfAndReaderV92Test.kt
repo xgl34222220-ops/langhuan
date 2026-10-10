@@ -98,7 +98,8 @@ class ShelfAndReaderV92Test {
         assertEquals(2, onlineCoverSampleSizeV92(1000, 1400))
         assertEquals(8, onlineCoverSampleSizeV92(4000, 6000))
         val screen = source("ui/online/OnlineBooksScreenV50.kt")
-        assertTrue(screen.contains("decodeOnlineCoverV92(fetchSourceBytesV36(coverUrl, maxBytes = 2 * 1024 * 1024))"))
+        // V95: list covers go through the source-aware downloader (Referer/User-Agent, header options), still capped at 2 MB.
+        assertTrue(screen.contains("decodeOnlineCoverV92(downloadOnlineCoverV95(coverUrl, maxBytes = 2 * 1024 * 1024))"))
     }
 
     @Test fun liveScreensAreWired() {

@@ -88,7 +88,7 @@ internal fun sourceDiscoveryCatalogV41(source: BookSourceV36): SourceDiscoveryCa
     val sections = if (raw.startsWith("[")) {
         val array = runCatching { BookSourceJsonV36.parseToJsonElement(raw) as? JsonArray }.getOrNull()
             ?: return SourceDiscoveryCatalogV41(emptyList(), listOf("exploreUrl 分类数组格式无效"))
-        if (array.size > 60) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 60 个分类，请拆分书源"))
+        if (array.size > 300) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 300 个分类，请拆分书源"))
         array.mapNotNull { item ->
             val obj = item as? JsonObject
             if (obj == null) { issues += "分类条目必须是对象"; return@mapNotNull null }
@@ -113,7 +113,7 @@ internal fun sourceDiscoveryCatalogV41(source: BookSourceV36): SourceDiscoveryCa
         }
     } else {
         val parts = raw.split("&&", "\n").filter { it.isNotBlank() }
-        if (parts.size > 60) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 60 个分类，请拆分书源"))
+        if (parts.size > 300) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 300 个分类，请拆分书源"))
         parts.mapNotNull { part ->
             val fields = part.split("::", limit = 2)
             if (fields.size == 2) entry(fields[0], fields[1]) else entry("发现", fields[0])
@@ -176,7 +176,7 @@ internal fun discoverPageV41(
 
 /** `{{page}}`, a page expression such as `{{(page-1)*20}}`, or a `<1,2,3>` page list. */
 internal fun discoveryTemplatePagedV95(template: String): Boolean =
-    Regex("\\{\\{[^}]*\\bpage\\b").containsMatchIn(template) || Regex("<[^<>]*,[^<>]*>").containsMatchIn(template) ||
+    Regex("\\{\\{[^\\}]*\\bpage\\b").containsMatchIn(template) || Regex("<[^<>]*,[^<>]*>").containsMatchIn(template) ||
         template.contains("searchPage")
 
 internal fun discoverBooksV41(source: BookSourceV36, section: SourceDiscoveryV41): List<OnlineBookV36> =

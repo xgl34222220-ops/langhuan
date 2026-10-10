@@ -72,7 +72,10 @@ internal fun jsObjectLiteralToJsonV94(text: String): String {
 internal fun parseSourceOptionsV94(text: String): JsonObject {
     val trimmed = text.trim()
     val strict = runCatching { BookSourceJsonV36.parseToJsonElement(trimmed) as? JsonObject }.getOrNull()
-    if (strict != null) return strict
+    // The lenient parser also accepts 'single quoted' tokens as unquoted strings, quotes included;
+    // that is the object-literal form and must go through the conversion below.
+    fun quoted(text: String) = text.length >= 2 && text.startsWith("'") && text.endsWith("'")
+    if (strict != null && strict.none { (k, v) -> quoted(k) || (v as? kotlinx.serialization.json.JsonPrimitive)?.let { it.isString && quoted(it.content) } == true }) return strict
     return runCatching { BookSourceJsonV36.parseToJsonElement(jsObjectLiteralToJsonV94(trimmed)) as? JsonObject }
         .getOrNull() ?: throw IllegalArgumentException("请求选项必须是 JSON 对象（例如 {\"method\":\"POST\",\"body\":\"q={{key}}\"}）")
 }
