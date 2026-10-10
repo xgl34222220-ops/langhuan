@@ -216,7 +216,7 @@ def monochrome_paths(strokes, unit_scale=1.0):
     """Simplified leaf silhouettes for the Android 13 themed icon (solid, no texture)."""
     out = []
     for st in strokes:
-        t, pts, nrm = st.centre(60)
+        t, pts, nrm = st.centre(26)
         w = st.profile(t) / 2
         if st.kind == "stem":
             w = np.maximum(w, 0.55)

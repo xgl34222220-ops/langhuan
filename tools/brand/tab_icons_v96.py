@@ -29,7 +29,6 @@ def rot_rrect(ax, ay, w, h, deg, r):
     def P(s, t): return ax + vx * s + ux * t, ay + vy * s + uy * t
     # corners with rounded tops only approximated by small chamfer arcs
     pts = [P(0, 0), P(w, 0), P(w, h - r), P(w - r, h), P(r, h), P(0, h - r)]
-    x = [P(0, 0), P(w, 0)]
     d = f"M{f(pts[0][0])},{f(pts[0][1])}L{f(pts[1][0])},{f(pts[1][1])}L{f(pts[2][0])},{f(pts[2][1])}"
     d += f"A{f(r)},{f(r)} 0 0 0 {f(pts[3][0])},{f(pts[3][1])}L{f(pts[4][0])},{f(pts[4][1])}"
     d += f"A{f(r)},{f(r)} 0 0 0 {f(pts[5][0])},{f(pts[5][1])}Z"
@@ -39,7 +38,7 @@ def rot_rrect(ax, ay, w, h, deg, r):
 # ------------------------------------------------------------------ 书架: books on a shelf
 book1 = rrect(4.25, 4.25, 8.25, 19.75, 1.0)
 book2 = rrect(9.75, 6.75, 13.75, 19.75, 1.0)
-book3 = rot_rrect(15.0, 19.75, 3.6, 12.4, 17, 1.0)
+book3 = rot_rrect(15.2, 19.75 - 3.6 * math.sin(math.radians(17)), 3.6, 12.0, 17, 1.0)
 shelf_base = "M2.75,19.75H21.25"
 band1 = "M4.25,8.25H8.25"
 band2 = "M9.75,10.25H13.75"

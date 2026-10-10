@@ -10,76 +10,82 @@ import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
 /**
- * V95 custom tab glyphs for 书架 / 书城 / 创作 / 我的, drawn on a 24-unit grid with a 1.6 stroke
- * (round caps and joins) to sit between SF Symbols and Material Symbols. Each destination has an
- * outline glyph (unselected) and a filled glyph (selected) with the same silhouette, so the swap
- * reads as a fill rather than a different icon. Paint is black; callers tint (Icon does).
- * Source of truth for the shapes: tools/brand/tab_icons.py.
+ * V96 custom tab glyphs for 书架 / 书城 / 创作 / 我的, drawn on a 24-unit grid with a 1.5 stroke
+ * and round caps/joins (SF Symbols "regular" weight at 24 dp). 书架 = books on a shelf, 书城 = a
+ * storefront under a scalloped awning, 创作 = a calligraphy brush (毛笔, echoing the ink-bamboo
+ * brand), 我的 = a person. Each destination has an outline glyph (unselected) and a filled glyph
+ * (selected) with exactly the same silhouette: filled shapes are filled *and* stroked with the same
+ * 1.5 line, so the swap reads as ink flooding the outline, never as a size jump. Paint is black;
+ * callers tint (Icon does). Source of truth for the shapes: tools/brand/tab_icons_v96.py.
  */
 object LanghuanTabIconsV95 {
     val ShelfOutline: ImageVector by lazy {
         tabIcon("ShelfOutline") {
-        strokePath("M5,4.5h3a1,1 0 0 1 1,1v13.5h-5v-13.5a1,1 0 0 1 1,-1z")
-        strokePath("M10.5,7.5h3a1,1 0 0 1 1,1v10.5h-5v-10.5a1,1 0 0 1 1,-1z")
-        strokePath("M16.1,7.9l2.4,-0.65a0.9,0.9 0 0 1 1.1,0.64l2.5,9.4l-3.6,0.96l-2.5,-9.25a0.9,0.9 0 0 1 0.1,-1.1z")
-        strokePath("M3,21h18")
-        strokePath("M6.5,8v1.6")
+            strokePath("M5.25,4.25H7.25A1,1 0 0 1 8.25,5.25V18.75A1,1 0 0 1 7.25,19.75H5.25A1,1 0 0 1 4.25,18.75V5.25A1,1 0 0 1 5.25,4.25Z")
+            strokePath("M10.75,6.75H12.75A1,1 0 0 1 13.75,7.75V18.75A1,1 0 0 1 12.75,19.75H10.75A1,1 0 0 1 9.75,18.75V7.75A1,1 0 0 1 10.75,6.75Z")
+            strokePath("M15.2,18.7L18.64,19.75L21.86,9.23A1,1 0 0 0 21.19,7.98L19.66,7.51A1,1 0 0 0 18.42,8.18Z")
+            strokePath("M2.75,19.75H21.25")
+            strokePath("M4.25,8.25H8.25")
+            strokePath("M9.75,10.25H13.75")
         }
     }
 
     val ShelfFilled: ImageVector by lazy {
         tabIcon("ShelfFilled") {
-        fillPath("M5.1,3.7h2.2a1.6,1.6 0 0 1 1.6,1.6v14.5h-5.4v-14.5a1.6,1.6 0 0 1 1.6,-1.6z M5.4,7.4h1.6v2.6h-1.6z")
-        fillPath("M11.6,6.7h2.2a1.6,1.6 0 0 1 1.6,1.6v11.5h-5.4v-11.5a1.6,1.6 0 0 1 1.6,-1.6z")
-        fillPath("M17.1,7.6l1.6,-0.43a1.5,1.5 0 0 1 1.85,1.06l2.6,9.7l-4.6,1.23l-2.5,-9.4a1.5,1.5 0 0 1 1.05,-2.16z")
-        strokePath("M3,21h18")
+            fillStrokePath("M5.25,4.25H7.25A1,1 0 0 1 8.25,5.25V18.75A1,1 0 0 1 7.25,19.75H5.25A1,1 0 0 1 4.25,18.75V5.25A1,1 0 0 1 5.25,4.25ZM5.3,7.6H7.2A0.3,0.3 0 0 1 7.5,7.9V8.6A0.3,0.3 0 0 1 7.2,8.9H5.3A0.3,0.3 0 0 1 5,8.6V7.9A0.3,0.3 0 0 1 5.3,7.6Z")
+            fillStrokePath("M10.75,6.75H12.75A1,1 0 0 1 13.75,7.75V18.75A1,1 0 0 1 12.75,19.75H10.75A1,1 0 0 1 9.75,18.75V7.75A1,1 0 0 1 10.75,6.75ZM10.8,9.6H12.7A0.3,0.3 0 0 1 13,9.9V10.6A0.3,0.3 0 0 1 12.7,10.9H10.8A0.3,0.3 0 0 1 10.5,10.6V9.9A0.3,0.3 0 0 1 10.8,9.6Z")
+            fillStrokePath("M15.2,18.7L18.64,19.75L21.86,9.23A1,1 0 0 0 21.19,7.98L19.66,7.51A1,1 0 0 0 18.42,8.18Z")
+            strokePath("M2.75,19.75H21.25")
         }
     }
 
     val StoreOutline: ImageVector by lazy {
         tabIcon("StoreOutline") {
-        strokePath("M2.8,9.2c3.2,-0.5 6.4,-2.2 9.2,-5.2c2.8,3 6,4.7 9.2,5.2")
-        strokePath("M5,9.6v10.9h14v-10.9")
-        strokePath("M9.6,20.5v-4.3a2.4,2.4 0 0 1 4.8,0v4.3")
-        strokePath("M9.5,12h5")
+            strokePath("M3.75,9.25L5.25,4.75H18.75L20.25,9.25a2.06,2.06 0 0 1 -4.12,0a2.06,2.06 0 0 1 -4.12,0a2.06,2.06 0 0 1 -4.12,0a2.06,2.06 0 0 1 -4.12,0Z")
+            strokePath("M5.25,12V19.25A1,1 0 0 0 6.25,20.25H17.75A1,1 0 0 0 18.75,19.25V12")
+            strokePath("M10,20.25V16.25A2,2 0 0 1 14,16.25V20.25")
         }
     }
 
     val StoreFilled: ImageVector by lazy {
         tabIcon("StoreFilled") {
-        fillPath("M12,3.1c-2.8,3 -5.9,4.7 -9,5.3a0.8,0.8 0 0 0 0.25,1.58c0.4,-0.06 0.8,-0.14 1.15,-0.23v10.75a0.9,0.9 0 0 0 0.9,0.9h4.5v-5.2a2.2,2.2 0 0 1 4.4,0v5.2h4.5a0.9,0.9 0 0 0 0.9,-0.9v-10.75c0.37,0.09 0.75,0.17 1.15,0.23a0.8,0.8 0 0 0 0.25,-1.58c-3.1,-0.6 -6.2,-2.3 -9,-5.3z M9.6,11.3h4.8v1.5h-4.8z")
+            fillStrokePath("M3.75,9.25L5.25,4.75H18.75L20.25,9.25a2.06,2.06 0 0 1 -4.12,0a2.06,2.06 0 0 1 -4.12,0a2.06,2.06 0 0 1 -4.12,0a2.06,2.06 0 0 1 -4.12,0Z")
+            fillStrokePath("M5.25,12.25H18.75V19.25A1,1 0 0 1 17.75,20.25H6.25A1,1 0 0 1 5.25,19.25ZM9.4,21V16.25A2.6,2.6 0 0 1 14.6,16.25V21Z")
         }
     }
 
     val CreateOutline: ImageVector by lazy {
         tabIcon("CreateOutline") {
-        strokePath("M14.8,4.6l4.6,4.6l-9.6,9.6l-5.3,0.7l0.7,-5.3z")
-        strokePath("M12.6,6.8l4.6,4.6")
-        strokePath("M13,20.5h7.5")
+            strokePath("M19.6,4.4L13.8,10.2")
+            strokePath("M12.71,9.1 L14.9,11.29 L13.41,12.78 L11.22,10.59Z")
+            strokePath("M11.22,10.59C8.57,11.19 5.6,15.15 4.43,20.06C8.85,18.82 12.74,15.64 13.41,12.78Z")
         }
     }
 
     val CreateFilled: ImageVector by lazy {
         tabIcon("CreateFilled") {
-        fillPath("M15.4,3.6a1,1 0 0 0 -1.3,0l-9.8,9.8a1,1 0 0 0 -0.28,0.57l-0.75,5.6a0.9,0.9 0 0 0 1,1l5.6,-0.75a1,1 0 0 0 0.57,-0.28l9.8,-9.8a1,1 0 0 0 0,-1.3z M13.17,6.23L17.77,10.83L16.63,11.97L12.03,7.37z")
-        strokePath("M13,20.5h7.5")
+            strokePath("M19.6,4.4L13.8,10.2")
+            fillStrokePath("M12.71,9.1 L14.9,11.29 L13.41,12.78 L11.22,10.59Z")
+            fillStrokePath("M11.22,10.59C8.57,11.19 5.6,15.15 4.43,20.06C8.85,18.82 12.74,15.64 13.41,12.78Z")
         }
     }
 
     val MineOutline: ImageVector by lazy {
         tabIcon("MineOutline") {
-        strokePath("M12,4.2a3.9,3.9 0 1 0 0.01,0z")
-        strokePath("M4.6,20.2c0.8,-3.6 3.7,-5.8 7.4,-5.8s6.6,2.2 7.4,5.8")
+            strokePath("M12,4.25A3.75,3.75 0 1 1 11.99,4.25Z")
+            strokePath("M4.75,20.25C5.45,16.55 8.35,14.25 12,14.25S18.55,16.55 19.25,20.25")
         }
     }
 
     val MineFilled: ImageVector by lazy {
         tabIcon("MineFilled") {
-        fillPath("M12,3.4a4.7,4.7 0 1 0 0.01,0z")
-        fillPath("M3.9,20.1c0.8,-4 4,-6.5 8.1,-6.5s7.3,2.5 8.1,6.5a0.9,0.9 0 0 1 -0.9,1.1h-14.4a0.9,0.9 0 0 1 -0.9,-1.1z")
+            fillStrokePath("M12,4.25A3.75,3.75 0 1 1 11.99,4.25Z")
+            fillStrokePath("M4.75,20.25C5.45,16.55 8.35,14.25 12,14.25S18.55,16.55 19.25,20.25Z")
         }
     }
 }
+
+internal const val TAB_ICON_STROKE_V96 = 1.5f
 
 private class TabIconScopeV95(val builder: ImageVector.Builder) {
     fun strokePath(d: String) {
@@ -87,7 +93,7 @@ private class TabIconScopeV95(val builder: ImageVector.Builder) {
             pathData = addPathNodes(d),
             fill = null,
             stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.6f,
+            strokeLineWidth = TAB_ICON_STROKE_V96,
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round,
         )
@@ -95,6 +101,12 @@ private class TabIconScopeV95(val builder: ImageVector.Builder) {
 
     fun fillPath(d: String) {
         builder.addPath(pathData = addPathNodes(d), pathFillType = PathFillType.EvenOdd, fill = SolidColor(Color.Black))
+    }
+
+    /** Fill (even-odd, so inner sub-paths are knock-outs) plus the outer outline at stroke width. */
+    fun fillStrokePath(d: String) {
+        fillPath(d)
+        strokePath(d.substringBefore('Z') + "Z")
     }
 }
 

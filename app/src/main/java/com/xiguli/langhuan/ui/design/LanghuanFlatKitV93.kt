@@ -18,8 +18,19 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ArrowBackIos
+import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -56,18 +67,20 @@ fun FlatIconButtonV93(
     iconSize: Int = 22,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Box(
         modifier = modifier
             .size(44.dp)
             .clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = androidx.compose.foundation.LocalIndication.current, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(iconSize.dp),
-            tint = tint ?: if (selected) t.primary else t.foreground.copy(alpha = 0.82f),
+            modifier = Modifier.size(iconSize.dp).graphicsLayer { alpha = if (pressed) 0.55f else 1f },
+            tint = tint ?: if (selected) t.primary else t.foreground.copy(alpha = 0.84f),
         )
     }
 }
@@ -98,10 +111,13 @@ fun FlatTopBarV93(
             textAlign = TextAlign.Center,
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // V96: an iOS-style chevron reads lighter than the Material arrow.
             FlatIconButtonV93(
-                icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                icon = Icons.AutoMirrored.Outlined.ArrowBackIos,
                 contentDescription = backDescription,
                 onClick = onBack,
+                iconSize = 20,
+                modifier = Modifier.padding(start = 4.dp),
             )
             Spacer(Modifier.weight(1f))
             action?.invoke()
@@ -115,9 +131,11 @@ fun FlatSectionLabelV93(text: String, modifier: Modifier = Modifier) {
     val t = LocalLanghuanUiTokens.current
     Text(
         text = text,
-        modifier = modifier.padding(top = 20.dp, bottom = 6.dp),
-        style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp, letterSpacing = 0.4.sp),
-        color = t.mutedForeground,
+        modifier = modifier.padding(top = 24.dp, bottom = 4.dp),
+        // V96: 12 sp medium, light tracking — a quiet caption, not a heading.
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp),
+        fontWeight = FontWeight.Medium,
+        color = t.mutedForeground.copy(alpha = 0.9f),
     )
 }
 
@@ -172,7 +190,7 @@ fun FlatListRowV93(
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.sp),
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp, letterSpacing = 0.sp),
                 color = content,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -181,7 +199,7 @@ fun FlatListRowV93(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
                     color = if (subtitleAccent) t.primary else t.mutedForeground,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -193,7 +211,7 @@ fun FlatListRowV93(
             Text(
                 text = value,
                 modifier = Modifier.widthIn(max = 140.dp),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
                 color = t.mutedForeground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -202,12 +220,15 @@ fun FlatListRowV93(
         }
         when {
             trailing != null -> { Spacer(Modifier.width(t.space2)); trailing() }
-            chevron && onClick != null -> Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = t.mutedForeground.copy(alpha = 0.6f),
-            )
+            chevron && onClick != null -> {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
+                    contentDescription = null,
+                    modifier = Modifier.size(13.dp),
+                    tint = t.mutedForeground.copy(alpha = 0.5f),
+                )
+            }
         }
     }
 }
@@ -241,10 +262,10 @@ fun FlatSwitchRowV93(
             Spacer(Modifier.width(t.space4))
         }
         Column(Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.sp), color = t.foreground)
+            Text(text = title, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp, letterSpacing = 0.sp), color = t.foreground)
             if (!subtitle.isNullOrBlank()) {
                 Spacer(Modifier.height(2.dp))
-                Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                Text(text = subtitle, style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp), color = t.mutedForeground)
             }
         }
         Spacer(Modifier.width(t.space3))
@@ -256,16 +277,29 @@ fun FlatSwitchRowV93(
 @Composable
 fun FlatSwitchV93(checked: Boolean) {
     val t = LocalLanghuanUiTokens.current
+    // V96: iOS proportions (46 x 28, 24 dp thumb), spring-driven thumb, cross-faded track and a
+    // soft shadow under the thumb.
+    val x by animateDpAsState(
+        if (checked) 20.dp else 2.dp,
+        spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
+        label = "switch-thumb",
+    )
+    val track by animateColorAsState(
+        if (checked) t.primary else t.foreground.copy(alpha = 0.13f),
+        tween(180),
+        label = "switch-track",
+    )
     Box(
         modifier = Modifier
-            .width(42.dp)
-            .height(24.dp)
-            .background(color = if (checked) t.primary else t.input, shape = CircleShape),
+            .width(46.dp)
+            .height(28.dp)
+            .background(color = track, shape = CircleShape),
     ) {
         Box(
             modifier = Modifier
-                .offset(x = if (checked) 20.dp else 2.dp, y = 2.dp)
-                .size(20.dp)
+                .offset(x = x, y = 2.dp)
+                .size(24.dp)
+                .shadow(elevation = 1.5.dp, shape = CircleShape, ambientColor = Color.Black.copy(alpha = 0.2f), spotColor = Color.Black.copy(alpha = 0.25f))
                 .background(color = Color.White, shape = CircleShape),
         )
     }
@@ -320,14 +354,13 @@ fun FlatTextTabV93(
             }
         }
         Spacer(Modifier.height(4.dp))
+        val bar by animateColorAsState(if (selected && !accentText) t.primary else Color.Transparent, tween(180), label = "tab-bar")
+        val barW by animateDpAsState(if (selected) 16.dp else 6.dp, spring(stiffness = Spring.StiffnessMediumLow), label = "tab-bar-w")
         Box(
             Modifier
-                .width(14.dp)
-                .height(3.dp)
-                .background(
-                    color = if (selected && !accentText) t.primary else Color.Transparent,
-                    shape = CircleShape,
-                ),
+                .width(barW)
+                .height(2.5.dp)
+                .background(color = bar, shape = CircleShape),
         )
     }
 }
@@ -402,5 +435,5 @@ fun FlatDotV93(modifier: Modifier = Modifier) {
 @Composable
 fun FlatHairlineV93(modifier: Modifier = Modifier) {
     val t = LocalLanghuanUiTokens.current
-    Box(modifier.fillMaxWidth().height(0.5.dp).background(t.border.copy(alpha = 0.7f)))
+    Box(modifier.fillMaxWidth().height(hairlineDpV96()).background(t.border.copy(alpha = 0.8f)))
 }

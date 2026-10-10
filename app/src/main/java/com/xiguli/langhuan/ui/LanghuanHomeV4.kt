@@ -4,6 +4,13 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -176,6 +183,9 @@ private const val HOME_CUSTOM_SHELVES_V4 = "custom_shelves"
 private const val HOME_CUSTOM_SHELF_ORDER_V4 = "custom_shelf_order_v50"
 private const val HOME_SORT_V4 = "shelf_sort"
 private const val HOME_LAYOUT_V4 = "shelf_layout_v4"
+/** V96: cover-only shelf grid (titles hidden). Default true = titles shown. */
+internal const val HOME_SHOW_TITLES_V96 = "shelf_show_titles_v96"
+internal const val HOME_SHELF_PREFS_NAME_V96 = HOME_SHELF_PREFS_V4
 private const val HOME_TAB_ALL_V4 = "__all__"
 private const val HOME_TAB_WRITING_V4 = "__writing__"
 private const val HOME_TAB_FOLLOWING_V4 = "__following__"
@@ -268,6 +278,7 @@ fun LanghuanHomeV4(
                 ?: HomeLayoutV4.GRID.key,
         )
     }
+    var showTitles by rememberSaveable { mutableStateOf(shelfPrefs.getBoolean(HOME_SHOW_TITLES_V96, true)) }
     var shelfRevision by rememberSaveable { mutableIntStateOf(0) }
     var addOpen by remember { mutableStateOf(false) }
     var shelfManagerOpen by remember { mutableStateOf(false) }
@@ -432,6 +443,11 @@ fun LanghuanHomeV4(
                             layoutKey = it.key
                             shelfPrefs.edit().putString(HOME_LAYOUT_V4, it.key).apply()
                         },
+                        showTitles = showTitles,
+                        onShowTitles = {
+                            showTitles = it
+                            shelfPrefs.edit().putBoolean(HOME_SHOW_TITLES_V96, it).apply()
+                        },
                         onBatch = { organizeOpen = false; batchOrganizerOpen = true },
                         onShelfManager = { organizeOpen = false; shelfManagerOpen = true },
                         modifier = Modifier.padding(top = t.space2, end = t.space2),
@@ -489,15 +505,23 @@ fun LanghuanHomeV4(
                     }
                 }
                 HomeLayoutV4.GRID -> {
+                    // V96: cover-only mode tightens the grid (covers sit closer, rows close up).
+                    val gridGap by androidx.compose.animation.core.animateDpAsState(
+                        if (showTitles) HOME_GRID_GAP_V93 else HOME_GRID_GAP_COVERS_V96, tween(220), label = "grid-gap",
+                    )
+                    val rowGap by androidx.compose.animation.core.animateDpAsState(
+                        if (showTitles) t.space5 else HOME_GRID_ROW_GAP_COVERS_V96, tween(220), label = "grid-row-gap",
+                    )
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).testTag(if (showTitles) "shelf-grid-titled" else "shelf-grid-covers"),
                         contentPadding = PaddingValues(
                             start = HOME_PAGE_GUTTER_V93, end = HOME_PAGE_GUTTER_V93,
+                            top = t.space1,
                             bottom = t.space6 + navigationBottom,
                         ),
-                        horizontalArrangement = Arrangement.spacedBy(HOME_GRID_GAP_V93),
-                        verticalArrangement = Arrangement.spacedBy(t.space5),
+                        horizontalArrangement = Arrangement.spacedBy(gridGap),
+                        verticalArrangement = Arrangement.spacedBy(rowGap),
                     ) {
                         if (continueReading != null) {
                             item(
@@ -539,6 +563,7 @@ fun LanghuanHomeV4(
                                     progress = readingProgress[book.id] ?: ShelfReadingProgressV92.UNREAD,
                                     onOpen = { onOpenBook(book.id) },
                                     onMore = { actionBook = book },
+                                    showTitle = showTitles,
                                 )
                             }
                         }
@@ -657,13 +682,18 @@ private fun HomeShelfHeaderV4(
     // V93: a small title on the left and plain line icons on the right, like the reference
     // reader's 「正在阅读」 shelf. No filled circles or outlines around the buttons.
     Row(
-        modifier = Modifier.fillMaxWidth().height(52.dp),
+        modifier = Modifier.fillMaxWidth().height(56.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // V96: same large-title scale as 书城 / 创作 / 我的 (30 sp bold), so the four tabs line up.
         Text(
             text = "书架",
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.weight(1f).semantics { heading() },
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontSize = 30.sp,
+                lineHeight = 36.sp,
+                letterSpacing = 0.2.sp,
+            ),
             color = t.foreground,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -697,6 +727,8 @@ internal const val HOME_TOOLBAR_BUTTON_DP_V91 = 44
 /** V93 page gutter and grid gap: generous whitespace around a plain cover grid. */
 private val HOME_PAGE_GUTTER_V93 = 20.dp
 private val HOME_GRID_GAP_V93 = 18.dp
+private val HOME_GRID_GAP_COVERS_V96 = 14.dp
+private val HOME_GRID_ROW_GAP_COVERS_V96 = 16.dp
 
 @Composable
 private fun HomeToolbarButtonV4(
@@ -987,6 +1019,8 @@ private fun HomeShelfOrganizerPanelV4(
     onBatch: () -> Unit,
     onShelfManager: () -> Unit,
     modifier: Modifier = Modifier,
+    showTitles: Boolean = true,
+    onShowTitles: (Boolean) -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
     // V93: a flat inline panel — text choices and line-icon rows, no boxed chips.
@@ -1017,6 +1051,21 @@ private fun HomeShelfOrganizerPanelV4(
                 icon = Icons.Outlined.ViewAgenda,
                 selected = layout == HomeLayoutV4.LIST,
                 onClick = { onLayout(HomeLayoutV4.LIST) },
+            )
+        }
+        // V96: cover-only grid. Only meaningful for the grid (list rows always need their titles).
+        AnimatedVisibility(
+            visible = layout == HomeLayoutV4.GRID,
+            enter = fadeIn(tween(160)) + expandVertically(tween(200)),
+            exit = fadeOut(tween(120)) + shrinkVertically(tween(180)),
+        ) {
+            com.xiguli.langhuan.ui.design.FlatSwitchRowV93(
+                title = "显示书名",
+                subtitle = if (showTitles) "封面下方显示书名与阅读进度" else "只显示封面，书架更紧凑",
+                checked = showTitles,
+                onCheckedChange = onShowTitles,
+                icon = Icons.Outlined.TextFields,
+                modifier = Modifier.testTag("shelf-show-titles"),
             )
         }
         Spacer(Modifier.height(t.space1))
@@ -1280,6 +1329,7 @@ private fun HomeBookGridItemV4(
     progress: ShelfReadingProgressV92,
     onOpen: () -> Unit,
     onMore: () -> Unit,
+    showTitle: Boolean = true,
 ) {
     val t = LocalLanghuanUiTokens.current
     val isEpub = remember(book.id, book.updatedAt) {
@@ -1287,26 +1337,41 @@ private fun HomeBookGridItemV4(
     }
     val online = isFollowingBookV4(book)
     val coverShape = RoundedCornerShape(HOME_COVER_RADIUS_V93)
+    val dark = t.background.luminance() < 0.5f
     // The whole tile (cover + title) opens the book, like Legado / Moon+ shelves; long-press or
     // the small ⋯ beside the progress opens the book page.
+    val interaction = remember { MutableInteractionSource() }
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("shelf-book-${book.id}")
+            // Cover-only mode: the title still reaches TalkBack and tests.
+            .semantics(mergeDescendants = true) { if (!showTitle) contentDescription = book.title }
             .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
                 onClick = onOpen,
                 onLongClick = onMore,
                 onClickLabel = "打开",
                 onLongClickLabel = "书籍菜单",
             ),
     ) {
-        // V93: a tall 3:4 cover with a small radius and a soft shadow; no frame.
+        // V96: a 3:4 cover with a 6 dp radius, a soft two-layer shadow (no frame), a hairline
+        // inner edge so pale covers don't melt into the paper, and a gentle press-in.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(HOME_COVER_ASPECT_V93)
-                .shadow(elevation = 5.dp, shape = coverShape, ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.22f))
+                .pressScaleV31(interaction)
+                .shadow(
+                    elevation = if (dark) 2.dp else 6.dp,
+                    shape = coverShape,
+                    ambientColor = Color.Black.copy(alpha = if (dark) 0.5f else 0.10f),
+                    spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.20f),
+                )
                 .clip(coverShape)
-                .background(color = t.input, shape = coverShape),
+                .background(color = t.input, shape = coverShape)
+                .border(width = 0.5.dp, color = Color.Black.copy(alpha = if (dark) 0.35f else 0.06f), shape = coverShape),
         ) {
             CoverPreviewV3(
                 path = book.coverPath,
@@ -1327,15 +1392,44 @@ private fun HomeBookGridItemV4(
                         .padding(5.dp)
                         .background(Color.Black.copy(alpha = 0.42f), RoundedCornerShape(3.dp))
                         .padding(horizontal = 4.dp, vertical = 1.dp),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp, letterSpacing = 0.2.sp),
                     color = Color.White,
                 )
             }
+            // Cover-only mode keeps the reading position visible as a hairline bar on the cover.
+            val fraction = if (progress.finished) 1f else progress.fraction?.coerceIn(0f, 1f)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !showTitle && fraction != null && fraction > 0f,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(180)),
+                exit = fadeOut(tween(120)),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                        .background(Color.Black.copy(alpha = 0.28f)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(fraction ?: 0f)
+                            .height(2.5.dp)
+                            .background(Color.White.copy(alpha = 0.92f)),
+                    )
+                }
+            }
         }
-        Spacer(Modifier.height(t.space2))
+        AnimatedVisibility(
+            visible = showTitle,
+            enter = fadeIn(tween(180)) + expandVertically(tween(220), expandFrom = Alignment.Top),
+            exit = fadeOut(tween(120)) + shrinkVertically(tween(200), shrinkTowards = Alignment.Top),
+        ) {
+        Column {
+        Spacer(Modifier.height(10.dp))
         Text(
             text = book.title,
-            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.testTag("shelf-title-${book.id}"),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 18.sp),
             color = t.foreground,
             fontWeight = FontWeight.Medium,
             maxLines = 2,
@@ -1366,10 +1460,12 @@ private fun HomeBookGridItemV4(
                 )
             }
         }
+        }
+        }
     }
 }
 
-private val HOME_COVER_RADIUS_V93 = 5.dp
+private val HOME_COVER_RADIUS_V93 = 6.dp
 private const val HOME_COVER_ASPECT_V93 = 0.75f
 
 
@@ -1383,12 +1479,19 @@ private fun HomeBookCoverV4(
     modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(5.dp)
+    val dark = t.background.luminance() < 0.5f
     Box(
         modifier = modifier
-            .shadow(elevation = 3.dp, shape = shape, ambientColor = Color.Black.copy(alpha = 0.14f), spotColor = Color.Black.copy(alpha = 0.18f))
+            .shadow(
+                elevation = if (dark) 2.dp else 4.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = if (dark) 0.5f else 0.10f),
+                spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.18f),
+            )
             .clip(shape)
-            .background(color = t.input, shape = shape),
+            .background(color = t.input, shape = shape)
+            .border(width = 0.5.dp, color = Color.Black.copy(alpha = if (dark) 0.35f else 0.06f), shape = shape),
     ) {
         CoverPreviewV3(
             path = book.coverPath,
@@ -1662,7 +1765,7 @@ private fun HomeBookActionsV4(
                 Row(verticalAlignment = Alignment.Top) {
                     HomeBookCoverV4(
                         book = book,
-                        modifier = Modifier.width(76.dp).height(101.dp),
+                        modifier = Modifier.width(84.dp).height(112.dp),
                     )
                     Spacer(Modifier.width(t.space5))
                     Column(modifier = Modifier.weight(1f)) {

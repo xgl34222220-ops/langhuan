@@ -300,10 +300,10 @@ internal fun MineTabV94(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier.size(60.dp).background(t.primary.copy(alpha = 0.08f), CircleShape),
+                    modifier = Modifier.size(60.dp).background(t.foreground.copy(alpha = 0.045f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    LanghuanMarkV95(size = 34.dp)
+                    LanghuanMarkV95(size = 38.dp)
                 }
                 Spacer(Modifier.width(t.space4))
                 Column {
