@@ -517,14 +517,12 @@ internal class OnlineBooksViewModelV36(
             return false
         }
         invalidateSourceResults()
-        val skipped = if (merged.skipped.isEmpty()) "" else "；${merged.skipped.size} 个跳过：${merged.skipped.take(3).joinToString("、")}${if (merged.skipped.size > 3) " 等" else ""}"
         val previousIds = previous.mapTo(HashSet()) { it.id }
         val addedNames = merged.sources.filter { it.id !in previousIds }.map { it.name }
-        val added = merged.sources.size - previous.size
+        // The result is shown by the inline report card on 书源管理; no duplicate toast over the list.
         _state.update {
             it.copy(
                 sources = merged.sources,
-                message = "导入 $added 个书源$skipped",
                 sourceImporting = false,
                 sourceImportReport = SourceImportReportV94(addedNames, merged.skipped, merged.warnings),
             )
