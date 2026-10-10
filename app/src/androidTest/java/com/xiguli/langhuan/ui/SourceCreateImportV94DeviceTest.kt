@@ -87,6 +87,12 @@ class SourceCreateImportV94DeviceTest {
             rule.onNodeWithTag("source-field-searchName").performScrollTo().performTextInput("tag.a@text")
             rule.onNodeWithTag("source-field-searchBookUrl").performScrollTo().performTextInput("tag.a@href")
             screenshot("v94-source-create")
+            // The JSON view edits the same draft.
+            rule.onNodeWithText("JSON").performClick()
+            rule.waitUntil(10000) { rule.onAllNodesWithText("手工测试书源", substring = true).fetchSemanticsNodes().isNotEmpty() }
+            screenshot("v94-source-editor-json")
+            rule.onNodeWithText("表单").performClick()
+            rule.waitForIdle()
             rule.onNodeWithText("保存规则").performClick()
             rule.waitUntil(15000) { vm.state.value.sources.any { it.id == createdId } }
             rule.waitUntil(10000) { vm.state.value.sourceEditId == null }
@@ -125,6 +131,10 @@ class SourceCreateImportV94DeviceTest {
             assertEquals("", imported.searchCover)
             // The dynamic group chip comes from the imported source.
             rule.onAllNodesWithText("测试").fetchSemanticsNodes().isNotEmpty().let(::assertTrue)
+            // Back from 书源管理 returns to the store page, which brings the bottom bar back.
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+            rule.waitUntil(10000) { rule.onAllNodesWithTag("langhuan-bottom-bar").fetchSemanticsNodes().isNotEmpty() }
+            screenshot("v94-online-store")
         } finally {
             rule.runOnIdle {
                 vm.cancelSourceEdit()
