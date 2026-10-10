@@ -32,9 +32,20 @@ internal fun loadChapterAuditV50(
     chapter: OnlineChapterV36,
     tocUrls: Set<String>,
     fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
+): OnlineChapterAuditV50 = withSourceRuleScopeV95(SourceRuleScopeV95(source, book = book, chapter = chapter, fetchText = currentSourceRuleScopeV95()?.fetchText)) {
+    loadChapterAuditInScopeV95(source, book, chapter, tocUrls, fetchDocument)
+}
+
+private fun loadChapterAuditInScopeV95(
+    source: BookSourceV36,
+    book: OnlineBookV36?,
+    chapter: OnlineChapterV36,
+    tocUrls: Set<String>,
+    fetchDocument: (BookSourceV36, SourceRequestV36) -> Document,
 ): OnlineChapterAuditV50 {
-    val initialUrl = publicSourceUrlV36(chapter.url).toString()
-    val otherChapters = tocUrls.map { publicSourceUrlV36(it).toString() }.toSet() - initialUrl
+    // Legado chapter urls may carry request options: `url,{"method":"POST",…}`.
+    val initialUrl = publicSourceUrlV36(chapter.url.substringBefore(",{")).toString()
+    val otherChapters = tocUrls.mapNotNull { runCatching { publicSourceUrlV36(it.substringBefore(",{")).toString() }.getOrNull() }.toSet() - initialUrl
     val visited = HashSet<String>()
     val parts = ArrayList<String>()
     val evidence = ArrayList<String>()
@@ -63,7 +74,9 @@ internal fun loadChapterAuditV50(
         val page = index + 1
         if (Thread.currentThread().isInterrupted) throw CancellationException("正文读取已取消")
         check(visited.add(url)) { "正文分页出现循环，未返回不完整正文" }
-        val doc = fetchDocument(source, SourceRequestV36(url))
+        val request = if (index == 0 && chapter.url.contains(",{")) parseSourceRequestUrlV95(chapter.url, source.baseUrl, source)
+            else SourceRequestV36(url)
+        val doc = fetchDocument(source, request)
         val finalUrl = publicSourceUrlV36(doc.location()).toString()
         if (index == 0) firstPageUrl = finalUrl
         check(finalUrl !in otherChapters) { "正文跳转到目录中的其他章节，未拼接跨章正文" }
@@ -75,14 +88,14 @@ internal fun loadChapterAuditV50(
         evidence += identity.evidence
         if (!identity.bookVerified) unknownBooks += page
         if (!identity.chapterVerified) unknownChapters += page
-        val text = cleanContentV36(ruleStringV36(doc, textRule), source.contentReplace).trim()
+        val text = cleanContentV36(chapterPlainTextV95(ruleStringV36(doc, textRule)), source.contentReplace).trim()
         check(text.isNotBlank()) { "正文规则未提取到可读文字（第 $page 页）" }
         parts += text
         chars += text.length
         check(chars <= MAX_SOURCE_BYTES_V36) { "单章正文超过大小限制" }
 
-        val next = ruleStringV36(doc, source.contentNext).takeIf { it.isNotBlank() }
-            ?.let { publicSourceUrlV36(resolveUrlV36(doc.location(), it)).toString() }
+        val next = ruleStringV36(doc, source.contentNext).lines().firstOrNull { it.isNotBlank() }?.trim()
+            ?.let { publicSourceUrlV36(resolveUrlV36(doc.location(), it).substringBefore(",{")).toString() }
         if (next == null || next in otherChapters) return completed()
         check(next !in visited) { "正文分页出现循环，未返回不完整正文" }
         check(page < 12) { "正文超过 12 页且仍有下一页，未返回不完整正文" }
@@ -98,6 +111,8 @@ private val CHAPTER_VALUE_ATTRS_V50 = setOf(
 /** Keep the existing value-rule behavior, and inspect only the alternative that actually returned text. */
 private fun chapterBodySelectionV50(doc: Document, rawRule: String): Pair<String, List<Element>> {
     val rule = rawRule.ifBlank { "@css:#content@html" }
+    // JSON / XPath / script rules return their own text; the static navigation check does not apply.
+    if (needsAdvancedRuleV95(rule) || jsonOfElementV95(doc) != null) return rule to emptyList()
     val cleanupAt = rule.indexOf("##").takeIf { it >= 0 } ?: rule.length
     val valueRule = rule.substring(0, cleanupAt)
     val cleanup = rule.substring(cleanupAt)
@@ -225,3 +240,8 @@ private fun chapterTitlesMatchV50(actual: String, expected: String): Boolean {
     val expectedTail = identityTextV50(b.replace(CHAPTER_NUMBER_V50, ""))
     return actualTail == expectedTail || actualTail.isBlank() || expectedTail.isBlank()
 }
+
+/** Script/JSON content often returns HTML markup; read it as paragraphs like the static @html rule does. */
+internal fun chapterPlainTextV95(raw: String): String =
+    if (Regex("<(p|br|div|span|section)[\\s/>]", RegexOption.IGNORE_CASE).containsMatchIn(raw)) htmlToTextV36(org.jsoup.Jsoup.parseBodyFragment(raw).body())
+    else raw.replace("&nbsp;", " ")

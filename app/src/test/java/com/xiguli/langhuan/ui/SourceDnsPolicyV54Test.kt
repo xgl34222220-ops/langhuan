@@ -21,25 +21,32 @@ class SourceDnsPolicyV54Test {
         checkedSourceDnsV54(dns).lookup("books.example")
     }
 
-    @Test fun benchmarkFakeIpPossibilityIsExplainedButNeverConnected() {
-        for (value in listOf("198.18.0.0","198.18.0.1","198.19.255.255","::ffff:198.18.0.2")) {
-            val failure=error(resolver(value))
-            assertEquals(SourceDnsFailureV54.BENCHMARK_RANGE,failure.reason)
-            assertTrue(failure.message!!.contains("可能"))
-            assertTrue(failure.message!!.contains("尚未连接"))
-            assertFalse(publicSourceAddressV36(InetAddress.getByName(value)))
+    @Test fun proxyFakeIpAnswersAreConnectedAsResolved() {
+        for (value in listOf("198.18.0.0","198.18.0.1","198.19.255.254","198.19.255.255","::ffff:198.18.0.2")) {
+            val address=InetAddress.getByName(value)
+            assertTrue(value,sourceBenchmarkAddressV54(address))
+            assertTrue(value,connectableSourceAddressV54(address))
+            assertEquals(listOf(address),checkedSourceDnsV54(resolver(value)).lookup("shuyuan.nyasama.net"))
         }
+        assertEquals(ips("198.18.0.1","1.1.1.1"),checkedSourceDnsV54(resolver("198.18.0.1","1.1.1.1")).lookup("books.example"))
+        assertEquals("http://198.18.0.1/",publicSourceUrlV36("http://198.18.0.1/").toString())
         assertFalse(sourceBenchmarkAddressV54(InetAddress.getByName("198.17.255.255")))
         assertFalse(sourceBenchmarkAddressV54(InetAddress.getByName("198.20.0.0")))
+        assertFalse(connectableSourceAddressV54(InetAddress.getByName("198.51.100.1")))
     }
 
     @Test fun genuinePrivateMixedAndIpv6AddressesRemainBlocked() {
-        for (value in listOf("127.0.0.1","10.0.0.1","192.168.1.1","169.254.169.254","100.64.0.1",
-            "0.0.0.0","fc00::1","fe80::1","::1","2001:db8::1")) {
+        val private=listOf("127.0.0.1","10.0.0.1","172.16.0.1","172.31.255.254","192.168.1.1","169.254.169.254",
+            "100.64.0.1","0.0.0.0","fc00::1","fd12:3456::1","fe80::1","::1","2001:db8::1")
+        for (value in private) {
+            assertFalse(value,connectableSourceAddressV54(InetAddress.getByName(value)))
+            assertEquals(SourceDnsFailureV54.NON_PUBLIC,error(resolver(value)).reason)
             assertEquals(SourceDnsFailureV54.NON_PUBLIC,error(resolver("1.1.1.1",value)).reason)
         }
         assertEquals(SourceDnsFailureV54.NON_PUBLIC,error(resolver("198.18.0.1","127.0.0.1")).reason)
-        assertEquals(SourceDnsFailureV54.BENCHMARK_RANGE,error(resolver("1.1.1.1","198.18.0.1")).reason)
+        for (literal in listOf("http://127.0.0.1/","http://10.0.0.1/","http://192.168.1.1/","http://[::1]/","http://[fe80::1]/")) {
+            assertThrows(IllegalArgumentException::class.java) { publicSourceUrlV36(literal) }
+        }
     }
 
     @Test fun emptyAnswerHasItsOwnDiagnosisAndResolverFailuresAreNotReplaced() {
@@ -71,7 +78,7 @@ class SourceDnsPolicyV54Test {
 
     @Test fun blockedDnsStopsRemainingAiRequestsWithoutNetworkOrModelRetries() {
         var calls=0
-        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE)
+        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.NON_PUBLIC)
         val session=SourceRequestSessionV46 { _, _ -> calls++;throw failure }
         val source=BookSourceV36("fixture","fixture","https://books.example")
         val first=runCatching { session.document(source,SourceRequestV36("https://books.example/")) }
@@ -89,7 +96,7 @@ class SourceDnsPolicyV54Test {
         }
         val result=runCatching {
             BookSourceAiBuilderV37(gateway,{ steps=it }) { _, _ ->
-                calls++;throw SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE)
+                calls++;throw SourceDnsBlockedV54(SourceDnsFailureV54.NON_PUBLIC)
             }.build("https://books.example/", "示例小说")
         }
         assertTrue(result.isFailure)
@@ -98,23 +105,23 @@ class SourceDnsPolicyV54Test {
         assertEquals("读取网站首页",steps.single().label)
         assertTrue(steps.single().completed)
         assertEquals(false,steps.single().ok)
-        assertTrue(steps.single().detail.contains("Fake-IP"))
+        assertTrue(steps.single().detail.contains("非公网地址"))
         assertEquals(steps.single().detail,result.exceptionOrNull()!!.message)
     }
 
     @Test fun diagnosticsNameTheBlockedHostAndOnlyTheObservedRedirects() {
-        val failure=error(resolver("198.18.0.2"))
+        val failure=error(resolver("10.0.0.2"))
         assertEquals("books.example",failure.blockedHost)
         assertTrue(failure.message!!.contains("books.example"))
         assertEquals(listOf("books.example"),failure.routeHosts)
         val redirected=sourceDnsWithRouteV55(failure,listOf("old.example","books.example")) as SourceDnsBlockedV54
         assertEquals(listOf("old.example","books.example"),redirected.routeHosts)
         assertSame(failure,redirected.cause)
-        assertEquals(SourceDnsFailureV54.BENCHMARK_RANGE,redirected.reason)
+        assertEquals(SourceDnsFailureV54.NON_PUBLIC,redirected.reason)
     }
 
     @Test fun diagnosticRoutesCannotEchoCredentialsPathsOrQueries() {
-        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE,
+        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.NON_PUBLIC,
             "https://name:secret@books.example/path?token=private",
             listOf("old.example","Cookie=secret","https://books.example/?token=private","books.example"))
         assertNull(failure.blockedHost)
@@ -124,7 +131,7 @@ class SourceDnsPolicyV54Test {
     }
 
     @Test fun redirectDecorationNeverConvertsCancellationOrOtherFailures() {
-        val dns=SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE,"books.example")
+        val dns=SourceDnsBlockedV54(SourceDnsFailureV54.NON_PUBLIC,"books.example")
         val cancel=CancellationException("cancel").apply { initCause(dns) }
         assertSame(cancel,sourceDnsWithRouteV55(cancel,listOf("old.example","books.example")))
         val ordinary=java.io.IOException("ordinary")
@@ -137,7 +144,7 @@ class SourceDnsPolicyV54Test {
             override suspend fun generate(prompt: PromptBundle): GeneratedChapter = error("No AI before homepage")
             override suspend fun generateText(prompt: PromptBundle): String = error("No AI before homepage")
         }
-        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE,"new.example",listOf("old.example","new.example"))
+        val failure=SourceDnsBlockedV54(SourceDnsFailureV54.NON_PUBLIC,"new.example",listOf("old.example","new.example"))
         val result=runCatching {
             BookSourceAiBuilderV37(gateway,{steps=it}) { _, _ -> throw failure }.build("https://old.example/","原创小说")
         }

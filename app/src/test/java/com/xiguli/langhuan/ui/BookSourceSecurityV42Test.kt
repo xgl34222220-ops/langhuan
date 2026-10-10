@@ -61,10 +61,21 @@ class BookSourceSecurityV42Test {
         assertEquals("fallback", sourceAttemptV36<String> { error("ordinary failure") }.getOrDefault("fallback"))
     }
 
-    @Test fun optionalScriptRulesAreUnsupportedToo() {
-        assertFalse(bookSourceSupportedV36(source.copy(contentNext = "@js:java.ajax('/secret')")))
-        assertFalse(bookSourceSupportedV36(source.copy(infoTocUrl = "$.chapters")))
-        assertFalse(bookSourceSupportedV36(source.copy(searchAuthor = "<js>fetch('http://localhost')</js>")))
+    @Test fun sandboxedScriptsRunButJavaClassAndWebViewScriptsAreRefused() {
+        // V95: Legado scripts and JSON rules run in the sandbox ...
+        assertTrue(bookSourceSupportedV36(source.copy(contentNext = "@js:java.ajax('/secret')")))
+        assertTrue(bookSourceSupportedV36(source.copy(infoTocUrl = "$.chapters")))
+        // ... but never with Java classes, files or a WebView.
+        assertFalse(bookSourceSupportedV36(source.copy(searchAuthor = "@js:java.lang.Runtime.getRuntime().exec('id')")))
+        assertFalse(bookSourceSupportedV36(source.copy(searchAuthor = "<js>Packages.java.io.File('/').list()</js>")))
+        assertFalse(bookSourceSupportedV36(source.copy(contentText = "@js:java.webView(null, baseUrl, null)")))
+        // Script requests use the same public-address guard: loopback is refused before any request is sent.
+        val requested = ArrayList<String>()
+        val scope = SourceRuleScopeV95(source, fetchText = { _, request -> requested += request.url; SourceTextResponseV95(request.url, "secret") })
+        val doc = Jsoup.parse("<p>x</p>", source.baseUrl)
+        assertEquals("", withSourceRuleScopeV95(scope) { ruleStringV36(doc, "@js:java.ajax('http://127.0.0.1/secret')") })
+        assertEquals("", withSourceRuleScopeV95(scope) { ruleStringV36(doc, "@js:java.ajax('http://localhost:8080/')") })
+        assertTrue(requested.toString(), requested.isEmpty())
     }
 
     @Test fun formsAreEncodedAndCrossSiteOrLoginFormsRejected() {

@@ -83,6 +83,12 @@ internal data class OnlineBooksStateV36(
     val sourceEditDraft: String = "",
     val sourceEditSaving: Boolean = false,
     val sourceEditError: String? = null,
+    /** V94: an import (text/file/URL) is running; the manage page shows progress. */
+    val sourceImporting: Boolean = false,
+    /** V94: result of the last import, shown as a dialog until dismissed. */
+    val sourceImportReport: SourceImportReportV94? = null,
+    /** V94: 「测试搜索」 on the source editor draft. */
+    val sourceTest: SourceTestStateV94? = null,
     val query: String = "",
     val discoveryLabel: String? = null,
     val discoverySection: SourceDiscoveryV41? = null,
@@ -126,6 +132,24 @@ internal data class OnlineBooksStateV36(
     val aiSavedSourceId: String? = null,
     val aiSavedSourceName: String? = null,
 )
+
+/** Import summary: what was added, what was kept as-is, what was skipped and why. */
+internal data class SourceImportReportV94(
+    val added: List<String>,
+    val skipped: List<String>,
+    val warnings: List<String>,
+    val error: String? = null,
+)
+
+internal data class SourceTestStateV94(
+    val keyword: String,
+    val running: Boolean = true,
+    val books: List<OnlineBookV36> = emptyList(),
+    val error: String? = null,
+)
+
+/** Sentinel edit id: the editor is creating a new source rather than editing an existing one. */
+internal const val SOURCE_NEW_ID_V94 = "__new_source_v94__"
 
 internal const val AI_SAVED_SOURCE_ID_KEY_V75 = "online_ai_saved_source_id_v75"
 
@@ -249,6 +273,7 @@ internal class OnlineBooksViewModelV36(
 
     init {
         if (restoredAiSavedSource == null) clearAiSavedSourceCheckpoint()
+        backfillOnlineCoversV95()
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
                 providerObservationVersion++
@@ -438,46 +463,85 @@ internal class OnlineBooksViewModelV36(
 
     fun importSources(raw: String) {
         if (!sourceStorageReady()) return
+        _state.update { it.copy(sourceImporting = true, sourceImportReport = null) }
         viewModelScope.launch {
             sourceAttemptV36 { withContext(Dispatchers.Default) { parseBookSourcesV36(raw) } }
                 .onSuccess { result -> merge(result) }
-                .onFailure { e -> _state.update { it.copy(error = "书源格式无法识别：${e.message.orEmpty().take(120)}") } }
+                .onFailure { e -> importFailed(sourceJsonErrorV94(e)) }
         }
     }
 
     fun importFromUrl(url: String) {
         if (!sourceStorageReady()) return
+        _state.update { it.copy(sourceImporting = true, sourceImportReport = null) }
         viewModelScope.launch {
             sourceAttemptV36 {
+                val target = sourceImportUrlV94(url)
                 runInterruptible(Dispatchers.IO) {
-                    String(fetchSourceBytesV36(url.trim()), Charsets.UTF_8)
+                    String(fetchSourceBytesV36(target), Charsets.UTF_8)
                 }
             }.onSuccess { importSources(it) }
-                .onFailure { e -> _state.update { it.copy(error = "下载书源失败：${e.message.orEmpty()}") } }
+                .onFailure { e -> importFailed("下载书源失败：${e.message.orEmpty().take(160)}") }
         }
     }
 
     fun importFromFile(uri: Uri) {
         if (!sourceStorageReady()) return
+        _state.update { it.copy(sourceImporting = true, sourceImportReport = null) }
         viewModelScope.launch {
             sourceAttemptV36 {
                 runInterruptible(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { String(readSourceBytesV36(it, MAX_SOURCE_BYTES_V36), Charsets.UTF_8) } ?: error("无法读取文件")
                 }
             }.onSuccess { importSources(it) }
-                .onFailure { e -> _state.update { it.copy(error = "读取书源文件失败：${e.message.orEmpty()}") } }
+                .onFailure { e -> importFailed("读取书源文件失败：${e.message.orEmpty().take(160)}") }
         }
     }
+
+    private fun importFailed(message: String) {
+        _state.update {
+            it.copy(
+                sourceImporting = false,
+                error = message,
+                sourceImportReport = SourceImportReportV94(emptyList(), emptyList(), emptyList(), error = message),
+            )
+        }
+    }
+
+    fun dismissSourceImportReport() = _state.update { it.copy(sourceImportReport = null, error = null, message = null) }
 
     private fun merge(result: BookSourceImportResultV36): Boolean {
         val previous = _state.value.sources
         val merged = mergeSourceImportsV36(previous, result)
-        if (!saveSources(merged.sources, previous)) return false
+        if (!saveSources(merged.sources, previous)) {
+            _state.update { it.copy(sourceImporting = false) }
+            return false
+        }
         invalidateSourceResults()
-        val skipped = if (merged.skipped.isEmpty()) "" else "；${merged.skipped.size} 个跳过：${merged.skipped.take(3).joinToString("、")}${if (merged.skipped.size > 3) " 等" else ""}"
-        val added = merged.sources.size - previous.size
-        _state.update { it.copy(sources = merged.sources, message = "导入 $added 个书源$skipped") }
+        val previousIds = previous.mapTo(HashSet()) { it.id }
+        val addedNames = merged.sources.filter { it.id !in previousIds }.map { it.name }
+        // The result is shown by the inline report card on 书源管理; no duplicate toast over the list.
+        _state.update {
+            it.copy(
+                sources = merged.sources,
+                sourceImporting = false,
+                sourceImportReport = SourceImportReportV94(addedNames, merged.skipped, merged.warnings),
+            )
+        }
         return true
+    }
+
+    /** Writes every stored source (Langhuan JSON) to a user-chosen document. */
+    fun exportSourcesTo(uri: Uri) {
+        viewModelScope.launch {
+            val raw = exportSources().ifBlank { return@launch }
+            sourceAttemptV36 {
+                runInterruptible(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(raw.toByteArray(Charsets.UTF_8)) } ?: error("无法写入文件")
+                }
+            }.onSuccess { _state.update { it.copy(message = "已导出 ${_state.value.sources.size} 个书源") } }
+                .onFailure { e -> _state.update { it.copy(error = "导出书源失败：${e.message.orEmpty().take(120)}") } }
+        }
     }
 
     fun toggleSource(id: String) { updateSources { list -> list.map { if (it.id == id) it.copy(enabled = !it.enabled) else it } } }
@@ -663,6 +727,8 @@ internal class OnlineBooksViewModelV36(
             sourceAttemptV36 { runInterruptible(Dispatchers.IO) { loadBookCatalogueV50(source, book) } }
                 .onSuccess { catalogue ->
                     val existing = withContext(Dispatchers.IO) { projects.findOnlineStory(source.id, catalogue.book.bookUrl) }
+                    // A book shelved before V95 has no cover file; the detail page just gave us its cover.
+                    existing?.let { saveOnlineCoverV95(it, source, catalogue.book.cover) }
                     currentCoroutineContext().ensureActive()
                     _state.update { state ->
                         if (generation != detailGeneration.get()) state else state.copy(detailLoading = false,
@@ -700,6 +766,60 @@ internal class OnlineBooksViewModelV36(
         _state.update { it.copy(detail = null, detailLoading = false, detailError = null, detailStopped = false, error = null) }
     }
 
+    /**
+     * Downloads the online cover (with the source's Referer/User-Agent, through the guarded client) and
+     * stores it as the shelf cover. Never replaces a cover file the book already has; failures keep the
+     * typographic placeholder.
+     */
+    private fun saveOnlineCoverV95(novelId: String, source: BookSourceV36?, cover: String) {
+        if (cover.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            sourceAttemptV36 {
+                val current = projects.onlineShelfBooksV95().firstOrNull { it.id == novelId } ?: return@sourceAttemptV36
+                if (!onlineCoverMissingV95(current.coverPath)) return@sourceAttemptV36
+                val bytes = runInterruptible { downloadOnlineCoverV95(cover, source, maxBytes = MAX_SOURCE_BYTES_V36) }
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "封面无法解码" }
+                val path = persistOnlineCoverFileV95(java.io.File(context.filesDir, "covers"), novelId, bytes)
+                if (!projects.setOnlineCoverIfMissingV95(novelId, path)) java.io.File(path).delete()
+            }
+        }
+    }
+
+    /** Books shelved before V95 never got a cover: fetch each one's detail page once (bounded, spaced out). */
+    private fun backfillOnlineCoversV95() {
+        viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(4_000)
+            val prefs = context.getSharedPreferences("online_cover_backfill_v95", android.content.Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val books = sourceAttemptV36 { projects.onlineShelfBooksV95() }.getOrDefault(emptyList())
+                .filter { onlineCoverMissingV95(it.coverPath) && now - prefs.getLong(it.id, 0L) > 3L * 24 * 3600 * 1000 }
+                .take(30)
+            for (book in books) {
+                val source = _state.value.sources.firstOrNull { it.id == book.sourceId && it.enabled } ?: continue
+                prefs.edit().putLong(book.id, now).apply()
+                sourceAttemptV36 {
+                    val cover = runInterruptible {
+                        withSourceRuleScopeV95(SourceRuleScopeV95(source)) {
+                            val page = fetchDocumentV36(source, SourceRequestV36(book.bookUrl))
+                            bookDetailFromPageV95(source, OnlineBookV36(source.id, source.name, book.title, "", "", "", "", book.bookUrl), page).cover
+                        }
+                    }
+                    if (cover.isNotBlank()) {
+                        val bytes = runInterruptible { downloadOnlineCoverV95(cover, source, maxBytes = MAX_SOURCE_BYTES_V36) }
+                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "封面无法解码" }
+                        val path = persistOnlineCoverFileV95(java.io.File(context.filesDir, "covers"), book.id, bytes)
+                        if (!projects.setOnlineCoverIfMissingV95(book.id, path)) java.io.File(path).delete()
+                    }
+                }
+                kotlinx.coroutines.delay(1_500)
+            }
+        }
+    }
+
     /** Save identity and catalogue only. Reading and offline caching are separate actions. */
     fun addToShelf() {
         val detail = _state.value.detail ?: return
@@ -716,6 +836,7 @@ internal class OnlineBooksViewModelV36(
                     )).snapshot.novel.id
                 }
             }.onSuccess { id ->
+                saveOnlineCoverV95(id, _state.value.sources.firstOrNull { it.id == detail.book.sourceId }, detail.book.cover)
                 _state.update { state -> state.copy(addingToShelf = false,
                     detail = state.detail?.takeIf { it.book == detail.book }?.copy(shelfStoryId = id) ?: state.detail,
                     message = "《${detail.book.name}》已加入书架，正文按阅读需要加载") }
@@ -740,6 +861,7 @@ internal class OnlineBooksViewModelV36(
 
     fun consumeCreated() = _state.update { it.copy(createdStoryId = null) }
     fun clearMessage() = _state.update { it.copy(message = null, error = null) }
+    fun consumeMessage() = _state.update { it.copy(message = null) }
 
     /** Refresh only the catalogue. No body request is made by checking for updates. */
     fun checkUpdate(novelId: String, onDone: (String) -> Unit) {
@@ -799,7 +921,17 @@ internal class OnlineBooksViewModelV36(
     fun beginSourceEdit(id: String) {
         val source = _state.value.sources.firstOrNull { it.id == id } ?: return
         sourceEditJob?.cancel()
-        _state.update { it.copy(sourceEditId = id, sourceEditSaving = false, sourceEditError = null, sourceEditDraft = BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)) }
+        sourceTestJob?.cancel()
+        _state.update { it.copy(sourceEditId = id, sourceEditSaving = false, sourceEditError = null, sourceTest = null, sourceEditDraft = BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)) }
+    }
+
+    /** 「新建书源」: an editor over a blank skeleton; saving adds a new source. */
+    fun beginSourceCreate(initialJson: String? = null) {
+        sourceEditJob?.cancel()
+        sourceTestJob?.cancel()
+        val draft = initialJson?.let(::normalizeSourceTextV94)?.takeIf { it.isNotBlank() }
+            ?: BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), newSourceTemplateV94())
+        _state.update { it.copy(sourceEditId = SOURCE_NEW_ID_V94, sourceEditSaving = false, sourceEditError = null, sourceTest = null, sourceEditDraft = draft) }
     }
 
     fun updateSourceEditDraft(raw: String) {
@@ -813,7 +945,8 @@ internal class OnlineBooksViewModelV36(
 
     fun cancelSourceEdit() {
         sourceEditJob?.cancel()
-        _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null) }
+        sourceTestJob?.cancel()
+        _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null, sourceTest = null) }
     }
 
     fun editSource(id: String, raw: String) {
@@ -822,14 +955,63 @@ internal class OnlineBooksViewModelV36(
         sourceEditJob?.cancel()
         sourceEditJob = viewModelScope.launch {
             sourceAttemptV36 {
-                val result = withContext(Dispatchers.Default) { parseBookSourcesV36(raw) }
+                val parsed = withContext(Dispatchers.Default) { validateSourceDraftV94(raw) }
                 currentCoroutineContext().ensureActive()
-                require(result.sources.size == 1 && result.skipped.isEmpty()) { "请提供一个有效的静态 HTML 书源" }
-                val edited = result.sources.single().copy(id = id)
-                require(_state.value.sourceEditId == id && _state.value.sources.any { it.id == id }) { "书源编辑已取消或原书源已删除" }
-                check(updateSources { list -> list.map { if (it.id == id) edited else it } }) { _state.value.error ?: "书源保存失败" }
-                _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null, message = "已更新书源「${edited.name}」") }
+                require(_state.value.sourceEditId == id) { "书源编辑已取消" }
+                if (id == SOURCE_NEW_ID_V94) {
+                    val created = parsed.copy(id = parsed.id.ifBlank { manualSourceIdV94(parsed.baseUrl) }, enabled = true)
+                    _state.value.sources.firstOrNull { it.id == created.id }?.let { existing ->
+                        throw IllegalArgumentException("已有相同网址的书源「${existing.name}」，请在书源详情里编辑它")
+                    }
+                    check(updateSources { list -> (list + created).sortedBy { it.name } }) { _state.value.error ?: "书源保存失败" }
+                    _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null, sourceTest = null, message = "已添加书源「${created.name}」") }
+                } else {
+                    require(_state.value.sources.any { it.id == id }) { "书源编辑已取消或原书源已删除" }
+                    val edited = parsed.copy(id = id)
+                    check(updateSources { list -> list.map { if (it.id == id) edited else it } }) { _state.value.error ?: "书源保存失败" }
+                    _state.update { it.copy(sourceEditId = null, sourceEditDraft = "", sourceEditSaving = false, sourceEditError = null, sourceTest = null, message = "已更新书源「${edited.name}」") }
+                }
             }.onFailure { error -> _state.update { it.copy(sourceEditSaving = false, sourceEditError = error.message ?: "书源编辑失败") } }
         }
     }
+
+    private var sourceTestJob: Job? = null
+
+    /** 「测试搜索」: runs the draft against the live site without saving it. */
+    fun testSourceDraft(raw: String, keyword: String) {
+        val key = keyword.trim()
+        if (key.isEmpty()) {
+            _state.update { it.copy(sourceTest = SourceTestStateV94(keyword = "", running = false, error = "请输入一个测试书名")) }
+            return
+        }
+        sourceTestJob?.cancel()
+        _state.update { it.copy(sourceTest = SourceTestStateV94(keyword = key)) }
+        sourceTestJob = viewModelScope.launch {
+            sourceAttemptV36 {
+                val source = withContext(Dispatchers.Default) { validateSourceDraftV94(raw) }
+                    .let { it.copy(id = it.id.ifBlank { manualSourceIdV94(it.baseUrl) }) }
+                require(source.searchUrl.isNotBlank() && source.searchList.isNotBlank()) { "这个书源没有搜索规则，无法测试搜索" }
+                runInterruptible(Dispatchers.IO) { searchSourceV36(source, key) }
+            }.onSuccess { books ->
+                _state.update { state ->
+                    state.copy(sourceTest = SourceTestStateV94(
+                        keyword = key,
+                        running = false,
+                        books = books.take(20),
+                        error = if (books.isEmpty()) "请求成功，但书籍列表规则没有匹配到结果；请检查「书籍列表」和「书名」规则" else null,
+                    ))
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(sourceTest = SourceTestStateV94(keyword = key, running = false, error = sourceFailurePresentationOrMessageV94(error))) }
+            }
+        }
+    }
+
+    fun clearSourceTest() {
+        sourceTestJob?.cancel()
+        _state.update { it.copy(sourceTest = null) }
+    }
 }
+
+private fun sourceFailurePresentationOrMessageV94(error: Throwable): String =
+    error.message?.takeIf { it.isNotBlank() }?.take(200) ?: error.javaClass.simpleName

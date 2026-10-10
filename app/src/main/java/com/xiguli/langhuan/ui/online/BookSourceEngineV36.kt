@@ -45,7 +45,8 @@ import org.jsoup.nodes.TextNode
  *   - default syntax:  class.item.0@tag.a@href   (class./id./tag./text./children, index, !exclude)
  *   - @css:            @css:div.item > a@href
  *   - alternatives ||, concatenation &&, cleanup ##regex##replacement, leading '-' to reverse lists
- * Sources that need JavaScript (<js>, @js:) or JSON APIs (@json:, $.) are reported as unsupported.
+ * V95 adds the rest of the Legado rule language in SourceRuleEngineV95 / SourceJsEngineV95:
+ * JSONPath (@json:, $.), XPath (@XPath:, //), and sandboxed scripts (@js:, <js>, {{}}, jsLib).
  */
 
 @Serializable
@@ -87,6 +88,14 @@ internal data class BookSourceV36(
     val exploreBookUrl: String = "",
     /** Explicitly selected by the user; rendering never enables executable source rules. */
     val useBrowser: Boolean = false,
+    /** Legado jsLib: shared script functions loaded before every rule script (sandboxed). */
+    val jsLib: String = "",
+    /** Legado ruleBookInfo.init: the detail-page value the other info rules read from. */
+    val infoInit: String = "",
+    /** Legado loginUrl: often a block of helper functions scripts `eval`; no login UI is offered. */
+    val loginUrl: String = "",
+    /** The Legado bookSourceUrl as written (may carry `#注释`); scripts read it through source.getKey(). */
+    val legadoKey: String = "",
 )
 
 internal data class OnlineBookV36(
@@ -106,12 +115,25 @@ internal val BookSourceJsonV36 = Json { ignoreUnknownKeys = true; isLenient = tr
 
 // ---- Import --------------------------------------------------------------------------------
 
-internal data class BookSourceImportResultV36(val sources: List<BookSourceV36>, val skipped: List<String>)
+internal data class BookSourceImportResultV36(
+    val sources: List<BookSourceV36>,
+    val skipped: List<String>,
+    /** Sources that were imported with some optional rule dropped or discovery disabled. */
+    val warnings: List<String> = emptyList(),
+    /** Existing ids replaced by an explicit edit/update; imports never fill this. */
+    val updated: Int = 0,
+)
 
 /** Parses a Langhuan or Legado source list (array or single object). */
 internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
     require(raw.length <= MAX_SOURCE_BYTES_V36) { "书源文件超过 4 MiB 限制" }
-    val root = BookSourceJsonV36.parseToJsonElement(raw.trim())
+    val text = normalizeSourceTextV94(raw)
+    require(text.isNotEmpty()) { "书源内容为空" }
+    require(text.startsWith("[") || text.startsWith("{")) {
+        if (text.startsWith("<")) "内容是网页而不是书源 JSON，请确认链接直接指向 .json 书源文件"
+        else "不是书源 JSON：书源应以 [ 或 { 开头"
+    }
+    val root = BookSourceJsonV36.parseToJsonElement(text)
     val items = when (root) {
         is JsonArray -> root.toList()
         is JsonObject -> listOf(root)
@@ -120,30 +142,63 @@ internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
     require(items.size <= 500) { "单次最多导入 500 个书源" }
     val sources = ArrayList<BookSourceV36>()
     val skipped = ArrayList<String>()
+    val warnings = ArrayList<String>()
     items.forEach { element ->
-        val obj = element as? JsonObject ?: return@forEach
-        val source = if (obj.containsKey("bookSourceUrl")) fromLegadoV36(obj) else runCatching {
+        val obj = element as? JsonObject ?: run { skipped += "未命名书源（不是对象）"; return@forEach }
+        val legado = obj.containsKey("bookSourceUrl")
+        val decoded = if (legado) fromLegadoV36(obj) else runCatching {
             BookSourceJsonV36.decodeFromJsonElement(BookSourceV36.serializer(), obj)
+                // A hand-made source (V94 editor) has no id yet: like Legado, its site address is the id.
+                .let { if (it.id.isBlank()) it.copy(id = manualSourceIdV94(it.baseUrl)) else it }
         }.getOrNull()
-        val name = source?.name ?: obj.string("bookSourceName").ifBlank { "未命名书源" }
-        val unsupported = if (obj.containsKey("bookSourceUrl")) unsupportedLegadoCapabilitiesV41(obj) else emptyList()
+        val name = decoded?.name?.ifBlank { null } ?: obj.string("bookSourceName").ifBlank { obj.string("name").ifBlank { "未命名书源" } }
+        val sourceType = (obj["bookSourceType"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+        val unsupported = if (legado) unsupportedLegadoCapabilitiesV41(obj) else emptyList()
+        val sanitized = decoded?.let(::sanitizeImportedSourceV94)
+        val source = sanitized?.source
         val discoveryIssues = source?.let { sourceDiscoveryCatalogV41(it.copy(enabled = true, enabledExplore = true)).issues }.orEmpty()
+        val discoveryUsable = source?.let { sourceDiscoveriesV41(it.copy(enabled = true, enabledExplore = true)).isNotEmpty() } ?: false
+        // Import never goes online: a url script that needs a request is checked when the user searches.
         val searchRequestIssue = source?.takeIf { it.searchUrl.isNotBlank() }?.let {
-            runCatching { buildSearchRequestV36(it, "test") }.exceptionOrNull()?.message
+            withSourceRuleScopeV95(SourceRuleScopeV95(it, "test", allowNetwork = false)) {
+                runCatching { buildSearchRequestV36(it, "test") }.exceptionOrNull()
+            }?.takeUnless(::sourceNeedsNetworkV95)?.message
         }
         when {
+            sourceType != 0 -> skipped += "$name（${when (sourceType) { 1 -> "音频"; 2 -> "图片/漫画"; 3 -> "文件下载"; else -> "非文字" }}书源，暂只支持文字小说）"
             unsupported.isNotEmpty() -> skipped += "$name（暂不支持：${unsupported.joinToString("、")}）"
+            source == null -> skipped += "$name（格式无法识别：缺少 bookSourceUrl 或 id/name/baseUrl）"
+            sourceRuleUnsupportedV94(source.searchUrl) != null ->
+                skipped += "$name（搜索地址 使用了 ${sourceRuleUnsupportedV94(source.searchUrl)}，暂不支持）"
             searchRequestIssue != null -> skipped += "$name（searchUrl：$searchRequestIssue）"
-            discoveryIssues.isNotEmpty() -> skipped += "$name（发现规则无效：${discoveryIssues.joinToString("；")}）"
-            source == null -> skipped += "$name（格式无法识别）"
+            discoveryIssues.isNotEmpty() && !discoveryUsable && source.searchUrl.isBlank() -> skipped += "$name（发现规则无效：${discoveryIssues.joinToString("；")}）"
             source.id.isBlank() || runCatching { publicSourceUrlV36(source.baseUrl) }.isFailure -> skipped += "$name（网站地址无效）"
             (source.searchUrl.isBlank() || source.searchList.isBlank()) &&
-                (source.exploreList.isBlank() || sourceDiscoveriesV41(source.copy(enabled = true, enabledExplore = true)).isEmpty()) -> skipped += "$name（没有可用的搜索或发现规则）"
-            !bookSourceSupportedV36(source) -> skipped += "$name（使用了 JS 或 JSON 接口，暂不支持）"
-            else -> sources += source
+                (source.exploreList.isBlank() || !discoveryUsable) -> skipped += "$name（没有可用的搜索或发现规则）"
+            !bookSourceSupportedV36(source) -> skipped += "$name（${unsupportedEssentialRuleV94(source)}，暂不支持）"
+            else -> {
+                sources += source
+                sanitized.notices.forEach { warnings += "$name：$it" }
+                if (legado) ignoredLegadoCapabilitiesV95(obj).takeIf { it.isNotEmpty() }?.let { warnings += "$name：已忽略 ${it.joinToString("、")}" }
+                if (legado && BROWSER_FALLBACK_APIS_V95.any { obj.toString().contains(it) }) {
+                    warnings += "$name：遇到人机验证时需要在浏览器中完成（startBrowser），琅嬛暂不支持这一步"
+                }
+            }
         }
     }
-    return BookSourceImportResultV36(sources, skipped)
+    return BookSourceImportResultV36(sources, skipped, warnings)
+}
+
+/** Names the first essential rule that still needs scripts after optional rules were dropped. */
+private fun unsupportedEssentialRuleV94(source: BookSourceV36): String {
+    val essential = listOf(
+        "搜索地址" to source.searchUrl, "搜索列表" to source.searchList, "搜索书名" to source.searchName,
+        "搜索链接" to source.searchBookUrl, "目录地址" to source.infoTocUrl, "章节列表" to source.tocList,
+        "章节名" to source.tocName, "章节链接" to source.tocUrl, "正文" to source.contentText,
+        "发现列表" to source.exploreList, "发现书名" to source.exploreName, "发现链接" to source.exploreBookUrl,
+    )
+    val hit = essential.firstNotNullOfOrNull { (label, rule) -> sourceRuleUnsupportedV94(rule)?.let { "$label 使用了 $it" } }
+    return hit ?: "包含暂不支持的规则"
 }
 
 private fun JsonObject.string(key: String): String =
@@ -151,19 +206,37 @@ private fun JsonObject.string(key: String): String =
 
 private fun JsonObject.obj(key: String): JsonObject? = when (val v = this[key]) {
     is JsonObject -> v
-    is JsonPrimitive -> v.contentOrNull?.let { runCatching { BookSourceJsonV36.parseToJsonElement(it).jsonObject }.getOrNull() }
+    is JsonPrimitive -> v.contentOrNull?.takeIf { it.isNotBlank() }?.let { runCatching { parseSourceOptionsV94(it) }.getOrNull() }
     else -> null
 }
 
 /** These fields change execution; accepting them while dropping them would corrupt an imported source. */
 private fun unsupportedLegadoCapabilitiesV41(obj: JsonObject): List<String> {
-    val dynamic = listOf("jsLib", "mainJs", "loginCheckJs", "coverDecodeJs", "exploreScreen")
-    return dynamic.filter { key ->
-        val value = obj[key]
-        value != null && value.toString() !in setOf("null", "\"\"", "{}", "[]") &&
-            ((value as? JsonPrimitive)?.contentOrNull?.isNotBlank() ?: true)
+    val out = ArrayList<String>()
+    val jsLib = obj["jsLib"]
+    val jsLibText = (jsLib as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
+    when {
+        jsLib is JsonObject || jsLibText.startsWith("{") -> out += "jsLib 远程脚本库（需要下载外部脚本文件）"
+        jsLibText.isNotEmpty() -> sourceScriptUnsupportedV95(jsLibText)?.let { out += "jsLib $it" }
     }
+    val mainJs = (obj["mainJs"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    if (mainJs.isNotBlank()) out += "mainJs"
+    return out
 }
+
+/** Optional Legado features that are skipped with a notice (the source still works without them). */
+private fun ignoredLegadoCapabilitiesV95(obj: JsonObject): List<String> = listOf(
+    "loginCheckJs" to "登录检查脚本（loginCheckJs）",
+    "coverDecodeJs" to "封面解密脚本（coverDecodeJs）",
+    "exploreScreen" to "发现筛选（exploreScreen）",
+).filter { (key, _) ->
+    val value = obj[key]
+    value != null && value.toString() !in setOf("null", "\"\"", "{}", "[]") && ((value as? JsonPrimitive)?.contentOrNull?.isNotBlank() ?: true)
+}.map { it.second }
+
+/** True for a failure that only means "this script wants the network", which import never uses. */
+internal fun sourceNeedsNetworkV95(error: Throwable): Boolean =
+    generateSequence(error) { it.cause }.take(8).any { it is SourceJsNetworkDisabledV95 }
 
 private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
     val explore = obj.obj("ruleExplore")
@@ -172,7 +245,7 @@ private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
     val toc = obj.obj("ruleToc")
     val content = obj.obj("ruleContent")
     val headers = obj.obj("header")?.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.contentOrNull?.let { k to it } }?.toMap().orEmpty()
-    val base = obj.string("bookSourceUrl").trimEnd('/').substringBefore("#")
+    val base = obj.string("bookSourceUrl").trim().trimEnd('/').substringBefore("#")
     return BookSourceV36(
         id = base.ifBlank { obj.string("bookSourceName") },
         name = obj.string("bookSourceName").ifBlank { base },
@@ -197,6 +270,10 @@ private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
         searchIntro = search?.string("intro").orEmpty(),
         searchLatest = search?.string("lastChapter").orEmpty(),
         searchBookUrl = search?.string("bookUrl").orEmpty(),
+        jsLib = obj.string("jsLib"),
+        loginUrl = obj.string("loginUrl"),
+        legadoKey = obj.string("bookSourceUrl").trim().takeIf { it.contains('#') }.orEmpty(),
+        infoInit = info?.string("init").orEmpty(),
         infoName = info?.string("name").orEmpty(),
         infoAuthor = info?.string("author").orEmpty(),
         infoCover = info?.string("coverUrl").orEmpty(),
@@ -216,29 +293,49 @@ internal fun bookSourceSupportedV36(source: BookSourceV36): Boolean {
     val rules = listOf(
         source.searchUrl, source.searchList, source.searchName, source.searchBookUrl,
         source.searchAuthor, source.searchCover, source.searchIntro, source.searchLatest,
-        source.infoName, source.infoAuthor, source.infoCover, source.infoIntro, source.infoTocUrl,
+        source.infoInit, source.infoName, source.infoAuthor, source.infoCover, source.infoIntro, source.infoTocUrl,
         source.tocList, source.tocName, source.tocUrl, source.tocNext, source.contentText,
         source.contentNext, source.contentReplace,
         source.exploreUrl, source.exploreList, source.exploreName, source.exploreAuthor,
         source.exploreCover, source.exploreIntro, source.exploreLatest, source.exploreBookUrl,
     )
-    return rules.none { rule ->
-        rule.length > 8192 ||
-        rule.contains("<js>", true) || rule.contains("@js:", true) || rule.startsWith("@json:", true) ||
-            rule.trimStart().startsWith("$.") || rule.trimStart().startsWith("{{") || rule.contains("java.", false)
-    }
+    return rules.none { rule -> sourceRuleUnsupportedV94(rule) != null } && sourceScriptUnsupportedV95(source.jsLib) == null &&
+        !source.jsLib.trimStart().startsWith("{")
 }
 
 // ---- Rule evaluation -------------------------------------------------------------------------
 
 private val VALUE_ATTRS = setOf("text", "textNodes", "ownText", "html", "all", "href", "src", "content", "value", "title", "alt", "data-src", "data-original")
 
-/** Elements selected by a list rule. */
+/** Elements selected by a list rule. JSON, XPath and script rules go through SourceRuleEngineV95. */
 internal fun ruleElementsV36(context: Element, rawRule: String): List<Element> {
+    val rule = rawRule.trim()
+    if (rule.isEmpty()) return emptyList()
+    if (needsAdvancedRuleV95(rule) || jsonOfElementV95(context) != null) return advancedRuleElementsV95(context, rule)
+    return basicRuleElementsV36(context, rule)
+}
+
+/** A string value from a value rule, cleaned and trimmed. */
+internal fun ruleStringV36(context: Element, rawRule: String): String {
+    val rule = rawRule.trim()
+    if (rule.isEmpty()) return ""
+    if (needsAdvancedRuleV95(rule) || jsonOfElementV95(context) != null) return advancedRuleStringV95(context, rule)
+    val (body, regex, replacement) = splitReplaceV36(rule)
+    for (alternative in body.split("||")) {
+        val joined = alternative.split("&&").joinToString("") { part -> evaluateValueV36(context, part.trim()) }
+        val cleaned = applyReplaceV36(joined, regex, replacement).trim()
+        if (cleaned.isNotEmpty()) return cleaned
+    }
+    return ""
+}
+
+/** V36 static list rule: default syntax / @css:, || alternatives, leading '-' reverses. */
+internal fun basicRuleElementsV36(context: Element, rawRule: String): List<Element> {
     var rule = rawRule.trim()
     if (rule.isEmpty()) return emptyList()
     val reverse = rule.startsWith("-")
     if (reverse) rule = rule.drop(1)
+    if (rule.startsWith("+")) rule = rule.drop(1)
     val alternatives = rule.split("||")
     for (alternative in alternatives) {
         val found = selectChainV36(context, alternative.trim(), valueRule = false).first
@@ -247,17 +344,11 @@ internal fun ruleElementsV36(context: Element, rawRule: String): List<Element> {
     return emptyList()
 }
 
-/** A string value from a value rule, cleaned and trimmed. */
-internal fun ruleStringV36(context: Element, rawRule: String): String {
-    val rule = rawRule.trim()
-    if (rule.isEmpty()) return ""
-    val (body, regex, replacement) = splitReplaceV36(rule)
-    for (alternative in body.split("||")) {
-        val joined = alternative.split("&&").joinToString("") { part -> evaluateValueV36(context, part.trim()) }
-        val cleaned = applyReplaceV36(joined, regex, replacement).trim()
-        if (cleaned.isNotEmpty()) return cleaned
-    }
-    return ""
+/** V36 static value rule without combinators: one string per selected element. */
+internal fun basicRuleValuesV36(context: Element, rule: String): List<String> {
+    if (rule.isEmpty()) return emptyList()
+    val (elements, attr) = selectChainV36(context, rule, valueRule = true)
+    return elements.mapNotNull { element -> attrValueV36(element, attr ?: "text") }.filter { it.isNotBlank() }
 }
 
 private fun splitReplaceV36(rule: String): Triple<String, String?, String> {
@@ -310,7 +401,7 @@ internal fun attrValueV36(element: Element, attr: String): String? = when (attr)
  * Walks a rule into (elements, attribute). The attribute is only split off for value rules.
  * Supports @css: and Legado's default class./id./tag./text./children segments.
  */
-private fun selectChainV36(context: Element, rule: String, valueRule: Boolean): Pair<List<Element>, String?> {
+internal fun selectChainV36(context: Element, rule: String, valueRule: Boolean): Pair<List<Element>, String?> {
     require(rule.length <= 8192) { "书源选择器过长" }
     require(!rule.contains(":matches", true) && !rule.contains("~=") && !rule.contains('\\')) {
         "不支持书源中的正则 CSS 选择器或转义选择器；请使用普通 class/id 选择器和 ## 文本清理"
@@ -346,7 +437,25 @@ private fun selectChainV36(context: Element, rule: String, valueRule: Boolean): 
 
 private fun isAttrSegmentV36(segment: String): Boolean = segment in VALUE_ATTRS || segment.startsWith("data-")
 
-private fun applySegmentV36(element: Element, segment: String): List<Element> {
+private fun applySegmentV36(element: Element, rawSegment: String): List<Element> {
+    // Legado list index: tag.li[0], tag.li[-1], tag.li[1:3], tag.li[!0]
+    val bracket = Regex("^(.*?)\\[(!?)([-\\d:,\\s]+)\\]$").find(rawSegment)
+    if (bracket != null && bracket.groupValues[1].isNotEmpty()) {
+        val found = applySegmentV36(element, bracket.groupValues[1])
+        val picked = LinkedHashSet<Int>()
+        bracket.groupValues[3].split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { spec ->
+            fun norm(v: Int) = if (v < 0) found.size + v else v
+            if (spec.contains(':')) {
+                val (a, b) = spec.split(':', limit = 2)
+                val start = a.trim().toIntOrNull()?.let(::norm) ?: 0
+                val end = b.trim().toIntOrNull()?.let(::norm) ?: (found.size - 1)
+                if (start <= end) (start..end).forEach(picked::add) else (start downTo end).forEach(picked::add)
+            } else spec.toIntOrNull()?.let { picked += norm(it) }
+        }
+        return if (bracket.groupValues[2] == "!") found.filterIndexed { i, _ -> i !in picked }
+        else picked.mapNotNull { found.getOrNull(it) }
+    }
+    val segment = rawSegment
     // type.name.index  |  type.name!index  |  children
     val exclude = segment.contains('!')
     val parts = segment.replace('!', '.').split('.')
@@ -396,36 +505,76 @@ internal fun htmlToTextV36(element: Element): String {
 }
 
 // ---- Network -------------------------------------------------------------------------------+
-internal data class SourceRequestV36(val url: String, val method: String = "GET", val body: String? = null, val charset: String? = null)
+internal data class SourceRequestV36(
+    val url: String,
+    val method: String = "GET",
+    val body: String? = null,
+    val charset: String? = null,
+    /** Per-request headers from a Legado `,{"headers":{…}}` option or a script request. */
+    val headers: Map<String, String> = emptyMap(),
+)
 
-/** Builds a request from a Legado-style url: `path?q={{key}}` optionally followed by `,{json options}`. */
+/**
+ * Builds a request from a Legado-style url: `path?q={{key}}` optionally followed by `,{json options}`.
+ * V95: the url may be a script (`@js:` / `<js>`), use `{{表达式}}` templates (`{{(page-1)*20}}`,
+ * `{{java.encodeURI(key)}}`), `<首页,第二页,…>` page lists and a `headers` option.
+ */
 internal fun buildSearchRequestV36(source: BookSourceV36, key: String, page: Int = 1): SourceRequestV36 {
-    val raw = source.searchUrl.trim()
-    val optionIndex = Regex(",\\s*(?=\\{)").find(raw)?.range?.first ?: -1
-    val urlPart = if (optionIndex > 0) raw.substring(0, optionIndex) else raw
-    val options = if (optionIndex > 0) {
-        BookSourceJsonV36.parseToJsonElement(raw.substring(optionIndex + 1)) as? JsonObject
-            ?: error("请求选项必须是 JSON 对象")
-    } else null
-    require(options == null || options.keys.all { it in setOf("method", "body", "charset") }) {
-        "请求包含不支持的选项：${options?.keys.orEmpty() - setOf("method", "body", "charset") }"
+    val current = currentSourceRuleScopeV95()
+    val scope = if (current != null && current.source?.id == source.id && current.key == key && current.page == page) current
+        else SourceRuleScopeV95(source, key, page, current?.book, current?.chapter, current?.allowNetwork ?: true, current?.fetchText)
+    return withSourceRuleScopeV95(scope) {
+        val rendered = renderSourceUrlV95(source.searchUrl, key, page, source.baseUrl)
+        parseSourceRequestUrlV95(rendered, source.baseUrl, source)
     }
-    require(options == null || options.values.all { it is JsonPrimitive && it.isString }) { "method/body/charset 请求选项必须是字符串" }
-    require(!urlPart.contains('<') && !urlPart.contains('>')) { "暂不支持 <首页,后续页> 地址表达式，请使用 {{page}} 或静态下一页链接" }
-    val charset = options?.get("charset")?.jsonPrimitive?.contentOrNull
-    val encoded = URLEncoder.encode(key, charset ?: "UTF-8")
-    fun fill(template: String): String {
-        val filled = template.replace("{{key}}", encoded).replace("{{page}}", page.toString())
-            .replace("searchKey", encoded).replace("searchPage", page.toString())
-        require(!filled.contains("{{") && !filled.contains("}}")) { "仅支持 {{key}}/{{page}}，不支持 JavaScript 模板表达式" }
-        return filled
+}
+
+private val URL_JS_V95 = Regex("<js>([\\s\\S]*?)</js>|@js:([\\s\\S]*)", RegexOption.IGNORE_CASE)
+
+/** Script, template and page-list expansion of a Legado url; the result still carries its `,{options}`. */
+internal fun renderSourceUrlV95(rawUrl: String, key: String, page: Int, baseUrl: String): String {
+    var text = rawUrl.trim()
+    require(text.length <= 64 * 1024) { "网址规则过长" }
+    if (URL_JS_V95.containsMatchIn(text)) {
+        var result = ""
+        var last = 0
+        URL_JS_V95.findAll(text).forEach { match ->
+            val before = text.substring(last, match.range.first).trim()
+            if (before.isNotEmpty()) result = before
+            val code = (match.groups[1]?.value ?: match.groups[2]?.value).orEmpty()
+            result = SourceJsEngineV95.evalStrict(code, mapOf("result" to result), baseUrl)
+            last = match.range.last + 1
+        }
+        text.substring(last).trim().takeIf { it.isNotEmpty() }?.let { result = it }
+        text = result.trim()
+        require(text.isNotEmpty()) { "网址脚本没有返回地址" }
     }
-    val url = resolveUrlV36(source.baseUrl, fill(urlPart))
-    val method = options?.get("method")?.jsonPrimitive?.contentOrNull?.uppercase() ?: "GET"
-    val body = options?.get("body")?.jsonPrimitive?.contentOrNull?.let(::fill)
-    require(method in setOf("GET", "POST", "HEAD")) { "书源仅支持 GET、POST、HEAD 请求" }
-    publicSourceUrlV36(url)
-    return SourceRequestV36(url, method, body, charset)
+    // The charset option decides how {{key}} is percent-encoded (gbk sites expect gbk bytes).
+    val charset = Regex("[\"']charset[\"']\\s*:\\s*[\"']([\\w-]+)[\"']").find(text)?.groupValues?.get(1)
+    val encodedKey = URLEncoder.encode(key, runCatching { Charset.forName(charset ?: "UTF-8"); charset ?: "UTF-8" }.getOrDefault("UTF-8"))
+    val out = StringBuilder()
+    var i = 0
+    while (i < text.length) {
+        val open = text.indexOf("{{", i)
+        if (open < 0) { out.append(text, i, text.length); break }
+        out.append(text, i, open)
+        val close = findTemplateCloseV95(text, open + 2)
+        require(close > 0) { "网址模板缺少 }}" }
+        val inner = text.substring(open + 2, close).trim()
+        out.append(when (inner) {
+            "key" -> encodedKey
+            "page" -> page.toString()
+            else -> SourceJsEngineV95.evalStrict(inner, mapOf("result" to ""), baseUrl)
+        })
+        i = close + 2
+    }
+    text = out.toString().replace("searchKey", encodedKey).replace("searchPage", page.toString())
+    // <first,second,third>: the n-th entry for page n, the last one afterwards.
+    text = text.replace(Regex("<([^<>]*,[^<>]*)>")) { match ->
+        val pages = match.groupValues[1].split(',')
+        (if (page <= pages.size) pages[page - 1] else pages.last()).trim()
+    }
+    return text
 }
 
 internal fun resolveUrlV36(base: String, target: String): String {
@@ -447,7 +596,7 @@ internal fun publicSourceUrlV36(raw: String): HttpUrl {
         !host.endsWith(".lan") && !host.endsWith(".home")) { "不允许访问本机或内网书源" }
     // Numeric literals are rejected here as well as in DNS, so imports fail early.
     if (host.contains(':') || host.all { it.isDigit() || it == '.' }) {
-        require(publicSourceAddressV36(InetAddress.getByName(host))) { "不允许访问本机或内网书源" }
+        require(connectableSourceAddressV54(InetAddress.getByName(host))) { "不允许访问本机或内网书源" }
     }
     return url.newBuilder().fragment(null).build()
 }
@@ -632,12 +781,17 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
         // No global CookieManager or automatic cookie jar is used by source requests.
         val configuredHeaders = sourceHeadersForUrlV36(source, url)
         configuredHeaders.forEach { (name, value) -> request.header(name, value) }
+        // Request-level headers (Legado `,{"headers":…}`, script requests, cover Referer) apply to this request only.
+        sourceRequestHeadersV95(initial.headers, sameOrigin = sameSourceOriginV36(publicSourceUrlV36(initial.url), url)).forEach { (name, value) -> request.header(name, value) }
         val configuredCookie = configuredHeaders.entries.firstOrNull { it.key.equals("Cookie", true) }?.value
         val learnedCookies = cookies.filter { it.matches(url) && it.expiresAt > System.currentTimeMillis() }.joinToString("; ") { "${it.name}=${it.value}" }
         listOfNotNull(configuredCookie, learnedCookies.takeIf { it.isNotEmpty() }).joinToString("; ")
             .takeIf { it.isNotEmpty() }?.let { request.header("Cookie", it) }
+        val contentType = initial.headers.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value
+            ?: if (body.orEmpty().trimStart().let { b -> b.startsWith("{") || b.startsWith("[") }) "application/json; charset=utf-8"
+            else "application/x-www-form-urlencoded"
         val requestBody = if (method == "POST") body.orEmpty().toByteArray(Charset.forName(initial.charset ?: "UTF-8"))
-            .toRequestBody("application/x-www-form-urlencoded".toMediaType()) else null
+            .toRequestBody(contentType.toMediaType()) else null
         SourceCooldownV46.check(url)
         val response = try {
             awaitSourceResponseV36(request.method(method, requestBody).build(), maxBytes, remaining)
@@ -668,6 +822,33 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
 internal fun fetchSourceBytesV36(url: String, maxBytes: Int = MAX_SOURCE_BYTES_V36): ByteArray =
     fetchSourceResponseV36(null, SourceRequestV36(url), maxBytes).bytes
 
+/** Bytes for a request with explicit headers (covers: Referer / User-Agent of the source). */
+internal fun fetchSourceRequestBytesV95(source: BookSourceV36?, request: SourceRequestV36, maxBytes: Int): ByteArray =
+    fetchSourceResponseV36(source, request, maxBytes).bytes
+
+/** Headers a single request may carry. Hop-by-hop and routing headers are never accepted from a source. */
+internal fun sourceRequestHeadersV95(headers: Map<String, String>, sameOrigin: Boolean): Map<String, String> =
+    headers.filter { (name, value) ->
+        name.isNotBlank() && name.length <= 128 && value.length <= 8192 &&
+            !name.contains('\r') && !name.contains('\n') && !value.contains('\r') && !value.contains('\n') &&
+            name.lowercase() !in setOf("host", "content-length", "connection", "transfer-encoding", "proxy-authorization", "proxy-connection", "upgrade", "te") &&
+            // Credentials from a source never follow a redirect to another site.
+            (sameOrigin || name.lowercase() !in setOf("cookie", "authorization"))
+    }
+
+/** A script request (java.ajax & co.): decoded text through the same guarded client. */
+internal fun fetchSourceTextV95(source: BookSourceV36?, request: SourceRequestV36): SourceTextResponseV95 {
+    if (source?.useBrowser == true) {
+        val doc = BookSourceBrowserV38.document(source, request)
+        return SourceTextResponseV95(doc.location(), doc.outerHtml())
+    }
+    val response = fetchSourceResponseV36(source, request, MAX_SOURCE_BYTES_V36)
+    val charset = request.charset ?: response.type?.let { Regex("charset=[\"']?([\\w-]+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1) }
+        ?: sniffCharsetV36(response.bytes)
+    val text = String(response.bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
+    return SourceTextResponseV95(response.url, text, response.code, listOfNotNull(response.type?.let { "Content-Type" to it }).toMap())
+}
+
 internal fun fetchDocumentV36(source: BookSourceV36, request: SourceRequestV36): Document {
     if (source.useBrowser) return BookSourceBrowserV38.document(source, request)
     val response = fetchSourceResponseV36(source, request, MAX_SOURCE_BYTES_V36)
@@ -682,6 +863,8 @@ internal fun parseSourceDocumentV44(
         ?: sniffCharsetV36(bytes)
     val html = String(bytes, runCatching { Charset.forName(charset) }.getOrDefault(Charsets.UTF_8))
     if (browserChallengePendingV38(html, mitigationHeader)) throw SourceBrowserChallengeV46(sourceOriginV46(publicSourceUrlV36(url)))
+    // JSON APIs (many Legado sources) become a JSON node so JSONPath rules can read them.
+    jsonDocumentV95(html, url)?.let { return it }
     return Jsoup.parse(html, url)
 }
 
@@ -703,6 +886,15 @@ internal fun searchSourceV36(
     key: String,
     page: Int = 1,
     fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
+): List<OnlineBookV36> = withSourceRuleScopeV95(SourceRuleScopeV95(source, key, page, fetchText = currentSourceRuleScopeV95()?.fetchText)) {
+    searchSourceInScopeV95(source, key, page, fetchDocument)
+}
+
+private fun searchSourceInScopeV95(
+    source: BookSourceV36,
+    key: String,
+    page: Int,
+    fetchDocument: (BookSourceV36, SourceRequestV36) -> Document,
 ): List<OnlineBookV36> {
     val doc = fetchDocument(source, buildSearchRequestV36(source, key, page))
     return ruleElementsV36(doc, source.searchList).mapNotNull { item ->
@@ -714,7 +906,8 @@ internal fun searchSourceV36(
             sourceName = source.name,
             name = name,
             author = ruleStringV36(item, source.searchAuthor),
-            cover = ruleStringV36(item, source.searchCover).let { if (it.isBlank()) it else resolveUrlV36(doc.location(), it) },
+            cover = ruleStringV36(item, source.searchCover).let { if (it.isBlank()) it else resolveUrlV36(doc.location(), it) }
+                .also { OnlineCoverSourcesV95.remember(it, source) },
             intro = ruleStringV36(item, source.searchIntro),
             latest = ruleStringV36(item, source.searchLatest),
             bookUrl = resolveUrlV36(doc.location(), url),
@@ -733,15 +926,30 @@ internal fun loadBookCatalogueV50(
     source: BookSourceV36,
     book: OnlineBookV36,
     fetchDocument: (BookSourceV36, SourceRequestV36) -> Document = ::fetchDocumentV36,
+): OnlineBookCatalogueV50 = withSourceRuleScopeV95(SourceRuleScopeV95(source, book = book, fetchText = currentSourceRuleScopeV95()?.fetchText)) {
+    loadBookCatalogueInScopeV95(source, book, fetchDocument)
+}
+
+/** Detail fields from the book page; the cover falls back to the search/discovery cover, resolved against the page. */
+internal fun bookDetailFromPageV95(source: BookSourceV36, book: OnlineBookV36, page: Document): OnlineBookV36 {
+    val info = ruleContextV95(page, source.infoInit)
+    return book.copy(
+        name = ruleStringV36(info, source.infoName).ifBlank { book.name },
+        author = ruleStringV36(info, source.infoAuthor).ifBlank { book.author },
+        cover = ruleStringV36(info, source.infoCover).ifBlank { book.cover }.let { if (it.isBlank()) it else resolveUrlV36(page.location(), it) }
+            .also { OnlineCoverSourcesV95.remember(it, source) },
+        intro = ruleStringV36(info, source.infoIntro).ifBlank { book.intro },
+    )
+}
+
+private fun loadBookCatalogueInScopeV95(
+    source: BookSourceV36,
+    book: OnlineBookV36,
+    fetchDocument: (BookSourceV36, SourceRequestV36) -> Document,
 ): OnlineBookCatalogueV50 {
     if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
     val page = fetchDocument(source, SourceRequestV36(book.bookUrl))
-    val detailed = book.copy(
-        name = ruleStringV36(page, source.infoName).ifBlank { book.name },
-        author = ruleStringV36(page, source.infoAuthor).ifBlank { book.author },
-        cover = ruleStringV36(page, source.infoCover).ifBlank { book.cover }.let { if (it.isBlank()) it else resolveUrlV36(page.location(), it) },
-        intro = ruleStringV36(page, source.infoIntro).ifBlank { book.intro },
-    )
+    val detailed = bookDetailFromPageV95(source, book, page)
     val inspectors = HashMap<Document, CataloguePageInspectorV50>()
     fun inspect(doc: Document) = inspectors.getOrPut(doc) { CataloguePageInspectorV50(doc) }
 
@@ -769,7 +977,11 @@ internal fun loadBookCatalogueV50(
     }
 
     val onPageChapters = declaredChapters(page)
-    val declaredToc = ruleStringV36(page, source.infoTocUrl).takeIf { it.isNotBlank() }?.let { resolveUrlV36(page.location(), it) }
+    val declaredToc = ruleStringV36(ruleContextV95(page, source.infoInit), source.infoTocUrl).takeIf { it.isNotBlank() }
+        ?.lines()?.firstOrNull { it.isNotBlank() }?.trim()?.let { resolveUrlV36(page.location(), it) }
+    // A scripted/JSON source declares its own API endpoints, which may live on another host of the site.
+    val scriptedSource = needsAdvancedRuleV95(source.infoTocUrl) || needsAdvancedRuleV95(source.tocList) ||
+        needsAdvancedRuleV95(source.tocNext) || jsonOfElementV95(page) != null
     val explicitToc = heuristicTocUrlV39(page, explicitOnly = true)
     val heuristicToc = heuristicTocUrlV39(page)
     fun otherPage(url: String?): String? = url?.takeIf { catalogueCanonicalUrlV50(it) != catalogueCanonicalUrlV50(page.location()) }
@@ -782,12 +994,14 @@ internal fun loadBookCatalogueV50(
     }
     val firstToc = fullToc ?: otherPage(declaredToc) ?: otherPage(explicitToc) ?: otherPage(heuristicToc).takeIf { onPageChapters.isEmpty() }
     fun read(url: String, message: String): Document {
-        check(sameCatalogueOriginV50(page.location(), url)) { "目录入口不在当前网站，未继续读取" }
+        check(scriptedSource || sameCatalogueOriginV50(page.location(), url)) { "目录入口不在当前网站，未继续读取" }
         if (Thread.currentThread().isInterrupted) throw CancellationException("目录读取已取消")
-        return sourceAttemptV36 { fetchDocument(source, SourceRequestV36(url)) }.getOrElse { failure ->
+        val request = if (scriptedSource) parseSourceRequestUrlV95(url, page.location(), source) else SourceRequestV36(url)
+        return sourceAttemptV36 { fetchDocument(source, request) }.getOrElse { failure ->
             throw IllegalStateException("$message：${failure.message.orEmpty()}", failure)
-        }.also { check(sameCatalogueOriginV50(page.location(), it.location())) { "目录跳转到站外，未将结果当作完整目录" } }
+        }.also { check(scriptedSource || sameCatalogueOriginV50(page.location(), it.location())) { "目录跳转到站外，未将结果当作完整目录" } }
     }
+    val pendingScriptedPages = ArrayDeque<String>()
     var doc = firstToc?.let { read(it, "完整目录读取失败，未将预览章节当作完整目录") } ?: page
     val firstCatalogueUrl = catalogueCanonicalUrlV50(doc.location())
     val chapters = LinkedHashMap<String, OnlineChapterV36>()
@@ -858,11 +1072,18 @@ internal fun loadBookCatalogueV50(
         val weakPreviewGap = section.weakPreview && numbers.maxOrNull()?.let { it > found.size && numbers.minOrNull() != 1 } == true
         unresolvedPreview = unresolvedPreview || section.preview || weakPreviewGap
         val ruleNext = ruleStringV36(doc, source.tocNext)
-        val navigation = catalogueNavigationV50(doc, ruleNext, book.bookUrl)
+        val navigation = if (scriptedSource) {
+            // Legado nextTocUrl may list several pages at once; queue the unseen ones.
+            ruleNext.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                .map { resolveUrlV36(doc.location(), it) }
+                .filter { catalogueCanonicalUrlV50(it.substringBefore(",{")) !in visited && it !in pendingScriptedPages }
+                .forEach(pendingScriptedPages::addLast)
+            CatalogueNavigationV50(pendingScriptedPages.removeFirstOrNull(), paginated = pendingScriptedPages.isNotEmpty())
+        } else catalogueNavigationV50(doc, ruleNext, book.bookUrl)
         check(!navigation.unresolved) { "页面仍有更多章节或目录分页，但没有可读取的静态同站链接；未将当前列表当作完整目录" }
         val next = navigation.next
         if (next == null) return completed()
-        check(catalogueCanonicalUrlV50(next) !in visited) { "目录分页循环返回已读取页面，未返回不完整目录" }
+        check(catalogueCanonicalUrlV50(next.substringBefore(",{")) !in visited) { "目录分页循环返回已读取页面，未返回不完整目录" }
         check(pageIndex < 39) { "目录超过 40 页限制，未返回不完整目录" }
         doc = read(next, "目录分页读取失败，未返回不完整目录")
     }
@@ -1005,5 +1226,5 @@ internal fun mergeSourceImportsV36(existing: List<BookSourceV36>, incoming: Book
         if (merged.containsKey(source.id)) skipped += "${source.name}（ID 已存在，保留原书源；如需修改请使用编辑）"
         else merged[source.id] = source
     }
-    return BookSourceImportResultV36(merged.values.sortedBy { it.name }, skipped)
+    return BookSourceImportResultV36(merged.values.sortedBy { it.name }, skipped, incoming.warnings)
 }

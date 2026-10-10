@@ -56,9 +56,10 @@ class BookSourceEngineV36Test {
             ]
         """.trimIndent()
         val result = parseBookSourcesV36(json)
-        assertEquals(1, result.sources.size)
+        // V95: JSON API sources ($.…) import too.
+        assertEquals(2, result.sources.size)
         assertEquals("甲站", result.sources[0].name)
-        assertEquals(1, result.skipped.size)
+        assertEquals(0, result.skipped.size)
         val request = buildSearchRequestV36(result.sources[0], "长夜")
         assertTrue(request.url.startsWith("https://a.example/s?q="))
         assertFalse(request.url.contains("{{key}}"))
