@@ -485,7 +485,7 @@ internal fun publicSourceUrlV36(raw: String): HttpUrl {
         !host.endsWith(".lan") && !host.endsWith(".home")) { "不允许访问本机或内网书源" }
     // Numeric literals are rejected here as well as in DNS, so imports fail early.
     if (host.contains(':') || host.all { it.isDigit() || it == '.' }) {
-        require(publicSourceAddressV36(InetAddress.getByName(host))) { "不允许访问本机或内网书源" }
+        require(connectableSourceAddressV54(InetAddress.getByName(host))) { "不允许访问本机或内网书源" }
     }
     return url.newBuilder().fragment(null).build()
 }
