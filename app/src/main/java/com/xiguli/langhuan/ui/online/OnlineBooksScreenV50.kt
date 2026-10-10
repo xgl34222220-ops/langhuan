@@ -66,6 +66,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -460,9 +461,9 @@ private fun OnlineSearchFieldV50(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = t.space4)
-            .height(50.dp)
-            .background(color = t.input, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            .height(46.dp)
+            // V94 flat: soft fill, no outline.
+            .background(color = t.foreground.copy(alpha = 0.045f), shape = RoundedCornerShape(23.dp))
             .padding(horizontal = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -694,10 +695,10 @@ private fun OnlineBookResultRowV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            // V94 flat result row: cover + text on the page background, no card outline.
+            .clip(shape)
             .clickable(onClick = onClick)
-            .padding(t.space3),
+            .padding(vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OnlineCoverV50(

@@ -334,9 +334,9 @@ private fun SourceManageSearchV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .background(t.input, shape)
-            .border(1.dp, t.border, shape)
+            .height(46.dp)
+            // V94 flat: soft fill, no outline (matches the shelf search field).
+            .background(t.foreground.copy(alpha = 0.045f), RoundedCornerShape(23.dp))
             .padding(horizontal = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -410,8 +410,8 @@ private fun SourceManageCardV50(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(t.card, shape)
-            .border(1.dp, t.border, shape)
+            // V94 flat: no card outline; a faint fill separates rows by whitespace.
+            .background(t.foreground.copy(alpha = 0.03f), shape)
             .clickable(onClick = onClick)
             .padding(t.space4),
     ) {
