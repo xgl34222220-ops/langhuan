@@ -1,7 +1,6 @@
 package com.xiguli.langhuan.ui
 
 import android.graphics.Bitmap
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -53,7 +52,8 @@ class BrandRefreshV95DeviceTest {
 
         tab("MINE")
         rule.onNodeWithTag("bottom-tab-MINE").assertIsSelected()
-        rule.onNodeWithText("我的").assertIsDisplayed()
+        // Large title + tab label.
+        assertTrue(rule.onAllNodesWithText("我的").fetchSemanticsNodes().size >= 2)
         screenshot("v95-tab-mine")
         val before = TabReselectBusV95.current.token
         tab("MINE")
@@ -62,7 +62,7 @@ class BrandRefreshV95DeviceTest {
         rule.onNodeWithTag("bottom-tab-MINE").assertIsSelected()
 
         tab("ONLINE")
-        rule.onNodeWithText("书城").assertIsDisplayed()
+        assertTrue(rule.onAllNodesWithText("书城").fetchSemanticsNodes().size >= 2)
         screenshot("v95-tab-online")
 
         tab("CREATE_HUB")
