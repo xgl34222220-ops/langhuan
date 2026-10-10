@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -232,7 +233,8 @@ class LiveUiPolishV92DeviceTest {
         prefs.edit().clear().commit()
         val settings = ReaderSettingsV30(prefs)
         menu(settings, ReaderMenuTabV30.DIRECTORY, ReaderMenuPanelV30.MAIN, chapters(300))
-        rule.onNodeWithText("第1章 夜航").assertIsDisplayed()
+        // V93 menu header also shows the current chapter label; the directory row comes after it.
+        rule.onAllNodesWithText("第1章 夜航").onLast().assertIsDisplayed()
         val bar = rule.onNodeWithContentDescription(READER_TOC_FAST_SCROLL_LABEL_V92)
         bar.assertExists()
         bar.performTouchInput { down(topCenter); moveTo(center) }
