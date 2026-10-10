@@ -68,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -480,10 +481,10 @@ private fun OnlineSearchFieldV50(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = t.space4)
-            .height(46.dp)
-            // V94 flat: soft fill, no outline.
-            .background(color = t.foreground.copy(alpha = 0.045f), shape = RoundedCornerShape(23.dp))
-            .padding(horizontal = t.space3),
+            .height(44.dp)
+            // V94 flat: soft fill, no outline. V96: the inner action is a matching pill.
+            .background(color = t.foreground.copy(alpha = 0.05f), shape = RoundedCornerShape(22.dp))
+            .padding(start = 14.dp, end = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -531,22 +532,18 @@ private fun OnlineSearchFieldV50(
             )
         }
         Spacer(Modifier.width(t.space1))
-        val searchShape = RoundedCornerShape(t.radiusMd)
+        val searchShape = RoundedCornerShape(17.dp)
         val searchEnabled = query.isNotBlank() && !searching
         Box(
             modifier = Modifier
-                .height(36.dp)
+                .height(34.dp)
+                .clip(searchShape)
                 .background(
-                    color = if (searchEnabled) t.primary else t.border,
-                    shape = searchShape,
-                )
-                .border(
-                    width = 1.dp,
-                    color = if (searchEnabled) t.primary else t.border,
+                    color = if (searchEnabled) t.primary else Color.Transparent,
                     shape = searchShape,
                 )
                 .clickable(enabled = searchEnabled, role = androidx.compose.ui.semantics.Role.Button, onClick = submit)
-                .padding(horizontal = t.space3),
+                .padding(horizontal = 14.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (searching) {
@@ -558,8 +555,8 @@ private fun OnlineSearchFieldV50(
             } else {
                 Text(
                     text = "搜索",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (query.isNotBlank()) t.card else t.mutedForeground,
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
+                    color = if (query.isNotBlank()) t.primaryForeground else t.mutedForeground.copy(alpha = 0.7f),
                     fontWeight = FontWeight.SemiBold,
                 )
             }
