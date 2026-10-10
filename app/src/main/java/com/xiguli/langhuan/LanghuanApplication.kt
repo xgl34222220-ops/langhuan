@@ -20,9 +20,17 @@ class LanghuanApplication : Application() {
     // Keep process startup side-effect free. Reference-library installation and indexing are
     // deliberately not started from Application.onCreate(); the launcher must render first.
     // Workflow observation is attached only when ChapterRunRuntime itself is first requested.
-    val chapterRunRuntime: ChapterRunRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    private val chapterRunRuntimeLazy = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ChapterRunRuntime(this).also { runtime ->
             NovelWorkflowRuntimeObserver.attach(this, runtime)
         }
     }
+    val chapterRunRuntime: ChapterRunRuntime by chapterRunRuntimeLazy
+
+    /**
+     * The runtime only if something already started it. Passive observers (the shelf's run
+     * badge) use this so that merely rendering the shelf never creates the runtime.
+     */
+    val chapterRunRuntimeIfStarted: ChapterRunRuntime?
+        get() = if (chapterRunRuntimeLazy.isInitialized()) chapterRunRuntimeLazy.value else null
 }

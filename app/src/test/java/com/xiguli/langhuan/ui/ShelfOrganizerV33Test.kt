@@ -13,7 +13,8 @@ class ShelfOrganizerV33Test {
     @Test
     fun sortModesCycleAndParse() {
         assertEquals(LuoShelfSortV33.UPDATED, LuoShelfSortV33.RECENT_READ.next())
-        assertEquals(LuoShelfSortV33.RECENT_READ, LuoShelfSortV33.TITLE.next())
+        assertEquals(LuoShelfSortV33.PROGRESS, LuoShelfSortV33.TITLE.next())
+        assertEquals(LuoShelfSortV33.RECENT_READ, LuoShelfSortV33.PROGRESS.next())
         assertEquals(LuoShelfSortV33.RECENT_READ, LuoShelfSortV33.of("nope"))
         assertEquals(LuoShelfSortV33.TITLE, LuoShelfSortV33.of("title"))
     }
