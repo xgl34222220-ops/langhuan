@@ -25,6 +25,8 @@ internal data class ReaderThemeV30(
     val text: Color,
     val secondary: Color,
     val dark: Boolean = false,
+    /** V92 paper texture / gallery picture painted under the text of every page. */
+    val backdrop: ReaderBackdropPaintV92? = null,
 ) {
     val sheet: Color get() = if (dark) Color(0xFF1F1F21) else Color(0xFFFFFFFF)
     val sheetText: Color get() = if (dark) Color(0xFFE8E8EA) else Color(0xFF1C1C1E)
@@ -161,6 +163,7 @@ internal fun DrawScope.drawReaderPageV30(
     placeholder: String? = null,
 ) {
     drawRect(theme.page)
+    theme.backdrop?.let { drawReaderBackdropV92(it, geometry.width, geometry.height) }
     drawIntoCanvas { canvas ->
         val native = canvas.nativeCanvas
         val chrome = paints.chrome

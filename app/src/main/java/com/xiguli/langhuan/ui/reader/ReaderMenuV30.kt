@@ -773,23 +773,38 @@ private fun ReaderChapterListV30(
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = readerTocInitialIndexV90(chapterIndex, chapters.size),
     )
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(
-            start = t.space3, end = t.space3, bottom = t.space3,
-        ),
-    ) {
-        itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
-            val current = index == chapterIndex
-            val marked = chapter.chapterNumber in bookmarkedChapters
-            ReaderChapterRowV30(
-                chapter = chapter,
-                current = current,
-                bookmarked = marked,
-                onClick = { onJumpChapter(index, 0) },
-            )
+    // V92: long directories (web serials with hundreds of chapters) get a fast-scroll strip.
+    val fastScroll = chapters.size >= READER_TOC_FAST_SCROLL_MIN_V92
+    Box(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = t.space3,
+                end = if (fastScroll) READER_TOC_FAST_SCROLL_GUTTER_V92 else t.space3,
+                bottom = t.space3,
+            ),
+        ) {
+            itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
+                val current = index == chapterIndex
+                val marked = chapter.chapterNumber in bookmarkedChapters
+                ReaderChapterRowV30(
+                    chapter = chapter,
+                    current = current,
+                    bookmarked = marked,
+                    onClick = { onJumpChapter(index, 0) },
+                )
+            }
         }
+        ReaderTocFastScrollerV92(
+            listState = listState,
+            itemCount = chapters.size,
+            labelFor = { index ->
+                chapters.getOrNull(index)
+                    ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
+                    .orEmpty()
+            },
+        )
     }
 }
 
@@ -805,7 +820,10 @@ private fun ReaderBookmarkListV30(
     modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val rows = chapters.filter { it.chapterNumber in bookmarks }
+    // Index once instead of chapters.indexOf(chapter) per row (O(n²) on long books).
+    val rows = remember(chapters, bookmarks) {
+        chapters.withIndex().filter { it.value.chapterNumber in bookmarks }
+    }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
             title = "还没有书签",
@@ -819,8 +837,7 @@ private fun ReaderBookmarkListV30(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
     ) {
-        items(items = rows, key = { "bookmark-${it.id}" }) { chapter ->
-            val index = chapters.indexOf(chapter)
+        items(items = rows, key = { "bookmark-${it.value.id}" }) { (index, chapter) ->
             ReaderChapterRowV30(
                 chapter = chapter,
                 current = false,
@@ -1237,6 +1254,9 @@ private fun ReaderThemePanelV30(
         )
         Spacer(Modifier.height(t.space4))
         ReaderThemeGridV30(settings = settings, compact = false)
+        Spacer(Modifier.height(t.space5))
+        // V92: brightness, warm light and paper backdrop live with the colour themes.
+        ReaderLightAndBackdropSectionV92(settings = settings)
     }
 }
 
