@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- V95 brand: jade (玉) field, ivory (宣纸) mark, gold moon. -->
-    <color name="launcher_background">#1A5C4C</color>
-    <!-- Window + splash surface matches the app's paper background so there is no white flash. -->
+    <!-- Window surface matches the app's paper background (LanghuanLightUiTokens.background). -->
     <color name="langhuan_window_v95">#F7F5F0</color>
-    <color name="splash_mark_v95">#1E6A5A</color>
-    <color name="splash_moon_v95">#C08A3A</color>
+    <!-- V96 brand: ink-wash bamboo (墨竹) on rice paper (宣纸) with a vermilion seal dot. -->
+    <color name="splash_paper_v96">#F4EFE4</color>
+    <color name="splash_ink_v96">#1A1917</color>
+    <color name="splash_seal_v96">#CB3A24</color>
 </resources>

@@ -18,6 +18,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.MaterialTheme
@@ -159,7 +160,7 @@ private fun StartupDatabaseRoot(
 @Composable
 private fun LauncherCheckingScreen() {
     // Same paper surface and mark as the launch screen, so a slow check continues it seamlessly.
-    Surface(Modifier.fillMaxSize(), color = colorResource(R.color.langhuan_window_v95)) {
+    Surface(Modifier.fillMaxSize(), color = colorResource(R.color.splash_paper_v96)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -169,21 +170,24 @@ private fun LauncherCheckingScreen() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Same 288 dp canvas as the system splash icon, nudged so the sprig stays exactly where
+            // the launch screen drew it while the progress line appears underneath.
+            Spacer(Modifier.height(40.dp))
             Image(
-                painter = painterResource(R.drawable.splash_mark_v95),
+                painter = painterResource(R.drawable.splash_bamboo_v96),
                 contentDescription = null,
-                modifier = Modifier.size(160.dp),
+                modifier = Modifier.size(288.dp),
             )
             LinearProgressIndicator(
                 modifier = Modifier.padding(top = 4.dp).width(96.dp).height(2.dp),
-                color = colorResource(R.color.splash_mark_v95),
-                trackColor = colorResource(R.color.splash_mark_v95).copy(alpha = .16f),
+                color = colorResource(R.color.splash_ink_v96),
+                trackColor = colorResource(R.color.splash_ink_v96).copy(alpha = .16f),
             )
             Text(
                 text = "正在检查琅嬛数据…",
                 modifier = Modifier.padding(top = 14.dp),
                 style = MaterialTheme.typography.bodyMedium,
-                color = colorResource(R.color.splash_mark_v95).copy(alpha = .72f),
+                color = colorResource(R.color.splash_ink_v96).copy(alpha = .72f),
             )
         }
     }

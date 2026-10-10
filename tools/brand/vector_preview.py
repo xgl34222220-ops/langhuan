@@ -37,14 +37,6 @@ def to_svg(path, res, night=False):
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {vw} {vh}"><defs>{"".join(defs)}</defs>{body}</svg>'
 def render(path,res,size,night=False):
     return Image.open(io.BytesIO(cairosvg.svg2png(bytestring=to_svg(path,res,night).encode(),output_width=size,output_height=size))).convert('RGBA')
-def adaptive(res,size,mono=False,tint=(28,68,121),bg=(207,222,244)):
-    """Full 108-unit adaptive canvas at `size` px."""
-    d=os.path.join(res,'drawable')
-    if mono:
-        fg=render(os.path.join(d,'ic_launcher_monochrome_v95.xml'),res,size)
-        base=Image.new('RGBA',(size,size),bg+(255,)); solid=Image.new('RGBA',(size,size),tint+(255,))
-        base.paste(solid,(0,0),fg.split()[3]); return base
-    b=render(os.path.join(d,'ic_launcher_background_v95.xml'),res,size); b.alpha_composite(render(os.path.join(d,'ic_launcher_foreground_v95.xml'),res,size)); return b
 def mask(im,shape):
     n=im.size[0]; k=4; m=Image.new('L',(n*k,n*k),0); dr=ImageDraw.Draw(m); i=n*k*18/108; box=[i,i,n*k-i,n*k-i]; w=box[2]-box[0]
     if shape=='circle': dr.ellipse(box,fill=255)

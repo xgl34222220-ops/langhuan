@@ -8,6 +8,8 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.ColorDrawable
+import android.view.ContextThemeWrapper
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.R
@@ -18,16 +20,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * V95 brand: the moon-gate mark must stay inside the adaptive-icon safe zone (66 dp circle) so no
- * launcher mask clips it, the monochrome layer must exist for themed icons, and the splash mark
- * must render in both light and dark. Writes a preview sheet for the PR.
+ * V96 brand (ink-wash bamboo): the painted sprig and its vermilion seal must stay inside the
+ * adaptive-icon safe zone (66 dp circle) so no launcher mask clips them, the rice-paper background
+ * must be a solid cream, the monochrome layer must exist for themed icons, and the splash must be
+ * ink-on-paper in light mode and paper-white-on-ink in dark mode with a matching starting-window
+ * background (no white flash). Writes preview sheets for the PR.
  */
-class LauncherIconV95DeviceTest {
+class LauncherIconV96DeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
     @Test @SdkSuppress(minSdkVersion = 33)
-    fun markFitsSafeZoneOnEveryMaskAndHasThemedLayer() {
+    fun inkSprigFitsSafeZoneOnEveryMaskAndHasThemedLayer() {
         val icon = context.getDrawable(R.mipmap.ic_launcher) as AdaptiveIconDrawable
         val round = context.getDrawable(R.mipmap.ic_launcher_round) as AdaptiveIconDrawable
         assertNotNull(icon.monochrome)
@@ -36,23 +40,35 @@ class LauncherIconV95DeviceTest {
         icon.setBounds(0, 0, size, size)
         val fg = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         icon.foreground.draw(Canvas(fg))
-        var ivory = 0
+        var ink = 0
+        var seal = 0
         var outsideSafeZone = 0
         // AdaptiveIconDrawable bounds are the visible 72 dp viewport (layers are drawn 1.5x around
         // it), so the 66 dp safe-zone circle has radius 33/72 of the bounds.
         val safeRadius = size * 33f / 72f
         for (y in 0 until size) for (x in 0 until size) {
             val c = fg.getPixel(x, y)
-            if (Color.alpha(c) < 40) continue
-            if (Color.red(c) > 220 && Color.green(c) > 215 && Color.blue(c) > 190) ivory++
+            val a = Color.alpha(c)
+            if (a < 40) continue
+            if (a > 200 && Color.red(c) < 80 && Color.green(c) < 80 && Color.blue(c) < 80) ink++
+            if (a > 200 && Color.red(c) > 150 && Color.green(c) < 120 && Color.blue(c) < 100) seal++
             val dx = x - size / 2f
             val dy = y - size / 2f
             if (dx * dx + dy * dy > safeRadius * safeRadius) outsideSafeZone++
         }
-        assertTrue("Ivory book and moon gate must be clearly visible ($ivory px)", ivory > 6000)
-        assertEquals("Mark must stay inside the 66 dp safe zone", 0, outsideSafeZone)
+        assertTrue("Ink bamboo leaves must be clearly visible ($ink px)", ink > 6000)
+        assertTrue("Vermilion seal dot must be visible ($seal px)", seal > 300)
+        assertEquals("Painted sprig must stay inside the 66 dp safe zone", 0, outsideSafeZone)
         assertEquals(0, Color.alpha(fg.getPixel(0, 0)))
         fg.recycle()
+
+        // Background layer: opaque warm rice paper.
+        val bg = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        icon.background.draw(Canvas(bg))
+        val p = bg.getPixel(size / 4, size / 4)
+        assertEquals(255, Color.alpha(p))
+        assertTrue("paper is cream, not white or grey: $p", Color.red(p) in 225..250 && Color.blue(p) in 200..235 && Color.red(p) > Color.blue(p))
+        bg.recycle()
 
         val cell = 432
         val sheet = Bitmap.createBitmap(cell * 4, cell + 56, Bitmap.Config.ARGB_8888)
@@ -83,11 +99,11 @@ class LauncherIconV95DeviceTest {
             canvas.drawText(names[i], cell / 2f, cell + 38f, label)
             canvas.restore()
         }
-        save(sheet, "v95-launcher-masks.png")
+        save(sheet, "v96-launcher-masks.png")
     }
 
     @Test
-    fun splashMarkRendersInLightAndDark() {
+    fun splashIsInkOnPaperAndPaperOnInkWithMatchingWindow() {
         val w = 540
         val h = 960
         val sheet = Bitmap.createBitmap(w * 2, h, Bitmap.Config.ARGB_8888)
@@ -97,19 +113,38 @@ class LauncherIconV95DeviceTest {
                 uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or night
             }
             val themed = context.createConfigurationContext(cfg)
-            val bg = themed.getColor(R.color.langhuan_window_v95)
-            val paint = Paint().apply { color = bg }
-            canvas.drawRect((i * w).toFloat(), 0f, ((i + 1) * w).toFloat(), h.toFloat(), paint)
-            val mark = themed.getDrawable(R.drawable.splash_mark_v95)!!
-            val s = 320
-            mark.setBounds(i * w + (w - s) / 2, (h - s) / 2, i * w + (w + s) / 2, (h + s) / 2)
+            val bg = themed.getColor(R.color.splash_paper_v96)
+            // The starting window paints the same paper as the splash: no white flash.
+            val starting = ContextThemeWrapper(themed, R.style.Theme_Langhuan_Starting)
+            val attrs = starting.obtainStyledAttributes(intArrayOf(android.R.attr.windowBackground))
+            val window = attrs.getDrawable(0)
+            attrs.recycle()
+            assertTrue("starting window background is the splash paper", window is ColorDrawable && window.color == bg)
+
+            canvas.drawRect((i * w).toFloat(), 0f, ((i + 1) * w).toFloat(), h.toFloat(), Paint().apply { color = bg })
+            val mark = themed.getDrawable(R.drawable.splash_bamboo_v96)!!
+            val s = 378 // 288 dp icon canvas at the sheet's scale
+            val left = i * w + (w - s) / 2
+            val top = (h - s) / 2
+            mark.setBounds(left, top, left + s, top + s)
             mark.draw(canvas)
-            // The mark is ink on paper: it must differ clearly from the background in both modes.
-            val probe = Bitmap.createBitmap(sheet, i * w + w / 2 - 70, h / 2 + 20, 1, 1)
-            assertTrue("splash mark visible (mode $night)", probe.getPixel(0, 0) != bg)
+            var strokes = 0
+            var vermilion = 0
+            val bgLum = lum(bg)
+            for (y in top until top + s step 2) for (x in left until left + s step 2) {
+                val c = sheet.getPixel(x, y)
+                if (Color.red(c) > 170 && Color.green(c) < 130 && Color.blue(c) < 110) vermilion++
+                val d = lum(c) - bgLum
+                // Light: leaves darker than paper. Dark: leaves lighter than ink.
+                if (if (night == Configuration.UI_MODE_NIGHT_NO) d < -120 else d > 120) strokes++
+            }
+            assertTrue("bamboo leaves visible (mode $night): $strokes", strokes > 400)
+            assertTrue("seal dot visible (mode $night): $vermilion", vermilion > 10)
         }
-        save(sheet, "v95-splash-light-dark.png")
+        save(sheet, "v96-splash-light-dark.png")
     }
+
+    private fun lum(c: Int) = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
 
     private fun save(bitmap: Bitmap, name: String) {
         val file = File(context.getExternalFilesDir(null), name)
