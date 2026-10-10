@@ -22,18 +22,19 @@ class BookSourceImportV94Test {
         listOf("速读谷", "手机小说", "铅笔小说", "得奇小说网", "快书网", "天天看小说", "独步小说网", "就爱文学", "武林中文网").forEach {
             assertTrue("$it should import, got $names / ${result.skipped}", it in names)
         }
-        assertTrue("imported ${names.size}: $names", result.sources.size >= 9)
+        assertTrue("imported ${names.size}: $names", result.sources.size >= 21)
         assertEquals(22, result.sources.size + result.skipped.size)
         // No skip is a raw parser error any more; each names its reason in parentheses.
         result.skipped.forEach {
             assertFalse(it, it.contains("Unexpected JSON token"))
             assertTrue(it, it.contains("（"))
         }
-        // Script-only sources stay out with an explicit reason.
-        assertTrue(result.skipped.any { it.startsWith("起点中文") && it.contains("JavaScript") })
-        // 69书吧 needs a script for its table-of-contents URL, an essential rule.
-        assertTrue(result.skipped.any { it.startsWith("69书吧（") && it.contains("目录地址") })
-        assertTrue(result.skipped.any { it.startsWith("酷我小说") && it.contains("JSON") })
+        // Since V95 script, jsLib and JSON sources import; 起点中文 keeps its search but
+        // its 300+ discovery categories are disabled and its startBrowser step is flagged.
+        listOf("起点中文", "69书吧", "酷我小说").forEach { assertTrue("$it should import, got ${result.skipped}", it in names) }
+        assertTrue(result.warnings.toString(), result.warnings.any { it.startsWith("起点中文") && it.contains("startBrowser") })
+        // The only remaining skip names the script error that stopped it.
+        assertTrue(result.skipped.toString(), result.skipped.all { it.contains("书源脚本出错") || it.contains("暂不支持") })
     }
 
     @Test fun singleQuotedPostOptionsBuildTheRealRequest() {
