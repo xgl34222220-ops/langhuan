@@ -222,9 +222,10 @@ internal fun OnlineBooksScreenV50(
         LazyColumn(
             modifier = Modifier.weight(1f),
             state = storeListState,
+            // V96: same 20 dp gutter as the large title above.
             contentPadding = PaddingValues(
-                start = t.space4,
-                end = t.space4,
+                start = 20.dp,
+                end = 20.dp,
                 top = t.space3,
                 bottom = t.space6,
             ),
@@ -349,7 +350,7 @@ internal fun OnlineBooksScreenV50(
                             else -> "发现好书"
                         },
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 22.sp),
                         color = t.foreground,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -480,7 +481,7 @@ private fun OnlineSearchFieldV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4)
+            .padding(horizontal = 20.dp)
             .height(44.dp)
             // V94 flat: soft fill, no outline. V96: the inner action is a matching pill.
             .background(color = t.foreground.copy(alpha = 0.05f), shape = RoundedCornerShape(22.dp))

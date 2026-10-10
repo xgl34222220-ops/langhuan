@@ -56,17 +56,17 @@ object LanghuanTabIconsV95 {
 
     val CreateOutline: ImageVector by lazy {
         tabIcon("CreateOutline") {
-            strokePath("M19.6,4.4L13.8,10.2")
-            strokePath("M12.71,9.1 L14.9,11.29 L13.41,12.78 L11.22,10.59Z")
-            strokePath("M11.22,10.59C8.57,11.19 5.6,15.15 4.43,20.06C8.85,18.82 12.74,15.64 13.41,12.78Z")
+            strokePath("M20,4L14.48,9.52")
+            strokePath("M13.25,8.28 L15.72,10.75 L14.17,12.31 L11.69,9.83Z")
+            strokePath("M11.69,9.83C8.76,10.15 5.65,14.25 4.44,20.12C9.53,18.85 13.78,15.46 14.17,12.31Z")
         }
     }
 
     val CreateFilled: ImageVector by lazy {
         tabIcon("CreateFilled") {
-            strokePath("M19.6,4.4L13.8,10.2")
-            fillStrokePath("M12.71,9.1 L14.9,11.29 L13.41,12.78 L11.22,10.59Z")
-            fillStrokePath("M11.22,10.59C8.57,11.19 5.6,15.15 4.43,20.06C8.85,18.82 12.74,15.64 13.41,12.78Z")
+            strokePath("M20,4L14.48,9.52")
+            fillStrokePath("M13.25,8.28 L15.72,10.75 L14.17,12.31 L11.69,9.83Z")
+            fillStrokePath("M11.69,9.83C8.76,10.15 5.65,14.25 4.44,20.12C9.53,18.85 13.78,15.46 14.17,12.31Z")
         }
     }
 
