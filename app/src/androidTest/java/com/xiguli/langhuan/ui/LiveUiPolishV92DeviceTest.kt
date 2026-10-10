@@ -133,6 +133,7 @@ class LiveUiPolishV92DeviceTest {
         val progress = rule.activity.getSharedPreferences(ShelfReadingProgressStoreV92.PREFS, Context.MODE_PRIVATE)
         val shelf = rule.activity.getSharedPreferences("qingmo_shelf_v9", Context.MODE_PRIVATE)
         val previousSort = shelf.getString("shelf_sort", null)
+        val previousLayout = shelf.getString("shelf_layout_v4", null)
         fun save(id: String, index: Int, fraction: Float, finished: Boolean) {
             progress.edit()
                 .putLong("updated_$id", System.currentTimeMillis())
@@ -144,7 +145,9 @@ class LiveUiPolishV92DeviceTest {
         try {
             save(mountain.id, index = 2, fraction = 0.9f, finished = true)
             save(night.id, index = 1, fraction = 0.5f, finished = false)
-            shelf.edit().putString("shelf_sort", LuoShelfSortV33.PROGRESS.key).commit()
+            // V93 opens on the cover grid by default; this check reads row order, so use the list.
+            shelf.edit().putString("shelf_sort", LuoShelfSortV33.PROGRESS.key)
+                .putString("shelf_layout_v4", "list").commit()
             home(LibraryExperienceState(stories = listOf(night, mountain, river), libraryLoaded = true))
             rule.waitUntil(10000) { rule.onAllNodesWithText("江上书").fetchSemanticsNodes().isNotEmpty() }
             // Progress sort: finished first, then the half-read book, unread last.
@@ -168,6 +171,7 @@ class LiveUiPolishV92DeviceTest {
             }.commit()
             shelf.edit().apply {
                 if (previousSort == null) remove("shelf_sort") else putString("shelf_sort", previousSort)
+                if (previousLayout == null) remove("shelf_layout_v4") else putString("shelf_layout_v4", previousLayout)
             }.commit()
         }
     }

@@ -95,6 +95,8 @@ internal enum class ReaderBackdropV92(val key: String, val label: String) {
     XUAN("xuan", "宣纸"),
     LINEN("linen", "麻布"),
     GRID("grid", "稿纸"),
+    /** V93: faint ink-bamboo in the top corner of a plain page (the reference reader's paper). */
+    BAMBOO("bamboo", "竹影"),
     IMAGE("image", "相册图片"),
     ;
 
@@ -109,6 +111,8 @@ internal class ReaderBackdropPaintV92(
     val image: ImageBitmap? = null,
     /** Page-coloured veil over a picture so body text keeps its contrast. */
     val veil: Color = Color.Transparent,
+    /** V93: ink colour for the 竹影 corner decoration; Transparent when not used. */
+    val bambooInk: Color = Color.Transparent,
 )
 
 /** Window brightness override value for a stored setting (-1 = follow the system). */
@@ -168,8 +172,65 @@ internal fun DrawScope.drawReaderBackdropV92(
                 if (paint.veil.alpha > 0f) drawRect(paint.veil, size = Size(pageWidth, pageHeight))
             }
             paint.texture?.let { drawRect(brush = it, size = Size(pageWidth, pageHeight)) }
+            if (paint.bambooInk.alpha > 0f) drawReaderBambooV93(paint.bambooInk, pageWidth, pageHeight)
         }
     }
+}
+
+/**
+ * V93 竹影: two thin bamboo stalks with a few tapering leaves, washed into the top-right corner
+ * at very low alpha so body text keeps full contrast. Deterministic (no randomness) so every
+ * page of a chapter carries the same decoration.
+ */
+internal fun DrawScope.drawReaderBambooV93(ink: Color, pageWidth: Float, pageHeight: Float) {
+    val unit = minOf(pageWidth, pageHeight) / 360f
+    val stalk = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.2f * unit, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+    fun stalkAt(x: Float, top: Float, bottom: Float, lean: Float, alpha: Float) {
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(x, top)
+            quadraticTo(x + lean * 0.5f, (top + bottom) / 2f, x + lean, bottom)
+        }
+        drawPath(path, ink.copy(alpha = ink.alpha * alpha), style = stalk)
+        // Nodes: short light ticks across the stalk.
+        var y = top + 38f * unit
+        while (y < bottom - 6f * unit) {
+            val t = (y - top) / (bottom - top)
+            val cx = x + lean * t
+            drawLine(
+                ink.copy(alpha = ink.alpha * alpha * 1.4f),
+                Offset(cx - 4.5f * unit, y), Offset(cx + 4.5f * unit, y),
+                strokeWidth = 1.6f * unit,
+            )
+            y += 46f * unit
+        }
+    }
+    fun leaf(baseX: Float, baseY: Float, angleDeg: Float, length: Float, alpha: Float) {
+        val rad = Math.toRadians(angleDeg.toDouble())
+        val dx = kotlin.math.cos(rad).toFloat()
+        val dy = kotlin.math.sin(rad).toFloat()
+        val tipX = baseX + dx * length
+        val tipY = baseY + dy * length
+        val nx = -dy
+        val ny = dx
+        val w = length * 0.13f
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(baseX, baseY)
+            quadraticTo(baseX + dx * length * 0.45f + nx * w, baseY + dy * length * 0.45f + ny * w, tipX, tipY)
+            quadraticTo(baseX + dx * length * 0.45f - nx * w * 0.55f, baseY + dy * length * 0.45f - ny * w * 0.55f, baseX, baseY)
+            close()
+        }
+        drawPath(path, ink.copy(alpha = ink.alpha * alpha))
+    }
+    val right = pageWidth
+    stalkAt(right - 46f * unit, -10f * unit, 210f * unit, -8f * unit, 0.55f)
+    stalkAt(right - 18f * unit, -10f * unit, 150f * unit, 6f * unit, 0.40f)
+    leaf(right - 50f * unit, 70f * unit, 160f, 74f * unit, 0.85f)
+    leaf(right - 50f * unit, 72f * unit, 195f, 62f * unit, 0.70f)
+    leaf(right - 52f * unit, 118f * unit, 150f, 66f * unit, 0.75f)
+    leaf(right - 52f * unit, 120f * unit, 205f, 54f * unit, 0.60f)
+    leaf(right - 20f * unit, 40f * unit, 140f, 58f * unit, 0.55f)
+    leaf(right - 20f * unit, 42f * unit, 175f, 70f * unit, 0.65f)
+    leaf(right - 49f * unit, 165f * unit, 128f, 50f * unit, 0.50f)
 }
 
 /** Builds a seamless texture tile tinted with the theme's text colour. Pure CPU, ~1 ms. */
@@ -234,7 +295,7 @@ internal fun readerTextureTileV92(backdrop: ReaderBackdropV92, ink: Color, dark:
             canvas.drawRect(0f, 0f, sizePx.toFloat(), 1.2f, paint)
             canvas.drawRect(0f, 0f, 1.2f, sizePx.toFloat(), paint)
         }
-        ReaderBackdropV92.NONE, ReaderBackdropV92.IMAGE -> Unit
+        ReaderBackdropV92.NONE, ReaderBackdropV92.IMAGE, ReaderBackdropV92.BAMBOO -> Unit
     }
     return bitmap.asImageBitmap()
 }
@@ -262,6 +323,9 @@ internal fun rememberReaderBackdropPaintV92(settings: ReaderSettingsV30, theme: 
             ReaderBackdropV92.IMAGE -> image?.let {
                 ReaderBackdropPaintV92(image = it, veil = theme.page.copy(alpha = if (theme.dark) 0.55f else 0.42f))
             }
+            ReaderBackdropV92.BAMBOO -> ReaderBackdropPaintV92(
+                bambooInk = theme.text.copy(alpha = if (theme.dark) 0.10f else 0.13f),
+            )
             else -> readerTextureTileV92(backdrop, theme.text, theme.dark)?.let { tile ->
                 ReaderBackdropPaintV92(texture = ShaderBrush(ImageShader(tile, TileMode.Repeated, TileMode.Repeated)))
             }
@@ -444,6 +508,11 @@ private fun ReaderBackdropTileV92(
             contentAlignment = Alignment.Center,
         ) {
             if (tile != null) Canvas(Modifier.fillMaxSize()) { drawRect(brush = tile) }
+            if (option == ReaderBackdropV92.BAMBOO) {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawReaderBambooV93(theme.text.copy(alpha = 0.22f), size.width, size.height)
+                }
+            }
             if (option == ReaderBackdropV92.IMAGE) {
                 Icon(Icons.Rounded.Image, contentDescription = null, tint = theme.secondary, modifier = Modifier.size(20.dp))
             } else {

@@ -45,6 +45,43 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.FileOpen
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SettingsSuggest
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.ViewAgenda
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import com.xiguli.langhuan.ui.design.FlatHairlineV93
+import com.xiguli.langhuan.ui.design.FlatListRowV93
+import com.xiguli.langhuan.ui.design.FlatSectionLabelV93
+import com.xiguli.langhuan.ui.design.FlatSwitchRowV93
+import com.xiguli.langhuan.ui.design.FlatTopBarV93
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
@@ -157,7 +194,7 @@ private enum class HomeLayoutV4(val key: String) {
     LIST("list");
     companion object {
         fun fromKey(key: String?): HomeLayoutV4 =
-            entries.firstOrNull { it.key == key } ?: LIST
+            entries.firstOrNull { it.key == key } ?: GRID
     }
 }
 
@@ -227,12 +264,16 @@ fun LanghuanHomeV4(
     }
     var layoutKey by rememberSaveable {
         mutableStateOf(
-            shelfPrefs.getString(HOME_LAYOUT_V4, HomeLayoutV4.LIST.key)
-                ?: HomeLayoutV4.LIST.key,
+            // V93: the cover grid is the default shelf view; an explicit 「列表」 choice is kept.
+            shelfPrefs.getString(HOME_LAYOUT_V4, HomeLayoutV4.GRID.key)
+                ?: HomeLayoutV4.GRID.key,
         )
     }
     var shelfRevision by rememberSaveable { mutableIntStateOf(0) }
     var addOpen by remember { mutableStateOf(false) }
+    // V93: 「更多功能」 opens the flat 「我的」 page; its 「书架设置」 row opens a settings list.
+    var moreOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var shelfManagerOpen by remember { mutableStateOf(false) }
     var batchOrganizerOpen by remember { mutableStateOf(false) }
     var actionBook by remember { mutableStateOf<ReaderBookUi?>(null) }
@@ -338,6 +379,8 @@ fun LanghuanHomeV4(
 
     BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
     BackHandler(enabled = organizeOpen && !searchOpen) { organizeOpen = false }
+    BackHandler(enabled = moreOpen && !settingsOpen) { moreOpen = false }
+    BackHandler(enabled = settingsOpen) { settingsOpen = false }
 
     Box(modifier = Modifier.fillMaxSize().background(t.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -345,7 +388,7 @@ fun LanghuanHomeV4(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = t.space4, end = t.space4, top = t.space3),
+                    .padding(start = HOME_PAGE_GUTTER_V93, end = t.space2, top = t.space2),
             ) {
                 HomeShelfHeaderV4(
                     searchOpen = searchOpen,
@@ -357,9 +400,7 @@ fun LanghuanHomeV4(
                     onOrganize = { organizeOpen = !organizeOpen },
                     onAdd = { addOpen = true },
                     onOnline = onOnline,
-                    onAiSetup = onAiSetup,
-                    onRunCenter = onRunCenter,
-                    onSkills = onSkills,
+                    onMore = { moreOpen = true },
                     runActive = runActive,
                 )
 
@@ -371,11 +412,11 @@ fun LanghuanHomeV4(
                     HomeShelfSearchV4(
                         value = query,
                         onValueChange = { query = it },
-                        modifier = Modifier.padding(top = t.space3),
+                        modifier = Modifier.padding(top = t.space2, end = t.space2),
                     )
                 }
 
-                Spacer(Modifier.height(t.space3))
+                Spacer(Modifier.height(t.space1))
 
                 HomeShelfTabsV4(
                     tabs = tabs,
@@ -402,7 +443,7 @@ fun LanghuanHomeV4(
                         },
                         onBatch = { organizeOpen = false; batchOrganizerOpen = true },
                         onShelfManager = { organizeOpen = false; shelfManagerOpen = true },
-                        modifier = Modifier.padding(top = t.space3),
+                        modifier = Modifier.padding(top = t.space2, end = t.space2),
                     )
                 }
 
@@ -414,9 +455,10 @@ fun LanghuanHomeV4(
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(
-                            start = t.space4, end = t.space4, bottom = t.space6 + navigationBottom,
+                            start = HOME_PAGE_GUTTER_V93, end = HOME_PAGE_GUTTER_V93,
+                            bottom = t.space6 + navigationBottom,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(t.space2),
+                        verticalArrangement = Arrangement.spacedBy(t.space1),
                     ) {
                         if (continueReading != null) {
                             item(key = "continue-reading") {
@@ -460,10 +502,11 @@ fun LanghuanHomeV4(
                         columns = GridCells.Fixed(3),
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(
-                            start = t.space4, end = t.space4, bottom = t.space6 + navigationBottom,
+                            start = HOME_PAGE_GUTTER_V93, end = HOME_PAGE_GUTTER_V93,
+                            bottom = t.space6 + navigationBottom,
                         ),
-                        horizontalArrangement = Arrangement.spacedBy(t.space3),
-                        verticalArrangement = Arrangement.spacedBy(t.space4),
+                        horizontalArrangement = Arrangement.spacedBy(HOME_GRID_GAP_V93),
+                        verticalArrangement = Arrangement.spacedBy(t.space5),
                     ) {
                         if (continueReading != null) {
                             item(
@@ -513,6 +556,48 @@ fun LanghuanHomeV4(
             }
         }
 
+        AnimatedVisibility(
+            visible = moreOpen,
+            enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { it / 5 },
+            exit = fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { it / 5 },
+        ) {
+            HomeMinePageV93(
+                bookCount = if (loadingShelf) null else availableBooks.size,
+                finishedCount = if (loadingShelf) null else finishedBooks.size,
+                runActive = runActive,
+                onBack = { moreOpen = false },
+                onOnline = { moreOpen = false; onOnline() },
+                onImport = { moreOpen = false; onImportLocal() },
+                onShelfManager = { moreOpen = false; shelfManagerOpen = true },
+                onBatch = { moreOpen = false; batchOrganizerOpen = true },
+                onCreate = { moreOpen = false; onCreate() },
+                onAiSetup = { moreOpen = false; onAiSetup() },
+                onRunCenter = { moreOpen = false; onRunCenter() },
+                onSkills = { moreOpen = false; onSkills() },
+                onSettings = { settingsOpen = true },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = settingsOpen,
+            enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { it / 5 },
+            exit = fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { it / 5 },
+        ) {
+            HomeShelfSettingsPageV93(
+                sort = sort,
+                layout = layout,
+                onSort = {
+                    sortKey = it.key
+                    shelfPrefs.edit().putString(HOME_SORT_V4, it.key).apply()
+                },
+                onLayout = {
+                    layoutKey = it.key
+                    shelfPrefs.edit().putString(HOME_LAYOUT_V4, it.key).apply()
+                },
+                onBack = { settingsOpen = false },
+            )
+        }
+
         if (importState.busy) {
             HomeImportOverlayV4(
                 currentFileName = importState.currentFileName,
@@ -556,6 +641,14 @@ fun LanghuanHomeV4(
         HomeBookActionsV4(
             context = context,
             book = book,
+            progress = readingProgress[book.id] ?: ShelfReadingProgressV92.UNREAD,
+            progressLabel = homeBookProgressLabelV4(
+                context = context, state = state, book = book,
+                shelfProgress = readingProgress[book.id] ?: ShelfReadingProgressV92.UNREAD,
+            ),
+            chapterCount = bookProgressPrefs.getInt("total_${book.id}", 0),
+            chapterIndex = bookProgressPrefs.getInt("index_${book.id}", -1),
+            lastReadAt = lastReadAt[book.id] ?: 0L,
             shelf = assignments[book.id],
             shelves = customShelves,
             onDismiss = { actionBook = null },
@@ -611,135 +704,67 @@ private fun HomeShelfHeaderV4(
     onOrganize: () -> Unit,
     onAdd: () -> Unit,
     onOnline: () -> Unit,
-    onAiSetup: () -> Unit,
-    onRunCenter: () -> Unit,
-    onSkills: () -> Unit,
+    onMore: () -> Unit,
     runActive: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
-    var moreOpen by remember { mutableStateOf(false) }
+    // V93: a small title on the left and plain line icons on the right, like the reference
+    // reader's 「正在阅读」 shelf. No filled circles or outlines around the buttons.
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "书架",
             modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.titleLarge,
             color = t.foreground,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
         )
         HomeToolbarButtonV4(
-            icon = if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+            icon = if (searchOpen) Icons.Outlined.Close else Icons.Outlined.Search,
             contentDescription = if (searchOpen) "关闭搜索" else "搜索书架",
             selected = searchOpen,
             onClick = onSearch,
         )
         Spacer(Modifier.width(HOME_TOOLBAR_GAP_V91))
         HomeToolbarButtonV4(
-            icon = Icons.Rounded.Tune,
+            icon = Icons.Outlined.Tune,
             contentDescription = "整理书架",
             selected = organizeOpen,
             onClick = onOrganize,
         )
         Spacer(Modifier.width(HOME_TOOLBAR_GAP_V91))
         HomeToolbarButtonV4(
-            icon = Icons.Rounded.Explore,
+            icon = Icons.Outlined.Explore,
             contentDescription = "在线书城",
             onClick = onOnline,
         )
         Spacer(Modifier.width(HOME_TOOLBAR_GAP_V91))
         HomeToolbarButtonV4(
-            icon = Icons.Rounded.Add,
+            icon = Icons.Outlined.Add,
             contentDescription = "添加书籍",
             onClick = onAdd,
         )
         Spacer(Modifier.width(HOME_TOOLBAR_GAP_V91))
-        // AI 服务、运行中心和写作技能原本只能从旧首页进入；在书架“更多”里恢复入口，
-        // 保持书架顶部只有一个层级的工具按钮。
-        Box {
-            HomeToolbarButtonV4(
-                icon = Icons.Rounded.MoreHoriz,
-                contentDescription = "更多功能",
-                selected = moreOpen,
-                badge = runActive,
-                onClick = { moreOpen = true },
-            )
-            DropdownMenu(
-                expanded = moreOpen,
-                onDismissRequest = { moreOpen = false },
-                shape = RoundedCornerShape(t.radiusLg),
-                containerColor = t.card,
-            ) {
-                HomeMoreMenuItemV91(
-                    icon = Icons.Rounded.SettingsSuggest,
-                    title = "AI 与模型",
-                    subtitle = "服务商、模型与任务路由",
-                    onClick = { moreOpen = false; onAiSetup() },
-                )
-                HomeMoreMenuItemV91(
-                    icon = Icons.Rounded.Insights,
-                    title = "运行中心",
-                    subtitle = if (runActive) HOME_RUN_ACTIVE_LABEL_V92 else "查看 AI 写作任务与日志",
-                    badge = runActive,
-                    onClick = { moreOpen = false; onRunCenter() },
-                )
-                HomeMoreMenuItemV91(
-                    icon = Icons.Rounded.Psychology,
-                    title = "写作技能",
-                    subtitle = "管理创作 Skill",
-                    onClick = { moreOpen = false; onSkills() },
-                )
-            }
-        }
+        // AI 服务、运行中心和写作技能在「我的」页里：书架顶部只保留一层图标按钮。
+        HomeToolbarButtonV4(
+            icon = Icons.Outlined.PersonOutline,
+            contentDescription = "更多功能",
+            badge = runActive,
+            onClick = onMore,
+        )
     }
 }
 
-@Composable
-private fun HomeMoreMenuItemV91(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    badge: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    DropdownMenuItem(
-        text = {
-            Column(Modifier.padding(vertical = t.space1)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = t.foreground,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (badge) t.primary else t.mutedForeground,
-                )
-            }
-        },
-        leadingIcon = {
-            Box {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = t.secondaryForeground,
-                )
-                if (badge) HomeRunBadgeDotV92(Modifier.align(Alignment.TopEnd))
-            }
-        },
-        onClick = onClick,
-        modifier = Modifier.heightIn(min = 56.dp),
-    )
-}
-
-/** Toolbar icon buttons keep a 44 dp touch target with a tighter gap so five fit on 360 dp. */
-private val HOME_TOOLBAR_GAP_V91 = 6.dp
+/** Toolbar icon buttons keep a 44 dp touch target with a tight gap so five fit on 360 dp. */
+private val HOME_TOOLBAR_GAP_V91 = 2.dp
 internal const val HOME_TOOLBAR_BUTTON_DP_V91 = 44
+
+/** V93 page gutter and grid gap: generous whitespace around a plain cover grid. */
+private val HOME_PAGE_GUTTER_V93 = 20.dp
+private val HOME_GRID_GAP_V93 = 18.dp
 
 @Composable
 private fun HomeToolbarButtonV4(
@@ -757,37 +782,30 @@ private fun HomeToolbarButtonV4(
             .size(HOME_TOOLBAR_BUTTON_DP_V91.dp)
             .pressScaleV31(interaction)
             .clip(CircleShape)
-            .background(
-                color = if (selected) t.accent else t.card,
-                shape = CircleShape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = CircleShape,
-            )
             .clickable(
                 interactionSource = interaction,
                 indication = LocalIndication.current,
                 role = Role.Button,
                 onClick = onClick,
             )
-            .semantics { if (badge) stateDescription = HOME_RUN_ACTIVE_LABEL_V92 },
+            .semantics {
+                this.selected = selected
+                if (badge) stateDescription = HOME_RUN_ACTIVE_LABEL_V92
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(20.dp),
-            tint = if (selected) t.accentForeground else t.secondaryForeground,
+            modifier = Modifier.size(22.dp),
+            tint = if (selected) t.primary else t.foreground.copy(alpha = 0.84f),
         )
     }
-    // Drawn outside the clipped circle so the dot sits on the button's rim.
     if (badge) {
         HomeRunBadgeDotV92(
             Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 2.dp, end = 2.dp),
+                .padding(top = 8.dp, end = 8.dp),
         )
     }
     }
@@ -811,10 +829,10 @@ private fun HomeRunBadgeDotV92(modifier: Modifier = Modifier) {
     )
     Box(
         modifier = modifier
-            .size(10.dp)
+            .size(9.dp)
             .graphicsLayer { this.alpha = alpha }
-            .background(color = t.card, shape = CircleShape)
-            .padding(2.dp)
+            .background(color = t.background, shape = CircleShape)
+            .padding(1.5.dp)
             .background(color = t.primary, shape = CircleShape),
     )
 }
@@ -853,7 +871,7 @@ private fun HomeShelfSearchV4(
     modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
+    val shape = CircleShape
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // Opening search is an explicit intent to type: focus the field and raise the keyboard.
@@ -861,14 +879,13 @@ private fun HomeShelfSearchV4(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .background(color = t.input, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .padding(horizontal = t.space3),
+            .height(44.dp)
+            .background(color = t.foreground.copy(alpha = 0.05f), shape = shape)
+            .padding(horizontal = t.space4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Search,
+            imageVector = Icons.Outlined.Search,
             contentDescription = null,
             modifier = Modifier.size(19.dp),
             tint = t.mutedForeground,
@@ -909,7 +926,7 @@ private fun HomeShelfSearchV4(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Close,
+                    imageVector = Icons.Outlined.Close,
                     contentDescription = "清空搜索",
                     modifier = Modifier.size(18.dp),
                     tint = t.mutedForeground,
@@ -932,9 +949,11 @@ private fun HomeShelfTabsV4(
     onNewShelf: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    // V93: plain text tabs (no chips); the selected one is bold with a short accent underline.
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(t.space2),
+        horizontalArrangement = Arrangement.spacedBy(t.space4),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         tabs.forEach { tab ->
             HomeShelfTabChipV4(
@@ -945,6 +964,7 @@ private fun HomeShelfTabsV4(
             )
         }
         HomeNewShelfChipV4(onClick = onNewShelf)
+        Spacer(Modifier.width(t.space2))
     }
 }
 
@@ -956,73 +976,67 @@ private fun HomeShelfTabChipV4(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    Row(
+    Column(
         modifier = Modifier
-            .height(40.dp)
-            .clip(shape)
-            .background(
-                color = if (selected) t.accent else t.card,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(t.radiusSm))
             .semantics {
                 this.selected = selected
                 if (count != null) stateDescription = "$count 本"
             }
             .clickable(role = Role.Tab, onClick = onClick)
-            .padding(horizontal = t.space3),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (selected) t.accentForeground else t.secondaryForeground,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        )
-        // While the first library load is running the count is unknown: show nothing rather
-        // than a misleading 「全部 0」.
-        if (count != null) {
-            Spacer(Modifier.width(t.space1))
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (selected) t.primary else t.mutedForeground,
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (selected) t.foreground else t.mutedForeground,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
             )
+            // While the first library load is running the count is unknown: show nothing rather
+            // than a misleading 「全部 0」.
+            if (count != null) {
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    text = count.toString(),
+                    modifier = Modifier.padding(bottom = 1.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = t.mutedForeground.copy(alpha = 0.75f),
+                )
+            }
         }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier
+                .width(14.dp)
+                .height(3.dp)
+                .background(
+                    color = if (selected) t.primary else Color.Transparent,
+                    shape = CircleShape,
+                ),
+        )
     }
 }
 
 @Composable
 private fun HomeNewShelfChipV4(onClick: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    Row(
+    Box(
         modifier = Modifier
-            .height(40.dp)
-            .clip(shape)
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = t.space3),
-        verticalAlignment = Alignment.CenterVertically,
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Add,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = t.primary,
-        )
-        Spacer(Modifier.width(t.space1))
-        Text(
-            text = "新建书架",
-            style = MaterialTheme.typography.labelLarge,
-            color = t.primary,
-            fontWeight = FontWeight.Medium,
+            imageVector = Icons.Outlined.Add,
+            contentDescription = "新建书架",
+            modifier = Modifier.size(18.dp),
+            tint = t.mutedForeground,
         )
     }
 }
@@ -1043,66 +1057,45 @@ private fun HomeShelfOrganizerPanelV4(
     modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusLg)
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .padding(t.space4),
-    ) {
+    // V93: a flat inline panel — text choices and line-icon rows, no boxed chips.
+    Column(modifier = modifier.fillMaxWidth()) {
         HomeOrganizerSectionTitleV4(text = "排序")
-        Spacer(Modifier.height(t.space2))
-        // Two per row: four sort labels in one row no longer fit a 360 dp phone legibly.
-        LuoShelfSortV33.entries.chunked(2).forEachIndexed { rowIndex, row ->
-            if (rowIndex > 0) Spacer(Modifier.height(t.space2))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(t.space2),
-            ) {
-                row.forEach { item ->
-                    HomeOrganizerChoiceV4(
-                        text = item.label,
-                        selected = sort == item,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onSort(item) },
-                    )
-                }
-                repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(t.space1),
+        ) {
+            LuoShelfSortV33.entries.forEach { item ->
+                HomeOrganizerChoiceV4(
+                    text = item.label,
+                    selected = sort == item,
+                    onClick = { onSort(item) },
+                )
             }
         }
-        Spacer(Modifier.height(t.space4))
         HomeOrganizerSectionTitleV4(text = "显示")
-        Spacer(Modifier.height(t.space2))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(t.space2),
-        ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(t.space1)) {
             HomeOrganizerChoiceV4(
                 text = "网格",
-                icon = Icons.Rounded.GridView,
+                icon = Icons.Outlined.GridView,
                 selected = layout == HomeLayoutV4.GRID,
-                modifier = Modifier.weight(1f),
                 onClick = { onLayout(HomeLayoutV4.GRID) },
             )
             HomeOrganizerChoiceV4(
                 text = "列表",
-                icon = Icons.Rounded.ViewAgenda,
+                icon = Icons.Outlined.ViewAgenda,
                 selected = layout == HomeLayoutV4.LIST,
-                modifier = Modifier.weight(1f),
                 onClick = { onLayout(HomeLayoutV4.LIST) },
             )
         }
-        Spacer(Modifier.height(t.space4))
+        Spacer(Modifier.height(t.space1))
         HomeOrganizerActionV4(
-            icon = Icons.Rounded.SelectAll,
+            icon = Icons.Outlined.Checklist,
             title = "批量整理",
             subtitle = "多选书籍后一起移动或删除",
             onClick = onBatch,
         )
-        Spacer(Modifier.height(t.space2))
         HomeOrganizerActionV4(
-            icon = Icons.Rounded.FolderOpen,
+            icon = Icons.Outlined.FolderOpen,
             title = "书架管理",
             subtitle = "新建、重命名和调整书架顺序",
             onClick = onShelfManager,
@@ -1115,6 +1108,7 @@ private fun HomeOrganizerSectionTitleV4(text: String) {
     val t = LocalLanghuanUiTokens.current
     Text(
         text = text,
+        modifier = Modifier.padding(top = t.space2, bottom = 2.dp),
         style = MaterialTheme.typography.labelMedium,
         color = t.mutedForeground,
     )
@@ -1129,20 +1123,12 @@ private fun HomeOrganizerChoiceV4(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
     Row(
         modifier = modifier
-            .height(42.dp)
-            .background(
-                color = if (selected) t.accent else t.input,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
+            .heightIn(min = 40.dp)
+            .clip(RoundedCornerShape(t.radiusSm))
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .semantics { this.selected = selected }
             .padding(horizontal = t.space2),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -1152,15 +1138,15 @@ private fun HomeOrganizerChoiceV4(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(17.dp),
-                tint = if (selected) t.accentForeground else t.secondaryForeground,
+                tint = if (selected) t.primary else t.mutedForeground,
             )
             Spacer(Modifier.width(t.space1))
         }
         Text(
             text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) t.accentForeground else t.secondaryForeground,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) t.primary else t.secondaryForeground,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
         )
     }
@@ -1173,47 +1159,7 @@ private fun HomeOrganizerActionV4(
     subtitle: String,
     onClick: () -> Unit,
 ) {
-    val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(color = t.input, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(t.space3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .background(color = t.accent, shape = RoundedCornerShape(t.radiusMd))
-                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(19.dp),
-                tint = t.accentForeground,
-            )
-        }
-        Spacer(Modifier.width(t.space3))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = t.foreground,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(Modifier.height(t.space1))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-            )
-        }
-    }
+    FlatListRowV93(title = title, subtitle = subtitle, icon = icon, onClick = onClick)
 }
 
 
@@ -1227,93 +1173,70 @@ private fun HomeContinueReadingV4(
     onOpen: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusLg)
     val chapterLine = buildString {
         append("第 ${item.chapterNumber} 章")
         val title = item.chapterTitle?.trim()?.takeIf { it.isNotBlank() }
         if (title != null) { append(" · "); append(title) }
     }
     val lastRead = homeRelativeTimeV91(item.lastReadAt)
+    // V93: a flat resume line (small cover, text, thin progress) instead of a tinted card.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(color = t.goldContainer, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            .clip(RoundedCornerShape(t.radiusMd))
             .clickable(onClickLabel = "继续阅读", role = Role.Button, onClick = onOpen)
-            .padding(t.space3),
+            .padding(vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A real cover (Legado / ReadYou style) makes the resume card read as "this book",
-        // not as a generic banner; the bookmark glyph stays as a small corner tag.
-        Box {
-            HomeBookCoverV4(
-                book = item.book,
-                modifier = Modifier.width(46.dp).height(64.dp),
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(2.dp)
-                    .size(18.dp)
-                    .background(color = t.gold, shape = CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Bookmark,
-                    contentDescription = null,
-                    modifier = Modifier.size(11.dp),
-                    tint = t.card,
-                )
-            }
-        }
+        HomeBookCoverV4(
+            book = item.book,
+            modifier = Modifier.width(40.dp).height(54.dp),
+        )
         Spacer(Modifier.width(t.space3))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = if (lastRead != null) "继续阅读 · $lastRead" else "继续阅读",
-                style = MaterialTheme.typography.labelMedium,
-                color = t.goldForeground,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.labelSmall,
+                color = t.primary,
                 maxLines = 1,
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = item.book.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = t.foreground,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(t.space1))
             Text(
                 text = chapterLine,
                 style = MaterialTheme.typography.bodySmall,
-                color = t.secondaryForeground,
+                color = t.mutedForeground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (item.chapterFraction > 0.01f) {
-                Spacer(Modifier.height(t.space2))
+                Spacer(Modifier.height(6.dp))
                 LinearProgressIndicator(
                     progress = { item.chapterFraction.coerceIn(0f, 1f) },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp)
+                        .fillMaxWidth(0.6f)
+                        .height(2.dp)
                         .clip(CircleShape)
                         .semantics { contentDescription = "本章已读 ${(item.chapterFraction * 100).roundToInt()}%" },
-                    color = t.gold,
-                    trackColor = t.gold.copy(alpha = 0.18f),
+                    color = t.primary,
+                    trackColor = t.foreground.copy(alpha = 0.08f),
                     drawStopIndicator = {},
                 )
             }
         }
         Spacer(Modifier.width(t.space2))
         Icon(
-            imageVector = Icons.Rounded.MenuBook,
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
             modifier = Modifier.size(20.dp),
-            tint = t.goldForeground,
+            tint = t.mutedForeground.copy(alpha = 0.6f),
         )
     }
 }
@@ -1337,42 +1260,40 @@ private fun HomeBookListItemV4(
         EpubReaderEntry.isEpub(context, book.id)
     }
     val isOnline = isFollowingBookV4(book)
-    val shape = RoundedCornerShape(t.radiusLg)
+    // V93: flat row — cover, text and a plain ⋯; no card or border.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            .clip(RoundedCornerShape(t.radiusMd))
             .combinedClickable(
                 onClick = onOpen,
                 onLongClick = onMore,
                 onClickLabel = "打开",
                 onLongClickLabel = "书籍菜单",
             )
-            .padding(t.space3),
+            .padding(vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HomeBookCoverV4(
             book = book,
-            modifier = Modifier.width(58.dp).height(82.dp),
+            modifier = Modifier.width(54.dp).height(72.dp),
         )
-        Spacer(Modifier.width(t.space3))
+        Spacer(Modifier.width(t.space4))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = book.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = t.foreground,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(t.space1))
+            Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = homeGenreLabelV4(book),
                     style = MaterialTheme.typography.bodySmall,
-                    color = t.secondaryForeground,
+                    color = t.mutedForeground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1386,7 +1307,7 @@ private fun HomeBookListItemV4(
                     HomeSourceBadgeV4(text = badge, gold = isEpub && !isOnline)
                 }
             }
-            Spacer(Modifier.height(t.space2))
+            Spacer(Modifier.height(t.space1))
             Text(
                 text = homeBookProgressLabelV4(context = context, state = state, book = book, shelfProgress = progress),
                 style = MaterialTheme.typography.labelMedium,
@@ -1404,7 +1325,7 @@ private fun HomeBookListItemV4(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Rounded.MoreHoriz,
+                imageVector = Icons.Outlined.MoreHoriz,
                 contentDescription = "书籍菜单",
                 modifier = Modifier.size(20.dp),
                 tint = t.mutedForeground,
@@ -1433,12 +1354,12 @@ private fun HomeBookGridItemV4(
         EpubReaderEntry.isEpub(context, book.id)
     }
     val online = isFollowingBookV4(book)
-    // The whole tile (cover + title) opens the book, like Legado / Moon+ shelves; previously
-    // only the cover responded and taps on the title were silently ignored.
+    val coverShape = RoundedCornerShape(HOME_COVER_RADIUS_V93)
+    // The whole tile (cover + title) opens the book, like Legado / Moon+ shelves; long-press or
+    // the small ⋯ beside the progress opens the book page.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(t.radiusMd))
             .combinedClickable(
                 onClick = onOpen,
                 onLongClick = onMore,
@@ -1446,13 +1367,14 @@ private fun HomeBookGridItemV4(
                 onLongClickLabel = "书籍菜单",
             ),
     ) {
+        // V93: a tall 3:4 cover with a small radius and a soft shadow; no frame.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.70f)
-                .clip(RoundedCornerShape(t.radiusMd))
-                .background(color = t.input, shape = RoundedCornerShape(t.radiusMd))
-                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusMd)),
+                .aspectRatio(HOME_COVER_ASPECT_V93)
+                .shadow(elevation = 5.dp, shape = coverShape, ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.22f))
+                .clip(coverShape)
+                .background(color = t.input, shape = coverShape),
         ) {
             CoverPreviewV3(
                 path = book.coverPath,
@@ -1460,67 +1382,63 @@ private fun HomeBookGridItemV4(
                 modifier = Modifier.fillMaxSize(),
                 targetWidthPx = HOME_GRID_COVER_PX_V86,
             )
-            // 44 dp touch target around a 30 dp visual chip.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .clickable(role = Role.Button, onClick = onMore),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
+            val badge = when {
+                online -> "在线"
+                isEpub -> "EPUB"
+                else -> null
+            }
+            if (badge != null) {
+                Text(
+                    text = badge,
                     modifier = Modifier
-                        .size(30.dp)
-                        .background(color = t.card.copy(alpha = 0.92f), shape = CircleShape)
-                        .border(width = 1.dp, color = t.border, shape = CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.MoreHoriz,
-                        contentDescription = "书籍菜单",
-                        modifier = Modifier.size(17.dp),
-                        tint = t.secondaryForeground,
-                    )
-                }
+                        .align(Alignment.TopStart)
+                        .padding(5.dp)
+                        .background(Color.Black.copy(alpha = 0.42f), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
             }
         }
         Spacer(Modifier.height(t.space2))
         Text(
             text = book.title,
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = t.foreground,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(t.space1))
-        Text(
-            text = homeGenreLabelV4(book),
-            style = MaterialTheme.typography.bodySmall,
-            color = t.secondaryForeground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        val badge = when {
-            online -> "在线"
-            isEpub -> "EPUB"
-            else -> null
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = homeBookProgressLabelV4(context = context, state = state, book = book, shelfProgress = progress),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                color = t.mutedForeground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // Compact target beside the progress line; long-press on the tile does the same.
+            Box(
+                modifier = Modifier
+                    .size(width = 36.dp, height = 32.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onMore),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.MoreHoriz,
+                    contentDescription = "书籍菜单",
+                    modifier = Modifier.size(16.dp),
+                    tint = t.mutedForeground.copy(alpha = 0.7f),
+                )
+            }
         }
-        if (badge != null) {
-            Spacer(Modifier.height(t.space1))
-            HomeSourceBadgeV4(text = badge, gold = isEpub && !online)
-        }
-        Spacer(Modifier.height(t.space1))
-        Text(
-            text = homeBookProgressLabelV4(context = context, state = state, book = book, shelfProgress = progress),
-            style = MaterialTheme.typography.labelSmall,
-            color = t.mutedForeground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
+
+private val HOME_COVER_RADIUS_V93 = 5.dp
+private const val HOME_COVER_ASPECT_V93 = 0.75f
 
 
 /* -------------------------------------------------------------------------- */
@@ -1533,11 +1451,12 @@ private fun HomeBookCoverV4(
     modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusSm)
+    val shape = RoundedCornerShape(4.dp)
     Box(
         modifier = modifier
-            .background(color = t.input, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape),
+            .shadow(elevation = 3.dp, shape = shape, ambientColor = Color.Black.copy(alpha = 0.14f), spotColor = Color.Black.copy(alpha = 0.18f))
+            .clip(shape)
+            .background(color = t.input, shape = shape),
     ) {
         CoverPreviewV3(
             path = book.coverPath,
@@ -1566,31 +1485,13 @@ private fun HomeSourceBadgeV4(
     gold: Boolean,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusSm)
-    Row(
-        modifier = Modifier
-            .background(
-                color = if (gold) t.goldContainer else t.accent,
-                shape = shape,
-            )
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .padding(horizontal = t.space2, vertical = t.space1),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = if (gold) Icons.Rounded.MenuBook else Icons.Rounded.Wifi,
-            contentDescription = null,
-            modifier = Modifier.size(13.dp),
-            tint = if (gold) t.goldForeground else t.accentForeground,
-        )
-        Spacer(Modifier.width(t.space1))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (gold) t.goldForeground else t.accentForeground,
-            fontWeight = FontWeight.Medium,
-        )
-    }
+    // V93: a quiet text tag; colour only, no box.
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (gold) t.goldForeground else t.primary,
+        fontWeight = FontWeight.Medium,
+    )
 }
 
 
@@ -1615,21 +1516,12 @@ private fun HomeShelfEmptyV4(
             .padding(vertical = t.space6, horizontal = t.space5),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val shape = RoundedCornerShape(t.radiusLg)
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .background(color = t.input, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = if (query.isBlank()) Icons.Rounded.LibraryBooks else Icons.Rounded.SearchOff,
-                contentDescription = null,
-                modifier = Modifier.size(26.dp),
-                tint = t.mutedForeground,
-            )
-        }
+        Icon(
+            imageVector = if (query.isBlank()) Icons.AutoMirrored.Outlined.LibraryBooks else Icons.Outlined.SearchOff,
+            contentDescription = null,
+            modifier = Modifier.size(40.dp),
+            tint = t.mutedForeground.copy(alpha = 0.6f),
+        )
         Spacer(Modifier.height(t.space4))
         Text(
             text = when {
@@ -1662,19 +1554,19 @@ private fun HomeShelfEmptyV4(
             Spacer(Modifier.height(t.space4))
             HomePrimaryButtonV4(
                 text = "导入本地书籍",
-                icon = Icons.Rounded.FolderOpen,
+                icon = Icons.Outlined.FolderOpen,
                 onClick = onImport,
             )
             Spacer(Modifier.height(t.space2))
             Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
-                HomeTextActionV91(text = "开始创作", icon = Icons.Rounded.AutoAwesome, onClick = onCreate)
-                HomeTextActionV91(text = "在线书城", icon = Icons.Rounded.Explore, onClick = onOnline)
+                HomeTextActionV91(text = "开始创作", icon = Icons.Outlined.AutoAwesome, onClick = onCreate)
+                HomeTextActionV91(text = "在线书城", icon = Icons.Outlined.Explore, onClick = onOnline)
             }
         } else if (query.isBlank() && activeTab != HOME_TAB_FINISHED_V4) {
             Spacer(Modifier.height(t.space4))
             HomePrimaryButtonV4(
                 text = "添加书籍",
-                icon = Icons.Rounded.Add,
+                icon = Icons.Outlined.Add,
                 onClick = onAdd,
             )
         }
@@ -1698,7 +1590,6 @@ private fun HomeImportOverlayV4(currentFileName: String, onCancel: (() -> Unit)?
             modifier = Modifier
                 .padding(t.space5)
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1725,7 +1616,7 @@ private fun HomeImportOverlayV4(currentFileName: String, onCancel: (() -> Unit)?
             }
             if (onCancel != null) {
                 Spacer(Modifier.width(t.space3))
-                HomeTextActionV91(text = "取消导入", icon = Icons.Rounded.Close, onClick = onCancel)
+                HomeTextActionV91(text = "取消导入", icon = Icons.Outlined.Close, onClick = onCancel)
             }
         }
     }
@@ -1749,7 +1640,6 @@ private fun HomeAddBookDialogV4(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
         ) {
             Text(
@@ -1765,14 +1655,14 @@ private fun HomeAddBookDialogV4(
             )
             Spacer(Modifier.height(t.space4))
             HomeDialogActionV4(
-                icon = Icons.Rounded.FolderOpen,
+                icon = Icons.Outlined.FolderOpen,
                 title = "导入本地书籍",
                 subtitle = "TXT · Markdown · EPUB",
                 onClick = onImport,
             )
             Spacer(Modifier.height(t.space2))
             HomeDialogActionV4(
-                icon = Icons.Rounded.AutoAwesome,
+                icon = Icons.Outlined.AutoAwesome,
                 title = "开始创作",
                 subtitle = "和 AI 一起构思一本新小说",
                 gold = true,
@@ -1789,12 +1679,15 @@ private fun HomeAddBookDialogV4(
 /*                             Book Actions                                   */
 /* -------------------------------------------------------------------------- */
 
-// 注意：ChatGPT 原稿中 HomeBookActionsV4 的 onMove 参数重复声明了两次，
-// 适配阶段需删除其中一个，此处存档保留原样以便核对。
 @Composable
 private fun HomeBookActionsV4(
     context: Context,
     book: ReaderBookUi,
+    progress: ShelfReadingProgressV92,
+    progressLabel: String,
+    chapterCount: Int,
+    chapterIndex: Int,
+    lastReadAt: Long,
     shelf: String?,
     shelves: List<String>,
     onDismiss: () -> Unit,
@@ -1806,82 +1699,187 @@ private fun HomeBookActionsV4(
 ) {
     val t = LocalLanghuanUiTokens.current
     var moveOpen by remember { mutableStateOf(false) }
-    Dialog(onDismissRequest = onDismiss) {
-        val shape = RoundedCornerShape(t.radiusXl)
+    val isEpub = remember(book.id, book.updatedAt) { EpubReaderEntry.isEpub(context, book.id) }
+    val format = when {
+        isFollowingBookV4(book) -> "在线书源"
+        isEpub -> "EPUB"
+        isWritingBookV4(book) -> "创作"
+        else -> "TXT"
+    }
+    // V93 「图书详情」: a full page in the reference's layout — cover with title fields, a large
+    // whole-book progress figure, grey key/value rows, then the book actions as flat rows.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
-                .padding(t.space4),
+                .fillMaxSize()
+                .background(t.background)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                HomeBookCoverV4(
-                    book = book,
-                    modifier = Modifier.width(50.dp).height(70.dp),
-                )
-                Spacer(Modifier.width(t.space3))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = book.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = t.foreground,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+            FlatTopBarV93(title = "图书详情", onBack = onDismiss, backDescription = "关闭图书详情")
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = HOME_PAGE_GUTTER_V93),
+            ) {
+                Spacer(Modifier.height(t.space2))
+                Row(verticalAlignment = Alignment.Top) {
+                    HomeBookCoverV4(
+                        book = book,
+                        modifier = Modifier.width(76.dp).height(101.dp),
                     )
-                    Spacer(Modifier.height(t.space1))
+                    Spacer(Modifier.width(t.space5))
+                    Column(modifier = Modifier.weight(1f)) {
+                        HomeDetailFieldV93(label = "书名", value = book.title)
+                        Spacer(Modifier.height(t.space3))
+                        HomeDetailFieldV93(label = "分类", value = homeGenreLabelV4(book))
+                    }
+                }
+                Spacer(Modifier.height(t.space6))
+                val percent = when {
+                    progress.finished -> "100"
+                    progress.fraction != null -> String.format(java.util.Locale.US, "%.1f", progress.fraction.coerceIn(0f, 1f) * 100f)
+                    else -> "0"
+                }
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        text = shelf?.takeIf { it.isNotBlank() } ?: "全部",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = percent,
+                        style = MaterialTheme.typography.displaySmall,
+                        color = t.foreground,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "%",
+                        modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
+                        style = MaterialTheme.typography.titleSmall,
                         color = t.mutedForeground,
                     )
+                    Spacer(Modifier.weight(1f))
+                    if (chapterCount > 0 && chapterIndex in 0 until chapterCount) {
+                        Text(
+                            text = "读到 ${chapterIndex + 1} / $chapterCount 章",
+                            modifier = Modifier.padding(bottom = 6.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = t.mutedForeground,
+                        )
+                    }
                 }
+                Text(
+                    text = progressLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
+                )
+                Spacer(Modifier.height(t.space2))
+                LinearProgressIndicator(
+                    progress = { if (progress.finished) 1f else (progress.fraction ?: 0f).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(2.dp).clip(CircleShape),
+                    color = t.primary,
+                    trackColor = t.foreground.copy(alpha = 0.08f),
+                    drawStopIndicator = {},
+                )
+                Spacer(Modifier.height(t.space5))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(t.foreground.copy(alpha = 0.035f), RoundedCornerShape(t.radiusMd))
+                        .padding(horizontal = t.space4, vertical = t.space2),
+                ) {
+                    HomeDetailKeyValueV93("文件格式", format)
+                    if (book.currentWords > 0) HomeDetailKeyValueV93("全文字数", homeWordCountV93(book.currentWords))
+                    if (chapterCount > 0) HomeDetailKeyValueV93("总章节数", "$chapterCount 章")
+                    HomeDetailKeyValueV93("所在书架", shelf?.takeIf { it.isNotBlank() } ?: "未分组")
+                    if (book.updatedAt > 0L) HomeDetailKeyValueV93("更新时间", homeDateTimeV93(book.updatedAt))
+                    HomeDetailKeyValueV93("最近阅读", if (lastReadAt > 0L) homeDateTimeV93(lastReadAt) else "尚未阅读")
+                }
+                Spacer(Modifier.height(t.space4))
+                HomeDialogActionV4(
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    title = "打开 / 继续阅读",
+                    onClick = onOpen,
+                )
+                HomeDialogActionV4(
+                    icon = Icons.Outlined.AutoAwesome,
+                    title = "进入酒馆",
+                    onClick = onTavern,
+                )
+                HomeDialogActionV4(
+                    icon = Icons.Outlined.Edit,
+                    title = "修改书名",
+                    onClick = onRename,
+                )
+                HomeDialogActionV4(
+                    icon = Icons.AutoMirrored.Outlined.DriveFileMove,
+                    title = "移动书架",
+                    subtitle = shelf ?: "当前未分组",
+                    onClick = { moveOpen = true },
+                )
+                HomeDialogActionV4(
+                    icon = Icons.Outlined.DeleteOutline,
+                    title = "删除小说",
+                    destructive = true,
+                    onClick = onDelete,
+                )
+                Spacer(Modifier.height(t.space5))
             }
-            Spacer(Modifier.height(t.space4))
-            HomeDialogActionV4(
-                icon = Icons.Rounded.MenuBook,
-                title = "打开 / 继续阅读",
-                onClick = onOpen,
-            )
-            Spacer(Modifier.height(t.space2))
-            HomeDialogActionV4(
-                icon = Icons.Rounded.AutoAwesome,
-                title = "进入酒馆",
-                onClick = onTavern,
-            )
-            Spacer(Modifier.height(t.space2))
-            HomeDialogActionV4(
-                icon = Icons.Rounded.Edit,
-                title = "修改书名",
-                onClick = onRename,
-            )
-            Spacer(Modifier.height(t.space2))
-            HomeDialogActionV4(
-                icon = Icons.Rounded.DriveFileMove,
-                title = "移动书架",
-                subtitle = shelf ?: "当前未分组",
-                onClick = { moveOpen = true },
-            )
-            Spacer(Modifier.height(t.space2))
-            HomeDialogActionV4(
-                icon = Icons.Rounded.DeleteOutline,
-                title = "删除小说",
-                destructive = true,
-                onClick = onDelete,
+        }
+        if (moveOpen) {
+            HomeMoveBookDialogV4(
+                book = book,
+                shelves = shelves,
+                current = shelf,
+                onDismiss = { moveOpen = false },
+                onMove = { moveOpen = false; onMove(it) },
             )
         }
     }
-    if (moveOpen) {
-        HomeMoveBookDialogV4(
-            book = book,
-            shelves = shelves,
-            current = shelf,
-            onDismiss = { moveOpen = false },
-            onMove = { moveOpen = false; onMove(it) },
+}
+
+@Composable
+private fun HomeDetailFieldV93(label: String, value: String) {
+    val t = LocalLanghuanUiTokens.current
+    Text(text = label, style = MaterialTheme.typography.labelSmall, color = t.mutedForeground)
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = value,
+        style = MaterialTheme.typography.bodyLarge,
+        color = t.foreground,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+    Spacer(Modifier.height(6.dp))
+    FlatHairlineV93()
+}
+
+@Composable
+private fun HomeDetailKeyValueV93(key: String, value: String) {
+    val t = LocalLanghuanUiTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = key, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+        Spacer(Modifier.width(t.space4))
+        Text(
+            text = value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = t.foreground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
         )
     }
 }
+
+private fun homeWordCountV93(words: Int): String =
+    if (words >= 10_000) String.format(java.util.Locale.US, "%.1f万字", words / 10_000f) else "$words 字"
+
+private fun homeDateTimeV93(at: Long): String =
+    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINA).format(java.util.Date(at))
 
 @Composable
 private fun HomeDialogActionV4(
@@ -1892,56 +1890,16 @@ private fun HomeDialogActionV4(
     destructive: Boolean = false,
     gold: Boolean = false,
 ) {
-    val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = when {
-                    gold -> t.goldContainer
-                    destructive -> t.destructive.copy(alpha = 0.08f)
-                    else -> t.input
-                },
-                shape = shape,
-            )
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(t.space3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = when {
-                gold -> t.goldForeground
-                destructive -> t.destructive
-                else -> t.secondaryForeground
-            },
-        )
-        Spacer(Modifier.width(t.space3))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = when {
-                    destructive -> t.destructive
-                    gold -> t.goldForeground
-                    else -> t.foreground
-                },
-                fontWeight = FontWeight.Medium,
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Spacer(Modifier.height(t.space1))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = t.mutedForeground,
-                )
-            }
-        }
-    }
+    // V93: actions are flat line-icon rows; the accent marks the AI action, red the destructive.
+    FlatListRowV93(
+        title = title,
+        subtitle = subtitle,
+        icon = icon,
+        destructive = destructive,
+        subtitleAccent = gold,
+        chevron = false,
+        onClick = onClick,
+    )
 }
 
 @Composable
@@ -1993,7 +1951,6 @@ private fun HomeSecondaryButtonV4(
             .fillMaxWidth()
             .height(46.dp)
             .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -2021,7 +1978,6 @@ private fun HomeMoveBookDialogV4(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
         ) {
             Text(
@@ -2092,7 +2048,7 @@ private fun HomeMoveTargetV4(
         )
         if (selected) {
             Icon(
-                imageVector = Icons.Rounded.Check,
+                imageVector = Icons.Outlined.Check,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = t.primary,
@@ -2120,7 +2076,6 @@ private fun HomeRenameBookDialogV4(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
         ) {
             Text(
@@ -2194,7 +2149,6 @@ private fun HomeDeleteBookDialogV4(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
         ) {
             Text(
@@ -2271,7 +2225,6 @@ private fun HomeShelfManagerV4(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
         ) {
             Text(
@@ -2580,13 +2533,11 @@ private fun HomeBookListSkeletonV4() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .padding(t.space3)
+            .padding(vertical = t.space2)
             .semantics { contentDescription = "正在载入书架" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LanghuanSkeletonV31(Modifier.width(58.dp).height(82.dp), RoundedCornerShape(t.radiusSm))
+        LanghuanSkeletonV31(Modifier.width(54.dp).height(72.dp), RoundedCornerShape(4.dp))
         Spacer(Modifier.width(t.space3))
         Column(Modifier.weight(1f)) {
             LanghuanSkeletonV31(Modifier.fillMaxWidth(0.6f).height(16.dp))
@@ -2602,10 +2553,185 @@ private fun HomeBookListSkeletonV4() {
 private fun HomeBookGridSkeletonV4() {
     val t = LocalLanghuanUiTokens.current
     Column(Modifier.fillMaxWidth().semantics { contentDescription = "正在载入书架" }) {
-        LanghuanSkeletonV31(Modifier.fillMaxWidth().aspectRatio(0.70f), RoundedCornerShape(t.radiusMd))
+        LanghuanSkeletonV31(Modifier.fillMaxWidth().aspectRatio(HOME_COVER_ASPECT_V93), RoundedCornerShape(HOME_COVER_RADIUS_V93))
         Spacer(Modifier.height(t.space2))
         LanghuanSkeletonV31(Modifier.fillMaxWidth(0.8f).height(14.dp))
         Spacer(Modifier.height(t.space1))
         LanghuanSkeletonV31(Modifier.fillMaxWidth(0.5f).height(11.dp))
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                         V93 · 我的 / 书架设置                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 「我的」: avatar + name, then flat line-icon rows grouped by whitespace (no cards). Hosts the
+ * entries that used to sit in the 「更多功能」 dropdown (AI 与模型、运行中心、写作技能) plus the
+ * shelf's own tools, and the 「书架设置」 list.
+ */
+@Composable
+private fun HomeMinePageV93(
+    bookCount: Int?,
+    finishedCount: Int?,
+    runActive: Boolean,
+    onBack: () -> Unit,
+    onOnline: () -> Unit,
+    onImport: () -> Unit,
+    onShelfManager: () -> Unit,
+    onBatch: () -> Unit,
+    onCreate: () -> Unit,
+    onAiSetup: () -> Unit,
+    onRunCenter: () -> Unit,
+    onSkills: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(t.background)
+            // Swallow taps on blank areas so nothing reaches the shelf underneath.
+            .pointerInput(Unit) { detectTapGestures { } }
+            .statusBarsPadding(),
+    ) {
+        FlatTopBarV93(title = "", onBack = onBack, backDescription = "返回书架")
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = HOME_PAGE_GUTTER_V93)
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = t.space2),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(t.foreground.copy(alpha = 0.06f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.PersonOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(30.dp),
+                        tint = t.mutedForeground,
+                    )
+                }
+                Spacer(Modifier.width(t.space4))
+                Column {
+                    Text(
+                        text = "琅嬛读者",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = t.foreground,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (bookCount == null) "正在载入书架…"
+                        else "书架 $bookCount 本 · 已读完 ${finishedCount ?: 0} 本",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
+            }
+            Spacer(Modifier.height(t.space3))
+            FlatListRowV93(title = "在线书城", icon = Icons.Outlined.Explore, onClick = onOnline)
+            FlatListRowV93(title = "导入本地书籍", icon = Icons.Outlined.FileOpen, value = "TXT · EPUB", onClick = onImport)
+            FlatListRowV93(title = "书架管理", icon = Icons.Outlined.FolderOpen, onClick = onShelfManager)
+            FlatListRowV93(title = "批量整理", icon = Icons.Outlined.Checklist, onClick = onBatch)
+            Spacer(Modifier.height(t.space4))
+            FlatListRowV93(title = "开始创作", icon = Icons.Outlined.AutoAwesome, onClick = onCreate)
+            FlatListRowV93(
+                title = "运行中心",
+                icon = Icons.Outlined.Insights,
+                subtitle = if (runActive) HOME_RUN_ACTIVE_LABEL_V92 else "查看 AI 写作任务与日志",
+                subtitleAccent = runActive,
+                badge = runActive,
+                onClick = onRunCenter,
+            )
+            FlatListRowV93(title = "写作技能", icon = Icons.Outlined.Psychology, subtitle = "管理创作 Skill", onClick = onSkills)
+            Spacer(Modifier.height(t.space4))
+            FlatListRowV93(title = "AI 与模型", icon = Icons.Outlined.SettingsSuggest, subtitle = "服务商、模型与任务路由", onClick = onAiSetup)
+            FlatListRowV93(title = "书架设置", icon = Icons.Outlined.Settings, subtitle = "排序与显示方式", onClick = onSettings)
+            Spacer(Modifier.height(t.space6))
+        }
+    }
+}
+
+/** 「书架设置」: flat settings list — title + grey subtitle, switch or check on the right. */
+@Composable
+private fun HomeShelfSettingsPageV93(
+    sort: LuoShelfSortV33,
+    layout: HomeLayoutV4,
+    onSort: (LuoShelfSortV33) -> Unit,
+    onLayout: (HomeLayoutV4) -> Unit,
+    onBack: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(t.background)
+            .pointerInput(Unit) { detectTapGestures { } }
+            .statusBarsPadding(),
+    ) {
+        FlatTopBarV93(title = "书架设置", onBack = onBack)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = HOME_PAGE_GUTTER_V93)
+                .navigationBarsPadding(),
+        ) {
+            FlatSectionLabelV93("显示")
+            FlatSwitchRowV93(
+                title = "封面网格",
+                subtitle = "以三列封面展示书架；关闭后显示为列表",
+                checked = layout == HomeLayoutV4.GRID,
+                onCheckedChange = { onLayout(if (it) HomeLayoutV4.GRID else HomeLayoutV4.LIST) },
+            )
+            FlatSectionLabelV93("排序方式")
+            LuoShelfSortV33.entries.forEach { item ->
+                val selected = sort == item
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                        .selectable(selected = selected, role = Role.RadioButton, onClick = { onSort(item) }),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = item.label,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = t.foreground,
+                    )
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = t.primary,
+                        )
+                    }
+                }
+            }
+            Text(
+                text = when (sort) {
+                    LuoShelfSortV33.RECENT_READ -> "最近打开的书排在最前。"
+                    LuoShelfSortV33.UPDATED -> "最近更新或导入的书排在最前。"
+                    LuoShelfSortV33.TITLE -> "按书名排列。"
+                    LuoShelfSortV33.PROGRESS -> "读完的书在前，其次按阅读进度，未读的书排在最后。"
+                },
+                modifier = Modifier.padding(top = t.space2),
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
+            Spacer(Modifier.height(t.space6))
+        }
     }
 }

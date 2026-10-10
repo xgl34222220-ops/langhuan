@@ -174,7 +174,7 @@ internal fun DrawScope.drawReaderPageV30(
         if (info.showTimeBattery) {
             native.drawText(info.time, geometry.left, geometry.footerBaseline, chrome)
         }
-        val rightLabel = if (info.pageLabel.isBlank()) info.progressLabel else "${info.pageLabel}   ${info.progressLabel}"
+        val rightLabel = if (info.pageLabel.isBlank()) info.progressLabel else "${info.pageLabel}  ${info.progressLabel}"
         native.drawText(rightLabel, geometry.right - chrome.measureText(rightLabel), geometry.footerBaseline, chrome)
         if (info.showTimeBattery) {
             val timeWidth = chrome.measureText(info.time)

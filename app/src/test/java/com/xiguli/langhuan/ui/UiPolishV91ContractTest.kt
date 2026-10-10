@@ -22,9 +22,11 @@ class UiPolishV91ContractTest {
         // The three callbacks used to be accepted and silently dropped.
         assertFalse(home.contains("@Suppress(\"UNUSED_PARAMETER\")"))
         assertTrue(home.contains("contentDescription = \"更多功能\""))
-        assertTrue(home.contains("onClick = { moreOpen = false; onAiSetup() }"))
-        assertTrue(home.contains("onClick = { moreOpen = false; onRunCenter() }"))
-        assertTrue(home.contains("onClick = { moreOpen = false; onSkills() }"))
+        // V93: 「更多功能」 opens the 「我的」 page; its rows close it and call the root callbacks.
+        assertTrue(home.contains("onAiSetup = { moreOpen = false; onAiSetup() }"))
+        assertTrue(home.contains("onRunCenter = { moreOpen = false; onRunCenter() }"))
+        assertTrue(home.contains("onSkills = { moreOpen = false; onSkills() }"))
+        assertTrue(home.contains("HomeMinePageV93("))
         // Existing device tests open the online store through this description.
         assertTrue(home.contains("contentDescription = \"在线书城\""))
         val router = source("ui/LanghuanRootV4.kt")
