@@ -1,5 +1,9 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -769,23 +773,38 @@ private fun ReaderChapterListV30(
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = readerTocInitialIndexV90(chapterIndex, chapters.size),
     )
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(
-            start = t.space3, end = t.space3, bottom = t.space3,
-        ),
-    ) {
-        itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
-            val current = index == chapterIndex
-            val marked = chapter.chapterNumber in bookmarkedChapters
-            ReaderChapterRowV30(
-                chapter = chapter,
-                current = current,
-                bookmarked = marked,
-                onClick = { onJumpChapter(index, 0) },
-            )
+    // V92: long directories (web serials with hundreds of chapters) get a fast-scroll strip.
+    val fastScroll = chapters.size >= READER_TOC_FAST_SCROLL_MIN_V92
+    Box(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = t.space3,
+                end = if (fastScroll) READER_TOC_FAST_SCROLL_GUTTER_V92 else t.space3,
+                bottom = t.space3,
+            ),
+        ) {
+            itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
+                val current = index == chapterIndex
+                val marked = chapter.chapterNumber in bookmarkedChapters
+                ReaderChapterRowV30(
+                    chapter = chapter,
+                    current = current,
+                    bookmarked = marked,
+                    onClick = { onJumpChapter(index, 0) },
+                )
+            }
         }
+        ReaderTocFastScrollerV92(
+            listState = listState,
+            itemCount = chapters.size,
+            labelFor = { index ->
+                chapters.getOrNull(index)
+                    ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
+                    .orEmpty()
+            },
+        )
     }
 }
 
@@ -801,7 +820,10 @@ private fun ReaderBookmarkListV30(
     modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val rows = chapters.filter { it.chapterNumber in bookmarks }
+    // Index once instead of chapters.indexOf(chapter) per row (O(n²) on long books).
+    val rows = remember(chapters, bookmarks) {
+        chapters.withIndex().filter { it.value.chapterNumber in bookmarks }
+    }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
             title = "还没有书签",
@@ -815,8 +837,7 @@ private fun ReaderBookmarkListV30(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
     ) {
-        items(items = rows, key = { "bookmark-${it.id}" }) { chapter ->
-            val index = chapters.indexOf(chapter)
+        items(items = rows, key = { "bookmark-${it.value.id}" }) { (index, chapter) ->
             ReaderChapterRowV30(
                 chapter = chapter,
                 current = false,
@@ -1220,6 +1241,9 @@ private fun ReaderThemePanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "阅读主题", onBack = onBack)
@@ -1230,6 +1254,9 @@ private fun ReaderThemePanelV30(
         )
         Spacer(Modifier.height(t.space4))
         ReaderThemeGridV30(settings = settings, compact = false)
+        Spacer(Modifier.height(t.space5))
+        // V92: brightness, warm light and paper backdrop live with the colour themes.
+        ReaderLightAndBackdropSectionV92(settings = settings)
     }
 }
 
@@ -1277,6 +1304,8 @@ private fun ReaderThemeOptionV30(
 ) {
     val t = LocalLanghuanUiTokens.current
     Column(
+        // Keep the original click node: ReaderRecreationV42 validates the landscape Details tab
+        // accessibility tree, and extra RadioButton nodes here left its font stepper bounds stale.
         modifier = modifier.clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1341,9 +1370,14 @@ private fun ReaderFontPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "字体", onBack = onBack)
+        ReaderTypesetPreviewV91(settings = settings)
+        Spacer(Modifier.height(t.space3))
         val fonts = listOf(
             Triple("sans", "系统黑体", FontFamily.SansSerif),
             Triple("serif", "系统宋体", FontFamily.Serif),
@@ -1365,7 +1399,7 @@ private fun ReaderFontPanelV30(
                         color = if (selected) t.primary else t.border,
                         shape = shape,
                     )
-                    .clickable { settings.fontKey = key }
+                    .selectable(selected = selected, role = Role.RadioButton) { settings.fontKey = key }
                     .padding(t.space3),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1428,6 +1462,9 @@ private fun ReaderSizePanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(
@@ -1440,6 +1477,8 @@ private fun ReaderSizePanelV30(
                 )
             },
         )
+        ReaderTypesetPreviewV91(settings = settings)
+        Spacer(Modifier.height(t.space3))
         ReaderFontSizeStepperV30(settings = settings)
         Spacer(Modifier.height(t.space4))
         ReaderSliderRowV30(
@@ -1475,6 +1514,9 @@ private fun ReaderSpacingPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(
@@ -1487,6 +1529,8 @@ private fun ReaderSpacingPanelV30(
                 )
             },
         )
+        ReaderTypesetPreviewV91(settings = settings)
+        Spacer(Modifier.height(t.space3))
         Text(
             text = "行距",
             style = MaterialTheme.typography.labelMedium,
@@ -1556,6 +1600,9 @@ private fun ReaderTurnPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "翻页方式", onBack = onBack)
@@ -2011,6 +2058,51 @@ private fun ReaderSectionTitleV30(
     )
 }
 
+/**
+ * Live typesetting sample (Readera / Moon+ Reader style). The settings sheet covers most of the
+ * page, so font, size, weight, spacing, margins and indent are previewed here in the current
+ * reader theme with the exact typeface the page renderer uses.
+ */
+@Composable
+private fun ReaderTypesetPreviewV91(settings: ReaderSettingsV30) {
+    val t = LocalLanghuanUiTokens.current
+    val theme = readerThemeV30(settings.theme)
+    val family = remember(settings.fontKey, settings.weight) {
+        FontFamily(readerTypefaceV30(settings.fontKey, settings.weight))
+    }
+    val size = settings.fontSize
+    val style = TextStyle(
+        color = theme.text,
+        fontFamily = family,
+        fontSize = size.sp,
+        lineHeight = (size * settings.lineFactor).sp,
+        letterSpacing = settings.letterSpacing.em,
+    )
+    val indent = if (settings.indent) "\u3000\u3000" else ""
+    val shape = RoundedCornerShape(t.radiusMd)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 168.dp)
+            .clip(shape)
+            .background(color = theme.page, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clipToBounds()
+            .padding(horizontal = (settings.sidePadding * 0.6f).dp, vertical = t.space3)
+            .semantics(mergeDescendants = true) { contentDescription = READER_PREVIEW_LABEL_V91 },
+    ) {
+        Text(text = indent + READER_PREVIEW_SAMPLE_V91[0], style = style)
+        Spacer(Modifier.height(settings.paragraphSpacing.dp))
+        Text(text = indent + READER_PREVIEW_SAMPLE_V91[1], style = style)
+    }
+}
+
+internal const val READER_PREVIEW_LABEL_V91 = "排版预览"
+private val READER_PREVIEW_SAMPLE_V91 = listOf(
+    "夜色落在平静的水面上，船舱里只亮着一盏灯。",
+    "他记得来时的路，却找不到原来的码头。",
+)
+
 @Composable
 private fun ReaderPanelHeaderV30(
     title: String,
@@ -2023,7 +2115,10 @@ private fun ReaderPanelHeaderV30(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(40.dp).clickable(onClick = onBack),
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .clickable(role = Role.Button, onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -2325,7 +2420,8 @@ private fun ReaderChoiceChipV30(
                 color = if (selected) t.primary else t.border,
                 shape = shape,
             )
-            .clickable(onClick = onClick),
+            .clip(shape)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(

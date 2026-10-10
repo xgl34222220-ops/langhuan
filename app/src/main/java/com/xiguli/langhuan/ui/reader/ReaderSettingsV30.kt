@@ -143,6 +143,21 @@ internal class ReaderSettingsV30(
     var immersive by mutableStateOf(bool(KEY_IMMERSIVE, false))
     var lockPortrait by mutableStateOf(bool(KEY_LOCK_PORTRAIT, true))
 
+    /* -------------------------- Light & backdrop (V92) -------------------------- */
+    /** Window brightness 0.05..1, or [READER_BRIGHTNESS_SYSTEM_V92] to follow the system. */
+    var brightness by mutableFloatStateOf(
+        float(KEY_BRIGHTNESS, READER_BRIGHTNESS_SYSTEM_V92).let {
+            if (it < 0f) READER_BRIGHTNESS_SYSTEM_V92 else it.coerceIn(READER_MIN_BRIGHTNESS_V92, 1f)
+        },
+    )
+    /** Warm-light strength 0..1; 0 is off. */
+    var warmth by mutableFloatStateOf(float(KEY_WARMTH, 0f).coerceIn(0f, 1f))
+    var backdrop by mutableStateOf(ReaderBackdropV92.of(string(KEY_BACKDROP, ReaderBackdropV92.NONE.key)).key)
+    /** Bumped when a new gallery picture is imported so the decoded bitmap is refreshed. */
+    var backdropImageVersion by mutableStateOf(
+        runCatching { prefs.getLong(KEY_BACKDROP_IMAGE_VERSION, 0L) }.getOrDefault(0L),
+    )
+
     /* ------------------------- Reset Typography ------------------------- */
     fun resetTypography() {
         fontSize = DEFAULT_FONT
@@ -162,6 +177,7 @@ internal class ReaderSettingsV30(
         sidePadding, indent, fontKey, weight,
         turnMode, lastPagedMode, clickAnimation, fullNext, volumeTurn,
         keepScreen, showTimeBattery, immersive, lockPortrait,
+        brightness, warmth, backdrop, backdropImageVersion,
     )
 
     /* -------------------------------- Save -------------------------------- */
@@ -187,6 +203,10 @@ internal class ReaderSettingsV30(
             .putBoolean(KEY_TIME_BATTERY, showTimeBattery)
             .putBoolean(KEY_IMMERSIVE, immersive)
             .putBoolean(KEY_LOCK_PORTRAIT, lockPortrait)
+            .putFloat(KEY_BRIGHTNESS, brightness)
+            .putFloat(KEY_WARMTH, warmth)
+            .putString(KEY_BACKDROP, backdrop)
+            .putLong(KEY_BACKDROP_IMAGE_VERSION, backdropImageVersion)
             .putString(KEY_PRESET, "custom")
             .apply()
     }
@@ -234,5 +254,10 @@ internal class ReaderSettingsV30(
         private const val KEY_IMMERSIVE = "immersive"
         private const val KEY_LOCK_PORTRAIT = "lockPortrait"
         private const val KEY_PRESET = "preset"
+        /** Also read by ReaderWindowSessionV27, which applies the window override. */
+        const val KEY_BRIGHTNESS = "brightnessV92"
+        private const val KEY_WARMTH = "warmthV92"
+        private const val KEY_BACKDROP = "backdropV92"
+        private const val KEY_BACKDROP_IMAGE_VERSION = "backdropImageV92"
     }
 }

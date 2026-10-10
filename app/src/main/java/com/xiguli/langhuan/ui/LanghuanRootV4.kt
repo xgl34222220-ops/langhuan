@@ -394,6 +394,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                         onSkills = { openSkills(RootRouteV4.SHELF) },
                         onOnline = { route = RootRouteV4.ONLINE },
                         onRenameBook = libraryVm::renameBook,
+                        onCancelImport = localImportVm::cancelImport,
                     )
                 }
 

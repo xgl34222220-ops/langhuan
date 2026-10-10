@@ -20,6 +20,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 private data class ReaderWindowOptionsV27(
     val immersive: Boolean, val keepScreen: Boolean, val portrait: Boolean, val night: Boolean,
+    /** V92 window brightness override; BRIGHTNESS_OVERRIDE_NONE follows the system. */
+    val brightness: Float = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE,
 )
 
 internal fun Context.readerActivityV27(): Activity? = when (this) {
@@ -37,11 +39,17 @@ internal fun ReaderWindowSessionV27(resumed: Boolean) {
     fun readOptions() = ReaderWindowOptionsV27(
         prefs.getBoolean("immersive", false), prefs.getBoolean("keepScreen", false),
         prefs.getBoolean("lockPortrait", true), prefs.getString("theme", "paper") == "night",
+        readerWindowBrightnessV92(
+            runCatching { prefs.getFloat(ReaderSettingsV30.KEY_BRIGHTNESS, READER_BRIGHTNESS_SYSTEM_V92) }
+                .getOrDefault(READER_BRIGHTNESS_SYSTEM_V92),
+        ),
     )
     var options by remember(prefs) { mutableStateOf(readOptions()) }
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key in setOf("immersive", "keepScreen", "lockPortrait", "theme")) options = readOptions()
+            if (key in setOf("immersive", "keepScreen", "lockPortrait", "theme", ReaderSettingsV30.KEY_BRIGHTNESS)) {
+                options = readOptions()
+            }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -54,6 +62,7 @@ internal fun ReaderWindowSessionV27(resumed: Boolean) {
         val oldOrientation = activity.requestedOrientation
         val oldKeepScreen = window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
         val oldBehavior = controller.systemBarsBehavior
+        val oldBrightness = window.attributes.screenBrightness
         // Runs only when leaving the reader, not when key(chapterKey) is replaced.
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
@@ -62,9 +71,16 @@ internal fun ReaderWindowSessionV27(resumed: Boolean) {
             activity.requestedOrientation = oldOrientation
             if (oldKeepScreen) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            window.attributes = window.attributes.apply { screenBrightness = oldBrightness }
         }
     }
-    LaunchedEffect(options, resumed) {
+    // Brightness has its own effect: dragging the slider must not re-run the bar/orientation code.
+    LaunchedEffect(window, options.brightness) {
+        if (window.attributes.screenBrightness != options.brightness) {
+            window.attributes = window.attributes.apply { screenBrightness = options.brightness }
+        }
+    }
+    LaunchedEffect(options.copy(brightness = 0f), resumed) {
         controller.isAppearanceLightStatusBars = !options.night
         controller.isAppearanceLightNavigationBars = !options.night
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

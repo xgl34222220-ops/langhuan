@@ -350,7 +350,11 @@ internal fun ReaderSessionV30(
     }
     // 阅读正文主题独立于 App 全局浅深色；paper/warm/tea/green/blue/pink/white/night
     // 的实际颜色由 ReaderThemeV30 管理。
-    val theme = readerThemeV30(settings.theme)
+    // V92: the optional paper texture / gallery picture travels with the theme into every
+    // page paint (paged, page-turn animation and scroll mode).
+    val baseTheme = readerThemeV30(settings.theme)
+    val backdropPaint = rememberReaderBackdropPaintV92(settings, baseTheme)
+    val theme = remember(baseTheme, backdropPaint) { baseTheme.copy(backdrop = backdropPaint) }
     val mode = settings.turnMode
     val v3Tokens = LocalLanghuanUiTokens.current
 
@@ -677,6 +681,17 @@ internal fun ReaderSessionV30(
             .edit()
             .putInt("total_${book.id}", chapters.size)
             .putInt("index_${book.id}", chapterIndex)
+            .apply {
+                // V92: the shelf's 「已读完」 filter and progress sort read this flag. Only
+                // write it when the page count is known, so a pending layout cannot clear it.
+                val pageCount = (layout ?: previousLayout)?.pages?.size ?: 0
+                if (pageCount > 0) {
+                    putBoolean(
+                        ShelfReadingProgressStoreV92.finishedKey(book.id),
+                        readerPositionIsBookEndV92(chapterIndex, chapters.size, savedPage, pageCount),
+                    )
+                }
+            }
             .apply()
     }
 
@@ -1209,7 +1224,10 @@ internal fun ReaderSessionV30(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(theme.page)
+            .drawBehind {
+                drawRect(theme.page)
+                theme.backdrop?.let { drawReaderBackdropV92(it) }
+            }
             .onSizeChanged { viewport = it }
             .semantics {
                 contentDescription = "阅读正文"
@@ -1514,6 +1532,10 @@ internal fun ReaderSessionV30(
                     },
             )
         }
+
+        /* ----------------------------- Warm light (V92) ----------------------------- */
+        // Above the page text, below hints/players; draw-only so it never takes touches.
+        ReaderWarmLightOverlayV92(warmth = settings.warmth, dark = theme.dark)
 
         /* ------------------------------- Loading ------------------------------- */
         AnimatedVisibility(
@@ -2031,6 +2053,7 @@ private fun ReaderScrollModeV30(
                 .height(topPad)
                 .background(theme.page),
         ) {
+            theme.backdrop?.let { drawReaderBackdropV92(it, geometry.width, geometry.height) }
             drawIntoReaderChromeV30(
                 geometry = geometry, theme = theme, paints = paints,
                 info = info, header = true,
@@ -2043,6 +2066,9 @@ private fun ReaderScrollModeV30(
                 .align(Alignment.BottomCenter)
                 .background(theme.page),
         ) {
+            theme.backdrop?.let {
+                drawReaderBackdropV92(it, geometry.width, geometry.height, offsetY = geometry.height - size.height)
+            }
             drawIntoReaderChromeV30(
                 geometry = geometry, theme = theme, paints = paints,
                 info = info, header = false,
@@ -2071,7 +2097,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIntoReaderChrom
         drawReaderPageV30(
             page = null,
             geometry = geometry,
-            theme = theme.copy(page = Color.Transparent),
+            theme = theme.copy(page = Color.Transparent, backdrop = null),
             paints = paints,
             info = if (header) {
                 info.copy(

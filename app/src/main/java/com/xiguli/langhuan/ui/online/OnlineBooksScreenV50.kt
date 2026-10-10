@@ -478,6 +478,13 @@ private fun OnlineSearchFieldV50(
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusLg)
+    // Submitting a search drops the keyboard so the result list (or its empty/error state) is
+    // visible instead of staying hidden behind the IME.
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val submit = {
+        keyboard?.hide()
+        onSearch()
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -520,7 +527,7 @@ private fun OnlineSearchFieldV50(
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                     onSearch = {
-                        if (query.isNotBlank() && !searching) onSearch()
+                        if (query.isNotBlank() && !searching) submit()
                     },
                 ),
             )
@@ -547,7 +554,7 @@ private fun OnlineSearchFieldV50(
                     color = if (searchEnabled) t.primary else t.border,
                     shape = searchShape,
                 )
-                .clickable(enabled = searchEnabled, onClick = onSearch)
+                .clickable(enabled = searchEnabled, role = androidx.compose.ui.semantics.Role.Button, onClick = submit)
                 .padding(horizontal = t.space3),
             contentAlignment = Alignment.Center,
         ) {
@@ -1495,8 +1502,9 @@ private fun rememberOnlineCoverV50(
         if (bitmap != null) return@LaunchedEffect
         val loaded = runInterruptible(Dispatchers.IO) {
             try {
-                val bytes = fetchSourceBytesV36(coverUrl)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                // V92: covers were decoded at full size (often 1000×1400+, ~6 MB each) into a
+                // 32-entry cache; cap the download and downsample to list size like V36 does.
+                decodeOnlineCoverV92(fetchSourceBytesV36(coverUrl, maxBytes = 2 * 1024 * 1024))
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 null
@@ -1731,4 +1739,23 @@ private fun onlineFindDiscoveryV50(
 
 private fun onlineIsRankingLabelV50(label: String): Boolean {
     return label.contains("榜") || label.contains("排行")
+}
+
+/** Smallest power-of-two sample that fits a [maxWidth]×[maxHeight] cover. Pure; unit tested. */
+internal fun onlineCoverSampleSizeV92(width: Int, height: Int, maxWidth: Int = 360, maxHeight: Int = 540): Int {
+    var sample = 1
+    while (width / (sample * 2) >= maxWidth || height / (sample * 2) >= maxHeight) sample *= 2
+    return sample
+}
+
+/** Decodes a remote cover downsampled for the list; null when the bytes are not a sane image. */
+internal fun decodeOnlineCoverV92(bytes: ByteArray): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    if (bounds.outWidth.toLong() * bounds.outHeight > 40_000_000L) return null
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = onlineCoverSampleSizeV92(bounds.outWidth, bounds.outHeight)
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 }
