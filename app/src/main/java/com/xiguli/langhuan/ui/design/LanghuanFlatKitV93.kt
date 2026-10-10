@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
 
 /*
  * V93 flat kit: the visual language of the reference reader (plain light surfaces, thin outline
@@ -285,7 +286,10 @@ fun FlatTextTabV93(
 ) {
     val t = LocalLanghuanUiTokens.current
     Column(
-        modifier = modifier.heightIn(min = 44.dp),
+        // V94: the tab used to accept onClick without ever wiring it.
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
