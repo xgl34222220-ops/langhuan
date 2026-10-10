@@ -3,6 +3,8 @@ package com.xiguli.langhuan.ui
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
@@ -13,6 +15,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.ui.design.PaperReaderThemeV44
@@ -64,14 +67,15 @@ class LiveUiRestyleV93DeviceTest {
         ).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
     }
 
-    private fun menu(settings: ReaderSettingsV30, tab: ReaderMenuTabV30, list: List<ChapterDraft>, index: Int) {
+    /** The rule allows one setContent per test: the tab is switched through state. */
+    private fun menu(settings: ReaderSettingsV30, tab: MutableState<ReaderMenuTabV30>, list: List<ChapterDraft>, index: Int) {
         rule.setContent {
             LanghuanStableTheme {
                 ReaderMenuV30(
-                    visible = true, tab = tab, panel = ReaderMenuPanelV30.MAIN, book = night, chapters = list,
+                    visible = true, tab = tab.value, panel = ReaderMenuPanelV30.MAIN, book = night, chapters = list,
                     chapterIndex = index, pageIndex = 1, pageCount = 6, settings = settings,
                     theme = readerThemeV30(settings.theme), bookmarked = true,
-                    onDismiss = {}, onTab = {}, onPanel = {}, onBack = {},
+                    onDismiss = {}, onTab = { tab.value = it }, onPanel = {}, onBack = {},
                     onToggleBookmark = {}, onJumpChapter = { _, _ -> }, onPageFraction = {},
                     onEdit = {}, onWriting = {}, onStory = {},
                     bookmarkedChapters = setOf(3, 12, index + 1), bookmarkError = null,
@@ -180,13 +184,15 @@ class LiveUiRestyleV93DeviceTest {
         val settings = ReaderSettingsV30(prefs)
         val list = chapters(120)
         try {
-            menu(settings, ReaderMenuTabV30.DIRECTORY, list, 20)
+            val tab = mutableStateOf(ReaderMenuTabV30.DIRECTORY)
+            menu(settings, tab, list, 20)
             rule.onNodeWithText("正在阅读").assertIsDisplayed()
             screenshot("v93-menu-directory")
-            menu(settings, ReaderMenuTabV30.MORE, list, 20)
-            rule.onNodeWithText("屏幕常亮").assertIsDisplayed()
+            rule.onNodeWithContentDescription("阅读菜单：更多").performClick()
+            rule.runOnIdle { assertEquals(ReaderMenuTabV30.MORE, tab.value) }
+            rule.onNodeWithText("屏幕常亮").performScrollTo().assertIsDisplayed()
             screenshot("v93-menu-more")
-            menu(settings, ReaderMenuTabV30.DETAILS, list, 20)
+            rule.onNodeWithContentDescription("阅读菜单：详情").performClick()
             rule.onNodeWithText("当前阅读").assertExists()
             screenshot("v93-menu-details")
             assertEquals(18f, settings.fontSize, 4f)
