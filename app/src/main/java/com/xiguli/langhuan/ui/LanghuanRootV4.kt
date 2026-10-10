@@ -395,10 +395,13 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
     val runActiveV94 = rememberRunCenterActiveV92()
     val bottomBarVisible = route in ROOT_TABS_V94 && (route != RootRouteV4.ONLINE || onlineRootLevel)
 
+    var tabReselectV95 by remember { mutableStateOf(com.xiguli.langhuan.ui.design.TabReselectV95()) }
+
     val routeStates = rememberSaveableStateHolder()
     if (externalBooks != null) ExternalBookImportHostV1(externalBooks, localImportVm)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
       Column(Modifier.fillMaxSize()) {
+        androidx.compose.runtime.CompositionLocalProvider(com.xiguli.langhuan.ui.design.LocalTabReselectV95 provides tabReselectV95) {
         AnimatedContent(
             targetState = route,
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -681,6 +684,7 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
           }
           }
         }
+        }
         // V94 bottom navigation: shown on the four tab roots, hidden in the reader and every
         // full-screen page (editor, writing, settings, source editor/import, book detail...).
         if (bottomBarVisible) {
@@ -691,6 +695,8 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
                     val target = RootRouteV4.valueOf(key)
                     route = target
                 },
+                // V95: tapping the current tab again scrolls that tab back to its top.
+                onReselect = { key -> tabReselectV95 = com.xiguli.langhuan.ui.design.TabReselectV95(key, tabReselectV95.token + 1) },
             )
         }
       }
@@ -744,16 +750,19 @@ fun LanghuanRootV4(studioVm: StudioViewModel, externalBooks: ExternalBookImportC
 }
 
 /** V94 tab bar entries. The run badge sits on 创作, where 运行中心 now lives. */
-internal fun rootBottomTabsV94(runActive: Boolean): List<com.xiguli.langhuan.ui.design.BottomTabV94> = listOf(
-    com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.SHELF.name, "书架", androidx.compose.material.icons.Icons.Outlined.LibraryBooks, androidx.compose.material.icons.Icons.Filled.LibraryBooks),
-    com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.ONLINE.name, "书城", androidx.compose.material.icons.Icons.Outlined.Explore, androidx.compose.material.icons.Icons.Filled.Explore),
-    com.xiguli.langhuan.ui.design.BottomTabV94(
-        RootRouteV4.CREATE_HUB.name, "创作",
-        androidx.compose.material.icons.Icons.Outlined.EditNote, androidx.compose.material.icons.Icons.Filled.EditNote,
-        badge = runActive, badgeDescription = HOME_RUN_ACTIVE_LABEL_V92,
-    ),
-    com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.MINE.name, "我的", androidx.compose.material.icons.Icons.Outlined.PersonOutline, androidx.compose.material.icons.Icons.Filled.Person),
-)
+internal fun rootBottomTabsV94(runActive: Boolean): List<com.xiguli.langhuan.ui.design.BottomTabV94> {
+    val icons = com.xiguli.langhuan.ui.design.LanghuanTabIconsV95
+    return listOf(
+        com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.SHELF.name, "书架", icons.ShelfOutline, icons.ShelfFilled),
+        com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.ONLINE.name, "书城", icons.StoreOutline, icons.StoreFilled),
+        com.xiguli.langhuan.ui.design.BottomTabV94(
+            RootRouteV4.CREATE_HUB.name, "创作",
+            icons.CreateOutline, icons.CreateFilled,
+            badge = runActive, badgeDescription = HOME_RUN_ACTIVE_LABEL_V92,
+        ),
+        com.xiguli.langhuan.ui.design.BottomTabV94(RootRouteV4.MINE.name, "我的", icons.MineOutline, icons.MineFilled),
+    )
+}
 
 /**
  * App-level route motion. Opening a book zooms the page up out of the shelf; everything else is

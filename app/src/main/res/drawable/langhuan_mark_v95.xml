@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 琅嬛 mark for in-app use (empty states, about). Tint-free: colours come from the caller. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <group android:translateX="-26" android:translateY="-25">
+        <path android:fillColor="#FF1E6A5A" android:pathData="M76.32,51.83 A22.35,22.35 0 0,0 31.68,51.83 A1.35,1.35 0 0,0 34.38,51.97 A19.65,19.65 0 0,1 73.62,51.97 A1.35,1.35 0 0,0 76.32,51.83 Z" />
+        <path android:fillColor="#FFC08A3A" android:pathData="M56.9,41.5 A4.1,4.1 0 1,0 65.1,41.5 A4.1,4.1 0 1,0 56.9,41.5 Z" />
+        <path android:fillColor="#FF1E6A5A" android:pathData="M53.1,59 Q45,50.5 33,55 L33,69.6 Q45,66.4 53.1,75 Z" />
+        <path android:fillColor="#FF1E6A5A" android:pathData="M54.9,59 Q63,50.5 75,55 L75,69.6 Q63,66.4 54.9,75 Z" />
+    </group>
+</vector>

@@ -13,7 +13,13 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,6 +38,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import android.os.SystemClock
+import android.view.View
+import android.view.animation.PathInterpolator
 import com.xiguli.langhuan.data.local.StartupDatabaseStatus
 import com.xiguli.langhuan.data.local.StartupDatabaseGate
 import com.xiguli.langhuan.engine.PostStartupInitializer
@@ -44,8 +54,31 @@ import com.xiguli.langhuan.ui.theme.LanghuanThemeModeStateV50
 class MainActivity : ComponentActivity() {
     private val externalBooks by lazy { ViewModelProvider(this)[ExternalBookImportCoordinatorV1::class.java] }
 
+    /** V95: the launch screen stays up while the startup database check runs (bounded). */
+    @Volatile private var startupChecking = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Must run before super.onCreate: swaps Theme.Langhuan.Starting for Theme.Langhuan.
+        val splash = installSplashScreen()
+        val splashStartedAt = SystemClock.uptimeMillis()
         super.onCreate(savedInstanceState)
+        // Hold the mark (never a blank frame) until the first real screen can draw, but never
+        // longer than SPLASH_MAX_HOLD_MS_V95: a slow migration then shows the checking screen.
+        splash.setKeepOnScreenCondition {
+            startupChecking && SystemClock.uptimeMillis() - splashStartedAt < SPLASH_MAX_HOLD_MS_V95
+        }
+        // Smooth hand-off: the mark lifts and fades while the splash surface dissolves into the
+        // already-drawn first screen (same paper colour, so there is no white flash).
+        splash.setOnExitAnimationListener { provider ->
+            val ease = PathInterpolator(0.2f, 0f, 0f, 1f)
+            val icon: View? = runCatching { provider.iconView }.getOrNull()
+            icon?.let { mark ->
+                mark.animate().alpha(0f).scaleX(1.08f).scaleY(1.08f).translationY(-mark.height * .04f)
+                    .setDuration(SPLASH_EXIT_MS_V95).setInterpolator(ease).start()
+            }
+            provider.view.animate().alpha(0f).setStartDelay(60).setDuration(SPLASH_EXIT_MS_V95)
+                .setInterpolator(ease).withEndAction { provider.remove() }.start()
+        }
         val incoming = intent
         // Preserve the Activity's launch identity for Android lifecycle/result tracking.
         // Clear untrusted default arguments before the SavedStateHandle ViewModel is created.
@@ -59,7 +92,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             // Keep the proven launcher path plain and dependency-light until Room is healthy.
             MaterialTheme {
-                StartupDatabaseRoot(externalBooks)
+                StartupDatabaseRoot(externalBooks, onStartupSettled = { startupChecking = false })
             }
         }
     }
@@ -77,6 +110,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private const val SPLASH_MAX_HOLD_MS_V95 = 2_500L
+private const val SPLASH_EXIT_MS_V95 = 280L
+
 private sealed class LauncherState {
     data object Checking : LauncherState()
     data class Ready(val status: StartupDatabaseStatus) : LauncherState()
@@ -84,7 +120,10 @@ private sealed class LauncherState {
 }
 
 @Composable
-private fun StartupDatabaseRoot(externalBooks: ExternalBookImportCoordinatorV1) {
+private fun StartupDatabaseRoot(
+    externalBooks: ExternalBookImportCoordinatorV1,
+    onStartupSettled: () -> Unit = {},
+) {
     val context = LocalContext.current.applicationContext
     var launcherState by remember { mutableStateOf<LauncherState>(LauncherState.Checking) }
 
@@ -100,6 +139,7 @@ private fun StartupDatabaseRoot(externalBooks: ExternalBookImportCoordinatorV1) 
         // recomposition of the launcher root.
         if (status.ready) LanghuanThemeModeStateV50.init(context)
         launcherState = if (status.ready) LauncherState.Ready(status) else LauncherState.Failed(status)
+        onStartupSettled()
     }
 
     when (val state = launcherState) {
@@ -118,7 +158,8 @@ private fun StartupDatabaseRoot(externalBooks: ExternalBookImportCoordinatorV1) 
 
 @Composable
 private fun LauncherCheckingScreen() {
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    // Same paper surface and mark as the launch screen, so a slow check continues it seamlessly.
+    Surface(Modifier.fillMaxSize(), color = colorResource(R.color.langhuan_window_v95)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -128,11 +169,21 @@ private fun LauncherCheckingScreen() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            CircularProgressIndicator()
+            Image(
+                painter = painterResource(R.drawable.splash_mark_v95),
+                contentDescription = null,
+                modifier = Modifier.size(160.dp),
+            )
+            LinearProgressIndicator(
+                modifier = Modifier.padding(top = 4.dp).width(96.dp).height(2.dp),
+                color = colorResource(R.color.splash_mark_v95),
+                trackColor = colorResource(R.color.splash_mark_v95).copy(alpha = .16f),
+            )
             Text(
                 text = "正在检查琅嬛数据…",
-                modifier = Modifier.padding(top = 18.dp),
-                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 14.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colorResource(R.color.splash_mark_v95).copy(alpha = .72f),
             )
         }
     }

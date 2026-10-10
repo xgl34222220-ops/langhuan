@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="launcher_background">#7257D8</color>
+    <!-- V95 brand: jade (玉) field, ivory (宣纸) mark, gold moon. -->
+    <color name="launcher_background">#1A5C4C</color>
+    <!-- Window + splash surface matches the app's paper background so there is no white flash. -->
+    <color name="langhuan_window_v95">#F7F5F0</color>
+    <color name="splash_mark_v95">#1E6A5A</color>
+    <color name="splash_moon_v95">#C08A3A</color>
 </resources>
-

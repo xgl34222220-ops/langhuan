@@ -3,8 +3,16 @@
     <style name="Theme.Langhuan" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">#F5F0FF</item>
-        <item name="android:statusBarColor">#F5F0FF</item>
+        <item name="android:windowBackground">@color/langhuan_window_v95</item>
+        <item name="android:navigationBarColor">@color/langhuan_window_v95</item>
+        <item name="android:statusBarColor">@color/langhuan_window_v95</item>
+    </style>
+
+    <!-- V95 launch screen (androidx SplashScreen: system splash on API 31+, emulated below). -->
+    <style name="Theme.Langhuan.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/langhuan_window_v95</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_mark_v95</item>
+        <item name="windowSplashScreenAnimationDuration">300</item>
+        <item name="postSplashScreenTheme">@style/Theme.Langhuan</item>
     </style>
 </resources>
-

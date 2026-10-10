@@ -15,6 +15,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
+import com.xiguli.langhuan.ui.design.LargeTitleBarV95
+import com.xiguli.langhuan.ui.design.OnTabReselectV95
+import com.xiguli.langhuan.ui.design.EmptyStateV95
+import com.xiguli.langhuan.ui.design.LanghuanMarkV95
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -57,21 +62,11 @@ internal fun isOwnWritingBookV94(book: ReaderBookUi): Boolean =
 
 private val TAB_GUTTER_V94 = 20.dp
 
+/** V95: large title that collapses once the tab's content scrolls; reselecting the tab scrolls up. */
 @Composable
-private fun TabHeaderV94(title: String) {
-    val t = LocalLanghuanUiTokens.current
-    Box(
-        modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = TAB_GUTTER_V94),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = t.foreground,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
-    }
+private fun TabHeaderV94(title: String, scroll: ScrollState, tabKey: String) {
+    OnTabReselectV95(tabKey) { scroll.animateScrollTo(0) }
+    LargeTitleBarV95(title = title, collapsed = scroll.value > 0, horizontalPadding = TAB_GUTTER_V94)
 }
 
 /**
@@ -100,11 +95,12 @@ internal fun CreateTabV94(
             .background(t.background)
             .statusBarsPadding(),
     ) {
-        TabHeaderV94("创作")
+        val scroll = rememberScrollState()
+        TabHeaderV94("创作", scroll, "CREATE_HUB")
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = TAB_GUTTER_V94),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = t.space2)) {
@@ -128,11 +124,10 @@ internal fun CreateTabV94(
             FlatSectionLabelV93("在写的书")
             when {
                 !libraryLoaded -> Text("正在载入…", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
-                writing.isEmpty() -> Text(
-                    "还没有自己的作品。用上面的任一方式开一本新书吧。",
-                    modifier = Modifier.padding(vertical = t.space2),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = t.mutedForeground,
+                writing.isEmpty() -> EmptyStateV95(
+                    title = "还没有自己的作品",
+                    message = "用上面的任一方式开一本新书吧",
+                    modifier = Modifier.padding(vertical = 0.dp),
                 )
                 else -> writing.forEach { book ->
                     FlatListRowV93(
@@ -250,11 +245,12 @@ internal fun MineTabV94(
             .background(t.background)
             .statusBarsPadding(),
     ) {
-        TabHeaderV94("我的")
+        val scroll = rememberScrollState()
+        TabHeaderV94("我的", scroll, "MINE")
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = TAB_GUTTER_V94),
         ) {
             Row(
@@ -262,10 +258,10 @@ internal fun MineTabV94(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier.size(56.dp).background(t.foreground.copy(alpha = 0.06f), CircleShape),
+                    modifier = Modifier.size(60.dp).background(t.primary.copy(alpha = 0.08f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Outlined.PersonOutline, contentDescription = null, modifier = Modifier.size(30.dp), tint = t.mutedForeground)
+                    LanghuanMarkV95(size = 34.dp)
                 }
                 Spacer(Modifier.width(t.space4))
                 Column {
