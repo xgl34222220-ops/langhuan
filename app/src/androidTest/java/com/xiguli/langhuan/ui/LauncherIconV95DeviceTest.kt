@@ -38,7 +38,9 @@ class LauncherIconV95DeviceTest {
         icon.foreground.draw(Canvas(fg))
         var ivory = 0
         var outsideSafeZone = 0
-        val safeRadius = size * 33f / 108f
+        // AdaptiveIconDrawable bounds are the visible 72 dp viewport (layers are drawn 1.5x around
+        // it), so the 66 dp safe-zone circle has radius 33/72 of the bounds.
+        val safeRadius = size * 33f / 72f
         for (y in 0 until size) for (x in 0 until size) {
             val c = fg.getPixel(x, y)
             if (Color.alpha(c) < 40) continue
@@ -61,8 +63,7 @@ class LauncherIconV95DeviceTest {
         repeat(4) { i ->
             canvas.save()
             canvas.translate((i * cell).toFloat(), 0f)
-            val inset = cell * 18f / 108f
-            val box = RectF(inset, inset, cell - inset, cell - inset)
+            val box = RectF(0f, 0f, cell.toFloat(), cell.toFloat())
             val mask = Path().apply {
                 when (i) {
                     0, 3 -> addOval(box, Path.Direction.CW)
