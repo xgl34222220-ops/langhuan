@@ -21,7 +21,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -52,12 +53,23 @@ import androidx.compose.ui.unit.sp
 @Immutable
 data class TabReselectV95(val key: String = "", val token: Int = 0)
 
-val LocalTabReselectV95 = compositionLocalOf { TabReselectV95() }
+/**
+ * Process-wide reselect signal written by the bottom bar (kept here, not in the root router, so the
+ * bar and the tab pages agree without threading a callback through every host).
+ */
+object TabReselectBusV95 {
+    var current by mutableStateOf(TabReselectV95())
+        private set
+
+    fun reselect(key: String) {
+        current = TabReselectV95(key, current.token + 1)
+    }
+}
 
 /** Runs [onReselect] (typically `animateScrollToItem(0)`) each time the tab [key] is reselected. */
 @Composable
 fun OnTabReselectV95(key: String, onReselect: suspend () -> Unit) {
-    val signal = LocalTabReselectV95.current
+    val signal = TabReselectBusV95.current
     val latest by rememberUpdatedState(onReselect)
     val baseline = remember(key) { signal.token }
     LaunchedEffect(signal) {

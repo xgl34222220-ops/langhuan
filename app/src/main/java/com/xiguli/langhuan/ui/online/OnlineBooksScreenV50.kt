@@ -193,7 +193,13 @@ internal fun OnlineBooksScreenV50(
             .imePadding(),
     ) {
         /* Header */
+        val storeListState = androidx.compose.foundation.lazy.rememberLazyListState()
+        val storeScrolled by remember {
+            androidx.compose.runtime.derivedStateOf { storeListState.firstVisibleItemIndex > 0 || storeListState.firstVisibleItemScrollOffset > 0 }
+        }
+        if (embedded) com.xiguli.langhuan.ui.design.OnTabReselectV95("ONLINE") { storeListState.animateScrollToItem(0) }
         OnlineStoreHeaderV50(
+            collapsed = storeScrolled,
             embedded = embedded,
             onBack = onBack,
             onManageSources = onManageSources,
@@ -214,6 +220,7 @@ internal fun OnlineBooksScreenV50(
         /* Main content */
         LazyColumn(
             modifier = Modifier.weight(1f),
+            state = storeListState,
             contentPadding = PaddingValues(
                 start = t.space4,
                 end = t.space4,
@@ -402,8 +409,20 @@ private fun OnlineStoreHeaderV50(
     embedded: Boolean,
     onBack: () -> Unit,
     onManageSources: () -> Unit,
+    collapsed: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
+    if (embedded) {
+        // V95: as a bottom-bar tab, 书城 uses the shared large title that collapses on scroll.
+        com.xiguli.langhuan.ui.design.LargeTitleBarV95(title = "书城", collapsed = collapsed) {
+            OnlineTextButtonV50(
+                icon = Icons.Rounded.Source,
+                text = "书源管理",
+                onClick = onManageSources,
+            )
+        }
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -853,51 +872,16 @@ private fun OnlineStoreEmptyV50(
     discoveryLabel: String?,
     onManageSources: () -> Unit,
 ) {
-    val t = LocalLanghuanUiTokens.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = t.space6),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            imageVector = if (hasSources) Icons.Rounded.MenuBook else Icons.Rounded.Source,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = t.mutedForeground,
-        )
-        Spacer(Modifier.height(t.space3))
-        Text(
-            text = when {
-                !hasSources -> "还没有启用书源"
-                query.isNotBlank() -> "没有找到「$query」"
-                discoveryLabel != null -> "「$discoveryLabel」暂时没有内容"
-                else -> "试试搜索或浏览分类"
-            },
-            style = MaterialTheme.typography.titleMedium,
-            color = t.foreground,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(t.space1))
-        Text(
-            text = if (!hasSources) {
-                "先去书源管理启用书源，才能发现好书"
-            } else {
-                "换个关键词或分类试试"
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = t.mutedForeground,
-            textAlign = TextAlign.Center,
-        )
-        if (!hasSources) {
-            Spacer(Modifier.height(t.space3))
-            OnlinePrimaryButtonV50(
-                text = "去启用书源",
-                onClick = onManageSources,
-            )
-        }
-    }
+    com.xiguli.langhuan.ui.design.EmptyStateV95(
+        title = when {
+            !hasSources -> "还没有启用书源"
+            query.isNotBlank() -> "没有找到「$query」"
+            discoveryLabel != null -> "「$discoveryLabel」暂时没有内容"
+            else -> "试试搜索或浏览分类"
+        },
+        message = if (!hasSources) "先去书源管理启用书源，才能发现好书" else "换个关键词或分类试试",
+        action = (@Composable { OnlinePrimaryButtonV50(text = "去启用书源", onClick = onManageSources) }).takeIf { !hasSources },
+    )
 }
 
 

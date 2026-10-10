@@ -645,32 +645,11 @@ private fun SourceManageBottomButtonV50(
 @Composable
 private fun SourceManageEmptyV50(onCreate: () -> Unit, onImport: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = t.space6),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    // V95: illustrated empty state (brand mark) with the two plain-text actions underneath.
+    com.xiguli.langhuan.ui.design.EmptyStateV95(
+        title = "还没有书源",
+        message = "导入阅读（Legado）书源 JSON，或手动新建一个。",
     ) {
-        Icon(
-            imageVector = androidx.compose.material.icons.Icons.Outlined.Source,
-            contentDescription = null,
-            modifier = Modifier.size(36.dp),
-            tint = t.mutedForeground,
-        )
-        Spacer(Modifier.height(t.space3))
-        Text(
-            text = "还没有书源",
-            style = MaterialTheme.typography.titleMedium,
-            color = t.foreground,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(t.space2))
-        Text(
-            text = "导入阅读（Legado）书源 JSON，或手动新建一个。",
-            style = MaterialTheme.typography.bodySmall,
-            color = t.mutedForeground,
-        )
-        Spacer(Modifier.height(t.space4))
         Row(horizontalArrangement = Arrangement.spacedBy(t.space5)) {
             Text(
                 text = "导入书源",

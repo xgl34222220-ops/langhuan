@@ -42,6 +42,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** V95 custom glyphs for the four root tabs (by route key); other keys keep their own icons. */
+internal fun tabGlyphV95(key: String, selected: Boolean): ImageVector? {
+    val i = LanghuanTabIconsV95
+    return when (key) {
+        "SHELF" -> if (selected) i.ShelfFilled else i.ShelfOutline
+        "ONLINE" -> if (selected) i.StoreFilled else i.StoreOutline
+        "CREATE_HUB" -> if (selected) i.CreateFilled else i.CreateOutline
+        "MINE" -> if (selected) i.MineFilled else i.MineOutline
+        else -> null
+    }
+}
+
 /** One destination of the bottom bar. */
 data class BottomTabV94(
     val key: String,
@@ -117,6 +129,7 @@ fun LanghuanBottomBarV94(
                             onClick = {
                                 if (selected) {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    TabReselectBusV95.reselect(tab.key)
                                     onReselect(tab.key)
                                 } else {
                                     onSelect(tab.key)
@@ -138,7 +151,7 @@ fun LanghuanBottomBarV94(
                     ) {
                         Crossfade(targetState = selected, animationSpec = tween(160), label = "tab-glyph") { on ->
                             Icon(
-                                imageVector = if (on) tab.selectedIcon else tab.icon,
+                                imageVector = tabGlyphV95(tab.key, on) ?: if (on) tab.selectedIcon else tab.icon,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
                                 tint = tint,

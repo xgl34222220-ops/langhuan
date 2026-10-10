@@ -193,29 +193,71 @@ private fun CreateStartCardV94(
     }
 }
 
+/**
+ * V95: 「空白新书」 is a bottom sheet in the reference reader's style — grab handle, centred title,
+ * stacked fields, one full-width primary action and a quiet 「取消」 pill underneath.
+ */
 @Composable
 private fun BlankBookDialogV94(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
     val t = LocalLanghuanUiTokens.current
     var title by rememberSaveable { mutableStateOf("") }
     var genre by rememberSaveable { mutableStateOf("") }
-    AlertDialog(
+    androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = t.background,
-        title = { Text("空白新书", fontWeight = FontWeight.SemiBold) },
-        text = {
-            Column {
-                Text("书名", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
-                Spacer(Modifier.height(4.dp))
-                SourcePlainFieldV94(value = title, onValueChange = { title = it }, hint = "未命名小说", modifier = Modifier.fillMaxWidth(), description = "书名")
-                Spacer(Modifier.height(12.dp))
-                Text("类型（可选）", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
-                Spacer(Modifier.height(4.dp))
-                SourcePlainFieldV94(value = genre, onValueChange = { genre = it }, hint = "例如：悬疑、言情", modifier = Modifier.fillMaxWidth(), description = "类型")
-            }
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        dragHandle = {
+            Box(
+                Modifier
+                    .padding(top = 10.dp, bottom = 6.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .background(t.foreground.copy(alpha = 0.16f), RoundedCornerShape(2.dp)),
+            )
         },
-        confirmButton = { TextButton(onClick = { onConfirm(title, genre) }) { Text("创建并开写", color = t.primary) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = t.mutedForeground) } },
-    )
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
+            Text(
+                "空白新书",
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.titleMedium,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Spacer(Modifier.height(18.dp))
+            Text("书名", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+            Spacer(Modifier.height(6.dp))
+            SourcePlainFieldV94(value = title, onValueChange = { title = it }, hint = "未命名小说", modifier = Modifier.fillMaxWidth(), description = "书名")
+            Spacer(Modifier.height(14.dp))
+            Text("类型（可选）", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+            Spacer(Modifier.height(6.dp))
+            SourcePlainFieldV94(value = genre, onValueChange = { genre = it }, hint = "例如：悬疑、言情", modifier = Modifier.fillMaxWidth(), description = "类型")
+            Spacer(Modifier.height(22.dp))
+            SheetPillButtonV95("创建并开写", primary = true) { onConfirm(title, genre) }
+            Spacer(Modifier.height(10.dp))
+            SheetPillButtonV95("取消", primary = false, onClick = onDismiss)
+        }
+    }
+}
+
+@Composable
+private fun SheetPillButtonV95(text: String, primary: Boolean, onClick: () -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .background(if (primary) t.primary else t.foreground.copy(alpha = 0.05f), RoundedCornerShape(23.dp))
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (primary) t.primaryForeground else t.secondaryForeground,
+            fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Medium,
+        )
+    }
 }
 
 /**

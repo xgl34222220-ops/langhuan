@@ -147,9 +147,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.semantics.heading
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.xiguli.langhuan.ui.design.LanghuanMotionV31
@@ -380,27 +377,14 @@ fun LanghuanHomeV4(
     BackHandler(enabled = organizeOpen && !searchOpen) { organizeOpen = false }
 
     Box(modifier = Modifier.fillMaxSize().background(t.background)) {
-        // V95: large 「书架」 title that collapses as the shelf scrolls; reselecting the tab scrolls up.
-        val shelfGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-        val shelfListState = androidx.compose.foundation.lazy.rememberLazyListState()
-        val shelfScrolled by remember(layout) {
-            derivedStateOf {
-                if (layout == HomeLayoutV4.GRID) shelfGridState.firstVisibleItemIndex > 0 || shelfGridState.firstVisibleItemScrollOffset > 0
-                else shelfListState.firstVisibleItemIndex > 0 || shelfListState.firstVisibleItemScrollOffset > 0
-            }
-        }
-        com.xiguli.langhuan.ui.design.OnTabReselectV95("SHELF") {
-            if (layout == HomeLayoutV4.GRID) shelfGridState.animateScrollToItem(0) else shelfListState.animateScrollToItem(0)
-        }
         Column(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = HOME_PAGE_GUTTER_V93, end = t.space2, top = t.space1),
+                    .padding(start = HOME_PAGE_GUTTER_V93, end = t.space2, top = t.space2),
             ) {
                 HomeShelfHeaderV4(
-                    collapsed = shelfScrolled,
                     searchOpen = searchOpen,
                     organizeOpen = organizeOpen,
                     onSearch = {
@@ -461,7 +445,6 @@ fun LanghuanHomeV4(
                 HomeLayoutV4.LIST -> {
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        state = shelfListState,
                         contentPadding = PaddingValues(
                             start = HOME_PAGE_GUTTER_V93, end = HOME_PAGE_GUTTER_V93,
                             bottom = t.space6 + navigationBottom,
@@ -509,7 +492,6 @@ fun LanghuanHomeV4(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         modifier = Modifier.weight(1f),
-                        state = shelfGridState,
                         contentPadding = PaddingValues(
                             start = HOME_PAGE_GUTTER_V93, end = HOME_PAGE_GUTTER_V93,
                             bottom = t.space6 + navigationBottom,
@@ -665,7 +647,6 @@ fun LanghuanHomeV4(
 
 @Composable
 private fun HomeShelfHeaderV4(
-    collapsed: Boolean = false,
     searchOpen: Boolean,
     organizeOpen: Boolean,
     onSearch: () -> Unit,
@@ -675,20 +656,14 @@ private fun HomeShelfHeaderV4(
     val t = LocalLanghuanUiTokens.current
     // V93: a small title on the left and plain line icons on the right, like the reference
     // reader's 「正在阅读」 shelf. No filled circles or outlines around the buttons.
-    val collapse by androidx.compose.animation.core.animateFloatAsState(
-        if (collapsed) 1f else 0f, androidx.compose.animation.core.tween(220), label = "shelf-title",
-    )
     Row(
-        modifier = Modifier.fillMaxWidth().height((60f - 8f * collapse).dp),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "书架",
-            modifier = Modifier.weight(1f).semantics { heading() },
-            style = MaterialTheme.typography.headlineSmall.copy(
-                fontSize = (30f - 11f * collapse).sp,
-                lineHeight = (36f - 12f * collapse).sp,
-            ),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleLarge,
             color = t.foreground,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -1473,18 +1448,13 @@ private fun HomeShelfEmptyV4(
             .padding(vertical = t.space6, horizontal = t.space5),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // V95: the brand mark in a soft jade disc (search misses keep the search-off glyph).
-        Box(
-            Modifier.size(96.dp).background(t.primary.copy(alpha = 0.07f), androidx.compose.foundation.shape.CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (query.isBlank()) {
-                com.xiguli.langhuan.ui.design.LanghuanMarkV95(size = 56.dp, ink = t.primary.copy(alpha = 0.78f), moon = t.gold)
-            } else {
-                Icon(Icons.Outlined.SearchOff, contentDescription = null, modifier = Modifier.size(36.dp), tint = t.mutedForeground)
-            }
-        }
-        Spacer(Modifier.height(18.dp))
+        Icon(
+            imageVector = if (query.isBlank()) Icons.AutoMirrored.Outlined.LibraryBooks else Icons.Outlined.SearchOff,
+            contentDescription = null,
+            modifier = Modifier.size(40.dp),
+            tint = t.mutedForeground.copy(alpha = 0.6f),
+        )
+        Spacer(Modifier.height(t.space4))
         Text(
             text = when {
                 query.isNotBlank() -> "没有找到「${query.trim()}」"
