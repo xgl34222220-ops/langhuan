@@ -89,7 +89,8 @@ fun FlatTopBarV93(
         Text(
             text = title,
             modifier = Modifier.padding(horizontal = 56.dp),
-            style = MaterialTheme.typography.titleMedium,
+            // V95 type scale: sub-page titles 17 sp semibold (iOS nav-bar title size).
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 22.sp),
             color = t.foreground,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -114,8 +115,8 @@ fun FlatSectionLabelV93(text: String, modifier: Modifier = Modifier) {
     val t = LocalLanghuanUiTokens.current
     Text(
         text = text,
-        modifier = modifier.padding(top = t.space4, bottom = t.space1),
-        style = MaterialTheme.typography.labelMedium,
+        modifier = modifier.padding(top = 20.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp, letterSpacing = 0.4.sp),
         color = t.mutedForeground,
     )
 }
@@ -171,7 +172,7 @@ fun FlatListRowV93(
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.sp),
                 color = content,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -240,7 +241,7 @@ fun FlatSwitchRowV93(
             Spacer(Modifier.width(t.space4))
         }
         Column(Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge, color = t.foreground)
+            Text(text = title, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.sp), color = t.foreground)
             if (!subtitle.isNullOrBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
