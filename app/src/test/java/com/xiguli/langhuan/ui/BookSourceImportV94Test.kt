@@ -46,10 +46,10 @@ class BookSourceImportV94Test {
         assertEquals("searchkey=%BD%A3%C0%B4", request.body)
         // The cookie header was a single-quoted object literal too.
         assertTrue(gbk.headers.keys.any { it.equals("cookie", true) })
-        // 速读谷: lower-case 'post'; its optional cover rule needed @js: and is dropped.
+        // 速读谷: lower-case 'post'; since V95 its @js: cover rule is kept and runs in the sandbox.
         val sudugu = sources.first { it.name == "速读谷" }
         assertEquals("POST", buildSearchRequestV36(sudugu, "剑来").method)
-        assertEquals("", sudugu.searchCover)
+        assertTrue(sudugu.searchCover.contains("@js:"))
         assertEquals("class.bookbox", sudugu.searchList)
     }
 
@@ -61,18 +61,21 @@ class BookSourceImportV94Test {
         assertTrue(runCatching { parseSourceOptionsV94("not an object") }.exceptionOrNull()?.message.orEmpty().contains("JSON 对象"))
     }
 
-    @Test fun optionalScriptRulesAreDroppedButEssentialOnesSkipWithTheField() {
+    @Test fun scriptAndXpathRulesAreKeptButJavaClassScriptsAreDroppedOrSkippedWithTheField() {
         val base = """"bookSourceName":"甲","bookSourceUrl":"https://a.example","searchUrl":"/s?q={{key}}""""
-        val optional = parseBookSourcesV36("""{$base,"ruleSearch":{"bookList":"class.item","name":"tag.a@text","bookUrl":"tag.a@href","coverUrl":"tag.img@src@js:result+'x'","intro":"//div[@class='i']/text()"}}""")
-        val imported = optional.sources.single()
-        assertEquals("", imported.searchCover)
-        assertEquals("", imported.searchIntro)
-        assertTrue(optional.warnings.single(), optional.warnings.single().contains("搜索封面"))
-        assertTrue(optional.warnings.single().contains("XPath"))
+        val kept = parseBookSourcesV36("""{$base,"ruleSearch":{"bookList":"class.item","name":"tag.a@text","bookUrl":"tag.a@href","coverUrl":"tag.img@src@js:result+'x'","intro":"//div[@class='i']/text()"}}""")
+        val imported = kept.sources.single()
+        assertEquals("tag.img@src@js:result+'x'", imported.searchCover)
+        assertEquals("//div[@class='i']/text()", imported.searchIntro)
+        assertTrue(kept.warnings.toString(), kept.warnings.isEmpty())
 
-        val essential = parseBookSourcesV36("""{$base,"ruleSearch":{"bookList":"class.item","name":"tag.a@text","bookUrl":"tag.a@href"},"ruleContent":{"content":"<js>java.ajax(baseUrl)</js>"}}""")
+        val optional = parseBookSourcesV36("""{$base,"ruleSearch":{"bookList":"class.item","name":"tag.a@text","bookUrl":"tag.a@href","coverUrl":"@js:org.jsoup.Jsoup.parse(result).select('img').attr('src')"}}""")
+        assertEquals("", optional.sources.single().searchCover)
+        assertTrue(optional.warnings.single(), optional.warnings.single().contains("搜索封面") && optional.warnings.single().contains("Java"))
+
+        val essential = parseBookSourcesV36("""{$base,"ruleSearch":{"bookList":"class.item","name":"tag.a@text","bookUrl":"tag.a@href"},"ruleContent":{"content":"<js>java.webView(null, baseUrl, null)</js>"}}""")
         assertTrue(essential.sources.isEmpty())
-        assertTrue(essential.skipped.single(), essential.skipped.single().contains("正文"))
+        assertTrue(essential.skipped.single(), essential.skipped.single().contains("正文") && essential.skipped.single().contains("网页视图"))
     }
 
     @Test fun brokenDiscoveryDisablesDiscoveryInsteadOfLosingTheSource() {

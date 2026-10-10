@@ -26,6 +26,8 @@ private val ProjectJson = Json {
     explicitNulls = false
 }
 
+data class OnlineShelfBookV95(val id: String, val sourceId: String, val bookUrl: String, val title: String, val coverPath: String)
+
 data class StoryShelfItem(
     val id: String,
     val title: String,
@@ -334,6 +336,27 @@ class StoryProjectManager internal constructor(context: Context, private val db:
             activeOutline = activeChain(full, current),
         )
         return saveStructure(snapshot, loaded.draft)
+    }
+
+    /** Online shelf books (id, source, book url, cover path) for the V95 cover backfill. */
+    suspend fun onlineShelfBooksV95(): List<OnlineShelfBookV95> = storyDao.allHeaders().mapNotNull { row ->
+        runCatching { ProjectJson.decodeFromString(StorySnapshot.serializer(), row.snapshotJson).novel }.getOrNull()
+            ?.takeIf { it.sourceId.isNotBlank() && it.sourceBookUrl.isNotBlank() }
+            ?.let { OnlineShelfBookV95(it.id, it.sourceId, it.sourceBookUrl, it.title, it.coverPath) }
+    }
+
+    /**
+     * Sets a downloaded online cover. Only `novel.coverPath` changes, and only while the book still has
+     * no usable cover file, so a cover the user picked meanwhile is never replaced.
+     */
+    suspend fun setOnlineCoverIfMissingV95(novelId: String, coverPath: String): Boolean = db.withTransaction {
+        val header = storyDao.getHeader(novelId) ?: return@withTransaction false
+        val snapshot = ProjectJson.decodeFromString(StorySnapshot.serializer(), header.snapshotJson)
+        val current = snapshot.novel.coverPath
+        if (current.isNotBlank() && java.io.File(current).let { it.isFile && it.length() > 0L }) return@withTransaction false
+        val json = ProjectJson.encodeToString(StorySnapshot.serializer(), snapshot.copy(novel = snapshot.novel.copy(coverPath = coverPath)))
+        storyDao.updateSnapshot(novelId, json, header.updatedAt)
+        true
     }
 
     /** Online shelf identity is in the same transaction as its catalogue, not only preferences. */

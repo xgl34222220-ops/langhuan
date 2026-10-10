@@ -112,7 +112,7 @@ class SourceDiscoveryV41Test {
     }
 
     @Test fun requestOptionsFailExplicitlyWhileSourceHeadersStaySupported() {
-        for (field in listOf("headers", "header", "webView", "webJs", "js", "bodyJs", "dnsIp")) {
+        for (field in listOf("headers", "header", "webView", "webJs", "js", "bodyJs", "dnsIp", "proxy")) {
             val imported = parseBookSourcesV36("""{"bookSourceUrl":"https://books.example","searchUrl":"/list, {\"$field\":\"value\"}","ruleSearch":{"bookList":"li"}}""")
             assertTrue(imported.sources.isEmpty())
             assertTrue(imported.skipped.single().contains(field))
@@ -120,8 +120,12 @@ class SourceDiscoveryV41Test {
         val imported = parseBookSourcesV36("""{"bookSourceUrl":"https://books.example","header":{"User-Agent":"Fixture"},"searchUrl":"/search?q={{key}}","ruleSearch":{"bookList":"li"}}""")
         assertEquals("Fixture", imported.sources.single().headers["User-Agent"])
         assertTrue(imported.skipped.isEmpty())
-        assertTrue(runCatching { buildSearchRequestV36(source.copy(searchUrl = "/list?page={{page+1}}"), "") }.exceptionOrNull()?.message.orEmpty().contains("表达式"))
-        assertTrue(runCatching { buildSearchRequestV36(source.copy(searchUrl = "/list<1,2>.html"), "") }.exceptionOrNull()?.message.orEmpty().contains("首页"))
+        // V95: header objects, page expressions and <首页,后续页> lists are Legado features that now work.
+        val withHeaders = parseBookSourcesV36("""{"bookSourceUrl":"https://books.example","searchUrl":"/list, {\"headers\":{\"X-A\":\"1\"}}","ruleSearch":{"bookList":"li"}}""")
+        assertEquals("1", buildSearchRequestV36(withHeaders.sources.single(), "").headers["X-A"])
+        assertEquals("https://books.example/list?page=2", buildSearchRequestV36(source.copy(searchUrl = "/list?page={{page+1}}"), "").url)
+        assertEquals("https://books.example/list1.html", buildSearchRequestV36(source.copy(searchUrl = "/list<1,2>.html"), "").url)
+        assertEquals("https://books.example/list2.html", buildSearchRequestV36(source.copy(searchUrl = "/list<1,2>.html"), "", 5).url)
     }
 
     @Test fun dynamicCategoryControlsAreReportedInsteadOfBecomingEmptyHeadings() {

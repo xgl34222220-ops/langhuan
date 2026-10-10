@@ -273,6 +273,7 @@ internal class OnlineBooksViewModelV36(
 
     init {
         if (restoredAiSavedSource == null) clearAiSavedSourceCheckpoint()
+        backfillOnlineCoversV95()
         viewModelScope.launch {
             repository.observeProviders().collect { providers ->
                 providerObservationVersion++
@@ -726,6 +727,8 @@ internal class OnlineBooksViewModelV36(
             sourceAttemptV36 { runInterruptible(Dispatchers.IO) { loadBookCatalogueV50(source, book) } }
                 .onSuccess { catalogue ->
                     val existing = withContext(Dispatchers.IO) { projects.findOnlineStory(source.id, catalogue.book.bookUrl) }
+                    // A book shelved before V95 has no cover file; the detail page just gave us its cover.
+                    existing?.let { saveOnlineCoverV95(it, source, catalogue.book.cover) }
                     currentCoroutineContext().ensureActive()
                     _state.update { state ->
                         if (generation != detailGeneration.get()) state else state.copy(detailLoading = false,
@@ -763,6 +766,60 @@ internal class OnlineBooksViewModelV36(
         _state.update { it.copy(detail = null, detailLoading = false, detailError = null, detailStopped = false, error = null) }
     }
 
+    /**
+     * Downloads the online cover (with the source's Referer/User-Agent, through the guarded client) and
+     * stores it as the shelf cover. Never replaces a cover file the book already has; failures keep the
+     * typographic placeholder.
+     */
+    private fun saveOnlineCoverV95(novelId: String, source: BookSourceV36?, cover: String) {
+        if (cover.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            sourceAttemptV36 {
+                val current = projects.onlineShelfBooksV95().firstOrNull { it.id == novelId } ?: return@sourceAttemptV36
+                if (!onlineCoverMissingV95(current.coverPath)) return@sourceAttemptV36
+                val bytes = runInterruptible { downloadOnlineCoverV95(cover, source, maxBytes = MAX_SOURCE_BYTES_V36) }
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "封面无法解码" }
+                val path = persistOnlineCoverFileV95(java.io.File(context.filesDir, "covers"), novelId, bytes)
+                if (!projects.setOnlineCoverIfMissingV95(novelId, path)) java.io.File(path).delete()
+            }
+        }
+    }
+
+    /** Books shelved before V95 never got a cover: fetch each one's detail page once (bounded, spaced out). */
+    private fun backfillOnlineCoversV95() {
+        viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(4_000)
+            val prefs = context.getSharedPreferences("online_cover_backfill_v95", android.content.Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val books = sourceAttemptV36 { projects.onlineShelfBooksV95() }.getOrDefault(emptyList())
+                .filter { onlineCoverMissingV95(it.coverPath) && now - prefs.getLong(it.id, 0L) > 3L * 24 * 3600 * 1000 }
+                .take(30)
+            for (book in books) {
+                val source = _state.value.sources.firstOrNull { it.id == book.sourceId && it.enabled } ?: continue
+                prefs.edit().putLong(book.id, now).apply()
+                sourceAttemptV36 {
+                    val cover = runInterruptible {
+                        withSourceRuleScopeV95(SourceRuleScopeV95(source)) {
+                            val page = fetchDocumentV36(source, SourceRequestV36(book.bookUrl))
+                            bookDetailFromPageV95(source, OnlineBookV36(source.id, source.name, book.title, "", "", "", "", book.bookUrl), page).cover
+                        }
+                    }
+                    if (cover.isNotBlank()) {
+                        val bytes = runInterruptible { downloadOnlineCoverV95(cover, source, maxBytes = MAX_SOURCE_BYTES_V36) }
+                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "封面无法解码" }
+                        val path = persistOnlineCoverFileV95(java.io.File(context.filesDir, "covers"), book.id, bytes)
+                        if (!projects.setOnlineCoverIfMissingV95(book.id, path)) java.io.File(path).delete()
+                    }
+                }
+                kotlinx.coroutines.delay(1_500)
+            }
+        }
+    }
+
     /** Save identity and catalogue only. Reading and offline caching are separate actions. */
     fun addToShelf() {
         val detail = _state.value.detail ?: return
@@ -779,6 +836,7 @@ internal class OnlineBooksViewModelV36(
                     )).snapshot.novel.id
                 }
             }.onSuccess { id ->
+                saveOnlineCoverV95(id, _state.value.sources.firstOrNull { it.id == detail.book.sourceId }, detail.book.cover)
                 _state.update { state -> state.copy(addingToShelf = false,
                     detail = state.detail?.takeIf { it.book == detail.book }?.copy(shelfStoryId = id) ?: state.detail,
                     message = "《${detail.book.name}》已加入书架，正文按阅读需要加载") }

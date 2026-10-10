@@ -111,17 +111,16 @@ internal fun sourceJsonErrorV94(error: Throwable): String {
     }
 }
 
-/** Why a rule cannot run in the static HTML engine, or null when it can. */
+/**
+ * Why a rule cannot run, or null when it can. Since V95 JSONPath, XPath and sandboxed scripts run;
+ * only scripts that need Java classes, a WebView or files are refused.
+ */
 internal fun sourceRuleUnsupportedV94(rule: String): String? {
     val text = rule.trim()
     if (text.isEmpty()) return null
-    return when {
-        text.length > 8192 -> "规则过长"
-        text.contains("<js>", true) || text.contains("@js:", true) || text.startsWith("{{") || text.contains("java.") -> "JavaScript"
-        text.startsWith("@json:", true) || text.startsWith("$.") || text.startsWith("$[") -> "JSON 接口"
-        text.startsWith("//") || text.startsWith("@xpath:", true) -> "XPath"
-        else -> null
-    }
+    if (text.length > 64 * 1024) return "规则过长"
+    val scripted = text.contains("<js>", true) || text.contains("@js:", true) || text.contains("{{") || text.contains("java.")
+    return if (scripted) sourceScriptUnsupportedV95(text) else null
 }
 
 /** A field that can be dropped with a notice instead of rejecting the whole source. */

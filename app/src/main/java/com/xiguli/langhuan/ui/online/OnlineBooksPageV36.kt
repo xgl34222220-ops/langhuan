@@ -669,10 +669,10 @@ private val onlineCoverCacheV36 = object : android.util.LruCache<String, android
 private fun rememberOnlineCoverV36(url: String): androidx.compose.ui.graphics.ImageBitmap? {
     var bitmap by remember(url) { mutableStateOf(onlineCoverCacheV36.get(url)) }
     LaunchedEffect(url) {
-        if (bitmap != null || !url.startsWith("http")) return@LaunchedEffect
+        if (bitmap != null || !(url.startsWith("http") || url.startsWith("data:image"))) return@LaunchedEffect
         bitmap = kotlinx.coroutines.runInterruptible(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
-                val bytes = fetchSourceBytesV36(url, maxBytes = 2 * 1024 * 1024)
+                val bytes = downloadOnlineCoverV95(url, maxBytes = 2 * 1024 * 1024)
                 val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                 require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 40_000_000L) { "封面尺寸无效或过大" }

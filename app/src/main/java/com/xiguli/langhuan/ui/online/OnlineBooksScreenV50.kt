@@ -1375,7 +1375,7 @@ private fun rememberOnlineCoverV50(
             try {
                 // V92: covers were decoded at full size (often 1000×1400+, ~6 MB each) into a
                 // 32-entry cache; cap the download and downsample to list size like V36 does.
-                decodeOnlineCoverV92(fetchSourceBytesV36(coverUrl, maxBytes = 2 * 1024 * 1024))
+                decodeOnlineCoverV92(downloadOnlineCoverV95(coverUrl, maxBytes = 2 * 1024 * 1024))
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 null

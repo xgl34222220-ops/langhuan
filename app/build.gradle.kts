@@ -80,6 +80,8 @@ dependencies {
     implementation(libs.jsoup)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.re2j:re2j:1.8")
+    // Legado-compatible source scripts: pure-Java interpreter (no native libs), sandboxed in SourceJsEngineV95.
+    implementation("org.mozilla:rhino:1.7.15.1")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.material.kolor)
     implementation(libs.haze)
