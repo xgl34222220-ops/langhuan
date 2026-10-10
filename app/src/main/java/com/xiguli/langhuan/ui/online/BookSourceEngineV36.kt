@@ -106,12 +106,25 @@ internal val BookSourceJsonV36 = Json { ignoreUnknownKeys = true; isLenient = tr
 
 // ---- Import --------------------------------------------------------------------------------
 
-internal data class BookSourceImportResultV36(val sources: List<BookSourceV36>, val skipped: List<String>)
+internal data class BookSourceImportResultV36(
+    val sources: List<BookSourceV36>,
+    val skipped: List<String>,
+    /** Sources that were imported with some optional rule dropped or discovery disabled. */
+    val warnings: List<String> = emptyList(),
+    /** Existing ids replaced by an explicit edit/update; imports never fill this. */
+    val updated: Int = 0,
+)
 
 /** Parses a Langhuan or Legado source list (array or single object). */
 internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
     require(raw.length <= MAX_SOURCE_BYTES_V36) { "书源文件超过 4 MiB 限制" }
-    val root = BookSourceJsonV36.parseToJsonElement(raw.trim())
+    val text = normalizeSourceTextV94(raw)
+    require(text.isNotEmpty()) { "书源内容为空" }
+    require(text.startsWith("[") || text.startsWith("{")) {
+        if (text.startsWith("<")) "内容是网页而不是书源 JSON，请确认链接直接指向 .json 书源文件"
+        else "不是书源 JSON：书源应以 [ 或 { 开头"
+    }
+    val root = BookSourceJsonV36.parseToJsonElement(text)
     val items = when (root) {
         is JsonArray -> root.toList()
         is JsonObject -> listOf(root)
@@ -120,30 +133,56 @@ internal fun parseBookSourcesV36(raw: String): BookSourceImportResultV36 {
     require(items.size <= 500) { "单次最多导入 500 个书源" }
     val sources = ArrayList<BookSourceV36>()
     val skipped = ArrayList<String>()
+    val warnings = ArrayList<String>()
     items.forEach { element ->
-        val obj = element as? JsonObject ?: return@forEach
-        val source = if (obj.containsKey("bookSourceUrl")) fromLegadoV36(obj) else runCatching {
+        val obj = element as? JsonObject ?: run { skipped += "未命名书源（不是对象）"; return@forEach }
+        val legado = obj.containsKey("bookSourceUrl")
+        val decoded = if (legado) fromLegadoV36(obj) else runCatching {
             BookSourceJsonV36.decodeFromJsonElement(BookSourceV36.serializer(), obj)
+                // A hand-made source (V94 editor) has no id yet: like Legado, its site address is the id.
+                .let { if (it.id.isBlank()) it.copy(id = manualSourceIdV94(it.baseUrl)) else it }
         }.getOrNull()
-        val name = source?.name ?: obj.string("bookSourceName").ifBlank { "未命名书源" }
-        val unsupported = if (obj.containsKey("bookSourceUrl")) unsupportedLegadoCapabilitiesV41(obj) else emptyList()
+        val name = decoded?.name?.ifBlank { null } ?: obj.string("bookSourceName").ifBlank { obj.string("name").ifBlank { "未命名书源" } }
+        val sourceType = (obj["bookSourceType"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+        val unsupported = if (legado) unsupportedLegadoCapabilitiesV41(obj) else emptyList()
+        val sanitized = decoded?.let(::sanitizeImportedSourceV94)
+        val source = sanitized?.source
         val discoveryIssues = source?.let { sourceDiscoveryCatalogV41(it.copy(enabled = true, enabledExplore = true)).issues }.orEmpty()
+        val discoveryUsable = source?.let { sourceDiscoveriesV41(it.copy(enabled = true, enabledExplore = true)).isNotEmpty() } ?: false
         val searchRequestIssue = source?.takeIf { it.searchUrl.isNotBlank() }?.let {
             runCatching { buildSearchRequestV36(it, "test") }.exceptionOrNull()?.message
         }
         when {
+            sourceType != 0 -> skipped += "$name（${when (sourceType) { 1 -> "音频"; 2 -> "图片/漫画"; 3 -> "文件下载"; else -> "非文字" }}书源，暂只支持文字小说）"
             unsupported.isNotEmpty() -> skipped += "$name（暂不支持：${unsupported.joinToString("、")}）"
+            source == null -> skipped += "$name（格式无法识别：缺少 bookSourceUrl 或 id/name/baseUrl）"
+            sourceRuleUnsupportedV94(source.searchUrl) != null ->
+                skipped += "$name（搜索地址 使用了 ${sourceRuleUnsupportedV94(source.searchUrl)}，暂不支持）"
             searchRequestIssue != null -> skipped += "$name（searchUrl：$searchRequestIssue）"
-            discoveryIssues.isNotEmpty() -> skipped += "$name（发现规则无效：${discoveryIssues.joinToString("；")}）"
-            source == null -> skipped += "$name（格式无法识别）"
+            discoveryIssues.isNotEmpty() && !discoveryUsable && source.searchUrl.isBlank() -> skipped += "$name（发现规则无效：${discoveryIssues.joinToString("；")}）"
             source.id.isBlank() || runCatching { publicSourceUrlV36(source.baseUrl) }.isFailure -> skipped += "$name（网站地址无效）"
             (source.searchUrl.isBlank() || source.searchList.isBlank()) &&
-                (source.exploreList.isBlank() || sourceDiscoveriesV41(source.copy(enabled = true, enabledExplore = true)).isEmpty()) -> skipped += "$name（没有可用的搜索或发现规则）"
-            !bookSourceSupportedV36(source) -> skipped += "$name（使用了 JS 或 JSON 接口，暂不支持）"
-            else -> sources += source
+                (source.exploreList.isBlank() || !discoveryUsable) -> skipped += "$name（没有可用的搜索或发现规则）"
+            !bookSourceSupportedV36(source) -> skipped += "$name（${unsupportedEssentialRuleV94(source)}，暂不支持）"
+            else -> {
+                sources += source
+                sanitized.notices.forEach { warnings += "$name：$it" }
+            }
         }
     }
-    return BookSourceImportResultV36(sources, skipped)
+    return BookSourceImportResultV36(sources, skipped, warnings)
+}
+
+/** Names the first essential rule that still needs scripts after optional rules were dropped. */
+private fun unsupportedEssentialRuleV94(source: BookSourceV36): String {
+    val essential = listOf(
+        "搜索地址" to source.searchUrl, "搜索列表" to source.searchList, "搜索书名" to source.searchName,
+        "搜索链接" to source.searchBookUrl, "目录地址" to source.infoTocUrl, "章节列表" to source.tocList,
+        "章节名" to source.tocName, "章节链接" to source.tocUrl, "正文" to source.contentText,
+        "发现列表" to source.exploreList, "发现书名" to source.exploreName, "发现链接" to source.exploreBookUrl,
+    )
+    val hit = essential.firstNotNullOfOrNull { (label, rule) -> sourceRuleUnsupportedV94(rule)?.let { "$label 使用了 $it" } }
+    return hit ?: "使用了 JS 或 JSON 接口"
 }
 
 private fun JsonObject.string(key: String): String =
@@ -151,7 +190,7 @@ private fun JsonObject.string(key: String): String =
 
 private fun JsonObject.obj(key: String): JsonObject? = when (val v = this[key]) {
     is JsonObject -> v
-    is JsonPrimitive -> v.contentOrNull?.let { runCatching { BookSourceJsonV36.parseToJsonElement(it).jsonObject }.getOrNull() }
+    is JsonPrimitive -> v.contentOrNull?.takeIf { it.isNotBlank() }?.let { runCatching { parseSourceOptionsV94(it) }.getOrNull() }
     else -> null
 }
 
@@ -172,7 +211,7 @@ private fun fromLegadoV36(obj: JsonObject): BookSourceV36 {
     val toc = obj.obj("ruleToc")
     val content = obj.obj("ruleContent")
     val headers = obj.obj("header")?.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.contentOrNull?.let { k to it } }?.toMap().orEmpty()
-    val base = obj.string("bookSourceUrl").trimEnd('/').substringBefore("#")
+    val base = obj.string("bookSourceUrl").trim().trimEnd('/').substringBefore("#")
     return BookSourceV36(
         id = base.ifBlank { obj.string("bookSourceName") },
         name = obj.string("bookSourceName").ifBlank { base },
@@ -404,8 +443,7 @@ internal fun buildSearchRequestV36(source: BookSourceV36, key: String, page: Int
     val optionIndex = Regex(",\\s*(?=\\{)").find(raw)?.range?.first ?: -1
     val urlPart = if (optionIndex > 0) raw.substring(0, optionIndex) else raw
     val options = if (optionIndex > 0) {
-        BookSourceJsonV36.parseToJsonElement(raw.substring(optionIndex + 1)) as? JsonObject
-            ?: error("请求选项必须是 JSON 对象")
+        parseSourceOptionsV94(raw.substring(optionIndex + 1))
     } else null
     require(options == null || options.keys.all { it in setOf("method", "body", "charset") }) {
         "请求包含不支持的选项：${options?.keys.orEmpty() - setOf("method", "body", "charset") }"
@@ -447,7 +485,7 @@ internal fun publicSourceUrlV36(raw: String): HttpUrl {
         !host.endsWith(".lan") && !host.endsWith(".home")) { "不允许访问本机或内网书源" }
     // Numeric literals are rejected here as well as in DNS, so imports fail early.
     if (host.contains(':') || host.all { it.isDigit() || it == '.' }) {
-        require(publicSourceAddressV36(InetAddress.getByName(host))) { "不允许访问本机或内网书源" }
+        require(connectableSourceAddressV54(InetAddress.getByName(host))) { "不允许访问本机或内网书源" }
     }
     return url.newBuilder().fragment(null).build()
 }
@@ -1005,5 +1043,5 @@ internal fun mergeSourceImportsV36(existing: List<BookSourceV36>, incoming: Book
         if (merged.containsKey(source.id)) skipped += "${source.name}（ID 已存在，保留原书源；如需修改请使用编辑）"
         else merged[source.id] = source
     }
-    return BookSourceImportResultV36(merged.values.sortedBy { it.name }, skipped)
+    return BookSourceImportResultV36(merged.values.sortedBy { it.name }, skipped, incoming.warnings)
 }

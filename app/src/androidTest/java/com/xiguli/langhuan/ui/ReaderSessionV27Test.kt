@@ -14,7 +14,10 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xiguli.langhuan.domain.ChapterDraft
+import com.xiguli.langhuan.ui.design.PaperReaderThemeV44
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
@@ -23,6 +26,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
+/**
+ * V27 window-session and navigation checks, migrated in V92 from the unrouted legacy screens
+ * (HeroReaderPageV13 / ShelfQingmoFunctionalV9) to what LanghuanRootV4 actually shows: the V30
+ * reader session ([ReaderSessionV30]) and the live shelf ([LanghuanHomeV4]). Screenshot names
+ * are kept so earlier evidence stays comparable.
+ */
 class ReaderSessionV27Test {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
     private val book = ReaderBookUi("reader-qa", "夜航记", "悬疑", "渡船停在无人的码头。", "", "", 12000, 100000, 1, 1L)
@@ -51,31 +60,36 @@ class ReaderSessionV27Test {
     private fun barsVisible(): Boolean = ViewCompat.getRootWindowInsets(rule.activity.window.decorView)
         ?.isVisible(WindowInsetsCompat.Type.statusBars()) == true
 
+    private fun readerLaidOut(): Boolean = rule.onAllNodesWithContentDescription("阅读正文")
+        .fetchSemanticsNodes().any { it.config.getOrNull(SemanticsProperties.StateDescription)?.startsWith("第") == true }
+
     @Test fun chapterChangesKeepImmersionAndToolsStayAligned() {
         val selected = mutableIntStateOf(0)
         val reading = mutableStateOf(true)
+        lateinit var settings: ReaderSettingsV30
         rule.runOnUiThread {
             rule.activity.enableEdgeToEdge()
-            rule.activity.getSharedPreferences("reader_qingmo_v9", 0).edit().clear()
+            val prefs = rule.activity.getSharedPreferences("reader_qingmo_v9", 0)
+            prefs.edit().clear()
                 .putBoolean("immersive", true).putFloat("font", 20f).putFloat("line", 1.65f)
-                .putFloat("paragraph", 8f).putFloat("sidePadding", 22f).putString("fontKey", "sans").commit()
+                .putFloat("paragraph", 8f).putFloat("sidePadding", 22f).putString("fontKey", "sans")
+                .putString("pageMode", "none").putBoolean("clickAnimation", false).commit()
+            settings = ReaderSettingsV30(prefs)
         }
         rule.setContent {
-            MaterialTheme {
+            PaperReaderThemeV44 {
                 if (reading.value) {
                     ReaderWindowSessionV27(true)
                     key(selected.intValue) {
                         val chapter = chapters[selected.intValue]
-                        HeroReaderPageV13(book, LibraryExperienceState(stories = listOf(book), chapters = chapters, readingChapter = chapter), chapter,
-                            startPanel = false, interactionEnabled = true,
-                            onBack = { reading.value = false }, onOpenChapter = { selected.intValue = it - 1 },
-                            onEdit = {}, onWriting = {}, onStory = {})
+                        ReaderSessionV30(book, chapters, chapter.id, settings, false, true,
+                            {}, { reading.value = false }, {}, {}, {})
                     }
                 } else Text("书库")
             }
         }
         rule.waitUntil(10000) { !barsVisible() }
-        rule.waitForIdle()
+        rule.waitUntil(10000) { readerLaidOut() }
         screenshot("01-reader")
         val flash = AtomicBoolean(false)
         val view = rule.activity.window.decorView
@@ -91,40 +105,57 @@ class ReaderSessionV27Test {
         }
         rule.runOnUiThread { view.viewTreeObserver.removeOnPreDrawListener(observer) }
         assertFalse("A frame exposed the status bar during chapter change", flash.get())
-        rule.onRoot().performTouchInput { click(center) }
-        rule.onNodeWithText("设置").assertIsDisplayed()
+        rule.waitUntil(10000) { readerLaidOut() }
+        rule.onNodeWithContentDescription("阅读正文").performTouchInput { click(center) }
+        rule.waitUntil(10000) {
+            rule.onAllNodesWithContentDescription("阅读菜单：目录").fetchSemanticsNodes().isNotEmpty()
+        }
         screenshot("02-reader-tools")
-        val centers = listOf("排版预设", "主题", "字体", "字号").map {
-            rule.onAllNodesWithContentDescription(it, useUnmergedTree = true).fetchSemanticsNodes().minBy { node -> node.boundsInRoot.width }.boundsInRoot.center.x
+        val centers = listOf("详情", "目录", "更多").map { label ->
+            rule.onAllNodesWithContentDescription("阅读菜单：$label", useUnmergedTree = true)
+                .fetchSemanticsNodes().minBy { node -> node.boundsInRoot.width }.boundsInRoot.center.x
         }
         val gaps = centers.zipWithNext { a, b -> b - a }
-        assertTrue("Tool icon columns do not have equal spacing", gaps.max() - gaps.min() < 2f)
-        rule.onNodeWithText("目录").performClick()
-        rule.onNodeWithText("正在读").assertIsDisplayed()
+        assertTrue("Menu tabs do not have equal spacing: $centers", gaps.max() - gaps.min() < 2f)
+        rule.onNodeWithContentDescription("阅读菜单：目录").performClick()
+        rule.onNodeWithText("正在阅读").assertIsDisplayed()
         screenshot("03-directory")
-        rule.onNodeWithText("设置").performClick()
+        rule.onNodeWithContentDescription("阅读菜单：详情").performClick()
+        rule.onNodeWithText("当前阅读").assertExists()
         screenshot("08-reader-tools-settled")
         rule.onNodeWithContentDescription("返回书架").performClick()
         rule.waitUntil(10000) { barsVisible() }
+        rule.onNodeWithText("书库").assertIsDisplayed()
     }
 
     @Test fun shelfAndProfileHaveWorkingNavigation() {
+        var opened = ""
+        val other = book.copy(id = "other", title = "山中来信", genre = "导入作品")
         rule.setContent {
             LanghuanStableTheme {
-                ShelfQingmoFunctionalV9(LibraryExperienceState(stories = listOf(book, book.copy(id = "other", title = "山中来信")), libraryLoaded = true),
-                    LocalBookImportUiStateV1(), null, {}, {}, {}, {}, {}, {}, {}, {})
+                LanghuanHomeV4(
+                    state = LibraryExperienceState(stories = listOf(book, other), libraryLoaded = true),
+                    importState = LocalBookImportUiStateV1(),
+                    onOpenBook = { opened += "open:$it," }, onImportLocal = {}, onDeleteBook = {},
+                    onCreate = {}, onOpenTavern = {}, onOnline = { opened += "online," },
+                )
             }
         }
-        rule.onNodeWithText("首页").assertIsDisplayed()
+        rule.onNodeWithText("书架").assertIsDisplayed()
+        rule.onNodeWithText("山中来信").assertIsDisplayed()
         screenshot("04-home")
-        rule.onNodeWithText("书库").performClick()
-        rule.onNodeWithText("我的书库").assertIsDisplayed()
+        // The 在写 tab keeps only the user's own works; the imported novel leaves the list.
+        rule.onNodeWithText("在写").performClick()
+        rule.waitUntil(5000) { rule.onAllNodesWithText("山中来信").fetchSemanticsNodes().isEmpty() }
+        // The book can show both in the continue-reading card and its shelf row.
+        rule.onAllNodesWithText("夜航记").onFirst().assertIsDisplayed()
         screenshot("05-library")
-        rule.onNodeWithText("我的").performClick()
-        rule.onNodeWithText("阅读记录").assertIsDisplayed()
-        screenshot("06-profile")
-        rule.onNodeWithText("设置").performClick()
-        rule.onNodeWithText("AI 与模型").assertIsDisplayed()
+        rule.onNodeWithText("全部").performClick()
+        rule.onNodeWithText("山中来信").performClick()
+        rule.runOnIdle { assertTrue(opened, opened.contains("open:other,")) }
+        // V94: 在线书城 and 我的 are bottom-bar tabs owned by the root, not shelf header buttons.
+        assertTrue(rule.onAllNodesWithContentDescription("更多功能").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithContentDescription("整理书架").assertIsDisplayed()
         screenshot("07-settings")
     }
 }

@@ -400,14 +400,11 @@ fun CoverPreviewV3(path: String, title: String, modifier: Modifier = Modifier, t
     } else if (fileExists) {
         LanghuanSkeletonV31(modifier, RoundedCornerShape(t.radiusSm))
     } else {
-        Box(
-            modifier = modifier
-                .clip(RoundedCornerShape(t.radiusSm))
-                .background(t.muted),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(title.take(10), modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.titleMedium, color = t.foreground)
-        }
+        // V96: a cloth-bound generated cover instead of a flat grey box.
+        com.xiguli.langhuan.ui.design.CoverPlaceholderV96(
+            title = title,
+            modifier = modifier.clip(RoundedCornerShape(t.radiusSm)),
+        )
     }
 }
 

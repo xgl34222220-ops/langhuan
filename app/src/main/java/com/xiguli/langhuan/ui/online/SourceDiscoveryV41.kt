@@ -46,8 +46,7 @@ internal fun sourceDiscoveryCatalogV41(source: BookSourceV36): SourceDiscoveryCa
         require(!template.replace("{{page}}", "1").contains("{{")) { "仅支持 {{page}} 分页，不支持脚本表达式" }
         val optionsAt = template.indexOf(",{")
         if (optionsAt > 0) {
-            val options = BookSourceJsonV36.parseToJsonElement(template.substring(optionsAt + 1)) as? JsonObject
-                ?: error("请求选项必须是 JSON 对象")
+            val options = parseSourceOptionsV94(template.substring(optionsAt + 1))
             require(options.keys.all { it in setOf("method", "body", "charset") }) { "请求包含不支持的选项：${options.keys - setOf("method", "body", "charset")}" }
         }
         val request = buildSearchRequestV36(source.copy(searchUrl = template), "", 1)
@@ -79,7 +78,8 @@ internal fun sourceDiscoveryCatalogV41(source: BookSourceV36): SourceDiscoveryCa
             val label = (obj["title"] as? JsonPrimitive)?.contentOrNull ?: (obj["name"] as? JsonPrimitive)?.contentOrNull.orEmpty()
             // A title-only object is a Legado visual section heading, not a category to fetch.
             val url = (obj["url"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-            if (url.isBlank() && label.isNotBlank()) null else entry(label, url)
+            // An empty object (title and url both blank) is a Legado layout spacer cell.
+            if (url.isBlank()) null else entry(label, url)
         }
     } else {
         val parts = raw.split("&&", "\n").filter { it.isNotBlank() }

@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="launcher_background">#7257D8</color>
+    <!-- Window surface matches the app's paper background (LanghuanLightUiTokens.background). -->
+    <color name="langhuan_window_v95">#F7F5F0</color>
+    <!-- V97 brand: frosted-glass books + leaf on an emerald → mint gradient. Launch surface is a
+         pale mint paper (deep emerald at night); ink/accent colour the slow-start screen. -->
+    <color name="splash_bg_v97">#EEF5F1</color>
+    <color name="splash_ink_v97">#17392E</color>
+    <color name="splash_accent_v97">#1F7A5C</color>
 </resources>
-

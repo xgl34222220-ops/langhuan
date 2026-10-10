@@ -3,8 +3,19 @@
     <style name="Theme.Langhuan" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">#F5F0FF</item>
-        <item name="android:statusBarColor">#F5F0FF</item>
+        <item name="android:windowBackground">@color/langhuan_window_v95</item>
+        <item name="android:navigationBarColor">@color/langhuan_window_v95</item>
+        <item name="android:statusBarColor">@color/langhuan_window_v95</item>
+    </style>
+
+    <!-- V97 launch screen (androidx SplashScreen: system splash on API 31+, emulated below):
+         pale mint surface (deep emerald at night) with the glass-books icon tile centred.
+         The starting window background is the same colour so nothing flashes white. -->
+    <style name="Theme.Langhuan.Starting" parent="Theme.SplashScreen">
+        <item name="android:windowBackground">@color/splash_bg_v97</item>
+        <item name="windowSplashScreenBackground">@color/splash_bg_v97</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_glass_v97</item>
+        <item name="windowSplashScreenAnimationDuration">300</item>
+        <item name="postSplashScreenTheme">@style/Theme.Langhuan</item>
     </style>
 </resources>
-
