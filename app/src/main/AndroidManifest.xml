@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Readium 原版 EPUB 渲染依赖 WebView 的网络栈（仅本地资源请求，不访问外网）。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".LanghuanApplication"
