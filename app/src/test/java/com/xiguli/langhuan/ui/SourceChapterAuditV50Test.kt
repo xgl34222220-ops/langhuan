@@ -141,18 +141,19 @@ class SourceChapterAuditV50Test {
         assertRejected("未提取到可读文字") { audit(page("")) }
     }
 
-    @Test fun selfLoopIncludingFragmentsIsIncomplete() {
-        assertRejected("分页出现循环") { audit(page(next = "${chapter.url}#body")) }
+    // V97 (Legado BookContent): a "next page" link back to a page already read ends the chapter.
+    // Many 笔趣阁-style sites point the last page's 下一页 at itself or at the first page.
+    @Test fun selfLinkIncludingFragmentsEndsTheChapter() {
+        assertEquals("他关掉电视，窗外的雨还在下。", audit(page(next = "${chapter.url}#body")).text)
     }
 
-    @Test fun twoPageLoopDoesNotReturnPartialText() {
+    @Test fun twoPageLoopEndsAfterBothPagesWithoutRereading() {
         var requests = 0
-        assertRejected("分页出现循环") {
-            loadChapterAuditV50(source, book, chapter, setOf(chapter.url)) { _, request ->
-                requests++
-                Jsoup.parse(page(next = if (requests == 1) "${chapter.url}/2" else chapter.url), request.url)
-            }
-        }
+        val text = loadChapterAuditV50(source, book, chapter, setOf(chapter.url)) { _, request ->
+            requests++
+            Jsoup.parse(page(body = "第${requests}页。", next = if (requests == 1) "${chapter.url}/2" else chapter.url), request.url)
+        }.text
+        assertEquals("第1页。\n第2页。", text)
         assertEquals(2, requests)
     }
 

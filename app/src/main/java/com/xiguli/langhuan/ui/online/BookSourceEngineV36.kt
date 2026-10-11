@@ -394,7 +394,7 @@ internal fun attrValueV36(element: Element, attr: String): String? = when (attr)
     "html" -> htmlToTextV36(element)
     "all" -> element.outerHtml()
     "href", "src" -> element.absUrl(attr).ifBlank { element.attr(attr) }
-    else -> element.attr(attr).ifBlank { null }
+    else -> if (attr.startsWith("abs:")) element.absUrl(attr.removePrefix("abs:")).ifBlank { null } else element.attr(attr).ifBlank { null }
 }
 
 /**
@@ -416,6 +416,15 @@ internal fun selectChainV36(context: Element, rule: String, valueRule: Boolean):
         return selected to attr
     }
     val segments = rule.split('@').filter { it.isNotEmpty() }
+    // Legado (AnalyzeByJSoup.getString): the last segment of a value rule is always an attribute name,
+    // e.g. `@onclick`, `@lay-href`, `@abs:href`. Use that reading when the selected elements carry it.
+    // `@onclick` alone: an attribute of the current element.
+    if (valueRule && rule.startsWith("@") && segments.size == 1 && legadoAttrNameV97(segments[0])) return listOf(context) to segments[0]
+    if (valueRule && segments.size > 1 && !isAttrSegmentV36(segments.last()) && legadoAttrNameV97(segments.last())) {
+        val (owners, _) = selectChainV36(context, segments.dropLast(1).joinToString("@"), valueRule = false)
+        val name = segments.last()
+        if (owners.any { it.hasAttr(name.removePrefix("abs:")) }) return owners to name
+    }
     var attr: String? = null
     val steps = if (valueRule && segments.isNotEmpty() && isAttrSegmentV36(segments.last())) {
         attr = segments.last()
@@ -436,6 +445,12 @@ internal fun selectChainV36(context: Element, rule: String, valueRule: Boolean):
 }
 
 private fun isAttrSegmentV36(segment: String): Boolean = segment in VALUE_ATTRS || segment.startsWith("data-")
+
+private val LEGADO_ATTR_NAME_V97 = Regex("^(abs:)?[A-Za-z_][-A-Za-z0-9_]*$")
+private val LEGADO_TYPE_SEGMENT_V97 = Regex("^(class|id|tag|text|children)([.!]|$)")
+/** A plain attribute name (no selector syntax). */
+internal fun legadoAttrNameV97(segment: String): Boolean =
+    segment.length <= 64 && LEGADO_ATTR_NAME_V97.matches(segment) && !LEGADO_TYPE_SEGMENT_V97.containsMatchIn(segment)
 
 private fun applySegmentV36(element: Element, rawSegment: String): List<Element> {
     // Legado list index: tag.li[0], tag.li[-1], tag.li[1:3], tag.li[!0]
@@ -719,8 +734,72 @@ internal fun sourceHttpFailureV44(
 }
 
 // Waiting is interruptible. runInterruptible in callers cancels the actual socket, not just UI state.
-private fun awaitSourceResponseV36(request: Request, maxBytes: Int, remainingMs: Long): SourceResponseV36 {
-    val call = sourceClientV36.newCall(request)
+/**
+ * Book sites very often serve an incomplete or expired certificate chain, which Legado accepts (it trusts
+ * every certificate for source requests). Langhuan verifies first; only after a certificate failure the
+ * same request is retried without verification, and then without the source's Cookie/Authorization
+ * headers. The host is remembered for this process so later requests skip the failing attempt.
+ */
+private val lenientTlsHostsV97: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+@android.annotation.SuppressLint("CustomX509TrustManager", "TrustAllX509TrustManager")
+private object LenientTrustV97 : javax.net.ssl.X509TrustManager {
+    override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) = Unit
+    override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) = Unit
+    override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
+}
+
+private val sourceLenientClientV97 by lazy {
+    val context = javax.net.ssl.SSLContext.getInstance("TLS").apply { init(null, arrayOf(LenientTrustV97), java.security.SecureRandom()) }
+    sourceClientV36.newBuilder()
+        .sslSocketFactory(context.socketFactory, LenientTrustV97)
+        .hostnameVerifier { _, _ -> true }
+        .build()
+}
+
+internal fun sourceCertificateFailureV97(error: Throwable): Boolean {
+    var current: Throwable? = error
+    repeat(6) {
+        val e = current ?: return false
+        if (e is javax.net.ssl.SSLPeerUnverifiedException || e is java.security.cert.CertificateException ||
+            e is java.security.cert.CertPathValidatorException) return true
+        if (e is javax.net.ssl.SSLHandshakeException && Regex("certif|PKIX|path|trust|expired|validity", RegexOption.IGNORE_CASE)
+                .containsMatchIn(e.message.orEmpty())) return true
+        current = e.cause
+    }
+    return false
+}
+
+/** A pooled keep-alive connection the site already closed: one fresh retry, as browsers do. */
+internal fun sourceStaleConnectionV97(error: Throwable): Boolean =
+    error is java.io.EOFException || error.message.orEmpty().contains("unexpected end of stream", ignoreCase = true) ||
+        error.cause?.let { it is java.io.EOFException } == true
+
+private fun fetchWithFallbacksV97(request: Request, url: HttpUrl, maxBytes: Int, deadline: Long): SourceResponseV36 {
+    fun remaining(): Long = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()).also {
+        if (it <= 0) throw java.net.SocketTimeoutException("书源请求超时")
+    }
+    fun lenient(r: Request) = r.newBuilder().removeHeader("Cookie").removeHeader("Authorization").build()
+    val lenientHost = url.isHttps && url.host in lenientTlsHostsV97
+    val client = if (lenientHost) sourceLenientClientV97 else sourceClientV36
+    val first = if (lenientHost) lenient(request) else request
+    return try {
+        awaitSourceResponseV36(first, maxBytes, remaining(), client)
+    } catch (error: IOException) {
+        when {
+            url.isHttps && !lenientHost && sourceCertificateFailureV97(error) -> {
+                lenientTlsHostsV97 += url.host
+                awaitSourceResponseV36(lenient(request), maxBytes, remaining(), sourceLenientClientV97)
+            }
+            sourceStaleConnectionV97(error) ->
+                awaitSourceResponseV36(first.newBuilder().header("Connection", "close").build(), maxBytes, remaining(), client)
+            else -> throw error
+        }
+    }
+}
+
+private fun awaitSourceResponseV36(request: Request, maxBytes: Int, remainingMs: Long, client: OkHttpClient = sourceClientV36): SourceResponseV36 {
+    val call = client.newCall(request)
     call.timeout().timeout(remainingMs, TimeUnit.MILLISECONDS)
     val latch = CountDownLatch(1)
     var result: SourceResponseV36? = null
@@ -794,7 +873,7 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
             .toRequestBody(contentType.toMediaType()) else null
         SourceCooldownV46.check(url)
         val response = try {
-            awaitSourceResponseV36(request.method(method, requestBody).build(), maxBytes, remaining)
+            fetchWithFallbacksV97(request.method(method, requestBody).build(), url, maxBytes, deadline)
         } catch (error: Exception) {
             throw sourceDnsWithRouteV55(error, routeHosts)
         }
@@ -805,7 +884,10 @@ private fun fetchSourceResponseV36(source: BookSourceV36?, initial: SourceReques
         check(cookies.size <= 100) { "书源返回了过多 Cookie" }
         if (response.code in setOf(301, 302, 303, 307, 308)) {
             val next = sourceRedirectV36(url, response.location ?: error("跳转没有目标地址"), response.code, method)
-            if (response.code in setOf(301, 302, 303) && method == "POST") { method = "GET"; body = null }
+            // A site that moved to a new domain answers 301/302 with the same path; keep the form POST
+            // there (Legado sources often still point at the old domain). Other redirects become GET.
+            val domainMove = response.code in setOf(301, 302) && next.encodedPath == url.encodedPath && next.encodedQuery == url.encodedQuery
+            if (response.code in setOf(301, 302, 303) && method == "POST" && !domainMove) { method = "GET"; body = null }
             url = next
         } else {
             if (response.code !in 200..299) {
