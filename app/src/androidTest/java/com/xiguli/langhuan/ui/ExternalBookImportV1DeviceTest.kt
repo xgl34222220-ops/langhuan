@@ -39,12 +39,10 @@ class ExternalBookImportV1DeviceTest {
         try {
             val launch = Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             ActivityScenario.launch<MainActivity>(launch).use { scenario ->
-                lateinit var studio: StudioViewModel
-                scenario.onActivity { studio = ViewModelProvider(it)[StudioViewModel::class.java] }
+                lateinit var library: LocalReaderViewModel
+                scenario.onActivity { library = ViewModelProvider(it)[LocalReaderViewModel::class.java] }
                 withTimeout(20_000) {
-                    while (studio.state.value.chapters.isEmpty() || projects.activeStoryId() != studio.state.value.snapshot.novel.id) {
-                        delay(16)
-                    }
+                    while (!library.state.value.libraryLoaded) delay(16)
                 }
                 assertEquals("Startup must retain the explicit project", baseline, projects.activeStoryId())
                 block()
