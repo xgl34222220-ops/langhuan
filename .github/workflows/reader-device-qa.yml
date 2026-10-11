@@ -5,7 +5,8 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'app/src/main/java/com/xiguli/langhuan/ui/**'
+      - 'app/src/main/**'
+      - 'app/build.gradle.kts'
       - 'app/src/androidTest/**'
       - 'tools/run_reader_device_checks.sh'
       - 'tools/verify_epub_process_death.py'
@@ -70,7 +71,7 @@ jobs:
             adb exec-out screencap -p > reader-qa/emulator-before-tests.png
             if rg -q 'Application Not Responding:' reader-qa/emulator-before-tests-window.txt; then exit 1; fi
             # Keep only this CI emulator installation for artwork collection and the two process phases.
-            bash tools/run_reader_device_checks.sh "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/app/src/androidTest/assets/source-fixture/"
+            bash tools/run_reader_device_checks.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
