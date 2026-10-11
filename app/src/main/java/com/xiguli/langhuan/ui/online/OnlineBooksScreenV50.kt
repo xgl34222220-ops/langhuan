@@ -176,11 +176,9 @@ internal fun OnlineBooksScreenV50(
         mutableStateOf(OnlineDiscoveryGroupV50.ALL)
     }
 
-    val discoveries = remember(state.sources) {
-        state.sources
-            .filter { it.enabled }
-            .flatMap { sourceDiscoveriesV41(it) }
-    }
+    // V96: categories grouped per source (switcher + round-robin 全部); sources without discovery are listed, not dropped.
+    val discoveryCatalog = remember(state.sources) { onlineDiscoveryCatalogV96(state.sources) }
+    var discoverySourceId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val currentCategoryLabel = state.discoverySection
         ?.label?.takeIf { it.isNotBlank() }
@@ -197,6 +195,7 @@ internal fun OnlineBooksScreenV50(
             embedded = embedded,
             onBack = onBack,
             onManageSources = onManageSources,
+            enabledSources = state.sources.count { it.enabled },
         )
 
         /* Search */
@@ -237,10 +236,12 @@ internal fun OnlineBooksScreenV50(
             }
 
             /* Discovery: only real categories from enabled sources (V94; the old fixed chips did nothing). */
-            if (discoveries.isNotEmpty()) {
+            if (discoveryCatalog.sources.isNotEmpty() || discoveryCatalog.issues.isNotEmpty()) {
                 item(key = "discovery-categories") {
                     OnlineCategorySectionV50(
-                        discoveries = discoveries,
+                        catalog = discoveryCatalog,
+                        selectedSourceId = discoverySourceId,
+                        onSelectSource = { discoverySourceId = it },
                         selected = state.discoverySection,
                         group = discoveryGroup,
                         onGroup = { discoveryGroup = it },
@@ -402,6 +403,7 @@ private fun OnlineStoreHeaderV50(
     embedded: Boolean,
     onBack: () -> Unit,
     onManageSources: () -> Unit,
+    enabledSources: Int = 0,
 ) {
     val t = LocalLanghuanUiTokens.current
     Row(
@@ -432,6 +434,14 @@ private fun OnlineStoreHeaderV50(
             text = "书源管理",
             onClick = onManageSources,
         )
+        if (enabledSources > 0) {
+            Text(
+                text = "· $enabledSources",
+                modifier = Modifier.clickable(onClick = onManageSources).padding(end = t.space2),
+                style = MaterialTheme.typography.labelMedium,
+                color = t.mutedForeground,
+            )
+        }
     }
 }
 
@@ -613,13 +623,17 @@ private fun OnlineRecentSearchesV50(
 
 @Composable
 private fun OnlineCategorySectionV50(
-    discoveries: List<SourceDiscoveryV41>,
+    catalog: OnlineDiscoveryCatalogV96,
+    selectedSourceId: String?,
+    onSelectSource: (String?) -> Unit,
     selected: SourceDiscoveryV41?,
     group: OnlineDiscoveryGroupV50,
     onGroup: (OnlineDiscoveryGroupV50) -> Unit,
     onDiscover: (SourceDiscoveryV41) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val discoveries = visibleDiscoveriesV96(catalog.sources, selectedSourceId)
+    val activeSourceId = selectedSourceId?.takeIf { id -> catalog.sources.any { it.sourceId == id } }
     val hasRanking = discoveries.any { onlineIsRankingLabelV50(it.label) }
     val hasCategory = discoveries.any { !onlineIsRankingLabelV50(it.label) }
     val filtered = discoveries.filter {
@@ -629,8 +643,7 @@ private fun OnlineCategorySectionV50(
             OnlineDiscoveryGroupV50.CATEGORY -> !onlineIsRankingLabelV50(it.label)
         }
     }.ifEmpty { discoveries }
-    // Two sources can both call a category 「玄幻」: keep both, name the source on the second.
-    val duplicateLabels = filtered.groupBy { it.label }.filterValues { it.size > 1 }.keys
+    val chipLabels = discoveryChipLabelsV96(filtered, catalog.sources)
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -658,17 +671,30 @@ private fun OnlineCategorySectionV50(
                 }
             }
         }
+        if (catalog.sources.size > 1) {
+            Spacer(Modifier.height(t.space2))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
+                item(key = "all-sources") {
+                    OnlineChipV50(text = "全部书源", selected = activeSourceId == null, onClick = { onSelectSource(null) })
+                }
+                items(items = catalog.sources, key = { "source::${it.sourceId}" }) { source ->
+                    OnlineChipV50(
+                        text = source.name.take(12),
+                        selected = activeSourceId == source.sourceId,
+                        onClick = { onSelectSource(source.sourceId) },
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(t.space2))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(t.space2),
         ) {
-            items(
+            itemsIndexed(
                 items = filtered,
-                key = { "${it.sourceId}::${it.template}" },
-            ) { discovery ->
-                val label = if (discovery.label in duplicateLabels) {
-                    "${discovery.label}·${discovery.sourceId.substringAfter("://").substringBefore('/').removePrefix("www.").take(10)}"
-                } else discovery.label
+                key = { _, d -> "${d.sourceId}::${d.template}" },
+            ) { index, discovery ->
+                val label = chipLabels[index]
                 OnlineChipV50(
                     text = label,
                     selected = selected?.sourceId == discovery.sourceId && selected.template == discovery.template,
@@ -676,6 +702,7 @@ private fun OnlineCategorySectionV50(
                 )
             }
         }
+        OnlineDiscoveryIssuesV96(catalog.issues, Modifier.padding(top = t.space1))
     }
 }
 
