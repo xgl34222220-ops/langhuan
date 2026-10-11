@@ -146,13 +146,18 @@ class LocalReaderViewModel(application: Application) : AndroidViewModel(applicat
                     } else reconciled
                 }
                 if (pending != null && shelf.books.containsKey(pending.first)) pendingImportGroup = null
+                storiesLoaded = true
                 publish(books, shelf)
             }
         }
         viewModelScope.launch {
-            store.data.collect { shelf -> publish(_state.value.stories, shelf) }
+            // The shelf store emits its initial value immediately; publishing then would mark the
+            // library loaded with no stories yet (the EPUB reader treats that as a missing book).
+            store.data.collect { shelf -> if (storiesLoaded) publish(_state.value.stories, shelf) }
         }
     }
+
+    @Volatile private var storiesLoaded = false
 
     private fun publish(stories: List<ReaderBookUi>, shelf: ShelfLibraryData) {
         val books = stories.map { book -> shelfBook(book, shelf) }
@@ -186,7 +191,7 @@ class LocalReaderViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /** Re-reads reading progress after the reader closes. */
-    fun refreshShelf() = publish(_state.value.stories, store.data.value)
+    fun refreshShelf() { if (storiesLoaded) publish(_state.value.stories, store.data.value) }
 
     fun selectGroup(groupId: String) {
         uiPrefs.edit().putString(KEY_CURRENT_GROUP, groupId).apply()
