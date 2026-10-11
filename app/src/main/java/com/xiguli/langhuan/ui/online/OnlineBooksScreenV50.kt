@@ -171,6 +171,9 @@ internal fun OnlineBooksScreenV50(
     val t = LocalLanghuanUiTokens.current
     val searchIncomplete = state.query.isNotBlank() && state.discoverySection == null &&
         (state.searchStopped || state.searchFailures.isNotEmpty())
+    val aggregatedResults = remember(state.results, state.query, state.discoverySection) {
+        if (state.query.isNotBlank() && state.discoverySection == null) aggregateSearchResultsV97(state.results, state.query) else null
+    }
 
     var discoveryGroup by rememberSaveable {
         mutableStateOf(OnlineDiscoveryGroupV50.ALL)
@@ -348,7 +351,8 @@ internal fun OnlineBooksScreenV50(
                     )
                     if (state.results.isNotEmpty()) {
                         Text(
-                            text = "${state.results.size} 本",
+                            text = if (aggregatedResults != null) "${aggregatedResults.size} 本 · ${state.searchedSources}/${state.searchedSources + state.pendingSearchSourceIds.size} 个书源"
+                                else "${state.results.size} 本",
                             style = MaterialTheme.typography.labelMedium,
                             color = t.mutedForeground,
                         )
@@ -363,6 +367,19 @@ internal fun OnlineBooksScreenV50(
                         query = state.query,
                         discoveryLabel = currentCategoryLabel,
                         onManageSources = onManageSources,
+                    )
+                }
+            } else if (aggregatedResults != null) {
+                // V97 搜索聚合: one row per book (书名+作者), with every source that has it.
+                items(
+                    items = aggregatedResults,
+                    key = { "agg:${it.primary.sourceId}:${it.primary.bookUrl}" },
+                ) { group ->
+                    OnlineBookResultRowV50(
+                        book = group.primary,
+                        category = currentCategoryLabel,
+                        sourceCount = group.sourceCount,
+                        onClick = { onOpenBook(group.primary) },
                     )
                 }
             } else {
@@ -716,6 +733,7 @@ private fun OnlineBookResultRowV50(
     book: OnlineBookV36,
     category: String?,
     onClick: () -> Unit,
+    sourceCount: Int = 1,
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusMd)
@@ -764,7 +782,7 @@ private fun OnlineBookResultRowV50(
                     Spacer(Modifier.width(t.space1))
                 }
                 Text(
-                    text = book.sourceName.ifBlank { book.sourceId },
+                    text = book.sourceName.ifBlank { book.sourceId } + if (sourceCount > 1) " 等 $sourceCount 个来源" else "",
                     style = MaterialTheme.typography.labelSmall,
                     color = t.mutedForeground,
                     maxLines = 1,

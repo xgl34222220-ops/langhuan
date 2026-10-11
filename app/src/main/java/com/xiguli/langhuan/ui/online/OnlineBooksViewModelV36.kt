@@ -622,11 +622,17 @@ internal class OnlineBooksViewModelV36(
             failedSources = 0, searchFailures = emptyList(), pendingSearchSourceIds = sources.map { source -> source.id }.toSet(),
             searchStopped = false, results = if (preserveCompleted) it.results else emptyList(), error = null, message = null) }
         searchJob = viewModelScope.launch {
-            val gate = Semaphore(6)
+            // V97 搜索聚合: every enabled source at once (bounded), each with its own deadline, so one slow
+            // site never holds the list back; rows stream in and the screen merges them by 书名+作者.
+            val gate = Semaphore(SOURCE_CONCURRENCY_V97)
             coroutineScope {
                 sources.map { source ->
                     async(Dispatchers.IO) {
-                        val attempt = gate.withPermit { sourceAttemptV36 { runInterruptible { searchSourceV36(source, key) } } }
+                        val attempt = gate.withPermit {
+                            try {
+                                Result.success(withSourceDeadlineV97(if (source.useBrowser) 45_000L else SOURCE_TIMEOUT_MS_V97) { searchSourceV36(source, key) })
+                            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
+                        }
                         val found = attempt.getOrDefault(emptyList())
                         val failure = attempt.exceptionOrNull()?.let { error -> OnlineSourceFailureV57(
                             source.id, source.name,
