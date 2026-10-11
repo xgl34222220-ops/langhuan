@@ -21,12 +21,15 @@ class SourceEditingV41DeviceTest {
             vm.importSources("""{"id":"$id","name":"编辑测试书源","baseUrl":"https://example.com","searchUrl":"/search?q={{key}}","searchList":".book","searchName":"a@text","searchBookUrl":"a@href"}""")
         }
         rule.waitUntil(20000) { vm.state.value.sources.any { it.id == id } }
-        rule.waitUntil(20000) { rule.onAllNodesWithContentDescription("在线书城").fetchSemanticsNodes().isNotEmpty() }
-        rule.onAllNodesWithContentDescription("在线书城").onLast().performClick()
+        // V94: 书城 is a bottom-bar tab.
+        rule.waitUntil(20000) { rule.onAllNodesWithTag("bottom-tab-ONLINE").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("bottom-tab-ONLINE").performClick()
         rule.onNodeWithText("书源管理").performClick()
         rule.onNodeWithText("编辑测试书源").performClick()
         // The visible header action and bottom operation both edit the same source.
         rule.onAllNodesWithText("编辑规则").onFirst().assertIsDisplayed().performClick()
+        // The V94 editor opens on the form; the raw JSON is one tab away and shares the same draft.
+        rule.onNodeWithText("JSON").performClick()
         rule.onNodeWithText("书源 JSON").performTextReplacement("{\"unfinished\":")
         assertEquals("{\"unfinished\":", vm.state.value.sourceEditDraft)
         rule.activityRule.scenario.recreate()

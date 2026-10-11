@@ -76,6 +76,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -350,7 +351,11 @@ internal fun ReaderSessionV30(
     }
     // 阅读正文主题独立于 App 全局浅深色；paper/warm/tea/green/blue/pink/white/night
     // 的实际颜色由 ReaderThemeV30 管理。
-    val theme = readerThemeV30(settings.theme)
+    // V92: the optional paper texture / gallery picture travels with the theme into every
+    // page paint (paged, page-turn animation and scroll mode).
+    val baseTheme = readerThemeV30(settings.theme)
+    val backdropPaint = rememberReaderBackdropPaintV92(settings, baseTheme)
+    val theme = remember(baseTheme, backdropPaint) { baseTheme.copy(backdrop = backdropPaint) }
     val mode = settings.turnMode
     val v3Tokens = LocalLanghuanUiTokens.current
 
@@ -466,7 +471,8 @@ internal fun ReaderSessionV30(
     // 默认 18sp / 1.95 行距在 ReaderSettingsV30 中定稿；这里读取用户当前设置。
     val spec = with(density) {
         val fontPx = settings.fontSize.sp.toPx()
-        val titlePx = fontPx * 1.36f
+        // V93: a larger, heavier chapter heading with more air before the body.
+        val titlePx = fontPx * 1.5f
         ReaderTypeSpecV30(
             bodyWidthPx = geometry.bodyWidth.toInt().coerceAtLeast(0),
             bodyHeightPx = geometry.bodyHeight.toInt().coerceAtLeast(0),
@@ -619,17 +625,13 @@ internal fun ReaderSessionV30(
         val chapterLabel = chapter
             ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
             .orEmpty()
-        // v3 顶栏：书名 + 当前章节标题。ReaderRenderV30 只接收一个 chapterTitle
-        // 字段，因此这里组合成一条真实 chrome 文案，不新增数据层接口。
-        val header = when {
-            chapterLabel.isBlank() -> book.title
-            book.title.isBlank() -> chapterLabel
-            else -> "${book.title} · $chapterLabel"
-        }
+        // V93 顶栏：只留当前章节名（灰色小字），像参考阅读器那样安静；没有章节名时退回书名。
+        val header = chapterLabel.ifBlank { book.title }
         return ReaderChromeInfoV30(
             chapterTitle = header,
-            pageLabel = if (count > 0) "本章 $pageNumber / $count 页" else "",
-            progressLabel = if (catalogueIncomplete) "目录待补全" else "全书 ${bookProgress.roundToInt()}%",
+            // V93 页脚：右侧「1/12  1%」——本章页码与全书进度，不再加文字前缀。
+            pageLabel = if (count > 0) "$pageNumber/$count" else "",
+            progressLabel = if (catalogueIncomplete) "目录待补全" else "${bookProgress.roundToInt()}%",
             time = clock,
             battery = battery,
             showTimeBattery = settings.showTimeBattery,
@@ -677,6 +679,17 @@ internal fun ReaderSessionV30(
             .edit()
             .putInt("total_${book.id}", chapters.size)
             .putInt("index_${book.id}", chapterIndex)
+            .apply {
+                // V92: the shelf's 「已读完」 filter and progress sort read this flag. Only
+                // write it when the page count is known, so a pending layout cannot clear it.
+                val pageCount = (layout ?: previousLayout)?.pages?.size ?: 0
+                if (pageCount > 0) {
+                    putBoolean(
+                        ShelfReadingProgressStoreV92.finishedKey(book.id),
+                        readerPositionIsBookEndV92(chapterIndex, chapters.size, savedPage, pageCount),
+                    )
+                }
+            }
             .apply()
     }
 
@@ -1209,7 +1222,10 @@ internal fun ReaderSessionV30(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(theme.page)
+            .drawBehind {
+                drawRect(theme.page)
+                theme.backdrop?.let { drawReaderBackdropV92(it) }
+            }
             .onSizeChanged { viewport = it }
             .semantics {
                 contentDescription = "阅读正文"
@@ -1515,6 +1531,10 @@ internal fun ReaderSessionV30(
             )
         }
 
+        /* ----------------------------- Warm light (V92) ----------------------------- */
+        // Above the page text, below hints/players; draw-only so it never takes touches.
+        ReaderWarmLightOverlayV92(warmth = settings.warmth, dark = theme.dark)
+
         /* ------------------------------- Loading ------------------------------- */
         AnimatedVisibility(
             visible = shownLayout == null,
@@ -1588,17 +1608,13 @@ internal fun ReaderSessionV30(
             enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = 0.92f),
             exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.96f),
         ) {
-            val shape = RoundedCornerShape(v3Tokens.radiusLg)
+            // V93: a dark rounded pill (like the reference's 「再次滑动返回」 toast).
             Box(
                 modifier = Modifier
-                    .background(color = v3Tokens.card, shape = shape)
-                    .border(width = 1.dp, color = v3Tokens.border, shape = shape)
-                    .padding(
-                        horizontal = v3Tokens.space4,
-                        vertical = v3Tokens.space2,
-                    ),
+                    .background(color = Color(0xE6303030), shape = CircleShape)
+                    .padding(horizontal = 18.dp, vertical = 9.dp),
             ) {
-                Text(text = edgeHint.orEmpty(), color = v3Tokens.foreground, fontSize = 13.sp)
+                Text(text = edgeHint.orEmpty(), color = Color.White, fontSize = 13.sp)
             }
         }
 
@@ -2031,6 +2047,7 @@ private fun ReaderScrollModeV30(
                 .height(topPad)
                 .background(theme.page),
         ) {
+            theme.backdrop?.let { drawReaderBackdropV92(it, geometry.width, geometry.height) }
             drawIntoReaderChromeV30(
                 geometry = geometry, theme = theme, paints = paints,
                 info = info, header = true,
@@ -2043,6 +2060,9 @@ private fun ReaderScrollModeV30(
                 .align(Alignment.BottomCenter)
                 .background(theme.page),
         ) {
+            theme.backdrop?.let {
+                drawReaderBackdropV92(it, geometry.width, geometry.height, offsetY = geometry.height - size.height)
+            }
             drawIntoReaderChromeV30(
                 geometry = geometry, theme = theme, paints = paints,
                 info = info, header = false,
@@ -2071,7 +2091,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIntoReaderChrom
         drawReaderPageV30(
             page = null,
             geometry = geometry,
-            theme = theme.copy(page = Color.Transparent),
+            theme = theme.copy(page = Color.Transparent, backdrop = null),
             paints = paints,
             info = if (header) {
                 info.copy(

@@ -53,6 +53,8 @@ internal enum class LuoShelfSortV33(val key: String, val label: String) {
     RECENT_READ("read", "最近阅读"),
     UPDATED("updated", "最近更新"),
     TITLE("title", "书名"),
+    /** V92: furthest-read first; finished books lead, unread books trail. */
+    PROGRESS("progress", "阅读进度"),
     ;
 
     fun next(): LuoShelfSortV33 = entries[(ordinal + 1) % entries.size]
@@ -95,6 +97,8 @@ internal object LuoShelfAssignmentsV33 {
 internal fun luoSortBooksV33(
     books: List<ReaderBookUi>,
     sort: LuoShelfSortV33,
+    /** Whole-book progress sort key (see ShelfReadingProgressV92.sortKey); -1 when unread. */
+    progress: (ReaderBookUi) -> Float = { -1f },
     lastRead: (ReaderBookUi) -> Long,
 ): List<ReaderBookUi> = when (sort) {
     LuoShelfSortV33.RECENT_READ -> books.sortedByDescending { lastRead(it).takeIf { v -> v > 0L } ?: it.updatedAt }
@@ -103,6 +107,10 @@ internal fun luoSortBooksV33(
         val collator = Collator.getInstance(Locale.CHINA)
         books.sortedWith { a, b -> collator.compare(a.title, b.title) }
     }
+    LuoShelfSortV33.PROGRESS -> books.sortedWith(
+        compareByDescending<ReaderBookUi> { progress(it) }
+            .thenByDescending { lastRead(it).takeIf { v -> v > 0L } ?: it.updatedAt },
+    )
 }
 
 /** "全部 · 书架A · 书架B" chips; the active one fills with the accent colour. */

@@ -96,7 +96,7 @@ class AiReadingEvidenceV50DeviceTest {
     }
 
     @Test fun shortDnsErrorStillExpandsWhenLargeTextOverflowsThreeLines() {
-        val detail = "首页读取失败：" + SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE).message.orEmpty()
+        val detail = "首页读取失败：" + SourceDnsBlockedV54(SourceDnsFailureV54.NON_PUBLIC, "reader-mirror.books.example").message.orEmpty()
         assertTrue("Regression fixture must stay below the old 140-character threshold", detail.length < 140)
         val state = OnlineBooksStateV36(aiError = detail, aiSteps = listOf(
             AiSourceStepV37("读取网站首页", false, detail, true,
@@ -126,7 +126,7 @@ class AiReadingEvidenceV50DeviceTest {
         rule.onNodeWithText("收起提示").performScrollTo().assertIsDisplayed()
         assertTrue("Expanded text must include its complete final sentence", !overflows())
         rule.onAllNodesWithText(detail).assertCountEquals(1)
-        saveFrame("v55-ai-complete-dns-error-test-data", "无需关闭代理")
+        saveFrame("v55-ai-complete-dns-error-test-data", "域名解析设置")
         rule.onNodeWithText("查看第1步详情（1项）").performScrollTo().performClick()
         rule.onNodeWithText("已观察到的域名跳转：old.example → new.example").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("重试").performScrollTo().assertIsDisplayed()

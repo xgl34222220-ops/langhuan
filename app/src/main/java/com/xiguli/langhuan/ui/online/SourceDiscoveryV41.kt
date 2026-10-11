@@ -31,35 +31,64 @@ internal fun discoveryPagingIssueV41(page: SourceDiscoveryPageV41, hasNew: Boole
 
 internal fun sourceDiscoveriesV41(source: BookSourceV36): List<SourceDiscoveryV41> = sourceDiscoveryCatalogV41(source).sections
 
-/** Static Legado categories only. Unsupported entries are reported, never executed or silently lost. */
+private val discoveryScriptCacheV95 = object : LinkedHashMap<String, Result<String>>(16, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Result<String>>?): Boolean = size > 64
+}
+private val DISCOVERY_JS_V95 = Regex("<js>([\\s\\S]*?)</js>|@js:([\\s\\S]*)", RegexOption.IGNORE_CASE)
+
+/** A scripted exploreUrl (`@js:` / `<js>`) evaluated offline into its category list; cached per source. */
+private fun discoveryScriptV95(source: BookSourceV36, raw: String): Result<String> = synchronized(discoveryScriptCacheV95) {
+    val key = source.id + "\u0000" + raw + "\u0000" + source.jsLib.hashCode()
+    discoveryScriptCacheV95[key]?.let { return it }
+    val result = runCatching {
+        withSourceRuleScopeV95(SourceRuleScopeV95(source, allowNetwork = false)) {
+            var value = ""
+            var last = 0
+            DISCOVERY_JS_V95.findAll(raw).forEach { match ->
+                val before = raw.substring(last, match.range.first).trim()
+                if (before.isNotEmpty()) value = before
+                value = SourceJsEngineV95.evalStrict((match.groups[1]?.value ?: match.groups[2]?.value).orEmpty(), mapOf("result" to value), source.baseUrl)
+                last = match.range.last + 1
+            }
+            raw.substring(last).trim().takeIf { it.isNotEmpty() }?.let { value = it }
+            value.trim()
+        }
+    }
+    discoveryScriptCacheV95[key] = result
+    result
+}
+
+/** Legado categories: static lists, JSON arrays, or a script that returns either. Unusable entries are reported. */
 internal fun sourceDiscoveryCatalogV41(source: BookSourceV36): SourceDiscoveryCatalogV41 {
     if (!source.enabled || !source.enabledExplore || source.exploreUrl.isBlank()) return SourceDiscoveryCatalogV41(emptyList(), emptyList())
     val issues = ArrayList<String>()
-    val raw = source.exploreUrl.trim()
-    if (raw.length > 8192) return SourceDiscoveryCatalogV41(emptyList(), listOf("exploreUrl 超过 8192 字符限制"))
-    if (raw.contains("@js:", true) || raw.contains("<js>", true) || raw.startsWith("{{") || raw.contains("java.")) {
-        return SourceDiscoveryCatalogV41(emptyList(), listOf("exploreUrl 依赖动态 JavaScript，暂不支持；请改为静态分类地址"))
+    var raw = source.exploreUrl.trim()
+    if (raw.length > 64 * 1024) return SourceDiscoveryCatalogV41(emptyList(), listOf("exploreUrl 超过 64K 字符限制"))
+    if (DISCOVERY_JS_V95.containsMatchIn(raw)) {
+        sourceScriptUnsupportedV95(raw)?.let { return SourceDiscoveryCatalogV41(emptyList(), listOf("发现分类使用了$it")) }
+        raw = discoveryScriptV95(source, raw).getOrElse { error ->
+            val reason = if (sourceNeedsNetworkV95(error)) "发现分类脚本需要联网生成，暂不支持" else "发现分类脚本出错：${error.message.orEmpty().take(80)}"
+            return SourceDiscoveryCatalogV41(emptyList(), listOf(reason))
+        }
+        if (raw.length > 64 * 1024) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现分类脚本结果过长"))
     }
     fun entry(label: String, rawUrl: String): SourceDiscoveryV41? = runCatching {
         val template = rawUrl.trim()
         require(template.isNotBlank()) { "分类地址为空" }
-        require(!template.replace("{{page}}", "1").contains("{{")) { "仅支持 {{page}} 分页，不支持脚本表达式" }
-        val optionsAt = template.indexOf(",{")
-        if (optionsAt > 0) {
-            val options = BookSourceJsonV36.parseToJsonElement(template.substring(optionsAt + 1)) as? JsonObject
-                ?: error("请求选项必须是 JSON 对象")
-            require(options.keys.all { it in setOf("method", "body", "charset") }) { "请求包含不支持的选项：${options.keys - setOf("method", "body", "charset")}" }
+        sourceRuleUnsupportedV94(template)?.let { throw IllegalArgumentException("分类地址使用了$it") }
+        // Templates ({{page}}, {{(page-1)*20}}, <1,2>) are evaluated offline; a url that needs a request is kept as-is.
+        val request = withSourceRuleScopeV95(SourceRuleScopeV95(source, allowNetwork = false)) {
+            buildSearchRequestV36(source.copy(searchUrl = template), "", 1)
         }
-        val request = buildSearchRequestV36(source.copy(searchUrl = template), "", 1)
         SourceDiscoveryV41(source.id, label.trim().take(40).ifBlank { "发现" }, publicSourceUrlV36(request.url).toString(), template)
     }.getOrElse { error ->
-        issues += "${label.ifBlank { "发现" }}：${error.message.orEmpty()}"
+        issues += "${label.ifBlank { "发现" }}：${if (sourceNeedsNetworkV95(error)) "分类地址脚本需要联网生成，暂不支持" else error.message.orEmpty()}"
         null
     }
     val sections = if (raw.startsWith("[")) {
         val array = runCatching { BookSourceJsonV36.parseToJsonElement(raw) as? JsonArray }.getOrNull()
             ?: return SourceDiscoveryCatalogV41(emptyList(), listOf("exploreUrl 分类数组格式无效"))
-        if (array.size > 60) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 60 个分类，请拆分书源"))
+        if (array.size > 300) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 300 个分类，请拆分书源"))
         array.mapNotNull { item ->
             val obj = item as? JsonObject
             if (obj == null) { issues += "分类条目必须是对象"; return@mapNotNull null }
@@ -79,11 +108,12 @@ internal fun sourceDiscoveryCatalogV41(source: BookSourceV36): SourceDiscoveryCa
             val label = (obj["title"] as? JsonPrimitive)?.contentOrNull ?: (obj["name"] as? JsonPrimitive)?.contentOrNull.orEmpty()
             // A title-only object is a Legado visual section heading, not a category to fetch.
             val url = (obj["url"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-            if (url.isBlank() && label.isNotBlank()) null else entry(label, url)
+            // An empty object (title and url both blank) is a Legado layout spacer cell.
+            if (url.isBlank()) null else entry(label, url)
         }
     } else {
         val parts = raw.split("&&", "\n").filter { it.isNotBlank() }
-        if (parts.size > 60) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 60 个分类，请拆分书源"))
+        if (parts.size > 300) return SourceDiscoveryCatalogV41(emptyList(), listOf("发现最多支持 300 个分类，请拆分书源"))
         parts.mapNotNull { part ->
             val fields = part.split("::", limit = 2)
             if (fields.size == 2) entry(fields[0], fields[1]) else entry("发现", fields[0])
@@ -140,9 +170,14 @@ internal fun discoverPageV41(
     require(books.size <= 2000) { "发现单页超过 2000 本限制，无法完整显示，请缩小分类范围" }
     val doc = requireNotNull(document)
     val observedNext = discoveryNextUrlV41(doc)
-    val hasMore = books.isNotEmpty() && (observedNext != null || section.template.contains("{{page}}"))
+    val hasMore = books.isNotEmpty() && (observedNext != null || discoveryTemplatePagedV95(section.template))
     return SourceDiscoveryPageV41(books, observedNext.takeIf { books.isNotEmpty() }, hasMore)
 }
+
+/** `{{page}}`, a page expression such as `{{(page-1)*20}}`, or a `<1,2,3>` page list. */
+internal fun discoveryTemplatePagedV95(template: String): Boolean =
+    Regex("\\{\\{[^\\}]*\\bpage\\b").containsMatchIn(template) || Regex("<[^<>]*,[^<>]*>").containsMatchIn(template) ||
+        template.contains("searchPage")
 
 internal fun discoverBooksV41(source: BookSourceV36, section: SourceDiscoveryV41): List<OnlineBookV36> =
     discoverPageV41(source, section).books

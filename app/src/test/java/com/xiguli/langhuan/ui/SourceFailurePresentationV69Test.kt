@@ -49,12 +49,11 @@ class SourceFailurePresentationV69Test {
         val blocked = sourceFailureMessageV69(
             IllegalStateException(
                 "outer transport wrapper",
-                SourceDnsBlockedV54(SourceDnsFailureV54.BENCHMARK_RANGE, "books.example"),
+                SourceDnsBlockedV54(SourceDnsFailureV54.NON_PUBLIC, "books.example"),
             ),
         )
         assertTrue(blocked.contains("books.example"))
-        assertTrue(blocked.contains("Fake-IP"))
-        assertTrue(blocked.contains("尚未连接网站"))
+        assertTrue(blocked.contains("非公网地址"))
         assertFalse(blocked.contains(SOURCE_DNS_LOOKUP_MESSAGE_V71))
     }
 

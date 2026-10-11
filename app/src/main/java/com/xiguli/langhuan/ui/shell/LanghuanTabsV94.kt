@@ -1,0 +1,309 @@
+package com.xiguli.langhuan.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.FileOpen
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.SettingsSuggest
+import androidx.compose.material.icons.outlined.Source
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.xiguli.langhuan.ui.design.FlatListRowV93
+import com.xiguli.langhuan.ui.design.FlatSectionLabelV93
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+
+/** Same rule as the shelf's 「在写」 tab: the user's own works, not imports or followed web novels. */
+internal fun isOwnWritingBookV94(book: ReaderBookUi): Boolean =
+    book.genre != "导入作品" && book.sourceId.isBlank() && book.sourceBookUrl.isBlank()
+
+private val TAB_GUTTER_V94 = 20.dp
+
+@Composable
+private fun TabHeaderV94(title: String) {
+    val t = LocalLanghuanUiTokens.current
+    Box(
+        modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = TAB_GUTTER_V94),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = t.foreground,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * V94 「创作」标签：把原先散落在书架“添加”、我的页「开始创作」、运行中心和写作技能里的创作入口收拢到一处，
+ * 并接上此前没有任何入口的「空白新书」（手写，不用 AI）。
+ */
+@Composable
+internal fun CreateTabV94(
+    books: List<ReaderBookUi>,
+    libraryLoaded: Boolean,
+    aiReady: Boolean,
+    runActive: Boolean,
+    onNewAiBook: () -> Unit,
+    onNewBlankBook: (title: String, genre: String) -> Unit,
+    onContinueWriting: (String) -> Unit,
+    onRunCenter: () -> Unit,
+    onSkills: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val writing = remember(books) { books.filter(::isOwnWritingBookV94).sortedByDescending { it.updatedAt } }
+    var blankOpen by rememberSaveable { mutableStateOf(false) }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(t.background)
+            .statusBarsPadding(),
+    ) {
+        TabHeaderV94("创作")
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = TAB_GUTTER_V94),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = t.space2)) {
+                CreateStartCardV94(
+                    icon = Icons.Outlined.AutoAwesome,
+                    title = "AI 开新书",
+                    subtitle = if (aiReady) "聊出设定与大纲，再开写" else "先配置 AI 服务",
+                    accent = true,
+                    modifier = Modifier.weight(1f),
+                    onClick = onNewAiBook,
+                )
+                CreateStartCardV94(
+                    icon = Icons.Outlined.EditNote,
+                    title = "空白新书",
+                    subtitle = "不用 AI，直接写第一章",
+                    accent = false,
+                    modifier = Modifier.weight(1f),
+                    onClick = { blankOpen = true },
+                )
+            }
+            FlatSectionLabelV93("在写的书")
+            when {
+                !libraryLoaded -> Text("正在载入…", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+                writing.isEmpty() -> Text(
+                    "还没有自己的作品。用上面的任一方式开一本新书吧。",
+                    modifier = Modifier.padding(vertical = t.space2),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
+                )
+                else -> writing.forEach { book ->
+                    FlatListRowV93(
+                        title = book.title,
+                        subtitle = buildList {
+                            if (book.genre.isNotBlank()) add(book.genre)
+                            if (book.currentChapter > 0) add("写到第 ${book.currentChapter} 章")
+                            if (book.currentWords > 0) add(if (book.currentWords >= 10_000) "%.1f 万字".format(book.currentWords / 10_000f) else "${book.currentWords} 字")
+                        }.joinToString(" · ").ifBlank { "尚未开写" },
+                        value = "继续写",
+                        onClick = { onContinueWriting(book.id) },
+                    )
+                }
+            }
+            FlatSectionLabelV93("工具")
+            FlatListRowV93(
+                title = "运行中心",
+                icon = Icons.Outlined.Insights,
+                subtitle = if (runActive) HOME_RUN_ACTIVE_LABEL_V92 else "查看 AI 写作任务与日志",
+                subtitleAccent = runActive,
+                badge = runActive,
+                onClick = onRunCenter,
+            )
+            FlatListRowV93(title = "写作技能", icon = Icons.Outlined.Psychology, subtitle = "管理创作 Skill", onClick = onSkills)
+            Spacer(Modifier.height(t.space6))
+        }
+    }
+    if (blankOpen) {
+        BlankBookDialogV94(
+            onDismiss = { blankOpen = false },
+            onConfirm = { title, genre ->
+                blankOpen = false
+                onNewBlankBook(title, genre)
+            },
+        )
+    }
+}
+
+@Composable
+private fun CreateStartCardV94(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    accent: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val t = LocalLanghuanUiTokens.current
+    Column(
+        modifier = modifier
+            .background(
+                if (accent) t.primary.copy(alpha = 0.08f) else t.foreground.copy(alpha = 0.04f),
+                RoundedCornerShape(14.dp),
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 16.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = if (accent) t.primary else t.foreground.copy(alpha = 0.78f))
+        Spacer(Modifier.height(10.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall, color = t.foreground, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(2.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun BlankBookDialogV94(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    var title by rememberSaveable { mutableStateOf("") }
+    var genre by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = t.background,
+        title = { Text("空白新书", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column {
+                Text("书名", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+                Spacer(Modifier.height(4.dp))
+                SourcePlainFieldV94(value = title, onValueChange = { title = it }, hint = "未命名小说", modifier = Modifier.fillMaxWidth(), description = "书名")
+                Spacer(Modifier.height(12.dp))
+                Text("类型（可选）", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+                Spacer(Modifier.height(4.dp))
+                SourcePlainFieldV94(value = genre, onValueChange = { genre = it }, hint = "例如：悬疑、言情", modifier = Modifier.fillMaxWidth(), description = "类型")
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(title, genre) }) { Text("创建并开写", color = t.primary) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = t.mutedForeground) } },
+    )
+}
+
+/**
+ * V94 「我的」标签（原先藏在书架右上角「更多功能」里的页面）。只保留不在其它标签出现的入口：
+ * 书源管理、导入本地书籍、AI 与模型；书架排序/显示统一在书架的「整理」面板里。
+ */
+@Composable
+internal fun MineTabV94(
+    bookCount: Int?,
+    finishedCount: Int?,
+    sourceCount: Int,
+    enabledSourceCount: Int,
+    aiLabel: String?,
+    onSources: () -> Unit,
+    onImportLocal: () -> Unit,
+    onAiSetup: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val t = LocalLanghuanUiTokens.current
+    val context = LocalContext.current
+    val version = remember(context) {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+    }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(t.background)
+            .statusBarsPadding(),
+    ) {
+        TabHeaderV94("我的")
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = TAB_GUTTER_V94),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = t.space2),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.size(56.dp).background(t.foreground.copy(alpha = 0.06f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.PersonOutline, contentDescription = null, modifier = Modifier.size(30.dp), tint = t.mutedForeground)
+                }
+                Spacer(Modifier.width(t.space4))
+                Column {
+                    Text("琅嬛读者", style = MaterialTheme.typography.titleMedium, color = t.foreground, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (bookCount == null) "正在载入书架…" else "书架 $bookCount 本 · 已读完 ${finishedCount ?: 0} 本",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.mutedForeground,
+                    )
+                }
+            }
+            FlatSectionLabelV93("阅读")
+            FlatListRowV93(
+                title = "书源管理",
+                icon = Icons.Outlined.Source,
+                subtitle = "新建、导入、导出与启用书源",
+                value = if (sourceCount == 0) "未添加" else "$enabledSourceCount/$sourceCount 已启用",
+                onClick = onSources,
+            )
+            FlatListRowV93(title = "导入本地书籍", icon = Icons.Outlined.FileOpen, value = "TXT · EPUB", onClick = onImportLocal)
+            FlatSectionLabelV93("AI")
+            FlatListRowV93(
+                title = "AI 与模型",
+                icon = Icons.Outlined.SettingsSuggest,
+                subtitle = aiLabel ?: "服务商、模型与任务路由",
+                value = if (aiLabel == null) "未配置" else null,
+                onClick = onAiSetup,
+            )
+            FlatSectionLabelV93("关于")
+            FlatListRowV93(
+                title = "琅嬛",
+                icon = Icons.Outlined.Info,
+                subtitle = "阅读与 AI 写作",
+                value = version.ifBlank { null },
+                onClick = null,
+            )
+            Spacer(Modifier.height(t.space6))
+        }
+    }
+}

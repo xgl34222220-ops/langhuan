@@ -1,5 +1,9 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -46,6 +50,37 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Checkroom
+import androidx.compose.material.icons.outlined.CropFree
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FormatLineSpacing
+import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.ImportContacts
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.MyLocation
+import androidx.compose.material.icons.outlined.PostAdd
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.ScreenLockPortrait
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.ViewCarousel
+import androidx.compose.material.icons.outlined.WbSunny
+import com.xiguli.langhuan.ui.design.FlatIconCellV93
+import com.xiguli.langhuan.ui.design.FlatListRowV93
+import com.xiguli.langhuan.ui.design.FlatSwitchV93
+import com.xiguli.langhuan.ui.design.FlatTopBarV93
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.DarkMode
@@ -201,17 +236,17 @@ internal fun ReaderMenuV30(
                 .semantics { dismiss { onDismiss(); true } },
             contentAlignment = Alignment.BottomCenter,
         ) {
-            val panelShape = RoundedCornerShape(t.radiusXl)
+            // V93: a plain white bottom sheet attached to the screen edge (top corners only),
+            // no outline; the sheet colour runs under the navigation bar.
+            val panelShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                    .padding(horizontal = t.space3).padding(bottom = t.space2)
+                    .background(color = t.card, shape = panelShape)
                     .navigationBarsPadding()
                     .imePadding()
                     .heightIn(max = maxHeight)
-                    .background(color = t.background, shape = panelShape)
-                    .border(width = 1.dp, color = t.border, shape = panelShape)
                     // Swallow backdrop taps without merging the body's scroll viewport
                     // or unrelated text into one large clickable accessibility node.
                     .pointerInput(Unit) { detectTapGestures(onTap = {}) },
@@ -223,14 +258,16 @@ internal fun ReaderMenuV30(
                 // chapterNumber 级书签。ReaderMenu 只消费 Screen 提供的
                 // onToggleBookmark，不额外虚构新的 page bookmark API。
                 ReaderMenuPrimaryActionsV30(
+                    title = book.title,
+                    chapterLabel = chapters.getOrNull(chapterIndex)
+                        ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
+                        .orEmpty(),
                     bookmarked = bookmarked,
                     night = settings.night,
                     onBack = onBack,
                     onBookmark = onToggleBookmark,
                     onNight = { settings.toggleNight() },
                 )
-
-                ReaderMenuDividerV30()
 
                 AnimatedContent(
                     // Reserve the fixed bottom tabs before sizing the scrollable body.
@@ -280,6 +317,8 @@ internal fun ReaderMenuV30(
                                         onSizePanel = {
                                             onPanel(ReaderMenuPanelV30.SIZE)
                                         },
+                                        bookmarkedChapters = bookmarkedChapters,
+                                        onJumpChapter = onJumpChapter,
                                     )
                                 }
                                 ReaderMenuTabV30.DIRECTORY -> {
@@ -365,7 +404,6 @@ internal fun ReaderMenuV30(
                 }
 
                 if (panel == ReaderMenuPanelV30.MAIN) {
-                    ReaderMenuDividerV30()
                     ReaderMenuTabsV30(tab = tab, onTab = onTab)
                 }
             }
@@ -380,6 +418,8 @@ internal fun ReaderMenuV30(
 
 @Composable
 private fun ReaderMenuPrimaryActionsV30(
+    title: String,
+    chapterLabel: String,
     bookmarked: Boolean,
     night: Boolean,
     onBack: () -> Unit,
@@ -387,33 +427,50 @@ private fun ReaderMenuPrimaryActionsV30(
     onNight: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    // V93: one quiet header row — back arrow + book title on the left, bookmark and day/night
+    // as plain line icons on the right (the reference reader's menu header).
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space3).padding(bottom = t.space3),
-        horizontalArrangement = Arrangement.spacedBy(t.space2),
+            .padding(start = t.space1, end = t.space2, bottom = t.space1),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         ReaderPrimaryActionV30(
-            icon = Icons.Rounded.ArrowBack,
+            icon = Icons.AutoMirrored.Outlined.ArrowBack,
             label = "返回书架",
-            modifier = Modifier.weight(1f),
             onClick = onBack,
         )
+        Column(modifier = Modifier.weight(1f).padding(start = t.space1)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = t.foreground,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (chapterLabel.isNotBlank()) {
+                Text(
+                    text = chapterLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = t.mutedForeground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         ReaderPrimaryActionV30(
             icon = if (bookmarked) Icons.Outlined.Bookmark
             else Icons.Outlined.BookmarkBorder,
             label = if (bookmarked) "已加书签" else "本章加书签",
             description = if (bookmarked) "取消本章书签" else "添加本章书签",
             selected = bookmarked,
-            gold = bookmarked,
-            modifier = Modifier.weight(1f),
             onClick = onBookmark,
         )
         ReaderPrimaryActionV30(
-            icon = if (night) Icons.Rounded.LightMode else Icons.Outlined.DarkMode,
+            icon = if (night) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
             label = if (night) "切换日间" else "切换夜间",
             selected = night,
-            modifier = Modifier.weight(1f),
             onClick = onNight,
         )
     }
@@ -426,45 +483,22 @@ private fun ReaderPrimaryActionV30(
     description: String = label,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
-    gold: Boolean = false,
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    val background = when {
-        gold -> t.goldContainer
-        selected -> t.accent
-        else -> t.card
-    }
-    val foreground = when {
-        gold -> t.goldForeground
-        selected -> t.accentForeground
-        else -> t.secondaryForeground
-    }
-    Column(
+    Box(
         modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
             .semantics { contentDescription = description }
-            .height(72.dp)
-            .background(color = background, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = t.space2, vertical = t.space2),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = foreground,
-        )
-        Spacer(Modifier.height(t.space1))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = foreground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.size(22.dp),
+            tint = if (selected) t.primary else t.foreground.copy(alpha = 0.82f),
         )
     }
 }
@@ -486,6 +520,8 @@ private fun ReaderDetailsTabV30(
     onPageFraction: (Float) -> Unit,
     onThemePanel: () -> Unit,
     onSizePanel: () -> Unit,
+    bookmarkedChapters: Set<Int> = emptySet(),
+    onJumpChapter: (Int, Int) -> Unit = { _, _ -> },
 ) {
     val t = LocalLanghuanUiTokens.current
     val windowHeight = readerMenuWindowHeightV63()
@@ -494,25 +530,56 @@ private fun ReaderDetailsTabV30(
         pageCount <= 1 -> 0f
         else -> pageIndex.toFloat().div(pageCount - 1f).coerceIn(0f, 1f)
     }
+    val catalogueIncomplete = book.sourceId.isNotBlank() &&
+        catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = windowHeight * 0.58f)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = t.space4, vertical = t.space3),
+            .padding(horizontal = t.space5, vertical = t.space3),
     ) {
-        if (book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null) {
+        if (catalogueIncomplete) {
             Text("目录待补全，暂不能计算全书进度", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(t.space2))
         }
+        // V93 「阅读进度」: a large whole-book figure with 「读到 x / n 章」 on the right.
+        ReaderSectionTitleV30(title = "阅读进度")
+        Spacer(Modifier.height(t.space1))
+        if (!catalogueIncomplete && chapters.isNotEmpty()) {
+            val inside = if (pageCount > 0) (pageIndex + 1f) / pageCount.toFloat() else 0f
+            val bookFraction = ((chapterIndex + inside) / chapters.size.toFloat()).coerceIn(0f, 1f)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = String.format(Locale.US, "%.1f", bookFraction * 100f),
+                    style = MaterialTheme.typography.displaySmall,
+                    color = t.foreground,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "%",
+                    modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = t.mutedForeground,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "读到 ${chapterIndex + 1} / ${chapters.size} 章",
+                    modifier = Modifier.padding(bottom = 6.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
+                )
+            }
+        }
+        Spacer(Modifier.height(t.space3))
         ReaderSectionTitleV30(title = "当前阅读")
-        Spacer(Modifier.height(t.space2))
+        Spacer(Modifier.height(t.space1))
         ReaderBookInfoCardV30(
             book = book, chapter = chapter,
             pageIndex = pageIndex, pageCount = pageCount,
         )
         if (pageCount > 1) {
-            Spacer(Modifier.height(t.space3))
+            Spacer(Modifier.height(t.space2))
             Text(
                 text = "本章位置",
                 style = MaterialTheme.typography.labelMedium,
@@ -525,13 +592,60 @@ private fun ReaderDetailsTabV30(
                 colors = SliderDefaults.colors(
                     thumbColor = t.primary,
                     activeTrackColor = t.primary,
-                    inactiveTrackColor = t.border,
+                    inactiveTrackColor = t.foreground.copy(alpha = 0.10f),
                     activeTickColor = Color.Transparent,
                     inactiveTickColor = Color.Transparent,
                 ),
             )
         }
-        Spacer(Modifier.height(t.space5))
+        // V93: bookmarks are listed right in 详情, as in the reference's 「书签和摘抄」.
+        Spacer(Modifier.height(t.space4))
+        ReaderSectionTitleV30(title = "书签")
+        val marked = remember(chapters, bookmarkedChapters) {
+            chapters.withIndex().filter { it.value.chapterNumber in bookmarkedChapters }
+        }
+        if (marked.isEmpty()) {
+            Text(
+                text = "还没有书签，点右上角的书签图标收藏本章。",
+                modifier = Modifier.padding(vertical = t.space2),
+                style = MaterialTheme.typography.bodySmall,
+                color = t.mutedForeground,
+            )
+        } else {
+            marked.take(READER_DETAIL_BOOKMARKS_V93).forEach { (index, item) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clickable(role = Role.Button) { onJumpChapter(index, 0) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Bookmark,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = t.primary,
+                    )
+                    Spacer(Modifier.width(t.space3))
+                    Text(
+                        text = readerDisplayChapterTitleV13(item.title, item.chapterNumber),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = t.foreground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (marked.size > READER_DETAIL_BOOKMARKS_V93) {
+                Text(
+                    text = "另有 ${marked.size - READER_DETAIL_BOOKMARKS_V93} 条，在「目录 · 书签」中查看",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.mutedForeground,
+                )
+            }
+        }
+        Spacer(Modifier.height(t.space4))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -539,19 +653,19 @@ private fun ReaderDetailsTabV30(
             ReaderSectionTitleV30(title = "阅读主题", modifier = Modifier.weight(1f))
             ReaderInlineTextActionV30(text = "全部设置", onClick = onThemePanel)
         }
-        Spacer(Modifier.height(t.space3))
+        Spacer(Modifier.height(t.space2))
         ReaderThemeGridV30(settings = settings, compact = true)
-        Spacer(Modifier.height(t.space5))
+        Spacer(Modifier.height(t.space4))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ReaderSectionTitleV30(title = "字号", modifier = Modifier.weight(1f))
-            ReaderInlineTextActionV30(text = "更多", onClick = onSizePanel)
+            ReaderInlineTextActionV30(text = "更多字号", onClick = onSizePanel)
         }
-        Spacer(Modifier.height(t.space3))
+        Spacer(Modifier.height(t.space2))
         ReaderFontSizeStepperV30(settings = settings)
-        Spacer(Modifier.height(t.space4))
+        Spacer(Modifier.height(t.space3))
         Text(
             text = "当前正文主题：${readerThemeDisplayNameV30(theme.key)} · " +
                 "${settings.fontSize.roundToInt()}sp",
@@ -560,6 +674,8 @@ private fun ReaderDetailsTabV30(
         )
     }
 }
+
+private const val READER_DETAIL_BOOKMARKS_V93 = 5
 
 
 /* -------------------------------------------------------------------------- */
@@ -574,41 +690,36 @@ private fun ReaderBookInfoCardV30(
     pageCount: Int,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusLg)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
-            .padding(t.space3),
+            .padding(vertical = t.space1),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(50.dp)
-                .height(68.dp)
-                .background(color = t.input, shape = RoundedCornerShape(t.radiusSm))
-                .border(width = 1.dp, color = t.border, shape = RoundedCornerShape(t.radiusSm)),
+                .width(42.dp)
+                .height(56.dp)
+                .background(color = t.foreground.copy(alpha = 0.05f), shape = RoundedCornerShape(4.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Rounded.AutoStories,
+                imageVector = Icons.Outlined.AutoStories,
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = t.primary,
+                modifier = Modifier.size(20.dp),
+                tint = t.mutedForeground,
             )
         }
         Spacer(Modifier.width(t.space3))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = book.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = t.foreground,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(t.space1))
             Text(
                 text = chapter?.let {
                     readerDisplayChapterTitleV13(it.title, it.chapterNumber)
@@ -618,7 +729,6 @@ private fun ReaderBookInfoCardV30(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(t.space1))
             Text(
                 text = buildString {
                     if (book.genre.isNotBlank() && book.genre != "导入作品") {
@@ -667,7 +777,7 @@ private fun ReaderDirectoryTabV30(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = t.space4, vertical = t.space2),
+                .padding(horizontal = t.space3, vertical = t.space1),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ReaderDirectorySegmentV30(
@@ -769,23 +879,38 @@ private fun ReaderChapterListV30(
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = readerTocInitialIndexV90(chapterIndex, chapters.size),
     )
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(
-            start = t.space3, end = t.space3, bottom = t.space3,
-        ),
-    ) {
-        itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
-            val current = index == chapterIndex
-            val marked = chapter.chapterNumber in bookmarkedChapters
-            ReaderChapterRowV30(
-                chapter = chapter,
-                current = current,
-                bookmarked = marked,
-                onClick = { onJumpChapter(index, 0) },
-            )
+    // V92: long directories (web serials with hundreds of chapters) get a fast-scroll strip.
+    val fastScroll = chapters.size >= READER_TOC_FAST_SCROLL_MIN_V92
+    Box(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = t.space3,
+                end = if (fastScroll) READER_TOC_FAST_SCROLL_GUTTER_V92 else t.space3,
+                bottom = t.space3,
+            ),
+        ) {
+            itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
+                val current = index == chapterIndex
+                val marked = chapter.chapterNumber in bookmarkedChapters
+                ReaderChapterRowV30(
+                    chapter = chapter,
+                    current = current,
+                    bookmarked = marked,
+                    onClick = { onJumpChapter(index, 0) },
+                )
+            }
         }
+        ReaderTocFastScrollerV92(
+            listState = listState,
+            itemCount = chapters.size,
+            labelFor = { index ->
+                chapters.getOrNull(index)
+                    ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
+                    .orEmpty()
+            },
+        )
     }
 }
 
@@ -801,7 +926,10 @@ private fun ReaderBookmarkListV30(
     modifier: Modifier = Modifier,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val rows = chapters.filter { it.chapterNumber in bookmarks }
+    // Index once instead of chapters.indexOf(chapter) per row (O(n²) on long books).
+    val rows = remember(chapters, bookmarks) {
+        chapters.withIndex().filter { it.value.chapterNumber in bookmarks }
+    }
     if (rows.isEmpty()) {
         ReaderMenuEmptyV30(
             title = "还没有书签",
@@ -815,8 +943,7 @@ private fun ReaderBookmarkListV30(
             start = t.space3, end = t.space3, bottom = t.space3,
         ),
     ) {
-        items(items = rows, key = { "bookmark-${it.id}" }) { chapter ->
-            val index = chapters.indexOf(chapter)
+        items(items = rows, key = { "bookmark-${it.value.id}" }) { (index, chapter) ->
             ReaderChapterRowV30(
                 chapter = chapter,
                 current = false,
@@ -876,7 +1003,6 @@ private fun ReaderLegacyBookmarkListV30(
                     .fillMaxWidth()
                     .padding(vertical = t.space1)
                     .background(color = t.card, shape = shape)
-                    .border(width = 1.dp, color = t.border, shape = shape)
                     .padding(t.space3),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -914,48 +1040,39 @@ private fun ReaderChapterRowV30(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
+    // V93: flat directory row; the chapter being read is set in the accent colour.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = t.space1)
-            .background(
-                color = if (current) t.accent else Color.Transparent,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (current) t.primary else Color.Transparent,
-                shape = shape,
-            )
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(t.radiusSm))
             .clickable(onClick = onClick)
-            .padding(horizontal = t.space3, vertical = t.space3),
+            .padding(horizontal = t.space2, vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Text(
+            text = readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (current) t.primary else t.foreground,
+            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (current) {
             Text(
-                text = readerDisplayChapterTitleV13(chapter.title, chapter.chapterNumber),
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (current) t.accentForeground else t.foreground,
-                fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                text = "正在阅读",
+                modifier = Modifier.padding(start = t.space2),
+                style = MaterialTheme.typography.labelSmall,
+                color = t.primary,
             )
-            if (current) {
-                Text(
-                    text = "正在阅读",
-                    modifier = Modifier.padding(top = t.space1),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = t.primary,
-                )
-            }
         }
         if (bookmarked) {
             Icon(
                 imageVector = Icons.Outlined.Bookmark,
                 contentDescription = "已加书签",
-                modifier = Modifier.size(18.dp),
-                tint = t.gold,
+                modifier = Modifier.padding(start = t.space2).size(16.dp),
+                tint = t.primary,
             )
         }
     }
@@ -990,195 +1107,93 @@ private fun ReaderMoreTabV30(
     var renameOpen by remember { mutableStateOf(false) }
     var deleteOpen by remember { mutableStateOf(false) }
 
+    // V93: everything in 「更多」 is a 4-column grid of round line-icon cells with small grey
+    // labels (the reference reader's settings grid). Switches become toggle cells whose glyph
+    // and label turn the accent colour when on; panels open from plain cells.
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = windowHeight * 0.58f)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = t.space4, vertical = t.space3),
+            .padding(horizontal = t.space3, vertical = t.space2),
     ) {
-        ReaderSectionTitleV30(title = "常用")
-        Spacer(Modifier.height(t.space3))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(t.space2),
-        ) {
-            ReaderActionTileV30(
-                icon = Icons.Rounded.Headphones,
-                label = if (listening) "停止听书" else "听书",
-                selected = listening,
-                modifier = Modifier.weight(1f),
-                onClick = onListen,
-            )
-            ReaderActionTileV30(
-                icon = Icons.Rounded.BarChart,
-                label = "阅读统计",
-                modifier = Modifier.weight(1f),
-                onClick = { onPanel(ReaderMenuPanelV30.STATS) },
-            )
-            ReaderActionTileV30(
-                icon = Icons.Rounded.Search,
-                label = "全文搜索",
-                modifier = Modifier.weight(1f),
-                onClick = { onPanel(ReaderMenuPanelV30.SEARCH) },
-            )
-            ReaderActionTileV30(
-                icon = Icons.Rounded.MyLocation,
-                label = "定位",
-                modifier = Modifier.weight(1f),
-                onClick = onLocate,
-            )
-        }
-        if (onOpenOriginalEdition != null) {
-            Spacer(Modifier.height(t.space3))
-            // This EPUB opens in 文字版 because that was the last choice; offer the way back.
-            ReaderSettingsNavigationRowV30(
-                icon = Icons.Rounded.AutoStories,
-                title = "切换到原版",
-                value = "EPUB 原版排版",
-                onClick = onOpenOriginalEdition,
-            )
-        }
-        Spacer(Modifier.height(t.space5))
-        ReaderSectionTitleV30(title = "排版与翻页")
-        Spacer(Modifier.height(t.space2))
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.TextFields,
-            title = "字体",
-            value = readerFontLabelV30(settings.fontKey),
-            onClick = { onPanel(ReaderMenuPanelV30.FONT) },
+        ReaderIconGridV93(
+            listOf(
+                ReaderGridItemV93(Icons.Outlined.Headphones, if (listening) "停止听书" else "听书", active = listening, onClick = onListen),
+                ReaderGridItemV93(Icons.Outlined.BarChart, "阅读统计") { onPanel(ReaderMenuPanelV30.STATS) },
+                ReaderGridItemV93(Icons.Outlined.Search, "全文搜索") { onPanel(ReaderMenuPanelV30.SEARCH) },
+                ReaderGridItemV93(Icons.Outlined.MyLocation, "定位", onClick = onLocate),
+            ) + listOfNotNull(
+                // This EPUB opens in 文字版 because that was the last choice; offer the way back.
+                onOpenOriginalEdition?.let { ReaderGridItemV93(Icons.Outlined.AutoStories, "切换到原版", onClick = it) },
+            ),
         )
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.FormatLineSpacing,
-            title = "行距与排版",
-            value = String.format(Locale.US, "%.2f", settings.lineFactor),
-            onClick = { onPanel(ReaderMenuPanelV30.SPACING) },
+        ReaderGridLabelV93("排版")
+        ReaderIconGridV93(
+            listOf(
+                ReaderGridItemV93(Icons.Outlined.Checkroom, "主题") { onPanel(ReaderMenuPanelV30.THEME) },
+                ReaderGridItemV93(Icons.Outlined.TextFields, "字体") { onPanel(ReaderMenuPanelV30.FONT) },
+                ReaderGridItemV93(Icons.Outlined.FormatSize, "字号") { onPanel(ReaderMenuPanelV30.SIZE) },
+                ReaderGridItemV93(Icons.Outlined.FormatLineSpacing, "行距与排版") { onPanel(ReaderMenuPanelV30.SPACING) },
+                ReaderGridItemV93(Icons.Outlined.ViewCarousel, "翻页方式") { onPanel(ReaderMenuPanelV30.TURN) },
+            ),
         )
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.ViewCarousel,
-            title = "翻页方式",
-            value = settings.turnMode.label,
-            onClick = { onPanel(ReaderMenuPanelV30.TURN) },
+        ReaderGridLabelV93("翻页")
+        ReaderIconGridV93(
+            listOf(
+                ReaderGridItemV93(Icons.Outlined.SwapVert, "上下滚动", toggle = settings.turnMode == ReaderTurnModeV30.SCROLL) {
+                    if (settings.turnMode != ReaderTurnModeV30.SCROLL) settings.selectTurnMode(ReaderTurnModeV30.SCROLL)
+                    else settings.selectTurnMode(settings.lastPagedMode)
+                },
+                ReaderGridItemV93(Icons.Outlined.ImportContacts, "仿真翻页", toggle = settings.turnMode == ReaderTurnModeV30.SIMULATION) {
+                    settings.selectTurnMode(
+                        if (settings.turnMode != ReaderTurnModeV30.SIMULATION) ReaderTurnModeV30.SIMULATION
+                        else ReaderTurnModeV30.COVER,
+                    )
+                },
+                ReaderGridItemV93(Icons.Outlined.TouchApp, "点击动画", toggle = settings.clickAnimation) {
+                    settings.clickAnimation = !settings.clickAnimation
+                },
+                ReaderGridItemV93(Icons.Outlined.Fullscreen, "全屏下一页", toggle = settings.fullNext) {
+                    settings.fullNext = !settings.fullNext
+                },
+                ReaderGridItemV93(Icons.AutoMirrored.Outlined.VolumeUp, "音量键翻页", toggle = settings.volumeTurn) {
+                    settings.volumeTurn = !settings.volumeTurn
+                },
+            ),
         )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.SwapVert,
-            title = "上下滚动",
-            description = "连续纵向阅读正文",
-            checked = settings.turnMode == ReaderTurnModeV30.SCROLL,
-            onCheckedChange = { checked ->
-                if (checked) settings.selectTurnMode(ReaderTurnModeV30.SCROLL)
-                else settings.selectTurnMode(settings.lastPagedMode)
-            },
+        ReaderGridLabelV93("屏幕")
+        ReaderIconGridV93(
+            listOf(
+                ReaderGridItemV93(Icons.Outlined.WbSunny, "屏幕常亮", toggle = settings.keepScreen) {
+                    settings.keepScreen = !settings.keepScreen
+                },
+                ReaderGridItemV93(Icons.Outlined.Schedule, "时间电量", toggle = settings.showTimeBattery) {
+                    settings.showTimeBattery = !settings.showTimeBattery
+                },
+                ReaderGridItemV93(Icons.Outlined.CropFree, "沉浸式", toggle = settings.immersive) {
+                    settings.immersive = !settings.immersive
+                },
+                ReaderGridItemV93(Icons.Outlined.ScreenLockPortrait, "锁定竖屏", toggle = settings.lockPortrait) {
+                    settings.lockPortrait = !settings.lockPortrait
+                },
+            ),
         )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.AutoStories,
-            title = "仿真翻页",
-            description = "模拟纸张翻页效果",
-            checked = settings.turnMode == ReaderTurnModeV30.SIMULATION,
-            onCheckedChange = { checked ->
-                settings.selectTurnMode(
-                    if (checked) ReaderTurnModeV30.SIMULATION else ReaderTurnModeV30.COVER,
-                )
-            },
-        )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.TouchApp,
-            title = "点击动画",
-            description = "点击翻页时播放过渡动画",
-            checked = settings.clickAnimation,
-            onCheckedChange = { settings.clickAnimation = it },
-        )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.Fullscreen,
-            title = "全屏下一页",
-            description = "除中间区域外点击均向后翻页",
-            checked = settings.fullNext,
-            onCheckedChange = { settings.fullNext = it },
-        )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.VolumeUp,
-            title = "音量键翻页",
-            description = "音量加减键控制上一页与下一页",
-            checked = settings.volumeTurn,
-            onCheckedChange = { settings.volumeTurn = it },
-        )
-        Spacer(Modifier.height(t.space5))
-        ReaderSectionTitleV30(title = "屏幕")
-        Spacer(Modifier.height(t.space2))
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.WbSunny,
-            title = "屏幕常亮",
-            description = "阅读时阻止屏幕自动熄灭",
-            checked = settings.keepScreen,
-            onCheckedChange = { settings.keepScreen = it },
-        )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.Visibility,
-            title = "时间电量",
-            description = "页脚显示当前时间与电量",
-            checked = settings.showTimeBattery,
-            onCheckedChange = { settings.showTimeBattery = it },
-        )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.Fullscreen,
-            title = "沉浸式",
-            description = "隐藏系统栏，扩大正文阅读区域",
-            checked = settings.immersive,
-            onCheckedChange = { settings.immersive = it },
-        )
-        ReaderSwitchRowV30(
-            icon = Icons.Rounded.ScreenLockPortrait,
-            title = "锁定竖屏",
-            description = "阅读期间保持竖屏方向",
-            checked = settings.lockPortrait,
-            onCheckedChange = { settings.lockPortrait = it },
-        )
-        Spacer(Modifier.height(t.space5))
-        ReaderSectionTitleV30(title = "书籍与章节")
-        Spacer(Modifier.height(t.space2))
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.Edit,
-            title = "编辑当前章节",
-            value = currentChapter?.let { "第 ${it.chapterNumber} 章" } ?: "",
-            enabled = currentChapter != null,
-            onClick = onEdit,
-        )
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.AutoAwesome,
-            title = "AI 创作",
-            value = "规划、改写或续写",
-            onClick = onWriting,
-        )
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.MenuBook,
-            title = "故事模式",
-            value = "进入世界互动",
-            onClick = onStory,
-        )
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.Edit,
-            title = "重命名当前章节",
-            value = currentChapter?.title.orEmpty(),
-            enabled = currentChapter != null,
-            onClick = { renameOpen = true },
-        )
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.Add,
-            title = "新增章节",
-            value = "添加到章节末尾",
-            onClick = onAppendChapter,
-        )
-        ReaderSettingsNavigationRowV30(
-            icon = Icons.Rounded.DeleteOutline,
-            title = "删除最后一章",
-            value = chapters.lastOrNull()?.let { "第 ${it.chapterNumber} 章" }.orEmpty(),
-            destructive = true,
-            enabled = chapters.isNotEmpty(),
-            onClick = { deleteOpen = true },
+        ReaderGridLabelV93("书籍与章节")
+        ReaderIconGridV93(
+            listOf(
+                ReaderGridItemV93(Icons.Outlined.Edit, "编辑当前章节", enabled = currentChapter != null, onClick = onEdit),
+                ReaderGridItemV93(Icons.Outlined.AutoAwesome, "AI 创作", onClick = onWriting),
+                ReaderGridItemV93(Icons.AutoMirrored.Outlined.MenuBook, "故事模式", onClick = onStory),
+                ReaderGridItemV93(Icons.Outlined.DriveFileRenameOutline, "重命名章节", enabled = currentChapter != null) { renameOpen = true },
+                ReaderGridItemV93(Icons.Outlined.PostAdd, "新增章节", onClick = onAppendChapter),
+                ReaderGridItemV93(Icons.Outlined.DeleteOutline, "删除最后一章", enabled = chapters.isNotEmpty(), destructive = true) { deleteOpen = true },
+            ),
         )
         Spacer(Modifier.height(t.space3))
         Text(
             text = "《${book.title}》 · 共 ${chapters.size} 章",
+            modifier = Modifier.padding(horizontal = t.space2),
             style = MaterialTheme.typography.bodySmall,
             color = t.mutedForeground,
         )
@@ -1220,6 +1235,9 @@ private fun ReaderThemePanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "阅读主题", onBack = onBack)
@@ -1230,6 +1248,9 @@ private fun ReaderThemePanelV30(
         )
         Spacer(Modifier.height(t.space4))
         ReaderThemeGridV30(settings = settings, compact = false)
+        Spacer(Modifier.height(t.space5))
+        // V92: brightness, warm light and paper backdrop live with the colour themes.
+        ReaderLightAndBackdropSectionV92(settings = settings)
     }
 }
 
@@ -1277,6 +1298,8 @@ private fun ReaderThemeOptionV30(
 ) {
     val t = LocalLanghuanUiTokens.current
     Column(
+        // Keep the original click node: ReaderRecreationV42 validates the landscape Details tab
+        // accessibility tree, and extra RadioButton nodes here left its font stepper bounds stale.
         modifier = modifier.clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1341,9 +1364,14 @@ private fun ReaderFontPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "字体", onBack = onBack)
+        ReaderTypesetPreviewV91(settings = settings)
+        Spacer(Modifier.height(t.space3))
         val fonts = listOf(
             Triple("sans", "系统黑体", FontFamily.SansSerif),
             Triple("serif", "系统宋体", FontFamily.Serif),
@@ -1355,25 +1383,16 @@ private fun ReaderFontPanelV30(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = t.space2)
-                    .background(
-                        color = if (selected) t.accent else t.card,
-                        shape = shape,
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = if (selected) t.primary else t.border,
-                        shape = shape,
-                    )
-                    .clickable { settings.fontKey = key }
-                    .padding(t.space3),
+                    .clip(shape)
+                    .selectable(selected = selected, role = Role.RadioButton) { settings.fontKey = key }
+                    .padding(vertical = t.space3, horizontal = t.space1),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = label,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = t.foreground,
+                        color = if (selected) t.primary else t.foreground,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
@@ -1428,6 +1447,9 @@ private fun ReaderSizePanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(
@@ -1440,6 +1462,8 @@ private fun ReaderSizePanelV30(
                 )
             },
         )
+        ReaderTypesetPreviewV91(settings = settings)
+        Spacer(Modifier.height(t.space3))
         ReaderFontSizeStepperV30(settings = settings)
         Spacer(Modifier.height(t.space4))
         ReaderSliderRowV30(
@@ -1475,6 +1499,9 @@ private fun ReaderSpacingPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(
@@ -1487,6 +1514,8 @@ private fun ReaderSpacingPanelV30(
                 )
             },
         )
+        ReaderTypesetPreviewV91(settings = settings)
+        Spacer(Modifier.height(t.space3))
         Text(
             text = "行距",
             style = MaterialTheme.typography.labelMedium,
@@ -1556,6 +1585,9 @@ private fun ReaderTurnPanelV30(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // The menu body has a bounded height; landscape and large font scales used to
+            // clip the lower rows of settings panels with no way to reach them.
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
         ReaderPanelHeaderV30(title = "翻页方式", onBack = onBack)
@@ -1681,8 +1713,7 @@ private fun ReaderSearchPanelV30(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .background(color = t.input, shape = fieldShape)
-                .border(width = 1.dp, color = t.border, shape = fieldShape)
+                .background(color = t.foreground.copy(alpha = 0.05f), shape = fieldShape)
                 .padding(horizontal = t.space3),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1751,8 +1782,7 @@ private fun ReaderSearchPanelV30(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(color = t.card, shape = shape)
-                        .border(width = 1.dp, color = t.border, shape = shape)
+                        .background(color = t.foreground.copy(alpha = 0.035f), shape = shape)
                         .clickable { onJumpChapter(hit.chapterIndex, hit.offset) }
                         .padding(t.space3),
                 ) {
@@ -1820,7 +1850,6 @@ private fun ReaderRenameChapterDialogV30(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
         ) {
             Text(
@@ -1883,7 +1912,6 @@ private fun ReaderDeleteLastChapterDialogV30(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(color = t.card, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape)
                 .padding(t.space4),
         ) {
             Text(
@@ -1924,12 +1952,12 @@ private fun ReaderMenuTabsV30(
     onTab: (ReaderMenuTabV30) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    // V93: a plain bottom tab bar — three equal text tabs, the active one in the accent colour.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
-            .padding(horizontal = t.space3, vertical = t.space1),
-        horizontalArrangement = Arrangement.spacedBy(t.space1),
+            .height(52.dp)
+            .padding(horizontal = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         listOf(
@@ -1938,34 +1966,73 @@ private fun ReaderMenuTabsV30(
             ReaderMenuTabV30.MORE to "更多",
         ).forEach { (item, label) ->
             val selected = tab == item
-            val shape = RoundedCornerShape(t.radiusMd)
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .background(
-                        color = if (selected) t.accent else Color.Transparent,
-                        shape = shape,
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = if (selected) t.border else Color.Transparent,
-                        shape = shape,
-                    )
                     .selectable(selected = selected, role = Role.Tab) { onTab(item) }
                     .semantics { contentDescription = "阅读菜单：$label" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) t.accentForeground else t.mutedForeground,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (selected) t.primary else t.mutedForeground,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                 )
             }
         }
     }
 }
+
+
+/* -------------------------------------------------------------------------- */
+/*                         V93 · icon grid (更多)                              */
+/* -------------------------------------------------------------------------- */
+
+private class ReaderGridItemV93(
+    val icon: ImageVector,
+    val label: String,
+    val toggle: Boolean? = null,
+    val active: Boolean = false,
+    val enabled: Boolean = true,
+    val destructive: Boolean = false,
+    val onClick: () -> Unit,
+)
+
+@Composable
+private fun ReaderIconGridV93(items: List<ReaderGridItemV93>) {
+    items.chunked(READER_GRID_COLUMNS_V93).forEach { row ->
+        Row(modifier = Modifier.fillMaxWidth()) {
+            row.forEach { item ->
+                FlatIconCellV93(
+                    icon = item.icon,
+                    label = item.label,
+                    onClick = item.onClick,
+                    modifier = Modifier.weight(1f),
+                    active = item.active || item.toggle == true,
+                    toggle = item.toggle,
+                    enabled = item.enabled,
+                    destructive = item.destructive,
+                )
+            }
+            repeat(READER_GRID_COLUMNS_V93 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+@Composable
+private fun ReaderGridLabelV93(text: String) {
+    val t = LocalLanghuanUiTokens.current
+    Text(
+        text = text,
+        modifier = Modifier.padding(start = t.space2, top = t.space3, bottom = t.space1),
+        style = MaterialTheme.typography.labelSmall,
+        color = t.mutedForeground,
+    )
+}
+
+private const val READER_GRID_COLUMNS_V93 = 4
 
 
 /* -------------------------------------------------------------------------- */
@@ -1981,9 +2048,9 @@ private fun ReaderMenuHandleV30() {
     ) {
         Box(
             modifier = Modifier
-                .width(36.dp)
+                .width(32.dp)
                 .height(4.dp)
-                .background(color = t.border, shape = CircleShape),
+                .background(color = t.foreground.copy(alpha = 0.12f), shape = CircleShape),
         )
     }
 }
@@ -1992,7 +2059,7 @@ private fun ReaderMenuHandleV30() {
 private fun ReaderMenuDividerV30() {
     val t = LocalLanghuanUiTokens.current
     Box(
-        modifier = Modifier.fillMaxWidth().height(1.dp).background(t.border),
+        modifier = Modifier.fillMaxWidth().height(0.5.dp).background(t.border.copy(alpha = 0.6f)),
     )
 }
 
@@ -2005,11 +2072,56 @@ private fun ReaderSectionTitleV30(
     Text(
         text = title,
         modifier = modifier,
-        style = MaterialTheme.typography.titleMedium,
-        color = t.foreground,
-        fontWeight = FontWeight.SemiBold,
+        style = MaterialTheme.typography.labelLarge,
+        color = t.mutedForeground,
+        fontWeight = FontWeight.Medium,
     )
 }
+
+/**
+ * Live typesetting sample (Readera / Moon+ Reader style). The settings sheet covers most of the
+ * page, so font, size, weight, spacing, margins and indent are previewed here in the current
+ * reader theme with the exact typeface the page renderer uses.
+ */
+@Composable
+private fun ReaderTypesetPreviewV91(settings: ReaderSettingsV30) {
+    val t = LocalLanghuanUiTokens.current
+    val theme = readerThemeV30(settings.theme)
+    val family = remember(settings.fontKey, settings.weight) {
+        FontFamily(readerTypefaceV30(settings.fontKey, settings.weight))
+    }
+    val size = settings.fontSize
+    val style = TextStyle(
+        color = theme.text,
+        fontFamily = family,
+        fontSize = size.sp,
+        lineHeight = (size * settings.lineFactor).sp,
+        letterSpacing = settings.letterSpacing.em,
+    )
+    val indent = if (settings.indent) "\u3000\u3000" else ""
+    val shape = RoundedCornerShape(t.radiusMd)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 168.dp)
+            .clip(shape)
+            .background(color = theme.page, shape = shape)
+            .border(width = 1.dp, color = t.border, shape = shape)
+            .clipToBounds()
+            .padding(horizontal = (settings.sidePadding * 0.6f).dp, vertical = t.space3)
+            .semantics(mergeDescendants = true) { contentDescription = READER_PREVIEW_LABEL_V91 },
+    ) {
+        Text(text = indent + READER_PREVIEW_SAMPLE_V91[0], style = style)
+        Spacer(Modifier.height(settings.paragraphSpacing.dp))
+        Text(text = indent + READER_PREVIEW_SAMPLE_V91[1], style = style)
+    }
+}
+
+internal const val READER_PREVIEW_LABEL_V91 = "排版预览"
+private val READER_PREVIEW_SAMPLE_V91 = listOf(
+    "夜色落在平静的水面上，船舱里只亮着一盏灯。",
+    "他记得来时的路，却找不到原来的码头。",
+)
 
 @Composable
 private fun ReaderPanelHeaderV30(
@@ -2017,31 +2129,8 @@ private fun ReaderPanelHeaderV30(
     onBack: () -> Unit,
     action: (@Composable () -> Unit)? = null,
 ) {
-    val t = LocalLanghuanUiTokens.current
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = t.space3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier.size(40.dp).clickable(onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.ChevronLeft,
-                contentDescription = "返回",
-                modifier = Modifier.size(22.dp),
-                tint = t.secondaryForeground,
-            )
-        }
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleLarge,
-            color = t.foreground,
-            fontWeight = FontWeight.SemiBold,
-        )
-        action?.invoke()
-    }
+    // V93: back arrow + centred title, like the reference's sub-pages (字体 / 日间主题).
+    FlatTopBarV93(title = title, onBack = onBack, action = action)
 }
 
 @Composable
@@ -2052,40 +2141,7 @@ private fun ReaderActionTileV30(
     selected: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    Column(
-        modifier = modifier
-            .height(74.dp)
-            .background(
-                color = if (selected) t.accent else t.card,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
-            .padding(t.space2),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            modifier = Modifier.size(22.dp),
-            tint = if (selected) t.primary else t.secondaryForeground,
-        )
-        Spacer(Modifier.height(t.space1))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) t.accentForeground else t.secondaryForeground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    FlatIconCellV93(icon = icon, label = label, onClick = onClick, modifier = modifier, active = selected)
 }
 
 @Composable
@@ -2104,13 +2160,10 @@ private fun ReaderFontSizeStepperV30(settings: ReaderSettingsV30) {
                 settings.fontSize = (settings.fontSize - 1f).coerceAtLeast(12f)
             },
         )
-        val shape = RoundedCornerShape(t.radiusMd)
         Box(
             modifier = Modifier
                 .weight(1f)
-                .height(46.dp)
-                .background(color = t.input, shape = shape)
-                .border(width = 1.dp, color = t.border, shape = shape),
+                .height(46.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -2143,8 +2196,8 @@ private fun ReaderStepperButtonV30(
     Box(
         modifier = modifier
             .height(46.dp)
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            .background(color = t.foreground.copy(alpha = 0.05f), shape = shape)
+            .clip(shape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = if (text == "A+") "增大阅读字号" else "减小阅读字号" },
         contentAlignment = Alignment.Center,
@@ -2167,58 +2220,14 @@ private fun ReaderSettingsNavigationRowV30(
     enabled: Boolean = true,
     destructive: Boolean = false,
 ) {
-    val t = LocalLanghuanUiTokens.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = t.space3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .background(
-                    color = if (destructive) t.destructive.copy(alpha = 0.08f)
-                    else t.input,
-                    shape = RoundedCornerShape(t.radiusSm),
-                )
-                .border(
-                    width = 1.dp, color = t.border,
-                    shape = RoundedCornerShape(t.radiusSm),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = if (destructive) t.destructive else t.secondaryForeground,
-            )
-        }
-        Spacer(Modifier.width(t.space3))
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            color = when {
-                !enabled -> t.mutedForeground.copy(alpha = 0.45f)
-                destructive -> t.destructive
-                else -> t.foreground
-            },
-        )
-        if (value.isNotBlank()) {
-            Text(
-                text = value,
-                modifier = Modifier.width(112.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.End,
-            )
-        }
-    }
+    FlatListRowV93(
+        title = title,
+        onClick = onClick,
+        icon = icon,
+        value = value,
+        enabled = enabled,
+        destructive = destructive,
+    )
 }
 
 @Composable
@@ -2237,27 +2246,13 @@ private fun ReaderSwitchRowV30(
             .padding(vertical = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .background(
-                    color = if (checked) t.accent else t.input,
-                    shape = RoundedCornerShape(t.radiusSm),
-                )
-                .border(
-                    width = 1.dp, color = t.border,
-                    shape = RoundedCornerShape(t.radiusSm),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = if (checked) t.primary else t.secondaryForeground,
-            )
-        }
-        Spacer(Modifier.width(t.space3))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = if (checked) t.primary else t.foreground.copy(alpha = 0.7f),
+        )
+        Spacer(Modifier.width(t.space4))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -2266,7 +2261,7 @@ private fun ReaderSwitchRowV30(
             )
             Text(
                 text = description,
-                modifier = Modifier.padding(top = t.space1),
+                modifier = Modifier.padding(top = 2.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = t.mutedForeground,
             )
@@ -2277,31 +2272,7 @@ private fun ReaderSwitchRowV30(
 
 @Composable
 private fun ReaderSwitchV30(checked: Boolean) {
-    val t = LocalLanghuanUiTokens.current
-    Box(
-        modifier = Modifier
-            .width(44.dp)
-            .height(24.dp)
-            .background(
-                color = if (checked) t.primary else t.input,
-                shape = CircleShape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (checked) t.primary else t.border,
-                shape = CircleShape,
-            ),
-    ) {
-        Box(
-            modifier = Modifier
-                .offset(x = if (checked) 20.dp else 2.dp, y = 2.dp)
-                .size(20.dp)
-                .background(
-                    color = if (checked) t.card else t.mutedForeground,
-                    shape = CircleShape,
-                ),
-        )
-    }
+    FlatSwitchV93(checked = checked)
 }
 
 @Composable
@@ -2317,21 +2288,17 @@ private fun ReaderChoiceChipV30(
         modifier = modifier
             .height(40.dp)
             .background(
-                color = if (selected) t.accent else t.card,
+                color = if (selected) t.primary.copy(alpha = 0.10f) else t.foreground.copy(alpha = 0.04f),
                 shape = shape,
             )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick),
+            .clip(shape)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            color = if (selected) t.accentForeground else t.secondaryForeground,
+            color = if (selected) t.primary else t.secondaryForeground,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
         )
@@ -2391,27 +2358,20 @@ private fun ReaderDirectorySegmentV30(
     onClick: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusSm)
+    // V93: plain text segment; the selected one is accent and bold, no box.
     Box(
         modifier = Modifier
-            .height(34.dp)
-            .background(
-                color = if (selected) t.accent else t.card,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
+            .heightIn(min = 36.dp)
+            .clip(RoundedCornerShape(t.radiusSm))
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = t.space2),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) t.accentForeground else t.secondaryForeground,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) t.primary else t.mutedForeground,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
 }

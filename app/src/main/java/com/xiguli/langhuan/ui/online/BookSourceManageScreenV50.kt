@@ -11,6 +11,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.outlined.Source
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.FileOpen
@@ -40,15 +43,19 @@ import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import java.net.URI
 
 
-private enum class SourceManageGroupV50(
-    val label: String,
-) {
-    ALL("全部"),
-    GENERAL("综合"),
-    SUSPENSE("悬疑"),
-    ANCIENT("古风"),
+/** V94: groups come from the sources themselves (the old fixed 综合/悬疑/古风 chips matched nothing). */
+internal const val SOURCE_GROUP_ALL_V94 = ""
+internal const val SOURCE_GROUP_UNGROUPED_V94 = "未分组"
+
+internal fun sourceManageGroupsV94(sources: List<BookSourceV36>): List<String> {
+    val named = sources.flatMap { sourceGroupNamesV94(it) }.distinct().sorted()
+    val ungrouped = sources.any { sourceGroupNamesV94(it).isEmpty() }
+    return if (named.isEmpty()) emptyList() else named + if (ungrouped) listOf(SOURCE_GROUP_UNGROUPED_V94) else emptyList()
 }
 
+/** Legado groups may hold several names separated by commas/semicolons. */
+internal fun sourceGroupNamesV94(source: BookSourceV36): List<String> =
+    source.group.split(',', '，', ';', '；').map { it.trim() }.filter { it.isNotEmpty() }
 
 /**
  * 书源管理 V50。
@@ -68,20 +75,26 @@ internal fun BookSourceManageScreenV50(
     onToggleSource: (String) -> Unit,
     onImportSource: () -> Unit,
     onAiGenerateSource: () -> Unit,
+    onCreateSource: () -> Unit = {},
+    onExportSources: () -> Unit = {},
+    importing: Boolean = false,
+    importReport: SourceImportReportV94? = null,
+    onDismissImportReport: () -> Unit = {},
 ) {
     val t = LocalLanghuanUiTokens.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
     var query by rememberSaveable { mutableStateOf("") }
-    var group by rememberSaveable { mutableStateOf(SourceManageGroupV50.ALL) }
+    var group by rememberSaveable { mutableStateOf(SOURCE_GROUP_ALL_V94) }
+    val groups = remember(sources) { sourceManageGroupsV94(sources) }
 
     LaunchedEffect(focusSourceId) {
         if (focusSourceId != null) {
             focusManager.clearFocus(force = true)
             keyboardController?.hide()
             query = ""
-            group = SourceManageGroupV50.ALL
+            group = SOURCE_GROUP_ALL_V94
         }
     }
 
@@ -101,7 +114,19 @@ internal fun BookSourceManageScreenV50(
             .background(t.background)
             .statusBarsPadding(),
     ) {
-        SourceManageHeaderV50(onBack = onBack)
+        com.xiguli.langhuan.ui.design.FlatTopBarV93(
+            title = "书源管理",
+            onBack = onBack,
+            action = if (sources.isNotEmpty()) {
+                {
+                    com.xiguli.langhuan.ui.design.FlatIconButtonV93(
+                        icon = androidx.compose.material.icons.Icons.Outlined.Upload,
+                        contentDescription = "导出书源",
+                        onClick = onExportSources,
+                    )
+                }
+            } else null,
+        )
 
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -120,20 +145,45 @@ internal fun BookSourceManageScreenV50(
                 )
             }
 
-            item("manage-groups") {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(t.space2),
-                ) {
-                    items(
-                        items = SourceManageGroupV50.entries,
-                        key = { it.name },
-                    ) { item ->
-                        SourceManageGroupChipV50(
-                            text = item.label,
-                            selected = item == group,
-                            onClick = { group = item },
-                        )
+            if (groups.isNotEmpty()) {
+                item("manage-groups") {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(t.space2),
+                    ) {
+                        items(
+                            items = listOf(SOURCE_GROUP_ALL_V94) + groups,
+                            key = { "group:$it" },
+                        ) { item ->
+                            SourceManageGroupChipV50(
+                                text = item.ifEmpty { "全部" },
+                                selected = item == group,
+                                onClick = { group = item },
+                            )
+                        }
                     }
+                }
+            }
+
+            if (importing) {
+                item("manage-importing") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = t.space2),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = t.primary,
+                        )
+                        Spacer(Modifier.width(t.space2))
+                        Text("正在导入书源…", style = MaterialTheme.typography.bodyMedium, color = t.mutedForeground)
+                    }
+                }
+            }
+
+            importReport?.let { report ->
+                item("manage-import-report") {
+                    SourceImportReportCardV94(report = report, onDismiss = onDismissImportReport)
                 }
             }
 
@@ -188,7 +238,7 @@ internal fun BookSourceManageScreenV50(
 
             if (sources.isEmpty()) {
                 item("manage-empty") {
-                    SourceManageEmptyV50()
+                    SourceManageEmptyV50(onCreate = onCreateSource, onImport = onImportSource)
                 }
             } else if (ordered.isEmpty()) {
                 item("manage-no-match") {
@@ -219,7 +269,7 @@ internal fun BookSourceManageScreenV50(
 
             item("manage-note") {
                 Text(
-                    text = "启用后可在书城实测。支持 Legado 静态网页规则；依赖脚本或 JSON 接口的规则会明确报出未支持项。",
+                    text = "支持阅读（Legado）静态网页书源：单个对象或数组均可，来自文本、文件或网址。依赖脚本或 JSON 接口的必需规则会写明原因并跳过，可选规则（封面、简介等）会自动忽略。",
                     style = MaterialTheme.typography.bodySmall,
                     color = t.mutedForeground,
                 )
@@ -239,8 +289,15 @@ internal fun BookSourceManageScreenV50(
             horizontalArrangement = Arrangement.spacedBy(t.space2),
         ) {
             SourceManageBottomButtonV50(
+                icon = Icons.Rounded.Add,
+                text = "新建",
+                primary = false,
+                modifier = Modifier.weight(1f),
+                onClick = onCreateSource,
+            )
+            SourceManageBottomButtonV50(
                 icon = Icons.Rounded.FileOpen,
-                text = "导入书源",
+                text = "导入",
                 primary = false,
                 modifier = Modifier.weight(1f),
                 onClick = onImportSource,
@@ -249,7 +306,7 @@ internal fun BookSourceManageScreenV50(
                 icon = Icons.Rounded.AutoAwesome,
                 text = "AI 生成书源",
                 primary = true,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1.5f),
                 onClick = onAiGenerateSource,
             )
         }
@@ -268,50 +325,6 @@ internal fun sourceManageFocusOrderV74(
 
 
 @Composable
-private fun SourceManageHeaderV50(onBack: () -> Unit) {
-    val t = LocalLanghuanUiTokens.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = t.space4, vertical = t.space3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val shape = RoundedCornerShape(t.radiusMd)
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(t.card, shape)
-                .border(1.dp, t.border, shape)
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.ArrowBack,
-                contentDescription = "返回",
-                modifier = Modifier.size(20.dp),
-                tint = t.secondaryForeground,
-            )
-        }
-        Spacer(Modifier.width(t.space3))
-        Column {
-            Text(
-                text = "书源管理",
-                style = MaterialTheme.typography.headlineLarge,
-                color = t.foreground,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(t.space1))
-            Text(
-                text = "导入、自用与整理书源",
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-            )
-        }
-    }
-}
-
-
-@Composable
 private fun SourceManageSearchV50(
     query: String,
     onQueryChange: (String) -> Unit,
@@ -321,9 +334,9 @@ private fun SourceManageSearchV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .background(t.input, shape)
-            .border(1.dp, t.border, shape)
+            .height(46.dp)
+            // V94 flat: soft fill, no outline (matches the shelf search field).
+            .background(t.foreground.copy(alpha = 0.045f), RoundedCornerShape(23.dp))
             .padding(horizontal = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -397,8 +410,8 @@ private fun SourceManageCardV50(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(t.card, shape)
-            .border(1.dp, t.border, shape)
+            // V94 flat: no card outline; a faint fill separates rows by whitespace.
+            .background(t.foreground.copy(alpha = 0.03f), shape)
             .clickable(onClick = onClick)
             .padding(t.space4),
     ) {
@@ -623,42 +636,113 @@ private fun SourceManageBottomButtonV50(
             style = MaterialTheme.typography.labelLarge,
             color = if (primary) t.card else t.secondaryForeground,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
         )
     }
 }
 
 
 @Composable
-private fun SourceManageEmptyV50() {
+private fun SourceManageEmptyV50(onCreate: () -> Unit, onImport: () -> Unit) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusLg)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(t.card, shape)
-            .border(1.dp, t.border, shape)
-            .padding(t.space5),
+            .padding(vertical = t.space6),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Source,
+            imageVector = androidx.compose.material.icons.Icons.Outlined.Source,
             contentDescription = null,
-            modifier = Modifier.size(32.dp),
-            tint = t.primary,
+            modifier = Modifier.size(36.dp),
+            tint = t.mutedForeground,
         )
         Spacer(Modifier.height(t.space3))
         Text(
-            text = "连接你的阅读世界",
+            text = "还没有书源",
             style = MaterialTheme.typography.titleMedium,
             color = t.foreground,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(t.space2))
         Text(
-            text = "导入你有权使用的书源，或从网站地址生成规则。",
+            text = "导入阅读（Legado）书源 JSON，或手动新建一个。",
             style = MaterialTheme.typography.bodySmall,
             color = t.mutedForeground,
         )
+        Spacer(Modifier.height(t.space4))
+        Row(horizontalArrangement = Arrangement.spacedBy(t.space5)) {
+            Text(
+                text = "导入书源",
+                modifier = Modifier.clickable(onClick = onImport).padding(t.space2),
+                style = MaterialTheme.typography.labelLarge,
+                color = t.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "新建书源",
+                modifier = Modifier.clickable(onClick = onCreate).padding(t.space2),
+                style = MaterialTheme.typography.labelLarge,
+                color = t.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+/** Inline import summary (not a modal): counts, then each skipped source with its reason. */
+@Composable
+internal fun SourceImportReportCardV94(report: SourceImportReportV94, onDismiss: () -> Unit) {
+    val t = LocalLanghuanUiTokens.current
+    val failed = report.error != null
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (failed) t.destructive.copy(alpha = 0.06f) else t.primary.copy(alpha = 0.06f),
+                RoundedCornerShape(t.radiusMd),
+            )
+            .padding(t.space3),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = when {
+                    failed -> "导入失败"
+                    report.added.isEmpty() && report.skipped.isNotEmpty() -> "没有导入新书源"
+                    else -> "已导入 ${report.added.size} 个书源"
+                },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+                color = if (failed) t.destructive else t.foreground,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "知道了",
+                modifier = Modifier.clickable(onClick = onDismiss).padding(horizontal = t.space2, vertical = t.space1),
+                style = MaterialTheme.typography.labelLarge,
+                color = t.primary,
+            )
+        }
+        report.error?.let {
+            Spacer(Modifier.height(t.space1))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = t.destructive)
+        }
+        if (report.skipped.isNotEmpty()) {
+            Spacer(Modifier.height(t.space2))
+            Text("跳过 ${report.skipped.size} 个：", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+            report.skipped.take(8).forEach {
+                Text("· $it", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            if (report.skipped.size > 8) Text("另有 ${report.skipped.size - 8} 个", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+        }
+        if (report.warnings.isNotEmpty()) {
+            Spacer(Modifier.height(t.space2))
+            Text("已导入但有提示：", style = MaterialTheme.typography.labelMedium, color = t.mutedForeground)
+            report.warnings.take(6).forEach {
+                Text("· $it", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            if (report.warnings.size > 6) Text("另有 ${report.warnings.size - 6} 条提示", style = MaterialTheme.typography.bodySmall, color = t.mutedForeground)
+        }
     }
 }
 
@@ -677,18 +761,11 @@ private fun sourceManageMatchesQueryV50(
 
 private fun sourceManageMatchesGroupV50(
     source: BookSourceV36,
-    group: SourceManageGroupV50,
+    group: String,
 ): Boolean = when (group) {
-    SourceManageGroupV50.ALL -> true
-    SourceManageGroupV50.GENERAL ->
-        source.group.isBlank() || source.group.contains("综合", true)
-    SourceManageGroupV50.SUSPENSE ->
-        source.group.contains("悬疑", true) ||
-            source.group.contains("推理", true)
-    SourceManageGroupV50.ANCIENT ->
-        listOf("古风", "古言", "仙侠", "武侠", "历史").any {
-            source.group.contains(it, true)
-        }
+    SOURCE_GROUP_ALL_V94 -> true
+    SOURCE_GROUP_UNGROUPED_V94 -> sourceGroupNamesV94(source).isEmpty()
+    else -> group in sourceGroupNamesV94(source)
 }
 
 

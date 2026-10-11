@@ -55,6 +55,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -127,8 +129,10 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
 
     init {
         viewModelScope.launch {
-            storyDao.observeAll().collect { rows ->
-                val books = rows.mapNotNull { row ->
+            // V92: decoding every story snapshot (outline, bible, characters…) is CPU work that
+            // used to run on the main thread for each Room emission; map it on Default.
+            storyDao.observeAll().map { rows ->
+                rows.mapNotNull { row ->
                     runCatching {
                         val snapshot = LibraryJson.decodeFromString(StorySnapshot.serializer(), row.snapshotJson)
                         ReaderBookUi(
@@ -147,6 +151,7 @@ class LibraryExperienceViewModel(application: Application) : AndroidViewModel(ap
                         )
                     }.getOrNull()
                 }
+            }.flowOn(Dispatchers.Default).collect { books ->
                 _state.update { current ->
                     val opened = current.openedBook?.id?.let { id -> books.firstOrNull { it.id == id } }
                     current.copy(stories = books, openedBook = opened, libraryLoaded = true)

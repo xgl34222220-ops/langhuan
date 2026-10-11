@@ -52,7 +52,9 @@ class ReadingEditionContractTest {
         assertTrue(shelf.contains("val labels = listOf(\"书架\", \"书城\", \"我的\")"))
         assertTrue(shelf.contains("mutableStateOf(LuoShelfScreenV1.SHELF)"))
         assertTrue(shelf.contains("LuoShelfScreenV1.BOOKSTORE -> onlineContent(manageSources)"))
-        assertTrue(source("LanghuanRootV4.kt").contains("OnlineBooksScreenV50("))
+        // V94: the routed store lives in the online host, which the root renders as the 书城 tab.
+        assertTrue(source("LanghuanRootV4.kt").contains("OnlineHostV94("))
+        assertTrue(source("online/OnlineHostV94.kt").contains("OnlineBooksScreenV50("))
         assertTrue(source("shell/ReaderProfileV41.kt").contains("AnimatedVisibility(advanced)"))
         assertFalse(source("shell/ReaderProfileV41.kt").contains("CloudSync"))
     }

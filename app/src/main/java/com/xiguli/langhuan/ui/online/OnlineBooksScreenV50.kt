@@ -66,10 +66,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -93,25 +95,6 @@ private enum class OnlineDiscoveryGroupV50(
     RANKING("排行榜"),
     CATEGORY("分类"),
 }
-
-
-private data class OnlinePrototypeCategoryV50(
-    val label: String,
-    val ranking: Boolean = false,
-)
-
-
-private val OnlinePrototypeCategoriesV50 = listOf(
-    OnlinePrototypeCategoryV50("悬疑"),
-    OnlinePrototypeCategoryV50("仙侠"),
-    OnlinePrototypeCategoryV50("武侠"),
-    OnlinePrototypeCategoryV50("青春"),
-    OnlinePrototypeCategoryV50("月票榜", ranking = true),
-    OnlinePrototypeCategoryV50("完结榜", ranking = true),
-    OnlinePrototypeCategoryV50("科幻"),
-    OnlinePrototypeCategoryV50("古言"),
-    OnlinePrototypeCategoryV50("历史"),
-)
 
 
 /* -------------------------------------------------------------------------- */
@@ -194,11 +177,11 @@ internal fun OnlineBooksScreenV50(
         mutableStateOf(OnlineDiscoveryGroupV50.ALL)
     }
 
-    val discoveries = remember(state.sources) {
-        state.sources
-            .filter { it.enabled }
-            .flatMap { sourceDiscoveriesV41(it) }
-    }
+    // V96: categories grouped per source (switcher + round-robin 全部); sources without discovery are listed, not dropped.
+    val discoveryCatalog = remember(state.sources) { onlineDiscoveryCatalogV96(state.sources) }
+    // V97: rows without a list cover look theirs up on the book's detail page through its source.
+    val sourcesById = remember(state.sources) { state.sources.associateBy { it.id } }
+    var discoverySourceId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val currentCategoryLabel = state.discoverySection
         ?.label?.takeIf { it.isNotBlank() }
@@ -215,6 +198,7 @@ internal fun OnlineBooksScreenV50(
             embedded = embedded,
             onBack = onBack,
             onManageSources = onManageSources,
+            enabledSources = state.sources.count { it.enabled },
         )
 
         /* Search */
@@ -254,22 +238,19 @@ internal fun OnlineBooksScreenV50(
                 }
             }
 
-            /* Discovery entry */
-            item(key = "discovery-entry") {
-                OnlineDiscoveryEntryV50(
-                    selected = discoveryGroup,
-                    onSelect = { discoveryGroup = it },
-                )
-            }
-
-            /* Categories */
-            item(key = "discovery-categories") {
-                OnlineCategorySectionV50(
-                    discoveries = discoveries,
-                    selected = state.discoverySection,
-                    group = discoveryGroup,
-                    onDiscover = onDiscover,
-                )
+            /* Discovery: only real categories from enabled sources (V94; the old fixed chips did nothing). */
+            if (discoveryCatalog.sources.isNotEmpty() || discoveryCatalog.issues.isNotEmpty()) {
+                item(key = "discovery-categories") {
+                    OnlineCategorySectionV50(
+                        catalog = discoveryCatalog,
+                        selectedSourceId = discoverySourceId,
+                        onSelectSource = { discoverySourceId = it },
+                        selected = state.discoverySection,
+                        group = discoveryGroup,
+                        onGroup = { discoveryGroup = it },
+                        onDiscover = onDiscover,
+                    )
+                }
             }
 
             /* Search / discovery status */
@@ -394,6 +375,7 @@ internal fun OnlineBooksScreenV50(
                 ) { book ->
                     OnlineBookResultRowV50(
                         book = book,
+                        source = sourcesById[book.sourceId],
                         category = currentCategoryLabel,
                         onClick = { onOpenBook(book) },
                     )
@@ -425,12 +407,13 @@ private fun OnlineStoreHeaderV50(
     embedded: Boolean,
     onBack: () -> Unit,
     onManageSources: () -> Unit,
+    enabledSources: Int = 0,
 ) {
     val t = LocalLanghuanUiTokens.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = t.space4, vertical = t.space3),
+            .then(if (embedded) Modifier.height(52.dp).padding(start = 20.dp, end = t.space2) else Modifier.padding(horizontal = t.space4, vertical = t.space3)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!embedded) {
@@ -441,25 +424,28 @@ private fun OnlineStoreHeaderV50(
             )
             Spacer(Modifier.width(t.space3))
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "在线书城",
-                style = MaterialTheme.typography.headlineLarge,
-                color = t.foreground,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "从已启用书源发现新的故事",
-                modifier = Modifier.padding(top = t.space1),
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-            )
-        }
+        Text(
+            // V94: as a bottom-bar tab the store uses the same small bold title as 书架.
+            text = if (embedded) "书城" else "在线书城",
+            modifier = Modifier.weight(1f),
+            style = if (embedded) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,
+            color = t.foreground,
+            fontWeight = if (embedded) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1,
+        )
         OnlineTextButtonV50(
             icon = Icons.Rounded.Source,
             text = "书源管理",
             onClick = onManageSources,
         )
+        if (enabledSources > 0) {
+            Text(
+                text = "· $enabledSources",
+                modifier = Modifier.clickable(onClick = onManageSources).padding(end = t.space2),
+                style = MaterialTheme.typography.labelMedium,
+                color = t.mutedForeground,
+            )
+        }
     }
 }
 
@@ -478,13 +464,20 @@ private fun OnlineSearchFieldV50(
 ) {
     val t = LocalLanghuanUiTokens.current
     val shape = RoundedCornerShape(t.radiusLg)
+    // Submitting a search drops the keyboard so the result list (or its empty/error state) is
+    // visible instead of staying hidden behind the IME.
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val submit = {
+        keyboard?.hide()
+        onSearch()
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = t.space4)
-            .height(50.dp)
-            .background(color = t.input, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            .height(46.dp)
+            // V94 flat: soft fill, no outline.
+            .background(color = t.foreground.copy(alpha = 0.045f), shape = RoundedCornerShape(23.dp))
             .padding(horizontal = t.space3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -520,7 +513,7 @@ private fun OnlineSearchFieldV50(
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                     onSearch = {
-                        if (query.isNotBlank() && !searching) onSearch()
+                        if (query.isNotBlank() && !searching) submit()
                     },
                 ),
             )
@@ -547,7 +540,7 @@ private fun OnlineSearchFieldV50(
                     color = if (searchEnabled) t.primary else t.border,
                     shape = searchShape,
                 )
-                .clickable(enabled = searchEnabled, onClick = onSearch)
+                .clickable(enabled = searchEnabled, role = androidx.compose.ui.semantics.Role.Button, onClick = submit)
                 .padding(horizontal = t.space3),
             contentAlignment = Alignment.Center,
         ) {
@@ -628,176 +621,92 @@ private fun OnlineRecentSearchesV50(
 /*                            Discovery Entry                                 */
 /* -------------------------------------------------------------------------- */
 
-@Composable
-private fun OnlineDiscoveryEntryV50(
-    selected: OnlineDiscoveryGroupV50,
-    onSelect: (OnlineDiscoveryGroupV50) -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "发现",
-            style = MaterialTheme.typography.titleMedium,
-            color = t.foreground,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(t.space2))
-        Row(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
-            OnlineDiscoveryGroupV50.entries.forEach { group ->
-                OnlineDiscoveryCardV50(
-                    group = group,
-                    selected = group == selected,
-                    onClick = { onSelect(group) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RowScope.OnlineDiscoveryCardV50(
-    group: OnlineDiscoveryGroupV50,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(t.radiusMd)
-    val icon = when (group) {
-        OnlineDiscoveryGroupV50.ALL -> Icons.Rounded.AutoStories
-        OnlineDiscoveryGroupV50.RANKING -> Icons.Rounded.TrendingUp
-        OnlineDiscoveryGroupV50.CATEGORY -> Icons.Rounded.ManageSearch
-    }
-    Column(
-        modifier = Modifier
-            .weight(1f)
-            .background(
-                color = if (selected) t.primary else t.card,
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) t.primary else t.border,
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
-            .padding(t.space3),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (selected) t.card else t.primary,
-        )
-        Spacer(Modifier.height(t.space1))
-        Text(
-            text = group.label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) t.card else t.foreground,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-
 /* -------------------------------------------------------------------------- */
 /*                              Categories                                    */
 /* -------------------------------------------------------------------------- */
 
 @Composable
 private fun OnlineCategorySectionV50(
-    discoveries: List<SourceDiscoveryV41>,
+    catalog: OnlineDiscoveryCatalogV96,
+    selectedSourceId: String?,
+    onSelectSource: (String?) -> Unit,
     selected: SourceDiscoveryV41?,
     group: OnlineDiscoveryGroupV50,
+    onGroup: (OnlineDiscoveryGroupV50) -> Unit,
     onDiscover: (SourceDiscoveryV41) -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val prototypeCategories = OnlinePrototypeCategoriesV50.filter {
+    val discoveries = visibleDiscoveriesV96(catalog.sources, selectedSourceId)
+    val activeSourceId = selectedSourceId?.takeIf { id -> catalog.sources.any { it.sourceId == id } }
+    val hasRanking = discoveries.any { onlineIsRankingLabelV50(it.label) }
+    val hasCategory = discoveries.any { !onlineIsRankingLabelV50(it.label) }
+    val filtered = discoveries.filter {
         when (group) {
             OnlineDiscoveryGroupV50.ALL -> true
-            OnlineDiscoveryGroupV50.RANKING -> it.ranking
-            OnlineDiscoveryGroupV50.CATEGORY -> !it.ranking
+            OnlineDiscoveryGroupV50.RANKING -> onlineIsRankingLabelV50(it.label)
+            OnlineDiscoveryGroupV50.CATEGORY -> !onlineIsRankingLabelV50(it.label)
         }
-    }
+    }.ifEmpty { discoveries }
+    val chipLabels = discoveryChipLabelsV96(filtered, catalog.sources)
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(t.space4),
         ) {
             Text(
-                text = when (group) {
-                    OnlineDiscoveryGroupV50.ALL -> "分类"
-                    OnlineDiscoveryGroupV50.RANKING -> "排行榜"
-                    OnlineDiscoveryGroupV50.CATEGORY -> "分类"
-                },
+                text = "发现",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
                 color = t.foreground,
                 fontWeight = FontWeight.SemiBold,
             )
+            if (hasRanking && hasCategory) {
+                OnlineDiscoveryGroupV50.entries.forEach { item ->
+                    Text(
+                        text = item.label,
+                        modifier = Modifier
+                            .clickable { onGroup(item) }
+                            .padding(vertical = t.space1),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (item == group) t.primary else t.mutedForeground,
+                        fontWeight = if (item == group) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+        if (catalog.sources.size > 1) {
+            Spacer(Modifier.height(t.space2))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(t.space2)) {
+                item(key = "all-sources") {
+                    OnlineChipV50(text = "全部书源", selected = activeSourceId == null, onClick = { onSelectSource(null) })
+                }
+                items(items = catalog.sources, key = { "source::${it.sourceId}" }) { source ->
+                    OnlineChipV50(
+                        text = source.name.take(12),
+                        selected = activeSourceId == source.sourceId,
+                        onClick = { onSelectSource(source.sourceId) },
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(t.space2))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(t.space2),
         ) {
-            items(
-                items = prototypeCategories,
-                key = { it.label },
-            ) { category ->
-                val matched = onlineFindDiscoveryV50(discoveries, category)
+            itemsIndexed(
+                items = filtered,
+                key = { _, d -> "${d.sourceId}::${d.template}" },
+            ) { index, discovery ->
+                val label = chipLabels[index]
                 OnlineChipV50(
-                    text = category.label,
-                    selected = selected?.label == category.label,
-                    onClick = {
-                        val target = matched
-                        if (target != null) onDiscover(target)
-                    },
+                    text = label,
+                    selected = selected?.sourceId == discovery.sourceId && selected.template == discovery.template,
+                    onClick = { onDiscover(discovery) },
                 )
             }
         }
-        if (discoveries.isNotEmpty()) {
-            Spacer(Modifier.height(t.space2))
-            Text(
-                text = "已启用书源的发现入口",
-                style = MaterialTheme.typography.labelMedium,
-                color = t.mutedForeground,
-            )
-            Spacer(Modifier.height(t.space1))
-            discoveries.forEach { discovery ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = { onDiscover(discovery) })
-                        .padding(vertical = t.space1),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = if (onlineIsRankingLabelV50(discovery.label)) {
-                            Icons.Rounded.TrendingUp
-                        } else {
-                            Icons.Rounded.FolderOpen
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = t.mutedForeground,
-                    )
-                    Spacer(Modifier.width(t.space2))
-                    Text(
-                        text = discovery.label,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = t.foreground,
-                    )
-                    if (selected?.label == discovery.label) {
-                        Icon(
-                            imageVector = Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = t.primary,
-                        )
-                    }
-                }
-            }
-        }
+        OnlineDiscoveryIssuesV96(catalog.issues, Modifier.padding(top = t.space1))
     }
 }
 
@@ -809,6 +718,7 @@ private fun OnlineCategorySectionV50(
 @Composable
 private fun OnlineBookResultRowV50(
     book: OnlineBookV36,
+    source: BookSourceV36?,
     category: String?,
     onClick: () -> Unit,
 ) {
@@ -817,14 +727,22 @@ private fun OnlineBookResultRowV50(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = t.card, shape = shape)
-            .border(width = 1.dp, color = t.border, shape = shape)
+            // V94 flat result row: cover + text on the page background, no card outline.
+            .clip(shape)
             .clickable(onClick = onClick)
-            .padding(t.space3),
+            .padding(vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // V97: a row without a usable list cover backfills from its detail page's infoCover. The effect only
+        // runs while the row is composed (visible); lookups are capped at two at a time.
+        var rowCover by remember(book.sourceId, book.bookUrl, book.cover) { mutableStateOf(rowCoverV97(book)) }
+        LaunchedEffect(book.sourceId, book.bookUrl, book.cover, source != null) {
+            if (rowCover.isNotBlank() || source == null || book.bookUrl.isBlank()) return@LaunchedEffect
+            val found = OnlineDetailCoversV97.lookup(source, book)
+            if (found.isNotBlank()) rowCover = found
+        }
         OnlineCoverV50(
-            coverUrl = book.cover,
+            coverUrl = rowCover,
             contentDescription = book.name,
             modifier = Modifier
                 .width(52.dp)
@@ -1449,7 +1367,11 @@ private fun OnlineDownloadProgressV50(
 /*                                 Cover                                      */
 /* -------------------------------------------------------------------------- */
 
-private val onlineCoverCacheV50 = LruCache<String, android.graphics.Bitmap>(32)
+// V97: memory cache sized in bytes (list thumbnails are downsampled, so this holds well over 32), backed by
+// a ~50MB LRU disk cache in cacheDir/online-covers so covers survive scrolling, re-entry and restarts.
+private val onlineCoverCacheV50 = object : LruCache<String, android.graphics.Bitmap>(16 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount.coerceAtLeast(1)
+}
 
 @Composable
 private fun OnlineCoverV50(
@@ -1487,6 +1409,7 @@ private fun OnlineCoverV50(
 private fun rememberOnlineCoverV50(
     coverUrl: String,
 ): android.graphics.Bitmap? {
+    val cacheDir = LocalContext.current.cacheDir
     var bitmap by remember(coverUrl) {
         mutableStateOf(onlineCoverCacheV50.get(coverUrl))
     }
@@ -1495,8 +1418,12 @@ private fun rememberOnlineCoverV50(
         if (bitmap != null) return@LaunchedEffect
         val loaded = runInterruptible(Dispatchers.IO) {
             try {
-                val bytes = fetchSourceBytesV36(coverUrl)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                val disk = OnlineCoverDiskV97.get(cacheDir)
+                disk.get(coverUrl)?.let { cached -> decodeOnlineCoverV92(cached)?.let { return@runInterruptible it } }
+                // V92: covers were decoded at full size (often 1000×1400+, ~6 MB each) into a
+                // 32-entry cache; cap the download and downsample to list size like V36 does.
+                val bytes = downloadOnlineCoverV95(coverUrl, maxBytes = 2 * 1024 * 1024)
+                decodeOnlineCoverV92(bytes)?.also { disk.put(coverUrl, bytes) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 null
@@ -1722,13 +1649,25 @@ private fun OnlineSecondaryButtonV50(
 /*                                Helpers                                     */
 /* -------------------------------------------------------------------------- */
 
-private fun onlineFindDiscoveryV50(
-    discoveries: List<SourceDiscoveryV41>,
-    category: OnlinePrototypeCategoryV50,
-): SourceDiscoveryV41? {
-    return discoveries.firstOrNull { it.label == category.label }
-}
-
 private fun onlineIsRankingLabelV50(label: String): Boolean {
     return label.contains("榜") || label.contains("排行")
+}
+
+/** Smallest power-of-two sample that fits a [maxWidth]×[maxHeight] cover. Pure; unit tested. */
+internal fun onlineCoverSampleSizeV92(width: Int, height: Int, maxWidth: Int = 360, maxHeight: Int = 540): Int {
+    var sample = 1
+    while (width / (sample * 2) >= maxWidth || height / (sample * 2) >= maxHeight) sample *= 2
+    return sample
+}
+
+/** Decodes a remote cover downsampled for the list; null when the bytes are not a sane image. */
+internal fun decodeOnlineCoverV92(bytes: ByteArray): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    if (bounds.outWidth.toLong() * bounds.outHeight > 40_000_000L) return null
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = onlineCoverSampleSizeV92(bounds.outWidth, bounds.outHeight)
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 }

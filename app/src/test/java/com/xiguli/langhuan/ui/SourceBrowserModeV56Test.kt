@@ -10,7 +10,9 @@ class SourceBrowserModeV56Test {
             searchUrl = "/search?q={{key}}", searchList = "@css:li", searchName = "@css:a@text", searchBookUrl = "@css:a@href")
         val saved = BookSourceJsonV36.encodeToString(BookSourceV36.serializer(), source)
         assertEquals(source, parseBookSourcesV36(saved).sources.single())
-        assertFalse(parseBookSourcesV36(saved.replace("@css:li", "@js:java.ajax('/read')")).sources.isNotEmpty())
+        // V95: sandboxed Legado scripts import; scripts reaching for Java classes still do not.
+        assertTrue(parseBookSourcesV36(saved.replace("@css:li", "@js:java.ajax('/read')")).sources.isNotEmpty())
+        assertFalse(parseBookSourcesV36(saved.replace("@css:li", "@js:Packages.java.lang.System.exit(0)")).sources.isNotEmpty())
         assertFalse(BookSourceJsonV36.decodeFromString(BookSourceV36.serializer(), """{"id":"old","name":"Old","baseUrl":"https://books.example"}""").useBrowser)
     }
 
