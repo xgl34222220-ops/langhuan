@@ -137,13 +137,8 @@ private class ReaderTurnHolderV30 {
 
 @Composable
 internal fun ReaderEngineV30(
-    viewModel: LibraryExperienceViewModel,
-    studioState: StudioUiState,
+    viewModel: LocalReaderViewModel,
     onBackToShelf: () -> Unit,
-    onEnterWriting: (String) -> Unit,
-    onOpenEditor: (String, Int) -> Unit,
-    onOpenAiSetup: () -> Unit,
-    startOnInfo: Boolean = false,
     interactionEnabled: Boolean = true,
     onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
@@ -182,94 +177,6 @@ internal fun ReaderEngineV30(
         return
     }
 
-    var showWritingCopy by rememberSaveable(book.id) { mutableStateOf(false) }
-    if (showWritingCopy) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
-                viewModel.cancelWritingCopy()
-                showWritingCopy = false
-            },
-            title = { Text("从本章开始 AI 创作") },
-            text = {
-                Column {
-                    Text(
-                        "把《${startChapter.title}》已读取的正文复制到独立创作项目。" +
-                            "原书、目录和阅读进度保留，可在副本中规划、改写或续写。",
-                    )
-                    if (startChapter.content.isBlank()) {
-                        Text(
-                            text = if (book.sourceId.isNotBlank()) {
-                                "当前章尚未缓存，请先加载正文。"
-                            } else {
-                                "这一章没有可复制的文字正文，可返回书架创建新作品。"
-                            },
-                            modifier = Modifier.padding(top = 12.dp),
-                        )
-                    }
-                    state.readerLoadError?.let {
-                        Text(text = it, modifier = Modifier.padding(top = 8.dp))
-                    }
-                    state.writingCopyError?.let {
-                        Text(text = it, modifier = Modifier.padding(top = 8.dp))
-                    }
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
-                    enabled = !state.preparingWritingCopy &&
-                        state.loadingChapterNumber != startChapter.chapterNumber &&
-                        (startChapter.content.isNotBlank() || book.sourceId.isNotBlank()),
-                    onClick = {
-                        if (startChapter.content.isBlank()) {
-                            viewModel.ensureOnlineChapter(startChapter.chapterNumber)
-                        } else {
-                            viewModel.prepareWritingCopy { id ->
-                                showWritingCopy = false
-                                onEnterWriting(id)
-                            }
-                        }
-                    },
-                ) {
-                    Text(
-                        when {
-                            state.preparingWritingCopy -> "正在创建…"
-                            startChapter.content.isBlank() && book.sourceId.isNotBlank() -> "加载当前章"
-                            startChapter.content.isBlank() -> "本章暂无文字"
-                            else -> "创建副本并进入"
-                        },
-                    )
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        viewModel.cancelWritingCopy()
-                        showWritingCopy = false
-                    },
-                ) { Text("取消") }
-            },
-        )
-    }
-
-    var storyMode by rememberSaveable(book.id) { mutableStateOf(false) }
-    if (storyMode) {
-        BackHandler { storyMode = false }
-        StoryCleanExperience(
-            book = book,
-            libraryState = state,
-            aiReady = studioState.provider.ready,
-            onAiSetup = onOpenAiSetup,
-            onAdopted = { viewModel.openBook(book.id) },
-            onBack = { storyMode = false },
-            onLoadCurrentChapter = { viewModel.ensureOnlineChapter(startChapter.chapterNumber) },
-        )
-        return
-    }
-
-    LaunchedEffect(book.id, startChapter.id) {
-        viewModel.ensureOnlineChapter(startChapter.chapterNumber)
-    }
-
     key(book.id) {
         ReaderSessionV30(
             book = book,
@@ -278,38 +185,14 @@ internal fun ReaderEngineV30(
             },
             externalChapterId = startChapter.id,
             settings = settings,
-            startOnInfo = startOnInfo,
+            startOnInfo = false,
             interactionEnabled = interactionEnabled,
             onChapterChanged = { number -> viewModel.openReader(number) },
-            onLoadChapter = viewModel::ensureOnlineChapter,
-            onRefreshCatalogue = viewModel::refreshOnlineCatalogue,
-            refreshingCatalogue = state.isRefreshingCatalogue,
-            catalogueMessage = state.catalogueMessage,
-            loadingChapterNumber = state.loadingChapterNumber,
-            chapterLoadError = state.readerLoadError,
             onBack = onBackToShelf,
-            onEdit = { number -> onOpenEditor(book.id, number) },
-            onWriting = {
-                val imported = book.sourceId.isNotBlank() ||
-                    book.genre == "导入作品" ||
-                    context
-                        .getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE)
-                        .contains("imported_${book.id}")
-                if (imported) {
-                    showWritingCopy = true
-                } else {
-                    onEnterWriting(book.id)
-                }
-            },
-            onStory = { storyMode = true },
             onOpenOriginalEdition = onOpenOriginalEdition,
             chapterOps = remember(book.id) {
                 ReaderChapterOpsV35(
-                    rename = { number, title ->
-                        viewModel.renameChapter(book.id, number, title)
-                    },
-                    append = { viewModel.appendChapter(book.id, "") },
-                    deleteLast = { viewModel.deleteLastChapter(book.id) },
+                    rename = { number, title -> viewModel.renameChapter(book.id, number, title) },
                 )
             },
         )
@@ -330,17 +213,11 @@ internal fun ReaderSessionV30(
     interactionEnabled: Boolean,
     onChapterChanged: (Int) -> Unit,
     onBack: () -> Unit,
-    onEdit: (Int) -> Unit,
-    onWriting: () -> Unit,
-    onStory: () -> Unit,
     chapterOps: ReaderChapterOpsV35 = ReaderChapterOpsV35(),
     onLoadChapter: (Int) -> Unit = {},
     loadingChapterNumber: Int? = null,
     chapterLoadError: String? = null,
     speechFactory: ReaderSpeechFactoryV47 = systemReaderSpeechFactoryV47,
-    onRefreshCatalogue: () -> Unit = {},
-    refreshingCatalogue: Boolean = false,
-    catalogueMessage: String? = null,
     onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -607,9 +484,6 @@ internal fun ReaderSessionV30(
         mutableStateOf(bookmarkState.exceptionOrNull()?.message)
     }
     val legacyBookmarkState = remember { ReaderBookmarkStoreV49.legacy(prefs) }
-    val catalogueIncomplete = remember(book.sourceId, chapters) {
-        book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null
-    }
 
     fun infoFor(page: ReaderPageV30?, index: Int): ReaderChromeInfoV30 {
         val chapter = chapters.getOrNull(index)
@@ -631,7 +505,7 @@ internal fun ReaderSessionV30(
             chapterTitle = header,
             // V93 页脚：右侧「1/12  1%」——本章页码与全书进度，不再加文字前缀。
             pageLabel = if (count > 0) "$pageNumber/$count" else "",
-            progressLabel = if (catalogueIncomplete) "目录待补全" else "${bookProgress.roundToInt()}%",
+            progressLabel = "${bookProgress.roundToInt()}%",
             time = clock,
             battery = battery,
             showTimeBattery = settings.showTimeBattery,
@@ -1880,9 +1754,6 @@ internal fun ReaderSessionV30(
                     if (mode == ReaderTurnModeV30.SCROLL) scrollJump++
                 }
             },
-            onEdit = { currentChapter?.let { onEdit(it.chapterNumber) } },
-            onWriting = onWriting,
-            onStory = onStory,
             bookmarkedChapters = bookmarks.mapNotNull { it.toIntOrNull() }.toSet(),
             bookmarkError = bookmarkError,
             legacyBookmarkedChapters = legacyBookmarkState
@@ -1906,11 +1777,6 @@ internal fun ReaderSessionV30(
                 }
             },
             onRenameChapter = chapterOps.rename,
-            onAppendChapter = chapterOps.append,
-            onDeleteLastChapter = chapterOps.deleteLast,
-            onRefreshCatalogue = onRefreshCatalogue,
-            refreshingCatalogue = refreshingCatalogue,
-            catalogueMessage = catalogueMessage,
         )
     }
 }
@@ -2136,6 +2002,4 @@ private fun readerBatteryV30(context: Context): Int {
  */
 internal class ReaderChapterOpsV35(
     val rename: (Int, String) -> Unit = { _, _ -> Unit },
-    val append: () -> Unit = {},
-    val deleteLast: () -> Unit = {},
 )

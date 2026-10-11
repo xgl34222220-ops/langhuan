@@ -7,7 +7,6 @@ plugins {
 
 android {
     namespace = "com.xiguli.langhuan"
-    // Miuix 0.9.3 is published against API 37. targetSdk remains 36.
     compileSdk = 37
 
     defaultConfig {
@@ -15,8 +14,8 @@ android {
         minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 137
-        versionName = "0.33.14-reader-preview17"
+        versionCode = 140
+        versionName = "0.40.0-local-reader"
     }
 
     buildFeatures { compose = true }
@@ -76,20 +75,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jsoup)
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.google.re2j:re2j:1.8")
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.material.kolor)
-    implementation(libs.haze)
-    implementation(libs.haze.materials)
-    implementation(libs.miuix.ui)
-    implementation(libs.miuix.preference)
-    implementation(libs.miuix.icons)
-    implementation(libs.miuix.blur)
-    implementation(libs.miuix.squircle)
     testImplementation(libs.junit4)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

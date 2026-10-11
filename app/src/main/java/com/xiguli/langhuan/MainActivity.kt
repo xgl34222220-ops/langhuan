@@ -37,7 +37,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import android.os.SystemClock
@@ -45,10 +44,8 @@ import android.view.View
 import android.view.animation.PathInterpolator
 import com.xiguli.langhuan.data.local.StartupDatabaseStatus
 import com.xiguli.langhuan.data.local.StartupDatabaseGate
-import com.xiguli.langhuan.engine.PostStartupInitializer
-import com.xiguli.langhuan.ui.LanghuanRootV4
+import com.xiguli.langhuan.ui.LocalReaderRootV100
 import com.xiguli.langhuan.ui.ExternalBookImportCoordinatorV1
-import com.xiguli.langhuan.ui.StudioViewModel
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
 import com.xiguli.langhuan.ui.theme.LanghuanThemeModeStateV50
 
@@ -149,9 +146,7 @@ private fun StartupDatabaseRoot(
         is LauncherState.Ready -> {
             // Visual styling and noncritical background work begin only after startup is proven safe.
             LanghuanStableTheme(themeMode = LanghuanThemeModeStateV50.current) {
-                LaunchedEffect(Unit) { PostStartupInitializer.start(context) }
-                val studioViewModel: StudioViewModel = viewModel()
-                LanghuanRootV4(studioViewModel, externalBooks)
+                LocalReaderRootV100(externalBooks)
             }
         }
     }

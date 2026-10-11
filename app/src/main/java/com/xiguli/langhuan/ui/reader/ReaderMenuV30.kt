@@ -200,9 +200,6 @@ internal fun ReaderMenuV30(
     onToggleBookmark: () -> Unit,
     onJumpChapter: (Int, Int) -> Unit,
     onPageFraction: (Float) -> Unit,
-    onEdit: () -> Unit,
-    onWriting: () -> Unit,
-    onStory: () -> Unit,
     bookmarkedChapters: Set<Int>,
     bookmarkError: String?,
     legacyBookmarkedChapters: Set<Int>,
@@ -211,11 +208,6 @@ internal fun ReaderMenuV30(
     listening: Boolean,
     onListen: () -> Unit,
     onRenameChapter: (Int, String) -> Unit,
-    onAppendChapter: () -> Unit,
-    onDeleteLastChapter: () -> Unit,
-    onRefreshCatalogue: () -> Unit,
-    refreshingCatalogue: Boolean,
-    catalogueMessage: String?,
     onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     if (!visible) return
@@ -332,9 +324,6 @@ internal fun ReaderMenuV30(
                                         legacyBookmarkError = legacyBookmarkError,
                                         onRestoreLegacyBookmark = onRestoreLegacyBookmark,
                                         onJumpChapter = onJumpChapter,
-                                        onRefreshCatalogue = onRefreshCatalogue,
-                                        refreshingCatalogue = refreshingCatalogue,
-                                        catalogueMessage = catalogueMessage,
                                     )
                                 }
                                 ReaderMenuTabV30.MORE -> {
@@ -347,12 +336,7 @@ internal fun ReaderMenuV30(
                                         onListen = onListen,
                                         onPanel = onPanel,
                                         onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) },
-                                        onEdit = onEdit,
-                                        onWriting = onWriting,
-                                        onStory = onStory,
                                         onRenameChapter = onRenameChapter,
-                                        onAppendChapter = onAppendChapter,
-                                        onDeleteLastChapter = onDeleteLastChapter,
                                         onOpenOriginalEdition = onOpenOriginalEdition,
                                     )
                                 }
@@ -530,8 +514,6 @@ private fun ReaderDetailsTabV30(
         pageCount <= 1 -> 0f
         else -> pageIndex.toFloat().div(pageCount - 1f).coerceIn(0f, 1f)
     }
-    val catalogueIncomplete = book.sourceId.isNotBlank() &&
-        catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -539,14 +521,10 @@ private fun ReaderDetailsTabV30(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space5, vertical = t.space3),
     ) {
-        if (catalogueIncomplete) {
-            Text("目录待补全，暂不能计算全书进度", color = t.mutedForeground, style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(t.space2))
-        }
         // V93 「阅读进度」: a large whole-book figure with 「读到 x / n 章」 on the right.
         ReaderSectionTitleV30(title = "阅读进度")
         Spacer(Modifier.height(t.space1))
-        if (!catalogueIncomplete && chapters.isNotEmpty()) {
+        if (chapters.isNotEmpty()) {
             val inside = if (pageCount > 0) (pageIndex + 1f) / pageCount.toFloat() else 0f
             val bookFraction = ((chapterIndex + inside) / chapters.size.toFloat()).coerceIn(0f, 1f)
             Row(verticalAlignment = Alignment.Bottom) {
@@ -763,9 +741,6 @@ private fun ReaderDirectoryTabV30(
     legacyBookmarkError: String?,
     onRestoreLegacyBookmark: (Int) -> Unit,
     onJumpChapter: (Int, Int) -> Unit,
-    onRefreshCatalogue: () -> Unit,
-    refreshingCatalogue: Boolean,
-    catalogueMessage: String?,
 ) {
     val t = LocalLanghuanUiTokens.current
     var mode by rememberSaveable { mutableStateOf(ReaderDirectoryModeV30.CHAPTERS) }
@@ -809,26 +784,10 @@ private fun ReaderDirectoryTabV30(
                 )
             }
             Spacer(Modifier.weight(1f))
-            if (book.sourceId.isNotBlank()) {
-                ReaderSmallIconActionV30(
-                    icon = Icons.Rounded.AutoStories,
-                    contentDescription = "刷新目录",
-                    loading = refreshingCatalogue,
-                    onClick = onRefreshCatalogue,
-                )
-            }
         }
 
         bookmarkError?.let { ReaderInlineErrorV30(it) }
         legacyBookmarkError?.takeIf { legacy }?.let { ReaderInlineErrorV30(it) }
-        catalogueMessage?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                modifier = Modifier.padding(horizontal = t.space4, vertical = t.space1),
-                style = MaterialTheme.typography.bodySmall,
-                color = t.mutedForeground,
-            )
-        }
 
         when {
             mode == ReaderDirectoryModeV30.CHAPTERS -> {
@@ -1093,19 +1052,13 @@ private fun ReaderMoreTabV30(
     onListen: () -> Unit,
     onPanel: (ReaderMenuPanelV30) -> Unit,
     onLocate: () -> Unit,
-    onEdit: () -> Unit,
-    onWriting: () -> Unit,
-    onStory: () -> Unit,
     onRenameChapter: (Int, String) -> Unit,
-    onAppendChapter: () -> Unit,
-    onDeleteLastChapter: () -> Unit,
     onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     val t = LocalLanghuanUiTokens.current
     val windowHeight = readerMenuWindowHeightV63()
     val currentChapter = chapters.getOrNull(chapterIndex)
     var renameOpen by remember { mutableStateOf(false) }
-    var deleteOpen by remember { mutableStateOf(false) }
 
     // V93: everything in 「更多」 is a 4-column grid of round line-icon cells with small grey
     // labels (the reference reader's settings grid). Switches become toggle cells whose glyph
@@ -1182,12 +1135,7 @@ private fun ReaderMoreTabV30(
         ReaderGridLabelV93("书籍与章节")
         ReaderIconGridV93(
             listOf(
-                ReaderGridItemV93(Icons.Outlined.Edit, "编辑当前章节", enabled = currentChapter != null, onClick = onEdit),
-                ReaderGridItemV93(Icons.Outlined.AutoAwesome, "AI 创作", onClick = onWriting),
-                ReaderGridItemV93(Icons.AutoMirrored.Outlined.MenuBook, "故事模式", onClick = onStory),
                 ReaderGridItemV93(Icons.Outlined.DriveFileRenameOutline, "重命名章节", enabled = currentChapter != null) { renameOpen = true },
-                ReaderGridItemV93(Icons.Outlined.PostAdd, "新增章节", onClick = onAppendChapter),
-                ReaderGridItemV93(Icons.Outlined.DeleteOutline, "删除最后一章", enabled = chapters.isNotEmpty(), destructive = true) { deleteOpen = true },
             ),
         )
         Spacer(Modifier.height(t.space3))
@@ -1206,16 +1154,6 @@ private fun ReaderMoreTabV30(
             onConfirm = { title ->
                 renameOpen = false
                 onRenameChapter(currentChapter.chapterNumber, title)
-            },
-        )
-    }
-    if (deleteOpen) {
-        ReaderDeleteLastChapterDialogV30(
-            chapter = chapters.lastOrNull(),
-            onDismiss = { deleteOpen = false },
-            onConfirm = {
-                deleteOpen = false
-                onDeleteLastChapter()
             },
         )
     }
@@ -1895,51 +1833,6 @@ private fun ReaderRenameChapterDialogV30(
 }
 
 
-/* -------------------------------------------------------------------------- */
-/*                             Delete Dialog                                  */
-/* -------------------------------------------------------------------------- */
-
-@Composable
-private fun ReaderDeleteLastChapterDialogV30(
-    chapter: ChapterDraft?,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val t = LocalLanghuanUiTokens.current
-    Dialog(onDismissRequest = onDismiss) {
-        val shape = RoundedCornerShape(t.radiusXl)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(color = t.card, shape = shape)
-                .padding(t.space4),
-        ) {
-            Text(
-                text = "删除最后一章？",
-                style = MaterialTheme.typography.titleLarge,
-                color = t.foreground,
-            )
-            Spacer(Modifier.height(t.space2))
-            Text(
-                text = chapter?.let {
-                    "将删除「${
-                        readerDisplayChapterTitleV13(it.title, it.chapterNumber)
-                    }」。"
-                } ?: "当前没有可删除的章节。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = t.secondaryForeground,
-            )
-            Spacer(Modifier.height(t.space4))
-            ReaderDialogButtonsV30(
-                confirmText = "删除",
-                destructive = true,
-                confirmEnabled = chapter != null,
-                onDismiss = onDismiss,
-                onConfirm = onConfirm,
-            )
-        }
-    }
-}
 
 
 /* -------------------------------------------------------------------------- */

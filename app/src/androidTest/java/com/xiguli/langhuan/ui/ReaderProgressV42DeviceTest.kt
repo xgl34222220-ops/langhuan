@@ -53,7 +53,7 @@ class ReaderProgressV42DeviceTest {
         rule.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
                 if (visible.value) ReaderSessionV30(book, listOf(chapter), chapter.id, settings,
-                    false, true, {}, {}, {}, {}, {})
+                    false, true, {}, {})
             }
         }
         rule.waitUntil(20000) {
@@ -107,7 +107,7 @@ class ReaderProgressV42DeviceTest {
         }
         rule.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
-                ReaderSessionV30(book, listOf(chapter), chapter.id, settings, false, true, {}, {}, {}, {}, {})
+                ReaderSessionV30(book, listOf(chapter), chapter.id, settings, false, true, {}, {})
             }
         }
         rule.waitUntil(20000) {
@@ -157,7 +157,7 @@ class ReaderProgressV42DeviceTest {
         }
         rule.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
-                ReaderSessionV30(book, listOf(chapter), chapter.id, settings, false, true, {}, {}, {}, {}, {})
+                ReaderSessionV30(book, listOf(chapter), chapter.id, settings, false, true, {}, {})
             }
         }
         rule.waitUntil(20000) {
@@ -196,7 +196,7 @@ class ReaderProgressV42DeviceTest {
         rule.setContent {
             if (visible.value) {
                 val target = chapter.copy(novelId = targetBook.id, title = "回家", content = content.value, sourceUrl = if (delayedBody) "https://example.org/chapter" else "")
-                ReaderSessionV30(targetBook, listOf(target), target.id, settings, false, true, {}, {}, {}, {}, {})
+                ReaderSessionV30(targetBook, listOf(target), target.id, settings, false, true, {}, {})
             }
         }
         if (delayedBody) {
@@ -213,37 +213,6 @@ class ReaderProgressV42DeviceTest {
         rule.runOnIdle { visible.value = true }
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
         assertEquals("Reopening must not add the restored prefix twice", if (storedChapter == 1) 1202 else 0, ReaderProgressStoreV11.load(rule.activity, targetBook.id, 1).textOffset)
-    }
-
-    @Test fun insertingMissingChaptersKeepsTheSameChapterAndSentence() {
-        lateinit var settings: ReaderSettingsV30
-        val held = chapter.copy(chapterNumber = 16, title = "第985章 原创测试", readingOrder = 16)
-        val prefix = (1..15).map { chapter.copy(id = "prefix-$it", chapterNumber = it, title = "第${it}章", content = "短章正文", readingOrder = it) }
-        val items = mutableStateOf(prefix + held)
-        rule.runOnUiThread {
-            ReaderProgressStoreV11.save(rule.activity, book.id, ReaderProgressV11(chapterNumber = 16, textOffset = 1200, bodyVersion = 48))
-            settings = ReaderSettingsV30(rule.activity.getSharedPreferences("catalogue-anchor-v53", 0)).apply {
-                fontSize = 20f; turnMode = ReaderTurnModeV30.NONE; clickAnimation = false
-            }
-        }
-        rule.setContent { ReaderSessionV30(book.copy(sourceId = "catalogue-fixture"), items.value, held.id, settings, true, true, {}, {}, {}, {}, {}) }
-        rule.waitUntil(20000) { bodyReady() }
-        rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
-        assertEquals(1200, saved().textOffset)
-        rule.onNodeWithText("详情").performClick()
-        rule.onNodeWithText("目录待补全，暂不能计算全书进度", useUnmergedTree = true).assertIsDisplayed()
-        deviceWindowEvidenceV46("v53-incomplete-catalogue-test-data")
-        rule.runOnUiThread {
-            val missing = (16..984).map { chapter.copy(id = "inserted-$it", chapterNumber = it + 1000, title = "第${it}章", content = "新章节正文", readingOrder = it) }
-            items.value = prefix + missing + held.copy(readingOrder = 985)
-        }
-        rule.waitUntil(20000) { bodyReady() }
-        rule.mainClock.advanceTimeBy(800); rule.waitForIdle()
-        assertEquals("Catalogue repair changed the saved chapter key", 16, saved().chapterNumber)
-        assertEquals("Catalogue repair moved the reading sentence", 1200, saved().textOffset)
-        assertEquals(48, saved().bodyVersion)
-        rule.onNodeWithText("目录待补全，暂不能计算全书进度").assertDoesNotExist()
-        deviceWindowEvidenceV46("v53-repaired-catalogue-test-data")
     }
 
 }

@@ -11,7 +11,7 @@ import android.content.SharedPreferences
  * position was the last page of the last chapter (`finished_`). The shelf only reads these
  * values; nothing here touches the reader's own progress keys.
  */
-internal data class ShelfReadingProgressV92(
+data class ShelfReadingProgressV92(
     /** The reader has saved a position for this book at least once. */
     val started: Boolean = false,
     /** Whole-book position 0..1, or null when the chapter count is not known yet. */

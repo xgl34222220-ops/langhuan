@@ -371,57 +371,12 @@ fun LanghuanStableTheme(
     }
 
 
-    /*
-     * 旧页面兼容层。
-     *
-     * 当前工程仍有部分页面使用 LocalMiuixTokens。
-     * 在所有页面完成 v3 Design System 迁移前，
-     * 这里继续向旧组件提供与 v3 一致的基础色。
-     *
-     * 不再让旧页面返回蓝色 LuoShu 风格。
-     */
-    val legacyTokens = MiuixTokens(
-        pageBackground = uiTokens.background,
-
-        cardBackground = uiTokens.card,
-
-        /*
-         * v3 明确要求取消投影分层。
-         * 因此旧 elevatedCard 也不再制造另一种浮起 Surface，
-         * 直接保持 card。
-         */
-        elevatedCardBackground = uiTokens.card,
-
-        textPrimary = uiTokens.foreground,
-
-        /*
-         * 旧 Token 只有一个 secondary text，
-         * 优先映射到新的二级文字。
-         */
-        textSecondary = uiTokens.secondaryForeground,
-
-        /*
-         * MiuixTokens 暂时仍需要 success / warning。
-         * v3 Claude Token 表没有重新定义这两项，
-         * 因此兼容层不创造新的品牌色：
-         *
-         * success → primary
-         * warning → gold
-         *
-         * 新版组件不应依赖这两个旧语义。
-         */
-        success = uiTokens.primary,
-        warning = uiTokens.gold,
-    )
-
-
     MaterialTheme(
         colorScheme = materialColors,
         typography = LanghuanTypography,
         shapes = LanghuanShapes,
     ) {
         CompositionLocalProvider(
-            LocalMiuixTokens provides legacyTokens,
             LocalLanghuanUiTokens provides uiTokens,
         ) {
             content()

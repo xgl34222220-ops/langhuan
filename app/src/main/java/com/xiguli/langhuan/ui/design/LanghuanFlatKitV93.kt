@@ -437,3 +437,9 @@ fun FlatHairlineV93(modifier: Modifier = Modifier) {
     val t = LocalLanghuanUiTokens.current
     Box(modifier.fillMaxWidth().height(hairlineDpV96()).background(t.border.copy(alpha = 0.8f)))
 }
+
+
+/** A hairline that is exactly one device pixel wide (at least 0.5 dp rounded to a pixel). */
+@androidx.compose.runtime.Composable
+internal fun hairlineDpV96(): androidx.compose.ui.unit.Dp =
+    with(androidx.compose.ui.platform.LocalDensity.current) { 0.5.dp.toPx().let { kotlin.math.round(it) }.coerceAtLeast(1f).toDp() }

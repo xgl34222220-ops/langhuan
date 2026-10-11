@@ -46,7 +46,7 @@ import com.xiguli.langhuan.data.epub.EpubOriginalStore
 import com.xiguli.langhuan.data.epub.EpubPublicationSession
 import com.xiguli.langhuan.ui.EpubReaderScreenV50
 import com.xiguli.langhuan.ui.EpubReaderUiStateV50
-import com.xiguli.langhuan.ui.LibraryExperienceViewModel
+import com.xiguli.langhuan.ui.LocalReaderViewModel
 import com.xiguli.langhuan.ui.ReaderSelectionV30
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
 import com.xiguli.langhuan.ui.theme.LanghuanStableTheme
@@ -103,7 +103,7 @@ class EpubReaderActivity : FragmentActivity() {
     private lateinit var bookId: String
     private lateinit var store: EpubOriginalStore
     private lateinit var readerPrefs: android.content.SharedPreferences
-    private lateinit var libraryViewModel: LibraryExperienceViewModel
+    private lateinit var libraryViewModel: LocalReaderViewModel
 
     /* ------------------------------- Readium ------------------------------- */
     private var publication: Publication? = null
@@ -174,7 +174,7 @@ class EpubReaderActivity : FragmentActivity() {
         rendererExited = savedInstanceState?.getBoolean("epub_renderer_exited") == true
         store = EpubReaderEntry.store(this)
         readerPrefs = getSharedPreferences(READER_PREFS, Context.MODE_PRIVATE)
-        libraryViewModel = ViewModelProvider(this)[LibraryExperienceViewModel::class.java]
+        libraryViewModel = ViewModelProvider(this)[LocalReaderViewModel::class.java]
 
         // Readium 内部可能创建多个私有 WebView，每一个都套用已有安全策略。
         supportFragmentManager.registerFragmentLifecycleCallbacks(
