@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -178,6 +179,8 @@ internal fun OnlineBooksScreenV50(
 
     // V96: categories grouped per source (switcher + round-robin 全部); sources without discovery are listed, not dropped.
     val discoveryCatalog = remember(state.sources) { onlineDiscoveryCatalogV96(state.sources) }
+    // V97: rows without a list cover look theirs up on the book's detail page through its source.
+    val sourcesById = remember(state.sources) { state.sources.associateBy { it.id } }
     var discoverySourceId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val currentCategoryLabel = state.discoverySection
@@ -372,6 +375,7 @@ internal fun OnlineBooksScreenV50(
                 ) { book ->
                     OnlineBookResultRowV50(
                         book = book,
+                        source = sourcesById[book.sourceId],
                         category = currentCategoryLabel,
                         onClick = { onOpenBook(book) },
                     )
@@ -714,6 +718,7 @@ private fun OnlineCategorySectionV50(
 @Composable
 private fun OnlineBookResultRowV50(
     book: OnlineBookV36,
+    source: BookSourceV36?,
     category: String?,
     onClick: () -> Unit,
 ) {
@@ -728,8 +733,16 @@ private fun OnlineBookResultRowV50(
             .padding(vertical = t.space2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // V97: a row without a usable list cover backfills from its detail page's infoCover. The effect only
+        // runs while the row is composed (visible); lookups are capped at two at a time.
+        var rowCover by remember(book.sourceId, book.bookUrl, book.cover) { mutableStateOf(rowCoverV97(book)) }
+        LaunchedEffect(book.sourceId, book.bookUrl, book.cover, source != null) {
+            if (rowCover.isNotBlank() || source == null || book.bookUrl.isBlank()) return@LaunchedEffect
+            val found = OnlineDetailCoversV97.lookup(source, book)
+            if (found.isNotBlank()) rowCover = found
+        }
         OnlineCoverV50(
-            coverUrl = book.cover,
+            coverUrl = rowCover,
             contentDescription = book.name,
             modifier = Modifier
                 .width(52.dp)
@@ -1354,7 +1367,11 @@ private fun OnlineDownloadProgressV50(
 /*                                 Cover                                      */
 /* -------------------------------------------------------------------------- */
 
-private val onlineCoverCacheV50 = LruCache<String, android.graphics.Bitmap>(32)
+// V97: memory cache sized in bytes (list thumbnails are downsampled, so this holds well over 32), backed by
+// a ~50MB LRU disk cache in cacheDir/online-covers so covers survive scrolling, re-entry and restarts.
+private val onlineCoverCacheV50 = object : LruCache<String, android.graphics.Bitmap>(16 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount.coerceAtLeast(1)
+}
 
 @Composable
 private fun OnlineCoverV50(
@@ -1392,6 +1409,7 @@ private fun OnlineCoverV50(
 private fun rememberOnlineCoverV50(
     coverUrl: String,
 ): android.graphics.Bitmap? {
+    val cacheDir = LocalContext.current.cacheDir
     var bitmap by remember(coverUrl) {
         mutableStateOf(onlineCoverCacheV50.get(coverUrl))
     }
@@ -1400,9 +1418,12 @@ private fun rememberOnlineCoverV50(
         if (bitmap != null) return@LaunchedEffect
         val loaded = runInterruptible(Dispatchers.IO) {
             try {
+                val disk = OnlineCoverDiskV97.get(cacheDir)
+                disk.get(coverUrl)?.let { cached -> decodeOnlineCoverV92(cached)?.let { return@runInterruptible it } }
                 // V92: covers were decoded at full size (often 1000×1400+, ~6 MB each) into a
                 // 32-entry cache; cap the download and downsample to list size like V36 does.
-                decodeOnlineCoverV92(downloadOnlineCoverV95(coverUrl, maxBytes = 2 * 1024 * 1024))
+                val bytes = downloadOnlineCoverV95(coverUrl, maxBytes = 2 * 1024 * 1024)
+                decodeOnlineCoverV92(bytes)?.also { disk.put(coverUrl, bytes) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 null

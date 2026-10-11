@@ -906,7 +906,8 @@ private fun searchSourceInScopeV95(
             sourceName = source.name,
             name = name,
             author = ruleStringV36(item, source.searchAuthor),
-            cover = ruleStringV36(item, source.searchCover).let { if (it.isBlank()) it else resolveUrlV36(doc.location(), it) }
+            // V97: placeholder / blank rule results fall back to the row's lazy-load attributes.
+            cover = listCoverV97(item, ruleStringV36(item, source.searchCover), doc.location())
                 .also { OnlineCoverSourcesV95.remember(it, source) },
             intro = ruleStringV36(item, source.searchIntro),
             latest = ruleStringV36(item, source.searchLatest),
