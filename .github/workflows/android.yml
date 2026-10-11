@@ -51,6 +51,27 @@ jobs:
           grep "package: name='com.xiguli.langhuan'" "$EVIDENCE/apk-badging.txt"
           grep "application-label:'琅嬛'" "$EVIDENCE/apk-badging.txt"
 
+      # Informational: the bundled real Legado sources against the live sites (search → toc → content),
+      # one row per source and stage. Never fails the build; overseas runners are blocked by many sites.
+      - name: Live source diagnostic (informational)
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          LANGHUAN_LIVE_SOURCES: "1"
+        run: |
+          gradle --no-daemon :app:testDebugUnitTest --tests 'com.xiguli.langhuan.ui.SourceLiveDiagnosticV97Test' --rerun > /dev/null 2>&1 || true
+          cat app/build/reports/source-live-diagnostic.md >> "$GITHUB_STEP_SUMMARY" || echo "live diagnostic produced no report" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload live source diagnostic
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-live-diagnostic
+          path: app/build/reports/source-live-diagnostic.md
+          if-no-files-found: ignore
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

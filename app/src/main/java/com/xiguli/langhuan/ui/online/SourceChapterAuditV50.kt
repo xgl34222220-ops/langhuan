@@ -96,8 +96,8 @@ private fun loadChapterAuditInScopeV95(
 
         val next = ruleStringV36(doc, source.contentNext).lines().firstOrNull { it.isNotBlank() }?.trim()
             ?.let { publicSourceUrlV36(resolveUrlV36(doc.location(), it).substringBefore(",{")).toString() }
-        if (next == null || next in otherChapters) return completed()
-        check(next !in visited) { "正文分页出现循环，未返回不完整正文" }
+        // A "next page" that points back to a page already read is the end of the chapter (Legado stops there).
+        if (next == null || next in otherChapters || next in visited || next == finalUrl) return completed()
         check(page < 12) { "正文超过 12 页且仍有下一页，未返回不完整正文" }
         url = next
     }

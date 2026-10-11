@@ -426,6 +426,74 @@ class StoryProjectManager internal constructor(context: Context, private val db:
         plan.added.size
     }
 
+    /**
+     * 换源 (Legado ChangeBookSource): the shelf book now reads from another source. Existing chapter keys
+     * are rewritten in reading order with the new catalogue (title + address, cached text cleared since it
+     * came from the old source), extra chapters are appended or trailing ones removed, and the reader moves
+     * to [targetIndex] in the new catalogue. Fails without writing when the book changed meanwhile.
+     */
+    suspend fun switchOnlineSourceV97(
+        novelId: String, expectedSourceId: String, expectedBookUrl: String,
+        newSourceId: String, newBookUrl: String, items: List<ImportedChapter>, targetIndex: Int,
+    ): PersistedStory = db.withTransaction {
+        require(newSourceId.isNotBlank() && newBookUrl.isNotBlank() && items.isNotEmpty()) { "新书源缺少目录，未换源" }
+        require(items.all { it.sourceUrl.isNotBlank() } && items.map { it.sourceUrl }.distinct().size == items.size) { "新目录包含空地址或重复章节，未换源" }
+        val loaded = loadStory(novelId) ?: error("书籍已移除")
+        check(loaded.snapshot.novel.sourceId == expectedSourceId && loaded.snapshot.novel.sourceBookUrl == expectedBookUrl) {
+            "书籍来源已在其他操作中变化，请重新打开后再换源"
+        }
+        val existing = chapterDrafts(novelId)
+        val keep = minOf(existing.size, items.size)
+        val now = System.currentTimeMillis()
+        val rewritten = existing.take(keep).mapIndexed { index, draft ->
+            draft.copy(title = items[index].title.trim().ifBlank { draft.title }, content = "", sourceUrl = items[index].sourceUrl,
+                readingOrder = index + 1)
+        }
+        rewritten.forEach { draft ->
+            chapterStateDao.upsert(draft.toEntity(now))
+            upsertChapterMemory(draft, now)
+        }
+        val removed = existing.drop(keep)
+        val db0 = db.openHelper.writableDatabase
+        removed.forEach { draft ->
+            chapterStateDao.delete(novelId, draft.chapterNumber)
+            db0.execSQL("DELETE FROM chapter_versions WHERE novelId = ? AND chapterNumber = ?", arrayOf<Any?>(novelId, draft.chapterNumber))
+            db0.execSQL("DELETE FROM memory_chunks WHERE novelId = ? AND sourceType = 'CHAPTER' AND chapterNumber = ?",
+                arrayOf<Any?>(novelId, draft.chapterNumber))
+        }
+        val titles = rewritten.associate { it.chapterNumber to it.title }
+        val removedNumbers = removed.map { it.chapterNumber }.toSet()
+        val outline = effectiveOutline(loaded.snapshot)
+            .filterNot { it.level == OutlineLevel.CHAPTER && it.order in removedNumbers }
+            .map { node -> if (node.level == OutlineLevel.CHAPTER) titles[node.order]?.let { node.copy(title = it) } ?: node else node }
+        val firstKept = rewritten.first()
+        val base = loaded.snapshot.copy(
+            novel = loaded.snapshot.novel.copy(sourceId = newSourceId, sourceBookUrl = newBookUrl, currentWords = 0,
+                currentChapter = firstKept.chapterNumber),
+            outline = outline,
+            activeOutline = activeChain(outline, firstKept.chapterNumber),
+        )
+        saveStructure(base, firstKept)
+        if (items.size > keep) {
+            appendImportedChaptersInTransaction(novelId, items.drop(keep).map { ImportedChapter(it.title, "", it.sourceUrl) })
+            val all = chapterDrafts(novelId)
+            val byUrl = all.associateBy { it.sourceUrl }
+            items.forEachIndexed { index, item ->
+                val draft = byUrl[item.sourceUrl] ?: return@forEachIndexed
+                if (draft.readingOrder != index + 1) chapterStateDao.upsert(draft.copy(readingOrder = index + 1).toEntity(now))
+            }
+        }
+        val ordered = chapterDrafts(novelId)
+        val target = ordered.getOrNull(targetIndex.coerceIn(0, ordered.lastIndex)) ?: ordered.first()
+        val latest = loadStory(novelId) ?: error("书籍已移除")
+        val finalOutline = effectiveOutline(latest.snapshot)
+        saveStructure(latest.snapshot.copy(
+            novel = latest.snapshot.novel.copy(currentChapter = target.chapterNumber),
+            outline = finalOutline,
+            activeOutline = activeChain(finalOutline, target.chapterNumber),
+        ), target)
+    }
+
     suspend fun chapterDrafts(novelId: String): List<ChapterDraft> {
         val loaded = loadStory(novelId) ?: return emptyList()
 
