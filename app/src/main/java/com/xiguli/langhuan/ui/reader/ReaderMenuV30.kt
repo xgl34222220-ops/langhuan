@@ -2443,16 +2443,23 @@ private fun ReaderMenuEmptyV30(
             .padding(horizontal = t.space5, vertical = t.space6),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.AutoStories,
-            contentDescription = null,
-            modifier = Modifier.size(28.dp),
-            tint = t.mutedForeground,
-        )
+        // V103: the glyph sits in the same pale well as the 更多 grid, so empty pages feel designed.
+        Box(
+            modifier = Modifier.size(64.dp).background(t.muted, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.AutoStories,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+                tint = t.mutedForeground,
+            )
+        }
         Spacer(Modifier.height(t.space3))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
             color = t.foreground,
         )
         Spacer(Modifier.height(t.space2))

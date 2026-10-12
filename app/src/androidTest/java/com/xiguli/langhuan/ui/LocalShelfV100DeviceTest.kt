@@ -57,6 +57,10 @@ class LocalShelfV100DeviceTest {
      * emerging under the shelf), then finishes the drag and waits for the list to settle.
      */
     private fun swipeOpenShelfList(suffix: String) {
+        // Let any slide-back animation finish so the drag starts on a settled pager.
+        rule.waitForIdle()
+        SystemClock.sleep(500)
+        rule.waitForIdle()
         val pager = rule.onNodeWithTag("shelf_pager")
         pager.performTouchInput {
             down(Offset(width * 0.12f, height * 0.55f))
@@ -168,7 +172,8 @@ class LocalShelfV100DeviceTest {
                 // Tapping the title still opens the list; tapping a shelf there slides back.
                 rule.onNodeWithTag("shelf_title").performClick()
                 waitOnScreen("shelf_list_page")
-                rule.onNodeWithTag("shelf_group_${ShelfLibrary.DEFAULT_GROUP_ID}").performClick()
+                // Tap the shelf's name (the row's cover strip would open a book instead).
+                rule.onNodeWithTag("shelf_group_name_${ShelfLibrary.DEFAULT_GROUP_ID}", useUnmergedTree = true).performClick()
                 waitOnScreen("shelf_home")
                 swipeOpenShelfList(suffix)
                 if (mode == LanghuanThemeMode.LIGHT) {
