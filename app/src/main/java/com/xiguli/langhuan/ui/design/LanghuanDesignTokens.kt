@@ -335,39 +335,35 @@ data class LanghuanUiTokens(
 /**
  * Claude v3 定稿浅色 Token。
  */
+/*
+ * V102 palette, sampled from the reference reader recording (work/ref2): pure white pages,
+ * near-black ink #1F292A, mid-gray captions #858585, a single accent blue #3371E5 (selected tab /
+ * current chapter), #F4F4F4 grouped cards, #EFF2F3 icon circles and #EDF3FC active toggles.
+ * Dark is a true neutral equivalent (no warm or green tint).
+ */
 val LanghuanLightUiTokens = LanghuanUiTokens(
 
-    /* Surfaces */
-    background = Color(0xFFF7F5F0),
+    background = Color(0xFFFFFFFF),
     card = Color(0xFFFFFFFF),
-    input = Color(0xFFEAE7E0),
-    border = Color(0xFFDDDAD3),
+    input = Color(0xFFF4F4F4),
+    border = Color(0xFFEBEBEB),
 
-    /* Typography */
-    foreground = Color(0xFF22221F),
-    secondaryForeground = Color(0xFF4B4B46),
-    mutedForeground = Color(0xFF666760),
+    foreground = Color(0xFF1F292A),
+    secondaryForeground = Color(0xFF50585A),
+    mutedForeground = Color(0xFF858585),
 
-    /* Primary */
-    primary = Color(0xFF1E6A5A),
+    primary = Color(0xFF3371E5),
 
-    /* Accent */
-    accent = Color(0xFFDDE9E4),
-    accentForeground = Color(0xFF17513F),
+    accent = Color(0xFFEDF3FC),
+    accentForeground = Color(0xFF2B62CC),
 
-    /* Gold */
-    gold = Color(0xFFA9681C),
-    goldForeground = Color(0xFF8A5312),
-    goldContainer = Color(0xFFF3E6D2),
+    gold = Color(0xFFC98A2B),
+    goldForeground = Color(0xFF9A6516),
+    goldContainer = Color(0xFFFBF3E4),
 
-    /* Destructive */
-    destructive = Color(0xFFB03A2B),
-
-    // Claude v3 表未给 destructiveForeground。
-    // 浅色危险实色按钮使用白色前景。
+    destructive = Color(0xFFE5484D),
     destructiveForeground = Color(0xFFFFFFFF),
 
-    /* Spacing */
     space1 = 4.dp,
     space2 = 8.dp,
     space3 = 12.dp,
@@ -375,68 +371,49 @@ val LanghuanLightUiTokens = LanghuanUiTokens(
     space5 = 24.dp,
     space6 = 32.dp,
 
-    /* Radius */
     radiusSm = 8.dp,
     radiusMd = 12.dp,
     radiusLg = 16.dp,
     radiusXl = 24.dp,
 
-    /* v2 兼容层 */
-    cardForeground = Color(0xFF22221F),
+    cardForeground = Color(0xFF1F292A),
     primaryForeground = Color(0xFFFFFFFF),
-    muted = Color(0xFFEAE7E0),
-    ring = Color(0xFF1E6A5A),
-    strong = Color(0xFF22221F),
-    track = Color(0xFFDDDAD3),
-    warmSurface = Color(0xFFF3E6D2),
-    success = Color(0xFF1E6A5A),
+    muted = Color(0xFFEFF2F3),
+    ring = Color(0xFF3371E5),
+    strong = Color(0xFF1F292A),
+    track = Color(0xFFE7E9EC),
+    warmSurface = Color(0xFFF4F4F4),
+    success = Color(0xFF3371E5),
     successForeground = Color(0xFFFFFFFF),
-    warning = Color(0xFFA9681C),
-    warningForeground = Color(0xFF8A5312),
+    warning = Color(0xFFC98A2B),
+    warningForeground = Color(0xFF9A6516),
 )
 
 
-/* -------------------------------------------------------------------------- */
-/*                                Dark Tokens                                 */
-/* -------------------------------------------------------------------------- */
 
-/**
- * Claude v3 定稿深色 Token。
- */
 val LanghuanDarkUiTokens = LanghuanUiTokens(
 
-    /* Surfaces */
-    background = Color(0xFF141311),
-    card = Color(0xFF1C1B18),
-    input = Color(0xFF262420),
-    border = Color(0xFF2C2A26),
+    background = Color(0xFF121212),
+    card = Color(0xFF1C1C1E),
+    input = Color(0xFF242426),
+    border = Color(0xFF2C2C2E),
 
-    /* Typography */
-    foreground = Color(0xFFECE8E0),
-    secondaryForeground = Color(0xFFB5B0A6),
-    mutedForeground = Color(0xFF8E897F),
+    foreground = Color(0xFFECECEC),
+    secondaryForeground = Color(0xFFB4B4B7),
+    mutedForeground = Color(0xFF8A8A8E),
 
-    /* Primary */
-    primary = Color(0xFF7CCAB3),
+    primary = Color(0xFF5B92F0),
 
-    /* Accent */
-    accent = Color(0xFF1B3731),
-    accentForeground = Color(0xFFA6E0CD),
+    accent = Color(0xFF1D283A),
+    accentForeground = Color(0xFF8DB3F6),
 
-    /* Gold */
     gold = Color(0xFFD8A45E),
     goldForeground = Color(0xFFE2B777),
-    goldContainer = Color(0xFF372C1B),
+    goldContainer = Color(0xFF30291F),
 
-    /* Destructive */
-    destructive = Color(0xFFF08C7C),
+    destructive = Color(0xFFF07A70),
+    destructiveForeground = Color(0xFF2A0C0A),
 
-    // Claude v3 表未给 destructiveForeground。
-    // 深色主题的 destructive 本身较亮，
-    // 因此前景使用深墨红保证足够对比。
-    destructiveForeground = Color(0xFF32110C),
-
-    /* Spacing */
     space1 = 4.dp,
     space2 = 8.dp,
     space3 = 12.dp,
@@ -444,40 +421,24 @@ val LanghuanDarkUiTokens = LanghuanUiTokens(
     space5 = 24.dp,
     space6 = 32.dp,
 
-    /* Radius */
     radiusSm = 8.dp,
     radiusMd = 12.dp,
     radiusLg = 16.dp,
     radiusXl = 24.dp,
 
-    /* v2 兼容层 */
-    cardForeground = Color(0xFFECE8E0),
-    primaryForeground = Color(0xFF10251F),
-    muted = Color(0xFF262420),
-    ring = Color(0xFF7CCAB3),
-    strong = Color(0xFFECE8E0),
-    track = Color(0xFF2C2A26),
-    warmSurface = Color(0xFF372C1B),
-    success = Color(0xFF7CCAB3),
-    successForeground = Color(0xFF10251F),
+    cardForeground = Color(0xFFECECEC),
+    primaryForeground = Color(0xFFFFFFFF),
+    muted = Color(0xFF2A2A2D),
+    ring = Color(0xFF5B92F0),
+    strong = Color(0xFFECECEC),
+    track = Color(0xFF333336),
+    warmSurface = Color(0xFF242426),
+    success = Color(0xFF5B92F0),
+    successForeground = Color(0xFFFFFFFF),
     warning = Color(0xFFD8A45E),
     warningForeground = Color(0xFFE2B777),
 )
 
-/**
- * 当前琅嬛 UI Token。
- *
- * LanghuanStableTheme 会根据 themeMode：
- *
- * - FOLLOW_SYSTEM
- * - LIGHT
- * - DARK
- *
- * 注入 LanghuanLightUiTokens 或 LanghuanDarkUiTokens。
- *
- * 未包裹 Theme 时默认使用浅色 v3 Token，
- * 便于 Preview 与独立组件测试。
- */
 val LocalLanghuanUiTokens = staticCompositionLocalOf {
     LanghuanLightUiTokens
 }

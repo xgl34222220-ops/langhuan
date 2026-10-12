@@ -76,6 +76,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -121,7 +122,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal enum class ReaderMenuTabV30 { DETAILS, DIRECTORY, MORE }
 
 internal enum class ReaderMenuPanelV30 {
-    MAIN, THEME, FONT, SIZE, SPACING, TURN, SEARCH, STATS
+    MAIN, THEME, FONT, SIZE, SPACING, TURN, SEARCH, STATS,
+    /** V101 屏幕遮罩 (brightness, warm light, paper texture) and 定位. */
+    LIGHT, LOCATE,
 }
 
 private class ReaderTurnHolderV30 {
@@ -136,13 +139,8 @@ private class ReaderTurnHolderV30 {
 
 @Composable
 internal fun ReaderEngineV30(
-    viewModel: LibraryExperienceViewModel,
-    studioState: StudioUiState,
+    viewModel: LocalReaderViewModel,
     onBackToShelf: () -> Unit,
-    onEnterWriting: (String) -> Unit,
-    onOpenEditor: (String, Int) -> Unit,
-    onOpenAiSetup: () -> Unit,
-    startOnInfo: Boolean = false,
     interactionEnabled: Boolean = true,
     onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
@@ -181,94 +179,6 @@ internal fun ReaderEngineV30(
         return
     }
 
-    var showWritingCopy by rememberSaveable(book.id) { mutableStateOf(false) }
-    if (showWritingCopy) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
-                viewModel.cancelWritingCopy()
-                showWritingCopy = false
-            },
-            title = { Text("从本章开始 AI 创作") },
-            text = {
-                Column {
-                    Text(
-                        "把《${startChapter.title}》已读取的正文复制到独立创作项目。" +
-                            "原书、目录和阅读进度保留，可在副本中规划、改写或续写。",
-                    )
-                    if (startChapter.content.isBlank()) {
-                        Text(
-                            text = if (book.sourceId.isNotBlank()) {
-                                "当前章尚未缓存，请先加载正文。"
-                            } else {
-                                "这一章没有可复制的文字正文，可返回书架创建新作品。"
-                            },
-                            modifier = Modifier.padding(top = 12.dp),
-                        )
-                    }
-                    state.readerLoadError?.let {
-                        Text(text = it, modifier = Modifier.padding(top = 8.dp))
-                    }
-                    state.writingCopyError?.let {
-                        Text(text = it, modifier = Modifier.padding(top = 8.dp))
-                    }
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
-                    enabled = !state.preparingWritingCopy &&
-                        state.loadingChapterNumber != startChapter.chapterNumber &&
-                        (startChapter.content.isNotBlank() || book.sourceId.isNotBlank()),
-                    onClick = {
-                        if (startChapter.content.isBlank()) {
-                            viewModel.ensureOnlineChapter(startChapter.chapterNumber)
-                        } else {
-                            viewModel.prepareWritingCopy { id ->
-                                showWritingCopy = false
-                                onEnterWriting(id)
-                            }
-                        }
-                    },
-                ) {
-                    Text(
-                        when {
-                            state.preparingWritingCopy -> "正在创建…"
-                            startChapter.content.isBlank() && book.sourceId.isNotBlank() -> "加载当前章"
-                            startChapter.content.isBlank() -> "本章暂无文字"
-                            else -> "创建副本并进入"
-                        },
-                    )
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        viewModel.cancelWritingCopy()
-                        showWritingCopy = false
-                    },
-                ) { Text("取消") }
-            },
-        )
-    }
-
-    var storyMode by rememberSaveable(book.id) { mutableStateOf(false) }
-    if (storyMode) {
-        BackHandler { storyMode = false }
-        StoryCleanExperience(
-            book = book,
-            libraryState = state,
-            aiReady = studioState.provider.ready,
-            onAiSetup = onOpenAiSetup,
-            onAdopted = { viewModel.openBook(book.id) },
-            onBack = { storyMode = false },
-            onLoadCurrentChapter = { viewModel.ensureOnlineChapter(startChapter.chapterNumber) },
-        )
-        return
-    }
-
-    LaunchedEffect(book.id, startChapter.id) {
-        viewModel.ensureOnlineChapter(startChapter.chapterNumber)
-    }
-
     key(book.id) {
         ReaderSessionV30(
             book = book,
@@ -277,38 +187,14 @@ internal fun ReaderEngineV30(
             },
             externalChapterId = startChapter.id,
             settings = settings,
-            startOnInfo = startOnInfo,
+            startOnInfo = false,
             interactionEnabled = interactionEnabled,
             onChapterChanged = { number -> viewModel.openReader(number) },
-            onLoadChapter = viewModel::ensureOnlineChapter,
-            onRefreshCatalogue = viewModel::refreshOnlineCatalogue,
-            refreshingCatalogue = state.isRefreshingCatalogue,
-            catalogueMessage = state.catalogueMessage,
-            loadingChapterNumber = state.loadingChapterNumber,
-            chapterLoadError = state.readerLoadError,
             onBack = onBackToShelf,
-            onEdit = { number -> onOpenEditor(book.id, number) },
-            onWriting = {
-                val imported = book.sourceId.isNotBlank() ||
-                    book.genre == "导入作品" ||
-                    context
-                        .getSharedPreferences("local_book_meta_v1", Context.MODE_PRIVATE)
-                        .contains("imported_${book.id}")
-                if (imported) {
-                    showWritingCopy = true
-                } else {
-                    onEnterWriting(book.id)
-                }
-            },
-            onStory = { storyMode = true },
             onOpenOriginalEdition = onOpenOriginalEdition,
             chapterOps = remember(book.id) {
                 ReaderChapterOpsV35(
-                    rename = { number, title ->
-                        viewModel.renameChapter(book.id, number, title)
-                    },
-                    append = { viewModel.appendChapter(book.id, "") },
-                    deleteLast = { viewModel.deleteLastChapter(book.id) },
+                    rename = { number, title -> viewModel.renameChapter(book.id, number, title) },
                 )
             },
         )
@@ -329,17 +215,11 @@ internal fun ReaderSessionV30(
     interactionEnabled: Boolean,
     onChapterChanged: (Int) -> Unit,
     onBack: () -> Unit,
-    onEdit: (Int) -> Unit,
-    onWriting: () -> Unit,
-    onStory: () -> Unit,
     chapterOps: ReaderChapterOpsV35 = ReaderChapterOpsV35(),
     onLoadChapter: (Int) -> Unit = {},
     loadingChapterNumber: Int? = null,
     chapterLoadError: String? = null,
     speechFactory: ReaderSpeechFactoryV47 = systemReaderSpeechFactoryV47,
-    onRefreshCatalogue: () -> Unit = {},
-    refreshingCatalogue: Boolean = false,
-    catalogueMessage: String? = null,
     onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -350,8 +230,15 @@ internal fun ReaderSessionV30(
     }
     // 阅读正文主题独立于 App 全局浅深色；paper/warm/tea/green/blue/pink/white/night
     // 的实际颜色由 ReaderThemeV30 管理。
-    val theme = readerThemeV30(settings.theme)
+    // V92: the optional paper texture / gallery picture travels with the theme into every
+    // page paint (paged, page-turn animation and scroll mode).
+    val baseTheme = readerThemeV30(settings.theme)
+    val backdropPaint = rememberReaderBackdropPaintV92(settings, baseTheme)
+    val theme = remember(baseTheme, backdropPaint) { baseTheme.copy(backdrop = backdropPaint) }
     val mode = settings.turnMode
+    // V101 背景跟随: night mode follows the system dark mode while that switch is on.
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    LaunchedEffect(systemDark, settings.followSystemNight) { settings.applySystemNight(systemDark) }
     val v3Tokens = LocalLanghuanUiTokens.current
 
     /* ------------------------------ Position ------------------------------ */
@@ -466,7 +353,8 @@ internal fun ReaderSessionV30(
     // 默认 18sp / 1.95 行距在 ReaderSettingsV30 中定稿；这里读取用户当前设置。
     val spec = with(density) {
         val fontPx = settings.fontSize.sp.toPx()
-        val titlePx = fontPx * 1.36f
+        // V93: a larger, heavier chapter heading with more air before the body.
+        val titlePx = fontPx * 1.5f
         ReaderTypeSpecV30(
             bodyWidthPx = geometry.bodyWidth.toInt().coerceAtLeast(0),
             bodyHeightPx = geometry.bodyHeight.toInt().coerceAtLeast(0),
@@ -601,9 +489,6 @@ internal fun ReaderSessionV30(
         mutableStateOf(bookmarkState.exceptionOrNull()?.message)
     }
     val legacyBookmarkState = remember { ReaderBookmarkStoreV49.legacy(prefs) }
-    val catalogueIncomplete = remember(book.sourceId, chapters) {
-        book.sourceId.isNotBlank() && catalogueMiddleGapV53(chapters.map { it.title }, catalogueVolumeTitlesV53(chapters.map { it.title })) != null
-    }
 
     fun infoFor(page: ReaderPageV30?, index: Int): ReaderChromeInfoV30 {
         val chapter = chapters.getOrNull(index)
@@ -619,17 +504,13 @@ internal fun ReaderSessionV30(
         val chapterLabel = chapter
             ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
             .orEmpty()
-        // v3 顶栏：书名 + 当前章节标题。ReaderRenderV30 只接收一个 chapterTitle
-        // 字段，因此这里组合成一条真实 chrome 文案，不新增数据层接口。
-        val header = when {
-            chapterLabel.isBlank() -> book.title
-            book.title.isBlank() -> chapterLabel
-            else -> "${book.title} · $chapterLabel"
-        }
+        // V103 顶栏：参考阅读器左上角是灰色小字书名（大号章节标题已居中排在正文首页）；没有书名时退回章节名。
+        val header = book.title.ifBlank { chapterLabel }
         return ReaderChromeInfoV30(
             chapterTitle = header,
-            pageLabel = if (count > 0) "本章 $pageNumber / $count 页" else "",
-            progressLabel = if (catalogueIncomplete) "目录待补全" else "全书 ${bookProgress.roundToInt()}%",
+            // V93 页脚：右侧「1/12  1%」——本章页码与全书进度，不再加文字前缀。
+            pageLabel = if (count > 0) "$pageNumber/$count" else "",
+            progressLabel = "${bookProgress.roundToInt()}%",
             time = clock,
             battery = battery,
             showTimeBattery = settings.showTimeBattery,
@@ -677,6 +558,17 @@ internal fun ReaderSessionV30(
             .edit()
             .putInt("total_${book.id}", chapters.size)
             .putInt("index_${book.id}", chapterIndex)
+            .apply {
+                // V92: the shelf's 「已读完」 filter and progress sort read this flag. Only
+                // write it when the page count is known, so a pending layout cannot clear it.
+                val pageCount = (layout ?: previousLayout)?.pages?.size ?: 0
+                if (pageCount > 0) {
+                    putBoolean(
+                        ShelfReadingProgressStoreV92.finishedKey(book.id),
+                        readerPositionIsBookEndV92(chapterIndex, chapters.size, savedPage, pageCount),
+                    )
+                }
+            }
             .apply()
     }
 
@@ -768,6 +660,16 @@ internal fun ReaderSessionV30(
 
     LaunchedEffect(bookmarkError) {
         if (bookmarkError != null) edgeHint = bookmarkError
+    }
+
+    /** V101 下拉书签: pulling the page down toggles the current chapter's bookmark. */
+    fun togglePullBookmark() {
+        val number = currentChapter?.chapterNumber ?: return
+        val marking = number.toString() !in bookmarks
+        applyBookmarkResult(
+            ReaderBookmarkStoreV49.setMarked(prefs, book.id, number, marking),
+            if (marking) "已添加书签" else "已移除书签",
+        )
     }
 
     /* ------------------- Selection / Notes / Highlights ------------------- */
@@ -880,6 +782,7 @@ internal fun ReaderSessionV30(
         )
     }
     var menuPanel by remember { mutableStateOf(ReaderMenuPanelV30.MAIN) }
+    var quickAdjust by remember { mutableStateOf<ReaderQuickAdjustV101?>(null) }
 
     fun openMenu() {
         finishTurnNow()
@@ -1193,6 +1096,7 @@ internal fun ReaderSessionV30(
 
     BackHandler {
         when {
+            quickAdjust != null -> quickAdjust = null
             menuVisible && menuPanel != ReaderMenuPanelV30.MAIN -> {
                 menuPanel = ReaderMenuPanelV30.MAIN
             }
@@ -1209,7 +1113,10 @@ internal fun ReaderSessionV30(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(theme.page)
+            .drawBehind {
+                drawRect(theme.page)
+                theme.backdrop?.let { drawReaderBackdropV92(it) }
+            }
             .onSizeChanged { viewport = it }
             .semantics {
                 contentDescription = "阅读正文"
@@ -1301,6 +1208,7 @@ internal fun ReaderSessionV30(
                         mode,
                         settings.fullNext,
                         settings.clickAnimation,
+                        settings.pullBookmark,
                         geometry,
                     ) {
                         if (!interactionEnabled || waitingForOnlineBody) {
@@ -1320,6 +1228,7 @@ internal fun ReaderSessionV30(
                             var direction = 0
                             var released = false
                             var longPressed = false
+                            var pullDown = false
                             val width = size.width.toFloat()
                             val longPressAt =
                                 down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
@@ -1380,6 +1289,7 @@ internal fun ReaderSessionV30(
                                         abs(totalY) > slop * 2f && abs(totalY) > abs(totalX)
                                     ) {
                                         blocked = true
+                                        pullDown = settings.pullBookmark && selection == null && totalY > 0f
                                     }
                                 }
                                 if (dragging) {
@@ -1427,6 +1337,14 @@ internal fun ReaderSessionV30(
                                 abs(totalX) <= slop && abs(totalY) <= slop
                             ) {
                                 tapAt(down.position)
+                            } else if (
+                                released && pullDown && !longPressed &&
+                                totalY > 96.dp.toPx() && abs(totalX) < totalY * 0.7f
+                            ) {
+                                haptics.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                                )
+                                togglePullBookmark()
                             }
                         }
                     }
@@ -1515,6 +1433,10 @@ internal fun ReaderSessionV30(
             )
         }
 
+        /* ----------------------------- Warm light (V92) ----------------------------- */
+        // Above the page text, below hints/players; draw-only so it never takes touches.
+        ReaderWarmLightOverlayV92(warmth = settings.warmth, dark = theme.dark)
+
         /* ------------------------------- Loading ------------------------------- */
         AnimatedVisibility(
             visible = shownLayout == null,
@@ -1588,17 +1510,13 @@ internal fun ReaderSessionV30(
             enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = 0.92f),
             exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.96f),
         ) {
-            val shape = RoundedCornerShape(v3Tokens.radiusLg)
+            // V93: a dark rounded pill (like the reference's 「再次滑动返回」 toast).
             Box(
                 modifier = Modifier
-                    .background(color = v3Tokens.card, shape = shape)
-                    .border(width = 1.dp, color = v3Tokens.border, shape = shape)
-                    .padding(
-                        horizontal = v3Tokens.space4,
-                        vertical = v3Tokens.space2,
-                    ),
+                    .background(color = Color(0xE6303030), shape = CircleShape)
+                    .padding(horizontal = 18.dp, vertical = 9.dp),
             ) {
-                Text(text = edgeHint.orEmpty(), color = v3Tokens.foreground, fontSize = 13.sp)
+                Text(text = edgeHint.orEmpty(), color = Color.White, fontSize = 13.sp)
             }
         }
 
@@ -1808,6 +1726,16 @@ internal fun ReaderSessionV30(
             )
         }
 
+        /* --------------------------- V101 quick sliders --------------------------- */
+        quickAdjust?.let { adjust ->
+            ReaderQuickAdjustOverlayV101(
+                adjust = adjust,
+                settings = settings,
+                theme = theme,
+                onDismiss = { quickAdjust = null },
+            )
+        }
+
         /* ------------------------------- Reader menu ------------------------------- */
         ReaderMenuV30(
             visible = menuVisible,
@@ -1864,9 +1792,6 @@ internal fun ReaderSessionV30(
                     if (mode == ReaderTurnModeV30.SCROLL) scrollJump++
                 }
             },
-            onEdit = { currentChapter?.let { onEdit(it.chapterNumber) } },
-            onWriting = onWriting,
-            onStory = onStory,
             bookmarkedChapters = bookmarks.mapNotNull { it.toIntOrNull() }.toSet(),
             bookmarkError = bookmarkError,
             legacyBookmarkedChapters = legacyBookmarkState
@@ -1890,11 +1815,16 @@ internal fun ReaderSessionV30(
                 }
             },
             onRenameChapter = chapterOps.rename,
-            onAppendChapter = chapterOps.append,
-            onDeleteLastChapter = chapterOps.deleteLast,
-            onRefreshCatalogue = onRefreshCatalogue,
-            refreshingCatalogue = refreshingCatalogue,
-            catalogueMessage = catalogueMessage,
+            onQuickAdjust = { adjust ->
+                menuVisible = false
+                quickAdjust = adjust
+            },
+            onLocateBook = { index, fraction ->
+                menuVisible = false
+                val chapter = chapters.getOrNull(index)
+                val anchor = if (chapter == null) 0 else (chapter.content.length * fraction).toInt()
+                jumpTo(index, anchor)
+            },
         )
     }
 }
@@ -2031,6 +1961,7 @@ private fun ReaderScrollModeV30(
                 .height(topPad)
                 .background(theme.page),
         ) {
+            theme.backdrop?.let { drawReaderBackdropV92(it, geometry.width, geometry.height) }
             drawIntoReaderChromeV30(
                 geometry = geometry, theme = theme, paints = paints,
                 info = info, header = true,
@@ -2043,6 +1974,9 @@ private fun ReaderScrollModeV30(
                 .align(Alignment.BottomCenter)
                 .background(theme.page),
         ) {
+            theme.backdrop?.let {
+                drawReaderBackdropV92(it, geometry.width, geometry.height, offsetY = geometry.height - size.height)
+            }
             drawIntoReaderChromeV30(
                 geometry = geometry, theme = theme, paints = paints,
                 info = info, header = false,
@@ -2071,7 +2005,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIntoReaderChrom
         drawReaderPageV30(
             page = null,
             geometry = geometry,
-            theme = theme.copy(page = Color.Transparent),
+            theme = theme.copy(page = Color.Transparent, backdrop = null),
             paints = paints,
             info = if (header) {
                 info.copy(
@@ -2116,6 +2050,4 @@ private fun readerBatteryV30(context: Context): Int {
  */
 internal class ReaderChapterOpsV35(
     val rename: (Int, String) -> Unit = { _, _ -> Unit },
-    val append: () -> Unit = {},
-    val deleteLast: () -> Unit = {},
 )

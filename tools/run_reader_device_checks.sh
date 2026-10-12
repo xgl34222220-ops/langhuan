@@ -2,10 +2,9 @@
 # Preserve bounded diagnostic evidence from the synthetic CI emulator even if it disconnects.
 # Every existing test and process-restore gate keeps its original failing exit status.
 set -euo pipefail
-reader_fixture_url=${1:?controlled source fixture URL required}
 mkdir -p reader-qa/live reader-qa/retries
 reader_start_evidence() {
-  adb logcat -v threadtime 'CreativeWritingV135:I' 'CreativeStoryV135:I' 'EditorAtomicityV136:I' 'EditorProfileV137:I' 'AndroidRuntime:E' '*:W' >> reader-qa/device-logcat.txt 2>&1 &
+  adb logcat -v threadtime 'AndroidRuntime:E' '*:W' >> reader-qa/device-logcat.txt 2>&1 &
   reader_logcat_pid=$!
   (
     while timeout 5s adb get-state >/dev/null 2>&1; do
@@ -85,7 +84,7 @@ reader_connected_tests() {
   done
   return "$status"
 }
-reader_gradle_args=(-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.sourceFixtureBase="$reader_fixture_url")
+reader_gradle_args=(-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true)
 reader_start_evidence
 reader_cleanup() {
   reader_exit=$?
@@ -102,24 +101,13 @@ reader_cleanup() {
   exit "$reader_exit"
 }
 trap reader_cleanup EXIT
-# Recheck original failures and browser/search/catalogue recovery before the full gates.
+# Recheck the reader regressions and the V100 local shelf before the full gates.
 # These focused results never replace the complete suite or process-restoration gates.
-reader_regression_cases="com.xiguli.langhuan.ui.ReaderBookmarkV49DeviceTest#legacyRecoveryRequiresAnExplicitChoiceAndCancelKeepsAllData,com.xiguli.langhuan.ui.ReaderProgressV42DeviceTest#insertingMissingChaptersKeepsTheSameChapterAndSentence,com.xiguli.langhuan.ui.ReaderRecreationV42DeviceTest#longChapterAndChangedFontStayInReaderAfterActivityRecreation,com.xiguli.langhuan.ui.ReaderWritingCopyV53DeviceTest#readerAiActionCreatesIndependentDraftAndCancelLeavesNoProject,com.xiguli.langhuan.ui.SourceEditingV41DeviceTest#sourceDraftSurvivesActivityRecreationAndCancelDoesNotWrite,com.xiguli.langhuan.ui.CreativeStoryV135DeviceTest#clearingChatWhileHttpReplyIsDelayedCannotResurrectIt,com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest#verificationRecreationWaitsForTheUserAndKeepsTheResultingCookie,com.xiguli.langhuan.ui.SourceBrowserSessionV56DeviceTest#rendererExitWhileVerifyingReleasesTheWaitAndRetryKeepsTheProfile,com.xiguli.langhuan.ui.SourceSearchRecoveryV57DeviceTest,com.xiguli.langhuan.ui.SourceCatalogueRecoveryV58DeviceTest,com.xiguli.langhuan.ui.EpubOriginalReaderDeviceTest#reflowRendererExitKeepsConfirmedLocatorAndManualRetryRestoresSecureArtwork,com.xiguli.langhuan.ui.EpubOriginalReaderDeviceTest#fixedRendererExitKeepsConfirmedPageAndRecreationWaitsForManualRetry"
+reader_regression_cases="com.xiguli.langhuan.ui.ReaderBookmarkV49DeviceTest#legacyRecoveryRequiresAnExplicitChoiceAndCancelKeepsAllData,com.xiguli.langhuan.ui.ReaderRecreationV42DeviceTest#longChapterAndChangedFontStayInReaderAfterActivityRecreation,com.xiguli.langhuan.ui.LocalShelfV100DeviceTest,com.xiguli.langhuan.ui.EpubOriginalReaderDeviceTest#reflowRendererExitKeepsConfirmedLocatorAndManualRetryRestoresSecureArtwork,com.xiguli.langhuan.ui.EpubOriginalReaderDeviceTest#fixedRendererExitKeepsConfirmedPageAndRecreationWaitsForManualRetry"
 reader_connected_tests reader-regression-focused "${reader_gradle_args[@]}" -Pandroid.testInstrumentationRunnerArguments.class="$reader_regression_cases"
 mkdir -p reader-qa/reader-regression-focused
 cp -R app/build/reports/androidTests reader-qa/reader-regression-focused/
 cp -R app/build/outputs/androidTest-results reader-qa/reader-regression-focused/
-# Exercise the editor profile/save transaction before the existing complete gates.
-reader_connected_tests editor-profile-focused "${reader_gradle_args[@]}" -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.CreativeEditorProfileSaveV137DeviceTest
-mkdir -p reader-qa/editor-profile-focused
-cp -R app/build/reports/androidTests reader-qa/editor-profile-focused/
-cp -R app/build/outputs/androidTest-results reader-qa/editor-profile-focused/
-# Fail early on the full creation chain, editor reentry and Room fault/cancellation checks.
-# A successful focused check never substitutes for the original full-suite/process gates below.
-reader_connected_tests creative-focused "${reader_gradle_args[@]}" -Pandroid.testInstrumentationRunnerArguments.class=com.xiguli.langhuan.ui.CreativeWritingV135DeviceTest,com.xiguli.langhuan.ui.CreativeEditorEntryV136DeviceTest,com.xiguli.langhuan.data.CreativeEditorAtomicityV136DeviceTest
-mkdir -p reader-qa/creative-focused
-cp -R app/build/reports/androidTests reader-qa/creative-focused/
-cp -R app/build/outputs/androidTest-results reader-qa/creative-focused/
 reader_connected_tests full-suite "${reader_gradle_args[@]}"
 reader_wait_for_settled_device
 # The two-phase process-death gate is re-run whole (never partially) after a device recovery.

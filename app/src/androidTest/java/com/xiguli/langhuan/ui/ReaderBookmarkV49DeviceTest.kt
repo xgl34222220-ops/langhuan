@@ -39,7 +39,7 @@ class ReaderBookmarkV49DeviceTest {
                 PaperReaderThemeV44 {
                     if (f.visible.value) key(f.current.value.id) {
                         val chapters = f.chapters()
-                        ReaderSessionV30(f.current.value, chapters, chapters.first().id, settings, true, true, {}, {}, {}, {}, {})
+                        ReaderSessionV30(f.current.value, chapters, chapters.first().id, settings, true, true, {}, {})
                     }
                 }
             }

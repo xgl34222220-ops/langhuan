@@ -47,6 +47,11 @@ data class NewStoryRequest(
 
 internal data class ActiveStorySelectionV51(val id: String?, val revision: Long)
 
+data class PersistedStory(
+    val snapshot: StorySnapshot,
+    val draft: ChapterDraft,
+)
+
 class StoryProjectManager internal constructor(context: Context, private val db: LanghuanDatabase) {
     constructor(context: Context) : this(context, LanghuanDatabase.get(context))
     private val storyDao = db.storyStateDao()
@@ -194,13 +199,6 @@ class StoryProjectManager internal constructor(context: Context, private val db:
         manuscript: ImportedManuscript,
         beforeCommit: (PersistedStory) -> Unit = {},
     ): PersistedStory = db.withTransaction {
-        if (manuscript.sourceId.isNotBlank()) {
-            require(manuscript.sourceBookUrl.isNotBlank() && manuscript.chapters.isNotEmpty()) { "在线书籍缺少来源或目录" }
-            require(manuscript.chapters.all { it.sourceUrl.isNotBlank() } && manuscript.chapters.map { it.sourceUrl }.distinct().size == manuscript.chapters.size) { "在线目录包含空地址或重复章节" }
-            findOnlineStory(manuscript.sourceId, manuscript.sourceBookUrl)?.let { id ->
-                loadStory(id)?.let { return@withTransaction it }
-            }
-        }
         createImportedStoryInTransaction(manuscript).also(beforeCommit)
     }
 
@@ -282,127 +280,6 @@ class StoryProjectManager internal constructor(context: Context, private val db:
             saveStructure(snapshot, first)
         }
     }
-    /** Appends downloaded chapters (online-source updates) after the current last chapter. */
-    suspend fun appendImportedChapters(novelId: String, items: List<ImportedChapter>): PersistedStory? = db.withTransaction {
-        appendImportedChaptersInTransaction(novelId, items)
-    }
-
-    private suspend fun appendImportedChaptersInTransaction(novelId: String, items: List<ImportedChapter>): PersistedStory? {
-        if (items.isEmpty()) return null
-        val loaded = loadStory(novelId) ?: return null
-        val full = effectiveOutline(loaded.snapshot).toMutableList()
-        val volume = full.lastOrNull { it.level == OutlineLevel.VOLUME } ?: error("请先创建卷纲")
-        var number = full.filter { it.level == OutlineLevel.CHAPTER }.maxOfOrNull { it.order } ?: 0
-        val now = System.currentTimeMillis()
-        val drafts = items.map { item ->
-            number += 1
-            val node = OutlineNode(
-                id = "chapter-$novelId-$number-${UUID.randomUUID()}",
-                novelId = novelId,
-                parentId = volume.id,
-                level = OutlineLevel.CHAPTER,
-                order = number,
-                title = item.title.ifBlank { "第${number}章" },
-                objective = "梳理导入正文后补充本章目标。",
-                conflict = "待从正文提取冲突。",
-                turningPoint = "待从正文提取转折。",
-                locked = false,
-            )
-            full += node
-            ChapterDraft(
-                id = "draft-$novelId-$number",
-                novelId = novelId,
-                chapterNumber = number,
-                title = node.title,
-                objective = node.objective,
-                scenePlan = listOf(defaultScene(number)),
-                content = item.content,
-                sourceUrl = item.sourceUrl,
-                version = 1,
-            )
-        }
-        drafts.forEach { draft ->
-            chapterStateDao.upsert(draft.toEntity(now))
-            upsertChapterMemory(draft, now)
-        }
-        val current = loaded.snapshot.novel.currentChapter
-        val snapshot = loaded.snapshot.copy(
-            novel = loaded.snapshot.novel.copy(
-                currentWords = loaded.snapshot.novel.currentWords + drafts.sumOf { it.content.length },
-            ),
-            outline = full.sortedWith(compareBy({ it.level.ordinal }, { it.order })),
-            activeOutline = activeChain(full, current),
-        )
-        return saveStructure(snapshot, loaded.draft)
-    }
-
-    /** Online shelf identity is in the same transaction as its catalogue, not only preferences. */
-    suspend fun findOnlineStory(sourceId: String, bookUrl: String): String? =
-        storyDao.allHeaders().firstNotNullOfOrNull { row ->
-            runCatching { ProjectJson.decodeFromString(StorySnapshot.serializer(), row.snapshotJson).novel }
-                .getOrNull()?.takeIf { it.sourceId == sourceId && it.sourceBookUrl == bookUrl }?.id
-        }
-
-    /** Cache exactly one verified URL without overwriting existing text or changing chapter order. */
-    suspend fun cacheOnlineChapter(novelId: String, number: Int, chapterId: String, sourceUrl: String, text: String,
-        expectedSourceId: String, expectedBookUrl: String): ChapterDraft? = db.withTransaction {
-        require(text.isNotBlank()) { "本章正文为空，未写入缓存" }
-        val loaded = loadStory(novelId) ?: return@withTransaction null
-        check(loaded.snapshot.novel.sourceId == expectedSourceId && loaded.snapshot.novel.sourceBookUrl == expectedBookUrl) { "书籍来源已变化，未保存旧响应" }
-        val chapter = loadChapterDraftCursorSafe(novelId, number) ?: return@withTransaction null
-        check(chapter.id == chapterId && chapter.sourceUrl.isNotBlank() && chapter.sourceUrl == sourceUrl) { "章节来源已变化，未覆盖原正文" }
-        if (chapter.content.isNotBlank()) return@withTransaction chapter
-        val cached = chapter.copy(content = text)
-        val now = System.currentTimeMillis()
-        chapterStateDao.upsert(cached.toEntity(now))
-        // The imported placeholder is not a meaningful old revision. Keep its first version
-        // consistent with the first successfully cached text, so restoring v1 cannot erase it.
-        chapterVersionDao.upsert(ChapterVersionEntity("${cached.id}:v${cached.version}", novelId, number,
-            cached.version, cached.title, cached.content, cached.summary, now))
-        val snapshot = loaded.snapshot.copy(novel = loaded.snapshot.novel.copy(currentWords = loaded.snapshot.novel.currentWords + text.length))
-        persistCurrent(snapshot, if (loaded.draft.chapterNumber == number) cached else loaded.draft, now)
-        cached
-    }
-
-    suspend fun chapterDraft(novelId: String, number: Int): ChapterDraft? = loadChapterDraftCursorSafe(novelId, number)
-
-    /** Reading imports are reference material; AI writing receives a separate local project. */
-    suspend fun createWritingCopy(novelId: String, number: Int, expectedChapterId: String): PersistedStory = db.withTransaction {
-        val original = loadStory(novelId) ?: error("原书已移除")
-        val chapter = loadChapterDraftCursorSafe(novelId, number) ?: error("当前章节已移除")
-        check(chapter.id == expectedChapterId) { "当前章节已变化，请重新进入创作" }
-        require(chapter.content.isNotBlank()) { "请先读取当前章节正文，再创建创作副本" }
-        val copy = createImportedStoryInTransaction(ImportedManuscript(
-            title = original.snapshot.novel.title + " · 创作副本",
-            chapters = listOf(ImportedChapter(chapter.title, chapter.content)),
-            intro = "以《${original.snapshot.novel.title}》的《${chapter.title}》为起点，建立独立创作。" + chapter.summary.take(1200),
-        ))
-        saveStructure(copy.snapshot.copy(novel = copy.snapshot.novel.copy(genre = "创作副本")), copy.draft)
-    }
-
-    suspend fun appendOnlineCatalogue(novelId: String, sourceId: String, bookUrl: String, items: List<ImportedChapter>,
-        beforeCommit: suspend () -> Unit = {}): Int = db.withTransaction {
-        val novel = loadStory(novelId)?.snapshot?.novel ?: error("书籍已移除")
-        check(novel.sourceId == sourceId && novel.sourceBookUrl == bookUrl) { "书籍来源已变化，未更新目录" }
-        val existing = chapterDrafts(novelId)
-        val plan = planOnlineCatalogueV53(existing, items)
-        if (plan.added.isEmpty()) return@withTransaction 0
-        // Allocate only new stable chapter keys. Existing chapter IDs, bodies, versions,
-        // annotations and progress continue to refer to exactly the same chapters.
-        appendImportedChaptersInTransaction(novelId, plan.added)
-        val allocated = chapterDrafts(novelId).associateBy { it.sourceUrl }
-        val ordered = plan.items.mapIndexed { index, item ->
-            allocated.getValue(item.sourceUrl).copy(readingOrder = index + 1)
-        }
-        val now = System.currentTimeMillis()
-        ordered.forEach { chapterStateDao.upsert(it.toEntity(now)) }
-        val updated = loadStory(novelId) ?: error("书籍已移除")
-        val current = ordered.single { it.chapterNumber == updated.draft.chapterNumber }
-        persistCurrent(updated.snapshot, current, now)
-        beforeCommit()
-        plan.added.size
-    }
-
     suspend fun chapterDrafts(novelId: String): List<ChapterDraft> {
         val loaded = loadStory(novelId) ?: return emptyList()
 
@@ -439,45 +316,14 @@ class StoryProjectManager internal constructor(context: Context, private val db:
         return saveStructure(snapshot, draft)
     }
 
-    suspend fun createChapter(
-        snapshot: StorySnapshot,
-        title: String,
-        objective: String,
-        conflict: String,
-        turningPoint: String,
-        scenePlan: List<ScenePlan> = emptyList(),
-    ): PersistedStory {
-        val outline = effectiveOutline(snapshot).toMutableList()
-        val nextNumber = (outline.filter { it.level == OutlineLevel.CHAPTER }.maxOfOrNull { it.order } ?: 0) + 1
-        val volume = snapshot.activeOutline.lastOrNull { it.level == OutlineLevel.VOLUME }
-            ?: outline.filter { it.level == OutlineLevel.VOLUME }.maxByOrNull { it.order }
-            ?: error("请先创建卷纲")
-        val node = OutlineNode(
-            id = "chapter-${snapshot.novel.id}-$nextNumber-${UUID.randomUUID()}",
-            novelId = snapshot.novel.id,
-            parentId = volume.id,
-            level = OutlineLevel.CHAPTER,
-            order = nextNumber,
-            title = title.trim().ifBlank { "第${nextNumber}章" },
-            objective = objective.trim().ifBlank { "推动当前主线并制造新的选择。" },
-            conflict = conflict.trim().ifBlank { "人物目标遭遇阻碍。" },
-            turningPoint = turningPoint.trim().ifBlank { "章末出现新的信息、代价或选择。" },
-        )
-        outline += node
-        val draft = ChapterDraft(
-            id = "draft-${snapshot.novel.id}-$nextNumber",
-            novelId = snapshot.novel.id,
-            chapterNumber = nextNumber,
-            title = node.title,
-            objective = node.objective,
-            scenePlan = scenePlan.ifEmpty { listOf(defaultScene(nextNumber)) },
-        )
-        val updated = snapshot.copy(
-            novel = snapshot.novel.copy(currentChapter = nextNumber),
-            outline = outline,
-            activeOutline = activeChain(outline, nextNumber),
-        )
-        return saveStructure(updated, draft)
+    /** Removes a book and every row that belongs to it in one transaction. */
+    suspend fun deleteBook(novelId: String) = db.withTransaction {
+        val sql = db.openHelper.writableDatabase
+        sql.execSQL("DELETE FROM chapter_versions WHERE novelId = ?", arrayOf<Any?>(novelId))
+        sql.execSQL("DELETE FROM chapter_state WHERE novelId = ?", arrayOf<Any?>(novelId))
+        sql.execSQL("DELETE FROM memory_chunks WHERE novelId = ?", arrayOf<Any?>(novelId))
+        sql.execSQL("DELETE FROM story_state WHERE novelId = ?", arrayOf<Any?>(novelId))
+        if (preferences.getString(KEY_ACTIVE_STORY, null) == novelId) clearActiveStoryId()
     }
 
     suspend fun saveStructure(snapshot: StorySnapshot, draft: ChapterDraft): PersistedStory {
@@ -519,54 +365,6 @@ class StoryProjectManager internal constructor(context: Context, private val db:
         val current = loaded.snapshot.novel.currentChapter
         val snapshot = loaded.snapshot.copy(outline = outline, activeOutline = activeChain(outline, current))
         return saveStructure(snapshot, if (loaded.draft.chapterNumber == chapterNumber) renamed else loaded.draft)
-    }
-
-    /**
-     * Deletes the last chapter only. Middle deletion would renumber memory/timeline/progress keys.
-     * The draft is read through the chunked loader so even a very large final chapter is safe.
-     */
-    suspend fun deleteLastChapter(novelId: String): PersistedStory? = db.withTransaction {
-        val loaded = loadStory(novelId) ?: return@withTransaction null
-        val outline = effectiveOutline(loaded.snapshot)
-        val chapters = chapterDrafts(novelId)
-        check(chapters.size > 1) { "至少要保留一章" }
-        val removedDraft = chapters.last()
-        val last = outline.single { it.level == OutlineLevel.CHAPTER && it.order == removedDraft.chapterNumber }
-        val remaining = outline.filterNot { it.id == last.id }
-        chapterStateDao.delete(novelId, last.order)
-        db.openHelper.writableDatabase.execSQL(
-            "DELETE FROM chapter_versions WHERE novelId = ? AND chapterNumber = ?",
-            arrayOf<Any?>(novelId, last.order),
-        )
-        db.openHelper.writableDatabase.execSQL(
-            "DELETE FROM memory_chunks WHERE novelId = ? AND sourceType = 'CHAPTER' AND chapterNumber = ?",
-            arrayOf<Any?>(novelId, last.order),
-        )
-        val current = if (loaded.snapshot.novel.currentChapter == last.order) chapters[chapters.lastIndex - 1].chapterNumber
-            else loaded.snapshot.novel.currentChapter
-        val draft = loadChapterDraftCursorSafe(novelId, current)
-            ?: loaded.draft.takeIf { it.chapterNumber != last.order }
-            ?: error("找不到可切换的章节")
-        val snapshot = loaded.snapshot.copy(
-            novel = loaded.snapshot.novel.copy(
-                currentChapter = current,
-                currentWords = (loaded.snapshot.novel.currentWords - removedDraft.content.length).coerceAtLeast(0),
-            ),
-            outline = remaining,
-            activeOutline = activeChain(remaining, current),
-        )
-        saveStructure(snapshot, draft)
-    }
-
-    /** Appends an empty chapter after the last one. */
-    suspend fun appendChapter(novelId: String, title: String): PersistedStory? {
-        val loaded = loadStory(novelId) ?: return null
-        return createChapter(loaded.snapshot, title, objective = "", conflict = "", turningPoint = "")
-    }
-
-    suspend fun exportStory(novelId: String, format: ExportFormat): ExportArtifact {
-        val loaded = loadStory(novelId) ?: error("找不到当前小说")
-        return StoryExchange.export(loaded.snapshot, chapterDrafts(novelId), format)
     }
 
     private suspend fun persistCurrent(snapshot: StorySnapshot, draft: ChapterDraft, now: Long) {

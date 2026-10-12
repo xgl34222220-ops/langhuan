@@ -89,34 +89,125 @@ internal class ReaderSettingsV30(
     )
     var indent by mutableStateOf(bool(KEY_INDENT, true))
     var fontKey by mutableStateOf(
-        string(KEY_FONT, DEFAULT_FONT_KEY).takeIf { it in SUPPORTED_FONT_KEYS }
+        string(KEY_FONT, DEFAULT_FONT_KEY).takeIf { isUsableFontKey(it) }
             ?: DEFAULT_FONT_KEY,
     )
     var weight by mutableIntStateOf(readWeight())
 
     /* --------------------------- Reader Theme --------------------------- */
-    var theme by mutableStateOf(
-        readerThemeKeyV30(string(KEY_THEME, DEFAULT_THEME)),
+    /** V101 custom themes (published to [ReaderThemeRegistryV101] for the page painters). */
+    var customThemes by mutableStateOf(
+        ReaderThemeCatalogV101.decodeCustom(string(KEY_CUSTOM_THEMES, "")),
     )
-    private var dayTheme by mutableStateOf(
-        readerThemeKeyV30(string(KEY_DAY_THEME, DEFAULT_THEME))
-            .takeIf { it != NIGHT_THEME } ?: DEFAULT_THEME,
+        private set
+
+    init {
+        ReaderThemeRegistryV101.custom = customThemes
+    }
+
+    private val legacyTheme = readerThemeKeyV30(string(KEY_THEME, DEFAULT_THEME))
+
+    /** Selected theme of the day list / the night list. */
+    var dayTheme by mutableStateOf(
+        readerThemeKeyV30(string(KEY_DAY_THEME, legacyTheme.takeIf { !isDark(it) } ?: DEFAULT_THEME))
+            .takeIf { !isDark(it) } ?: DEFAULT_THEME,
     )
-    val night: Boolean get() = theme == NIGHT_THEME
+        private set
+    var nightTheme by mutableStateOf(
+        readerThemeKeyV30(string(KEY_NIGHT_THEME, NIGHT_THEME)).takeIf { isDark(it) } ?: NIGHT_THEME,
+    )
+        private set
+    var nightMode by mutableStateOf(bool(KEY_NIGHT_MODE, isDark(legacyTheme)))
+
+    /** The day and night lists shown on the 主题 pages (built-ins, 更多主题 extras, custom). */
+    var dayInstalled by mutableStateOf(installed(KEY_DAY_INSTALLED, dark = false))
+        private set
+    var nightInstalled by mutableStateOf(installed(KEY_NIGHT_INSTALLED, dark = true))
+        private set
+
+    init {
+        // A theme chosen by an older version (e.g. 纸白) stays visible in its list.
+        if (dayTheme !in dayInstalled) dayInstalled = dayInstalled + dayTheme
+        if (nightTheme !in nightInstalled) nightInstalled = nightInstalled + nightTheme
+    }
+
+    /** 背景跟随: day/night follows the system dark mode instead of the night icon. */
+    var followSystemNight by mutableStateOf(bool(KEY_FOLLOW_SYSTEM, false))
+
+    /** Active theme key. */
+    val theme: String get() = if (nightMode) nightTheme else dayTheme
+    val night: Boolean get() = nightMode
+
+    private fun isDark(key: String): Boolean =
+        ReaderThemeCatalogV101.resolve(key, customThemes)?.dark ?: (key == NIGHT_THEME)
+
+    private fun installed(key: String, dark: Boolean): List<String> {
+        val raw = string(key, "").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        return ReaderThemeCatalogV101.sanitizeInstalled(raw, dark, customThemes)
+    }
 
     fun toggleNight() {
-        if (night) {
-            theme = dayTheme.takeIf { it != NIGHT_THEME } ?: DEFAULT_THEME
+        followSystemNight = false
+        nightMode = !nightMode
+    }
+
+    /** Applies the system dark mode while 背景跟随 is on. */
+    fun applySystemNight(systemDark: Boolean) {
+        if (followSystemNight && nightMode != systemDark) nightMode = systemDark
+    }
+
+    /** Selects a theme in its own (day or night) list and shows it. */
+    fun selectTheme(key: String) {
+        val normalized = readerThemeKeyV30(key)
+        if (isDark(normalized)) {
+            nightTheme = normalized
+            if (normalized !in nightInstalled) nightInstalled = nightInstalled + normalized
+            nightMode = true
         } else {
-            if (theme != NIGHT_THEME) dayTheme = theme
-            theme = NIGHT_THEME
+            dayTheme = normalized
+            if (normalized !in dayInstalled) dayInstalled = dayInstalled + normalized
+            nightMode = false
         }
     }
 
-    fun selectTheme(key: String) {
-        val normalized = readerThemeKeyV30(key)
-        theme = normalized
-        if (normalized != NIGHT_THEME) dayTheme = normalized
+    /** 更多主题: adds a bundled extra to its list (no-op when already there). */
+    fun installTheme(key: String) {
+        val spec = ReaderThemeCatalogV101.resolve(key, customThemes) ?: return
+        if (spec.dark) {
+            if (key !in nightInstalled) nightInstalled = nightInstalled + key
+        } else if (key !in dayInstalled) {
+            dayInstalled = dayInstalled + key
+        }
+    }
+
+    /** Removes a theme from its list; custom themes are deleted. The last theme always stays. */
+    fun removeTheme(key: String): Boolean {
+        val spec = ReaderThemeCatalogV101.resolve(key, customThemes) ?: return false
+        val list = if (spec.dark) nightInstalled else dayInstalled
+        if (key !in list || list.size <= 1) return false
+        val next = list - key
+        if (spec.dark) {
+            nightInstalled = next
+            if (nightTheme == key) nightTheme = next.first()
+        } else {
+            dayInstalled = next
+            if (dayTheme == key) dayTheme = next.first()
+        }
+        if (spec.custom) {
+            customThemes = customThemes.filterNot { it.key == key }
+            ReaderThemeRegistryV101.custom = customThemes
+        }
+        return true
+    }
+
+    /** 新建主题: stores a custom theme, installs and selects it. */
+    fun addCustomTheme(spec: ReaderThemeSpecV101): Boolean {
+        if (!spec.custom || !spec.key.startsWith(ReaderThemeCatalogV101.CUSTOM_PREFIX)) return false
+        if (customThemes.size >= ReaderThemeCatalogV101.MAX_CUSTOM) return false
+        customThemes = customThemes.filterNot { it.key == spec.key } + spec
+        ReaderThemeRegistryV101.custom = customThemes
+        selectTheme(spec.key)
+        return true
     }
 
     /* ---------------------------- Page Turn ---------------------------- */
@@ -142,6 +233,26 @@ internal class ReaderSettingsV30(
     var showTimeBattery by mutableStateOf(bool(KEY_TIME_BATTERY, true))
     var immersive by mutableStateOf(bool(KEY_IMMERSIVE, false))
     var lockPortrait by mutableStateOf(bool(KEY_LOCK_PORTRAIT, true))
+    /** V101: system status bar / navigation bar while reading (沉浸式 hides both). */
+    var showStatusBar by mutableStateOf(bool(KEY_STATUS_BAR, true))
+    var showNavigationBar by mutableStateOf(bool(KEY_NAVIGATION_BAR, true))
+    /** V101 下拉书签: pulling the page down toggles the chapter bookmark. */
+    var pullBookmark by mutableStateOf(bool(KEY_PULL_BOOKMARK, true))
+
+    /* -------------------------- Light & backdrop (V92) -------------------------- */
+    /** Window brightness 0.05..1, or [READER_BRIGHTNESS_SYSTEM_V92] to follow the system. */
+    var brightness by mutableFloatStateOf(
+        float(KEY_BRIGHTNESS, READER_BRIGHTNESS_SYSTEM_V92).let {
+            if (it < 0f) READER_BRIGHTNESS_SYSTEM_V92 else it.coerceIn(READER_MIN_BRIGHTNESS_V92, 1f)
+        },
+    )
+    /** Warm-light strength 0..1; 0 is off. */
+    var warmth by mutableFloatStateOf(float(KEY_WARMTH, 0f).coerceIn(0f, 1f))
+    var backdrop by mutableStateOf(ReaderBackdropV92.of(string(KEY_BACKDROP, ReaderBackdropV92.NONE.key)).key)
+    /** Bumped when a new gallery picture is imported so the decoded bitmap is refreshed. */
+    var backdropImageVersion by mutableStateOf(
+        runCatching { prefs.getLong(KEY_BACKDROP_IMAGE_VERSION, 0L) }.getOrDefault(0L),
+    )
 
     /* ------------------------- Reset Typography ------------------------- */
     fun resetTypography() {
@@ -157,11 +268,13 @@ internal class ReaderSettingsV30(
 
     /* ------------------------------ Snapshot ------------------------------ */
     fun snapshot(): List<Any> = listOf(
-        theme, dayTheme,
+        dayTheme, nightTheme, nightMode, dayInstalled, nightInstalled, customThemes, followSystemNight,
+        showStatusBar, showNavigationBar, pullBookmark,
         fontSize, letterSpacing, lineFactor, paragraphSpacing,
         sidePadding, indent, fontKey, weight,
         turnMode, lastPagedMode, clickAnimation, fullNext, volumeTurn,
         keepScreen, showTimeBattery, immersive, lockPortrait,
+        brightness, warmth, backdrop, backdropImageVersion,
     )
 
     /* -------------------------------- Save -------------------------------- */
@@ -170,6 +283,15 @@ internal class ReaderSettingsV30(
             .putBoolean(KEY_COMFORT_MIGRATED, true)
             .putString(KEY_THEME, theme)
             .putString(KEY_DAY_THEME, dayTheme)
+            .putString(KEY_NIGHT_THEME, nightTheme)
+            .putBoolean(KEY_NIGHT_MODE, nightMode)
+            .putString(KEY_DAY_INSTALLED, dayInstalled.joinToString(","))
+            .putString(KEY_NIGHT_INSTALLED, nightInstalled.joinToString(","))
+            .putString(KEY_CUSTOM_THEMES, ReaderThemeCatalogV101.encodeCustom(customThemes))
+            .putBoolean(KEY_FOLLOW_SYSTEM, followSystemNight)
+            .putBoolean(KEY_STATUS_BAR, showStatusBar)
+            .putBoolean(KEY_NAVIGATION_BAR, showNavigationBar)
+            .putBoolean(KEY_PULL_BOOKMARK, pullBookmark)
             .putFloat(KEY_FONT_SIZE, fontSize)
             .putFloat(KEY_LETTER_SPACING, letterSpacing)
             .putFloat(KEY_LINE_FACTOR, lineFactor)
@@ -187,6 +309,10 @@ internal class ReaderSettingsV30(
             .putBoolean(KEY_TIME_BATTERY, showTimeBattery)
             .putBoolean(KEY_IMMERSIVE, immersive)
             .putBoolean(KEY_LOCK_PORTRAIT, lockPortrait)
+            .putFloat(KEY_BRIGHTNESS, brightness)
+            .putFloat(KEY_WARMTH, warmth)
+            .putString(KEY_BACKDROP, backdrop)
+            .putLong(KEY_BACKDROP_IMAGE_VERSION, backdropImageVersion)
             .putString(KEY_PRESET, "custom")
             .apply()
     }
@@ -208,14 +334,28 @@ internal class ReaderSettingsV30(
         const val MAX_SIDE = 40f
         const val MIN_LETTER_SPACING = 0f
         const val MAX_LETTER_SPACING = 0.20f
-        const val DEFAULT_THEME = "paper"
+        const val DEFAULT_THEME = ReaderThemeCatalogV101.DEFAULT_DAY
         const val NIGHT_THEME = "night"
         const val DEFAULT_FONT_KEY = "sans"
         val SUPPORTED_FONT_KEYS = setOf("sans", "serif", "mono")
+        /** V101 imported font: `custom:` + absolute path of a validated TTF/OTF in app storage. */
+        const val CUSTOM_FONT_PREFIX = "custom:"
+        fun isUsableFontKey(key: String): Boolean = key in SUPPORTED_FONT_KEYS ||
+            (key.startsWith(CUSTOM_FONT_PREFIX) && runCatching { java.io.File(key.removePrefix(CUSTOM_FONT_PREFIX)).isFile }.getOrDefault(false))
 
         private const val KEY_COMFORT_MIGRATED = "reader_comfort_v26"
         private const val KEY_THEME = "theme"
         private const val KEY_DAY_THEME = "dayTheme"
+        const val KEY_NIGHT_THEME = "nightThemeV101"
+        /** Also read by ReaderWindowSessionV27 (light / dark system bar icons). */
+        const val KEY_NIGHT_MODE = "nightModeV101"
+        private const val KEY_DAY_INSTALLED = "dayThemesV101"
+        private const val KEY_NIGHT_INSTALLED = "nightThemesV101"
+        private const val KEY_CUSTOM_THEMES = "customThemesV101"
+        private const val KEY_FOLLOW_SYSTEM = "followSystemNightV101"
+        const val KEY_STATUS_BAR = "statusBarV101"
+        const val KEY_NAVIGATION_BAR = "navigationBarV101"
+        private const val KEY_PULL_BOOKMARK = "pullBookmarkV101"
         private const val KEY_FONT_SIZE = "font"
         private const val KEY_LETTER_SPACING = "letterSpacing"
         private const val KEY_LINE_FACTOR = "line"
@@ -234,5 +374,10 @@ internal class ReaderSettingsV30(
         private const val KEY_IMMERSIVE = "immersive"
         private const val KEY_LOCK_PORTRAIT = "lockPortrait"
         private const val KEY_PRESET = "preset"
+        /** Also read by ReaderWindowSessionV27, which applies the window override. */
+        const val KEY_BRIGHTNESS = "brightnessV92"
+        private const val KEY_WARMTH = "warmthV92"
+        private const val KEY_BACKDROP = "backdropV92"
+        private const val KEY_BACKDROP_IMAGE_VERSION = "backdropImageV92"
     }
 }

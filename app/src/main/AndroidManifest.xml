@@ -2,17 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Miuix Blur runs only behind its API 33 capability gate; API 28-32 use Haze. -->
-    <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />
+    <!-- Readium 原版 EPUB 渲染依赖 WebView 的网络栈（仅本地资源请求，不访问外网）。 -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".LanghuanApplication"
         android:allowBackup="true"
-        android:usesCleartextTraffic="true"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="琅嬛"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -22,16 +18,9 @@
             android:name=".ui.epub.EpubReaderActivity"
             android:exported="false" />
         <activity
-            android:name=".ui.BookSourceBrowserActivityV56"
-            android:process=":book_source_browser"
-            android:exported="false" />
-        <service
-            android:name=".ui.BookSourceBrowserServiceV56"
-            android:process=":book_source_browser"
-            android:exported="false" />
-        <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:theme="@style/Theme.Langhuan.Starting"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask">
             <intent-filter>
@@ -72,16 +61,5 @@
             </intent-filter>
         </activity>
 
-        <!-- User-started writing runs stay visible while the UI is backgrounded. -->
-        <service
-            android:name=".engine.ChapterRunForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <!-- WorkManager promotes long distillation jobs to a visible data-sync foreground task. -->
-        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
     </application>
 </manifest>

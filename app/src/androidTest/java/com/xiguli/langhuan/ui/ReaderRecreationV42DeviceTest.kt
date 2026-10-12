@@ -136,9 +136,9 @@ class ReaderRecreationV42DeviceTest {
             }),
         )))
         val id = story.snapshot.novel.id
-        lateinit var vm: LibraryExperienceViewModel
+        lateinit var vm: LocalReaderViewModel
         try {
-            rule.runOnUiThread { vm = ViewModelProvider(rule.activity)[LibraryExperienceViewModel::class.java] }
+            rule.runOnUiThread { vm = ViewModelProvider(rule.activity)[LocalReaderViewModel::class.java] }
             rule.waitUntil(20000) { vm.state.value.stories.any { it.id == id } }
             rule.onNodeWithText(title).performClick()
             rule.waitUntil(20000) { vm.state.value.readingChapter != null }

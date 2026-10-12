@@ -215,11 +215,26 @@ internal fun readerLineGapV43(
     paragraphGap: Float,
 ): Float = (baselineAdvance - (previousDescent - ascent)).coerceAtLeast(0f) + paragraphGap.coerceAtLeast(0f)
 
+private val readerImportedTypefacesV101 = java.util.concurrent.ConcurrentHashMap<String, Typeface>()
+
+/** V101: an imported TTF/OTF (`custom:<path>`), parsed once; null when it cannot be loaded. */
+internal fun readerImportedTypefaceV101(fontKey: String): Typeface? {
+    if (!fontKey.startsWith(ReaderSettingsV30.CUSTOM_FONT_PREFIX)) return null
+    val path = fontKey.removePrefix(ReaderSettingsV30.CUSTOM_FONT_PREFIX)
+    readerImportedTypefacesV101[path]?.let { return it }
+    val loaded = runCatching {
+        val file = java.io.File(path)
+        if (file.isFile) Typeface.Builder(file).build() else null
+    }.getOrNull() ?: return null
+    readerImportedTypefacesV101[path] = loaded
+    return loaded
+}
+
 internal fun readerTypefaceV30(fontKey: String, weight: Int): Typeface {
     val base = when (fontKey) {
         "serif" -> Typeface.SERIF
         "mono" -> Typeface.MONOSPACE
-        else -> Typeface.SANS_SERIF
+        else -> readerImportedTypefaceV101(fontKey) ?: Typeface.SANS_SERIF
     }
     return Typeface.create(base, weight.coerceIn(100, 900), false)
 }
@@ -460,7 +475,9 @@ internal fun readerPaginateChapterV30(
             val gap = raws.lastOrNull()?.let {
                 readerLineGapV43(it.descent, ascent, spec.titleLineHeightPx, 0f)
             } ?: 0f
-            raws += Raw(text, true, 0, null, ascent, descent, ReaderSlotV30(descent - ascent, gap))
+            // V103: the chapter heading is centred on the page, like the reference reader.
+            val centred = arrayOf(text) to floatArrayOf(((width - titlePaint.measureText(text)) / 2f).coerceAtLeast(0f))
+            raws += Raw(text, true, 0, centred, ascent, descent, ReaderSlotV30(descent - ascent, gap))
         }
     }
 

@@ -60,7 +60,7 @@ class ReaderSpeechLoadingV47DeviceTest {
                 f.chapters.value.first { it.chapterNumber == f.selected.intValue }.id,
                 settings, false, true,
                 { number -> f.selected.intValue = number; if (f.chapters.value[number - 1].content.isBlank()) f.request(number) },
-                {}, {}, {}, {}, onLoadChapter = f::request,
+                {}, onLoadChapter = f::request,
                 loadingChapterNumber = f.loading.value, chapterLoadError = f.error.value,
                 speechFactory = ReaderSpeechFactoryV47 { _, ready, _, done, error -> Speech(ready, done, error).also { f.speech = it } },
             )

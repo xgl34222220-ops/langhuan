@@ -232,7 +232,7 @@ class ReaderEngineV30Test {
     fun readerEntryUsesSingleMeasureAndDrawPipeline() {
         val root = File(System.getProperty("user.dir") ?: ".")
         val dir = "src/main/java/com/xiguli/langhuan/ui/reader"
-        val entry = File(root, "$dir/ReaderNativeExperienceV4.kt").readText()
+        val entry = File(root, "src/main/java/com/xiguli/langhuan/ui/LocalReaderRootV100.kt").readText()
         val engine = File(root, "$dir/ReaderLayoutEngineV30.kt").readText()
         val screen = File(root, "$dir/ReaderScreenV30.kt").readText()
         val render = File(root, "$dir/ReaderRenderV30.kt").readText()
