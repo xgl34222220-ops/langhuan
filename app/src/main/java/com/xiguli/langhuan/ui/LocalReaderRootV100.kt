@@ -4,7 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -31,8 +32,9 @@ import com.xiguli.langhuan.ui.epub.ReaderEditionV90
 import kotlinx.coroutines.delay
 
 /**
- * Local-only root: 书架 is home (no bottom bar). The title opens 书架列表, + imports, the person
- * icon opens 我的, long-press opens the book sheet, and 查看详情 opens 图书详情.
+ * Local-only root: 书架 is home (no bottom bar). 书架列表 is a page to its left (swipe right, or
+ * tap the title), + imports, the person icon opens 我的, long-press opens the book sheet, and
+ * 查看详情 opens 图书详情.
  */
 @Composable
 fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) {
@@ -43,15 +45,20 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
     val context = LocalContext.current
     val appContext = context.applicationContext
 
-    // Routes: "shelf", "shelves", "mine", "reader", "detail:<id>".
+    // Routes: "shelf" (the 书架列表 ⇄ 正在阅读 pager), "mine", "reader", "detail:<id>".
+    // "shelves" is the pre-V102 full-screen list; it now opens the pager on the list page.
     var route by rememberSaveable { mutableStateOf("shelf") }
+    val shelfPager = rememberPagerState(initialPage = ShelfPagerV102.pageForRoute(route)) { ShelfPagerV102.PAGE_COUNT }
+    if (route == "shelves") route = "shelf"
     var sheetBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var moveBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteBookId by rememberSaveable { mutableStateOf<String?>(null) }
 
     if (route == "reader" && state.libraryLoaded && state.openedBook == null && !state.isBusy) route = "shelf"
+    // Follow the app theme (forced light/dark included), not the system setting, so status-bar
+    // icons stay dark on the white pages and light on the dark ones.
     com.xiguli.langhuan.ui.design.PaperReaderSystemBarsV44(
-        lightBackground = !isSystemInDarkTheme(),
+        lightBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f,
         readerActive = route == "reader",
     )
 
@@ -138,21 +145,6 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                         )
                     }
                 }
-                route == "shelves" -> {
-                    BackHandler { route = "shelf" }
-                    ShelfListPageV100(
-                        state = state,
-                        onBack = { route = "shelf" },
-                        onSelectGroup = { id ->
-                            vm.selectGroup(id)
-                            route = "shelf"
-                        },
-                        onCreateGroup = { vm.createGroup(it) },
-                        onRenameGroup = { id, name -> vm.renameGroup(id, name) },
-                        onDeleteGroup = { vm.deleteGroup(it) },
-                        onOpenBook = ::openBook,
-                    )
-                }
                 route == "mine" -> LocalMinePageV101(
                     books = state.books,
                     shelfCount = state.shelf.groups.size,
@@ -183,7 +175,8 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                         )
                     }
                 }
-                else -> LocalShelfHomeV100(
+                else -> LocalShelfPagerV102(
+                    pagerState = shelfPager,
                     state = state,
                     importState = importState,
                     onOpenBook = ::openBook,
@@ -191,7 +184,10 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                     onImport = { importLauncher.launch(arrayOf("*/*")) },
                     onCancelImport = importVm::cancelImport,
                     onMine = { route = "mine" },
-                    onOpenShelfList = { route = "shelves" },
+                    onSelectGroup = { id -> vm.selectGroup(id) },
+                    onCreateGroup = { vm.createGroup(it) },
+                    onRenameGroup = { id, name -> vm.renameGroup(id, name) },
+                    onDeleteGroup = { vm.deleteGroup(it) },
                 )
             }
         }

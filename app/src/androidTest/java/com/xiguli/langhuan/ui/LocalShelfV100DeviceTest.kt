@@ -1,5 +1,6 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -26,8 +27,8 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * V100 local shelf: 书架 home, 书架列表, the long-press sheet and 图书详情 (both tabs), in light
- * and dark. Screenshots land in reader-qa as local-*.png for the PR contact sheet.
+ * V100 local shelf: 书架 home, 书架列表 (V102: a page to the left, opened by swiping right; the
+ * half-way frame is captured too), the long-press sheet and 图书详情 (both tabs), in light and dark. Screenshots land in reader-qa as local-*.png for the PR contact sheet.
  */
 class LocalShelfV100DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
@@ -42,6 +43,32 @@ class LocalShelfV100DeviceTest {
 
     private fun waitGone(tag: String, timeout: Long = 20_000) =
         rule.waitUntil(timeout) { rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty() }
+
+    /** True once the node is settled on screen (pages of the shelf pager stay composed off-screen). */
+    private fun onScreen(tag: String): Boolean = rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes()
+        .any { kotlin.math.abs(it.boundsInRoot.left) < 2f }
+
+    private fun waitOnScreen(tag: String, timeout: Long = 20_000) = rule.waitUntil(timeout) { onScreen(tag) }
+
+    /**
+     * V102: drags right on 正在阅读 to reveal 书架列表. Captures the half-way frame (the list
+     * emerging under the shelf), then finishes the drag and waits for the list to settle.
+     */
+    private fun swipeOpenShelfList(suffix: String) {
+        val pager = rule.onNodeWithTag("shelf_pager")
+        pager.performTouchInput {
+            down(Offset(width * 0.12f, height * 0.55f))
+            repeat(9) { moveBy(Offset(width * 0.05f, 0f)) }
+        }
+        rule.waitForIdle()
+        assertTrue("mid-swipe: neither page settled", !onScreen("shelf_list_page") && !onScreen("shelf_home"))
+        deviceWindowEvidenceV46("local-shelf-swipe-$suffix")
+        pager.performTouchInput {
+            repeat(6) { moveBy(Offset(width * 0.05f, 0f)) }
+            up()
+        }
+        waitOnScreen("shelf_list_page")
+    }
 
     private fun settle() {
         rule.mainClock.advanceTimeBy(800)
@@ -120,10 +147,18 @@ class LocalShelfV100DeviceTest {
                 deviceWindowEvidenceV46("local-detail-cover-$suffix")
                 rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
                 waitTag("shelf_grid")
+                waitOnScreen("shelf_home")
 
-                // 书架列表.
+                // 书架列表: swipe right from 正在阅读 (finger-tracking pager), then back.
+                swipeOpenShelfList(suffix)
+                rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+                waitOnScreen("shelf_home")
+                // Tapping the title still opens the list; tapping a shelf there slides back.
                 rule.onNodeWithTag("shelf_title").performClick()
-                waitTag("shelf_list_page")
+                waitOnScreen("shelf_list_page")
+                rule.onNodeWithTag("shelf_group_name_${ShelfLibrary.DEFAULT_GROUP_ID}").performClick()
+                waitOnScreen("shelf_home")
+                swipeOpenShelfList(suffix)
                 if (mode == LanghuanThemeMode.LIGHT) {
                     rule.onNodeWithTag("shelf_list_add").performClick()
                     waitTag("shelf_name_field")
@@ -134,6 +169,7 @@ class LocalShelfV100DeviceTest {
                 settle()
                 deviceWindowEvidenceV46("local-shelf-list-$suffix")
                 rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+                waitOnScreen("shelf_home")
                 waitTag("shelf_grid")
             }
 
