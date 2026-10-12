@@ -8,6 +8,7 @@
     <application
         android:name=".LanghuanApplication"
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="琅嬛"
         android:roundIcon="@mipmap/ic_launcher_round"

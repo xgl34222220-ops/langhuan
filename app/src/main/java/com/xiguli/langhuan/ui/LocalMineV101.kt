@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
 import kotlin.math.roundToInt
+import com.xiguli.langhuan.ui.design.pagePushV103
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -107,21 +108,29 @@ fun LocalMinePageV101(
     onOpenBook: (String) -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(MinePageV101.HOME) }
-    BackHandler { if (page == MinePageV101.HOME) onBack() else page = MinePageV101.HOME }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .testTag("mine_page"),
-    ) {
-        when (page) {
-            MinePageV101.HOME -> MineHomeV101(books, shelfCount, onBack) { page = it }
-            MinePageV101.STATS -> MineStatsV101 { page = MinePageV101.HOME }
-            MinePageV101.EXCERPTS -> MineExcerptsV101(books, onOpenBook) { page = MinePageV101.HOME }
-            MinePageV101.FINISHED -> MineFinishedV101(books, onOpenBook) { page = MinePageV101.HOME }
-            MinePageV101.SETTINGS -> MineSettingsV101 { page = MinePageV101.HOME }
+    // On HOME, back belongs to the page stack (predictive back slides 我的 off with the finger).
+    BackHandler(enabled = page != MinePageV101.HOME) { page = MinePageV101.HOME }
+    // V103: sub-pages push in full width like every other page (measured reference motion).
+    androidx.compose.animation.AnimatedContent(
+        targetState = page,
+        transitionSpec = { pagePushV103(forward = targetState != MinePageV101.HOME) },
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag("mine_page"),
+        label = "mine_page",
+    ) { target ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            when (target) {
+                MinePageV101.HOME -> MineHomeV101(books, shelfCount, onBack) { page = it }
+                MinePageV101.STATS -> MineStatsV101 { page = MinePageV101.HOME }
+                MinePageV101.EXCERPTS -> MineExcerptsV101(books, onOpenBook) { page = MinePageV101.HOME }
+                MinePageV101.FINISHED -> MineFinishedV101(books, onOpenBook) { page = MinePageV101.HOME }
+                MinePageV101.SETTINGS -> MineSettingsV101 { page = MinePageV101.HOME }
+            }
         }
     }
 }
@@ -165,13 +174,16 @@ private fun MineHomeV101(books: List<LocalShelfBook>, shelfCount: Int, onBack: (
         Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Back, contentDescription = "返回", modifier = Modifier.size(24.dp)) }
         }
+        // V103 (measured on the reference): 48 dp avatar at 16 dp, 16 sp name over a 10.5 sp line,
+        // a full-width 0.5 dp hairline, then 54 dp rows (icon at 18 dp, label at 55 dp, no chevrons)
+        // in two groups split by a hairline inset to the labels. No stats strip.
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 30.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 Modifier
-                    .size(60.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
@@ -180,27 +192,30 @@ private fun MineHomeV101(books: List<LocalShelfBook>, shelfCount: Int, onBack: (
             ) {
                 val img = avatar
                 if (img != null) Image(img, contentDescription = "头像", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                else Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Person, contentDescription = "设置头像", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
+                else Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Person, contentDescription = "设置头像", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(26.dp))
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f).clickable { editing = true }.testTag("mine_name")) {
-                Text(name, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("编辑个人资料 · 仅保存在本机", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(name, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "编辑个人资料 · 仅保存在本机",
+                    modifier = Modifier.padding(top = 3.dp),
+                    fontSize = 10.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            MineFigureV101(ReaderStatsV35.format(stats.total), "累计阅读")
-            MineFigureV101("${stats.streak} 天", "连续阅读")
-            MineFigureV101("${books.size}", "藏书 · $shelfCount 个书架")
-            MineFigureV101("$finished", "读过")
-        }
-        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(Modifier.height(8.dp))
-        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Chart, "阅历", "今日 ${ReaderStatsV35.format(stats.today)}", "mine_row_stats") { onPage(MinePageV101.STATS) }
+        MineHairlineV103(inset = 0.dp)
+        Spacer(Modifier.height(6.dp))
+        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Chart, "阅历", "今日 ${ReaderStatsV35.format(stats.today)} · 累计 ${ReaderStatsV35.format(stats.total)}", "mine_row_stats") { onPage(MinePageV101.STATS) }
         MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Quote, "摘抄", "划线与书签", "mine_row_excerpts") { onPage(MinePageV101.EXCERPTS) }
-        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Done, "读过", "$finished 本", "mine_row_finished") { onPage(MinePageV101.FINISHED) }
-        Spacer(Modifier.height(8.dp))
+        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Done, "读过", "$finished 本 · 藏书 ${books.size}", "mine_row_finished") { onPage(MinePageV101.FINISHED) }
+        Spacer(Modifier.height(10.dp))
+        MineHairlineV103(inset = 55.dp)
+        Spacer(Modifier.height(10.dp))
         MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Settings, "设置", "阅读默认 · 关于", "mine_row_settings") { onPage(MinePageV101.SETTINGS) }
+        Spacer(Modifier.height(6.dp))
+        MineHairlineV103(inset = 0.dp)
     }
 
     if (editing) {
@@ -237,18 +252,22 @@ private fun MineFigureV101(value: String, label: String) {
 }
 
 @Composable
+private fun MineHairlineV103(inset: androidx.compose.ui.unit.Dp) {
+    val t = com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens.current
+    Box(Modifier.padding(start = inset).fillMaxWidth().height(0.5.dp).background(t.border))
+}
+
+@Composable
 private fun MineRowV101(icon: ImageVector, label: String, hint: String, tag: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 16.dp).testTag(tag),
+        Modifier.fillMaxWidth().height(54.dp).clickable(onClick = onClick).padding(start = 14.dp, end = 16.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val t = com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens.current
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = t.foreground)
-        Spacer(Modifier.width(14.dp))
-        Text(label, fontSize = 15.sp, color = t.foreground, modifier = Modifier.weight(1f))
-        Text(hint, fontSize = 12.sp, color = t.mutedForeground)
-        Spacer(Modifier.width(4.dp))
-        Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Chevron, contentDescription = null, modifier = Modifier.size(16.dp), tint = t.mutedForeground)
+        Spacer(Modifier.width(19.dp))
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = t.foreground, modifier = Modifier.weight(1f))
+        Text(hint, fontSize = 12.sp, color = t.mutedForeground, maxLines = 1)
     }
 }
 

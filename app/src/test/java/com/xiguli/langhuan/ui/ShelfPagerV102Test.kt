@@ -2,7 +2,6 @@ package com.xiguli.langhuan.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShelfPagerV102Test {
@@ -28,16 +27,12 @@ class ShelfPagerV102Test {
         assertEquals(1f, ShelfPagerV102.listReveal(0, -0.2f), eps)
     }
 
-    @Test fun parallaxDimAndShadowFadeOutWhenSettled() {
-        assertEquals(ShelfPagerV102.LIST_PARALLAX, ShelfPagerV102.listTranslation(0f), eps)
-        assertEquals(0f, ShelfPagerV102.listTranslation(1f), eps)
-        assertEquals(ShelfPagerV102.LIST_PARALLAX / 2, ShelfPagerV102.listTranslation(0.5f), eps)
-        assertEquals(0f, ShelfPagerV102.listDim(1f), eps)
-        assertEquals(ShelfPagerV102.LIST_DIM, ShelfPagerV102.listDim(0f), eps)
-        assertEquals(0f, ShelfPagerV102.shelfEdgeShadow(0f), eps)
-        assertEquals(0f, ShelfPagerV102.shelfEdgeShadow(1f), eps)
-        assertEquals(1f, ShelfPagerV102.shelfEdgeShadow(0.5f), eps)
-        assertTrue(ShelfPagerV102.shelfEdgeShadow(0.05f) in 0.01f..0.5f)
+    @Test fun predictiveBackDragsAttachedAndNeverOvershoots() {
+        assertEquals(0f, ShelfPagerV102.backDrag(0f), eps)
+        assertEquals(0.45f, ShelfPagerV102.backDrag(0.5f), eps)
+        assertEquals(0.9f, ShelfPagerV102.backDrag(1f), eps)
+        assertEquals(0.9f, ShelfPagerV102.backDrag(3f), eps)
+        assertEquals(0f, ShelfPagerV102.backDrag(-1f), eps)
     }
 
     @Test fun backReturnsFromListToShelfOnly() {

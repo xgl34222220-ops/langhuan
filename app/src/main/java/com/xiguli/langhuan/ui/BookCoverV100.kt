@@ -32,8 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xiguli.langhuan.ui.design.rememberLanghuanCoverV30
 
-/** Book covers are drawn 3:4, like printed web-novel covers. */
-const val BOOK_COVER_RATIO_V100 = 0.75f
+/** V103: book covers are drawn 5:7 (measured 176 × 247 px on the reference shelf). */
+const val BOOK_COVER_RATIO_V100 = 5f / 7f
 
 /** Number of generated cover styles offered on the 封面 tab. */
 const val GENERATED_COVER_STYLES_V100 = 9

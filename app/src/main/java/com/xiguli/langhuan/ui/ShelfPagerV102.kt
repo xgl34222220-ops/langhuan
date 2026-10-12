@@ -3,8 +3,8 @@ package com.xiguli.langhuan.ui
 /**
  * V102 shelf navigation: 书架列表 is a page to the LEFT of 正在阅读. The user drags right to
  * reveal the list and left to return; the pager tracks the finger, so the shelf's left column
- * stays visible at the right edge mid-swipe, like the reference. Inside its clipped slot the list
- * lags behind (parallax), is lightly dimmed and shaded where the shelf meets it.
+ * stays visible at the right edge mid-swipe, like the reference. V103: the two pages stay attached
+ * (no parallax, dim or edge shadow — measured from the reference recording).
  *
  * Pure functions here are unit-tested; the composable only feeds them the pager position.
  */
@@ -13,30 +13,16 @@ internal object ShelfPagerV102 {
     const val SHELF_PAGE = 1
     const val PAGE_COUNT = 2
 
-    /** Fraction of the page width the list lags behind its pager position when fully covered. */
-    const val LIST_PARALLAX = 0.32f
-
-    /** Peak dim laid over the list while the shelf still covers it. */
-    const val LIST_DIM = 0.10f
-
     /** How much of 书架列表 is revealed, 0 (on 正在阅读) … 1 (list fully open). */
     fun listReveal(currentPage: Int, currentPageOffsetFraction: Float): Float =
         (SHELF_PAGE - (currentPage + currentPageOffsetFraction)).coerceIn(0f, 1f)
 
     /**
-     * Extra horizontal shift of the list content inside its clipped page slot (fraction of page
-     * width, positive = right), so the list appears to emerge from underneath the shelf.
+     * V103: fraction of a page the pager is dragged towards the shelf for a predictive back
+     * gesture at [progress] (0…1). Attached 1:1, stopping just short of the shelf so the commit
+     * animation always has a little travel left.
      */
-    fun listTranslation(reveal: Float): Float = (1f - reveal.coerceIn(0f, 1f)) * LIST_PARALLAX
-
-    /** Dim over the list: strongest when the shelf covers it, gone when the list is open. */
-    fun listDim(reveal: Float): Float = (1f - reveal.coerceIn(0f, 1f)) * LIST_DIM
-
-    /** Edge-shadow strength on the shelf page's left edge: only while it is moving. */
-    fun shelfEdgeShadow(reveal: Float): Float {
-        val r = reveal.coerceIn(0f, 1f)
-        return if (r <= 0f || r >= 1f) 0f else minOf(1f, r * 6f, (1f - r) * 6f)
-    }
+    fun backDrag(progress: Float): Float = progress.coerceIn(0f, 1f) * 0.9f
 
     /** Where system back goes: from the list back to the shelf, otherwise not handled here. */
     fun backTarget(settledPage: Int): Int? = if (settledPage == LIST_PAGE) SHELF_PAGE else null

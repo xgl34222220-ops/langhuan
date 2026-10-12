@@ -79,6 +79,42 @@ class LocalShelfV100DeviceTest {
         waitOnScreen("shelf_list_page")
     }
 
+    private fun backEvent(progress: Float) = androidx.activity.BackEventCompat(8f, 1200f, progress, androidx.activity.BackEventCompat.EDGE_LEFT)
+
+    /**
+     * V103: drives a predictive back swipe by hand and captures it part-way, so the contact sheet
+     * shows the real mid-transition frames (the CI emulator runs with animations scaled to 0).
+     */
+    private fun predictiveBack(label: String, vararg stops: Float, commit: Boolean = true) {
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.dispatchOnBackStarted(backEvent(0f)) }
+        rule.waitForIdle()
+        stops.forEach { progress ->
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.dispatchOnBackProgressed(backEvent(progress)) }
+            rule.waitForIdle()
+            shot("$label-${(progress * 100).toInt()}")
+        }
+        rule.runOnUiThread {
+            if (commit) rule.activity.onBackPressedDispatcher.onBackPressed()
+            else rule.activity.onBackPressedDispatcher.dispatchOnBackCancelled()
+        }
+        settle()
+    }
+
+    /** V103: captures a push one frame-batch in (the test clock is held so the frame stays put). */
+    private fun midPush(label: String, millis: Long, action: () -> Unit) {
+        rule.waitForIdle()
+        rule.mainClock.autoAdvance = false
+        try {
+            action()
+            rule.mainClock.advanceTimeBy(millis)
+            SystemClock.sleep(500)
+            deviceWindowEvidenceV46(label)
+        } finally {
+            rule.mainClock.autoAdvance = true
+            rule.waitForIdle()
+        }
+    }
+
     /** Lets the render thread present the settled frame before the window screenshot. */
     private fun shot(label: String) {
         rule.waitForIdle()
@@ -185,9 +221,24 @@ class LocalShelfV100DeviceTest {
                 }
                 settle()
                 shot("local-shelf-list-$suffix")
-                rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+                if (mode == LanghuanThemeMode.LIGHT) {
+                    // Predictive back from 书架列表: both pages follow the gesture, attached.
+                    predictiveBack("local-list-back-$suffix", 0.5f)
+                } else {
+                    rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+                }
                 waitOnScreen("shelf_home")
                 waitTag("shelf_grid")
+                if (mode == LanghuanThemeMode.LIGHT) {
+                    // shelf → 我的 push part-way, settled 我的, then a predictive back at 35 % / 70 %.
+                    midPush("local-mine-push-mid-$suffix", 96) { rule.onNodeWithTag("shelf_mine").performClick() }
+                    waitTag("mine_row_stats")
+                    settle()
+                    shot("local-mine-shelfflow-$suffix")
+                    predictiveBack("local-mine-back-$suffix", 0.35f, 0.7f)
+                    waitTag("shelf_grid")
+                    waitOnScreen("shelf_home")
+                }
             }
 
             // 移动书架: the second book moves to the new shelf and leaves 正在阅读.

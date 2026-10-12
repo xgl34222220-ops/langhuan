@@ -141,7 +141,22 @@ internal fun ReaderPillSliderV101(
     theme: ReaderThemeV30,
     onValue: (Float) -> Unit,
 ) {
-    val fraction = ((value - range.start) / (range.endInclusive - range.start)).coerceIn(0f, 1f)
+    val target = ((value - range.start) / (range.endInclusive - range.start)).coerceIn(0f, 1f)
+    // V103: the fill glides to each step on a soft spring and every step change ticks.
+    val fraction by androidx.compose.animation.core.animateFloatAsState(
+        target,
+        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 900f),
+        label = "pill",
+    )
+    val view = androidx.compose.ui.platform.LocalView.current
+    val latestValue by androidx.compose.runtime.rememberUpdatedState(value)
+    val latestOnValue by androidx.compose.runtime.rememberUpdatedState(onValue)
+    fun emit(next: Float) {
+        if (next != latestValue) {
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            latestOnValue(next)
+        }
+    }
     val track = if (theme.dark) Color(0xFF2A2A2D) else Color(0xFFEFF2F3)
     BoxWithConstraints(
         modifier = Modifier
@@ -164,12 +179,12 @@ internal fun ReaderPillSliderV101(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(range, step, widthPx) {
-                    detectTapGestures(onTap = { onValue(valueAt(it.x)) })
+                    detectTapGestures(onTap = { emit(valueAt(it.x)) })
                 }
                 .pointerInput(range, step, widthPx) {
                     detectHorizontalDragGestures { change, _ ->
                         change.consume()
-                        onValue(valueAt(change.position.x))
+                        emit(valueAt(change.position.x))
                     }
                 },
         ) {

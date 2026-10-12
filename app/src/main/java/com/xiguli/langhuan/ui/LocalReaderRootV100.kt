@@ -1,16 +1,5 @@
 package com.xiguli.langhuan.ui
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.ui.unit.IntOffset
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -156,57 +145,62 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                         )
                     }
                 }
-            } else AnimatedContent(
-                targetState = route,
-                transitionSpec = { routeTransitionV102(initialState, targetState) },
-                label = "route",
-            ) { target ->
-              when {
-                target == "mine" -> LocalMinePageV101(
-                    books = state.books,
-                    shelfCount = state.shelf.groups.size,
-                    onBack = { route = "shelf" },
-                    onOpenBook = ::openBook,
-                )
-                target.startsWith("detail:") -> {
-                    val id = target.removePrefix("detail:")
-                    val book = state.books.firstOrNull { it.id == id }
-                    if (book == null) {
-                        if (state.libraryLoaded) route = "shelf"
-                    } else {
-                        LaunchedEffect(id) { vm.loadDetail(id) }
-                        BookDetailPageV100(
-                            book = book,
-                            groupName = state.shelf.groups.firstOrNull { it.id == book.groupId }?.name.orEmpty(),
-                            detail = state.detail?.takeIf { it.bookId == id },
-                            onBack = {
-                                vm.clearDetail()
-                                route = "shelf"
-                            },
-                            onSave = { title, author, cover ->
-                                vm.saveDetails(id, title, author, cover)
-                                vm.clearDetail()
-                                route = "shelf"
-                            },
-                            onImportCover = { uri -> vm.importCoverImage(id, uri) },
+            } else {
+                val overlay = route.takeIf { it == "mine" || it.startsWith("detail:") }
+                // 图书详情's loaded facts stay until the page has slid off (reopening reloads them).
+                fun popOverlay() {
+                    route = "shelf"
+                }
+                com.xiguli.langhuan.ui.design.PagePushStackV103(
+                    topKey = overlay,
+                    onPop = ::popOverlay,
+                    base = {
+                        LocalShelfPagerV102(
+                            pagerState = shelfPager,
+                            state = state,
+                            importState = importState,
+                            onOpenBook = ::openBook,
+                            onLongPressBook = { sheetBookId = it },
+                            onImport = { importLauncher.launch(arrayOf("*/*")) },
+                            onCancelImport = importVm::cancelImport,
+                            onMine = { route = "mine" },
+                            onSelectGroup = { id -> vm.selectGroup(id) },
+                            onCreateGroup = { vm.createGroup(it) },
+                            onRenameGroup = { id, name -> vm.renameGroup(id, name) },
+                            onDeleteGroup = { vm.deleteGroup(it) },
+                            backEnabled = overlay == null,
                         )
+                    },
+                ) { target ->
+                    when {
+                        target == "mine" -> LocalMinePageV101(
+                            books = state.books,
+                            shelfCount = state.shelf.groups.size,
+                            onBack = ::popOverlay,
+                            onOpenBook = ::openBook,
+                        )
+                        target.startsWith("detail:") -> {
+                            val id = target.removePrefix("detail:")
+                            val book = state.books.firstOrNull { it.id == id }
+                            if (book == null) {
+                                if (state.libraryLoaded && route == target) route = "shelf"
+                            } else {
+                                LaunchedEffect(id) { vm.loadDetail(id) }
+                                BookDetailPageV100(
+                                    book = book,
+                                    groupName = state.shelf.groups.firstOrNull { it.id == book.groupId }?.name.orEmpty(),
+                                    detail = state.detail?.takeIf { it.bookId == id },
+                                    onBack = ::popOverlay,
+                                    onSave = { title, author, cover ->
+                                        vm.saveDetails(id, title, author, cover)
+                                        popOverlay()
+                                    },
+                                    onImportCover = { uri -> vm.importCoverImage(id, uri) },
+                                )
+                            }
+                        }
                     }
                 }
-                else -> LocalShelfPagerV102(
-                    pagerState = shelfPager,
-                    state = state,
-                    importState = importState,
-                    onOpenBook = ::openBook,
-                    onLongPressBook = { sheetBookId = it },
-                    onImport = { importLauncher.launch(arrayOf("*/*")) },
-                    onCancelImport = importVm::cancelImport,
-                    onMine = { route = "mine" },
-                    onSelectGroup = { id -> vm.selectGroup(id) },
-                    onCreateGroup = { vm.createGroup(it) },
-                    onRenameGroup = { id, name -> vm.renameGroup(id, name) },
-                    onDeleteGroup = { vm.deleteGroup(it) },
-                )
-              }
             }
         }
     }
@@ -306,20 +300,4 @@ private fun LocalReaderHostV100(
         interactionEnabled = readerMounted,
         onOpenOriginalEdition = onOpenOriginalEdition,
     )
-}
-
-/**
- * V102 page motion (≈260 ms, standard easing): 图书详情 and 我的 slide in a short way from the
- * right over a fade; returning to the shelf fades back. No scrim is drawn over the pages.
- */
-private fun AnimatedContentTransitionScope<String>.routeTransitionV102(from: String, to: String): ContentTransform {
-    val forward = to != "shelf" && from == "shelf"
-    val back = to == "shelf" && from != "shelf"
-    val spec = tween<IntOffset>(260, easing = FastOutSlowInEasing)
-    val fade = tween<Float>(220, easing = FastOutSlowInEasing)
-    return when {
-        forward -> (slideInHorizontally(spec) { it / 6 } + fadeIn(fade)) togetherWith fadeOut(tween(160))
-        back -> fadeIn(fade) togetherWith (slideOutHorizontally(spec) { it / 6 } + fadeOut(fade))
-        else -> fadeIn(fade) togetherWith fadeOut(fade)
-    }
 }

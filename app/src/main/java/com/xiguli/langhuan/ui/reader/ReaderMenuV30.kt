@@ -168,6 +168,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.xiguli.langhuan.domain.ChapterDraft
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.design.ThinIconsV102
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -269,7 +270,15 @@ internal fun ReaderMenuV30(
             val rise = remember { MutableTransitionState(false) }.apply { targetState = true }
             AnimatedVisibility(
                 visibleState = rise,
-                enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(200)),
+                // V103: a full rise from the edge on a critically-damped spring (no fade — the
+                // sheet is opaque paper), so it lands softly instead of easing to a hard stop.
+                enter = slideInVertically(
+                    androidx.compose.animation.core.spring(
+                        dampingRatio = 0.92f,
+                        stiffness = 520f,
+                        visibilityThreshold = androidx.compose.ui.unit.IntOffset(1, 1),
+                    ),
+                ) { it },
             ) {
             Column(
                 modifier = Modifier
@@ -1130,61 +1139,61 @@ private fun ReaderMoreTabV30(
     ) {
         ReaderIconGridV93(
             listOf(
-                ReaderGridItemV93(Icons.Outlined.Checkroom, "主题") { onPanel(ReaderMenuPanelV30.THEME) },
-                ReaderGridItemV93(Icons.Outlined.Title, "字体") { onPanel(ReaderMenuPanelV30.FONT) },
-                ReaderGridItemV93(Icons.Outlined.FormatSize, "字号") { onQuickAdjust(ReaderQuickAdjustV101.SIZE) },
-                ReaderGridItemV93(Icons.Outlined.FormatLineSpacing, "行段") { onQuickAdjust(ReaderQuickAdjustV101.SPACING) },
+                ReaderGridItemV93(ThinIconsV102.Shirt, "主题") { onPanel(ReaderMenuPanelV30.THEME) },
+                ReaderGridItemV93(ThinIconsV102.Typeface, "字体") { onPanel(ReaderMenuPanelV30.FONT) },
+                ReaderGridItemV93(ThinIconsV102.TextSize, "字号") { onQuickAdjust(ReaderQuickAdjustV101.SIZE) },
+                ReaderGridItemV93(ThinIconsV102.LineSpacing, "行段") { onQuickAdjust(ReaderQuickAdjustV101.SPACING) },
 
-                ReaderGridItemV93(Icons.Outlined.LocationOn, "定位") { onPanel(ReaderMenuPanelV30.LOCATE) },
-                ReaderGridItemV93(Icons.Outlined.SwapVert, "上下翻页", toggle = settings.turnMode == ReaderTurnModeV30.SCROLL) {
+                ReaderGridItemV93(ThinIconsV102.Pin, "定位") { onPanel(ReaderMenuPanelV30.LOCATE) },
+                ReaderGridItemV93(ThinIconsV102.SwapVertical, "上下翻页", toggle = settings.turnMode == ReaderTurnModeV30.SCROLL) {
                     if (settings.turnMode != ReaderTurnModeV30.SCROLL) settings.selectTurnMode(ReaderTurnModeV30.SCROLL)
                     else settings.selectTurnMode(settings.lastPagedMode)
                 },
-                ReaderGridItemV93(Icons.Outlined.ImportContacts, "仿真翻页", toggle = settings.turnMode == ReaderTurnModeV30.SIMULATION) {
+                ReaderGridItemV93(ThinIconsV102.OpenBook, "仿真翻页", toggle = settings.turnMode == ReaderTurnModeV30.SIMULATION) {
                     settings.selectTurnMode(
                         if (settings.turnMode != ReaderTurnModeV30.SIMULATION) ReaderTurnModeV30.SIMULATION
                         else ReaderTurnModeV30.COVER,
                     )
                 },
-                ReaderGridItemV93(Icons.Outlined.Search, "全文搜索") { onPanel(ReaderMenuPanelV30.SEARCH) },
+                ReaderGridItemV93(ThinIconsV102.Search, "全文搜索") { onPanel(ReaderMenuPanelV30.SEARCH) },
 
-                ReaderGridItemV93(Icons.AutoMirrored.Outlined.VolumeUp, "音量键翻页", toggle = settings.volumeTurn) {
+                ReaderGridItemV93(ThinIconsV102.Volume, "音量键翻页", toggle = settings.volumeTurn) {
                     settings.volumeTurn = !settings.volumeTurn
                 },
-                ReaderGridItemV93(Icons.Outlined.StayCurrentPortrait, "屏幕常亮", toggle = settings.keepScreen) {
+                ReaderGridItemV93(ThinIconsV102.ScreenOn, "屏幕常亮", toggle = settings.keepScreen) {
                     settings.keepScreen = !settings.keepScreen
                 },
-                ReaderGridItemV93(Icons.Outlined.Schedule, "时间电量", toggle = settings.showTimeBattery) {
+                ReaderGridItemV93(ThinIconsV102.Clock, "时间电量", toggle = settings.showTimeBattery) {
                     settings.showTimeBattery = !settings.showTimeBattery
                 },
-                ReaderGridItemV93(Icons.Outlined.CropFree, "沉浸式", toggle = settings.immersive) {
+                ReaderGridItemV93(ThinIconsV102.Immersive, "沉浸式", toggle = settings.immersive) {
                     settings.immersive = !settings.immersive
                 },
 
-                ReaderGridItemV93(Icons.Outlined.Fingerprint, "点击动画", toggle = settings.clickAnimation) {
+                ReaderGridItemV93(ThinIconsV102.Tap, "点击动画", toggle = settings.clickAnimation) {
                     settings.clickAnimation = !settings.clickAnimation
                 },
-                ReaderGridItemV93(Icons.Outlined.BookmarkBorder, "下拉书签", toggle = settings.pullBookmark) {
+                ReaderGridItemV93(ThinIconsV102.Bookmark, "下拉书签", toggle = settings.pullBookmark) {
                     settings.pullBookmark = !settings.pullBookmark
                 },
-                ReaderGridItemV93(Icons.Outlined.Anchor, "全屏下一页", toggle = settings.fullNext) {
+                ReaderGridItemV93(ThinIconsV102.NextPage, "全屏下一页", toggle = settings.fullNext) {
                     settings.fullNext = !settings.fullNext
                 },
                 ReaderGridItemV93(
-                    Icons.Outlined.Gradient, "屏幕遮罩",
+                    ThinIconsV102.Shade, "屏幕遮罩",
                     active = settings.warmth > 0f || settings.brightness >= 0f,
                 ) { onPanel(ReaderMenuPanelV30.LIGHT) },
 
-                ReaderGridItemV93(Icons.Outlined.Landscape, "背景跟随", toggle = settings.followSystemNight) {
+                ReaderGridItemV93(ThinIconsV102.Landscape, "背景跟随", toggle = settings.followSystemNight) {
                     settings.followSystemNight = !settings.followSystemNight
                 },
-                ReaderGridItemV93(Icons.Outlined.CropPortrait, "状态栏", toggle = settings.showStatusBar) {
+                ReaderGridItemV93(ThinIconsV102.StatusBar, "状态栏", toggle = settings.showStatusBar) {
                     settings.showStatusBar = !settings.showStatusBar
                 },
-                ReaderGridItemV93(Icons.Outlined.PhoneAndroid, "导航栏", toggle = settings.showNavigationBar) {
+                ReaderGridItemV93(ThinIconsV102.NavigationBar, "导航栏", toggle = settings.showNavigationBar) {
                     settings.showNavigationBar = !settings.showNavigationBar
                 },
-                ReaderGridItemV93(Icons.Outlined.ScreenLockRotation, "锁定竖屏", toggle = settings.lockPortrait) {
+                ReaderGridItemV93(ThinIconsV102.Lock, "锁定竖屏", toggle = settings.lockPortrait) {
                     settings.lockPortrait = !settings.lockPortrait
                 },
             ),
@@ -1192,12 +1201,12 @@ private fun ReaderMoreTabV30(
         ReaderGridLabelV93("其他")
         ReaderIconGridV93(
             listOfNotNull(
-                ReaderGridItemV93(Icons.Outlined.Headphones, if (listening) "停止听书" else "听书", active = listening, onClick = onListen),
-                ReaderGridItemV93(Icons.Outlined.BarChart, "阅读统计") { onPanel(ReaderMenuPanelV30.STATS) },
-                ReaderGridItemV93(Icons.Outlined.ViewCarousel, "翻页动画") { onPanel(ReaderMenuPanelV30.TURN) },
-                ReaderGridItemV93(Icons.Outlined.DriveFileRenameOutline, "重命名章节", enabled = currentChapter != null) { renameOpen = true },
+                ReaderGridItemV93(ThinIconsV102.Headphones, if (listening) "停止听书" else "听书", active = listening, onClick = onListen),
+                ReaderGridItemV93(ThinIconsV102.Chart, "阅读统计") { onPanel(ReaderMenuPanelV30.STATS) },
+                ReaderGridItemV93(ThinIconsV102.Carousel, "翻页动画") { onPanel(ReaderMenuPanelV30.TURN) },
+                ReaderGridItemV93(ThinIconsV102.Pencil, "重命名章节", enabled = currentChapter != null) { renameOpen = true },
                 // This EPUB opens in 文字版 because that was the last choice; offer the way back.
-                onOpenOriginalEdition?.let { ReaderGridItemV93(Icons.Outlined.AutoStories, "切换到原版", onClick = it) },
+                onOpenOriginalEdition?.let { ReaderGridItemV93(ThinIconsV102.Book, "切换到原版", onClick = it) },
             ),
         )
         Spacer(Modifier.height(t.space2))

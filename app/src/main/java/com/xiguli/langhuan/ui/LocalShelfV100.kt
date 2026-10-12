@@ -1,6 +1,6 @@
 package com.xiguli.langhuan.ui
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,12 +96,13 @@ import kotlinx.coroutines.launch
 /*                           书架列表 ⇄ 正在阅读 pager                           */
 /* -------------------------------------------------------------------------- */
 
-private val PAGE_EASING_V102 = tween<Float>(durationMillis = 300, easing = FastOutSlowInEasing)
+private val PAGE_EASING_V102 = com.xiguli.langhuan.ui.design.PagePushV103.spec<Float>()
 
 /**
  * V102 home: two horizontally swiped pages. Page 0 is 书架列表 (left), page 1 the current shelf.
- * Dragging right reveals the list (it emerges from under the shelf with parallax and a soft edge
- * shadow); tapping a shelf there selects it and slides back. Back returns from the list.
+ * V103: like the reference, both pages stay attached and follow the finger 1:1 — no parallax,
+ * dim or edge shadow. Tapping a shelf there selects it and slides back; back (including the
+ * predictive back swipe) drags the list off with the finger.
  */
 @Composable
 fun LocalShelfPagerV102(
@@ -116,15 +118,28 @@ fun LocalShelfPagerV102(
     onCreateGroup: (String) -> Unit,
     onRenameGroup: (String, String) -> Unit,
     onDeleteGroup: (String) -> Unit,
+    backEnabled: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     fun goTo(page: Int) {
         scope.launch { pagerState.animateScrollToPage(page, animationSpec = PAGE_EASING_V102) }
     }
-    BackHandler(enabled = ShelfPagerV102.backTarget(pagerState.currentPage) != null) {
-        ShelfPagerV102.backTarget(pagerState.currentPage)?.let(::goTo)
+    PredictiveBackHandler(enabled = backEnabled && ShelfPagerV102.backTarget(pagerState.currentPage) != null) { events ->
+        var applied = 0f
+        try {
+            events.collect { event ->
+                val width = pagerState.layoutInfo.pageSize.toFloat()
+                val target = ShelfPagerV102.backDrag(event.progress) * width
+                val delta = target - applied
+                applied = target
+                pagerState.scroll { scrollBy(delta) }
+            }
+            ShelfPagerV102.backTarget(ShelfPagerV102.LIST_PAGE)?.let(::goTo)
+        } catch (cancel: kotlin.coroutines.cancellation.CancellationException) {
+            goTo(ShelfPagerV102.LIST_PAGE)
+            throw cancel
+        }
     }
-    val shadowColor = Color.Black.copy(alpha = if (LocalLanghuanUiTokens.current.background.luminanceV102() < 0.5f) 0.45f else 0.12f)
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag("shelf_pager"),
@@ -133,72 +148,43 @@ fun LocalShelfPagerV102(
         key = { it },
     ) { page ->
         if (page == ShelfPagerV102.LIST_PAGE) {
-            // The list lags inside its own (clipped) slot — parallax without ever overlapping the
-            // shelf — and is dimmed plus shaded at its right edge while the shelf still covers it.
-            Box(
-                Modifier.fillMaxSize().clipToBounds().drawWithContent {
-                    drawContent()
-                    val reveal = ShelfPagerV102.listReveal(pagerState.currentPage, pagerState.currentPageOffsetFraction)
-                    val dim = ShelfPagerV102.listDim(reveal)
-                    if (dim > 0f) drawRect(Color.Black.copy(alpha = dim))
-                    val strength = ShelfPagerV102.shelfEdgeShadow(reveal)
-                    if (strength > 0f) {
-                        val w = 18.dp.toPx()
-                        drawRect(
-                            brush = Brush.horizontalGradient(
-                                listOf(Color.Transparent, shadowColor.copy(alpha = shadowColor.alpha * strength)),
-                                startX = size.width - w,
-                                endX = size.width,
-                            ),
-                            topLeft = Offset(size.width - w, 0f),
-                            size = Size(w, size.height),
-                        )
-                    }
+            ShelfListPageV100(
+                state = state,
+                onSelectGroup = { id ->
+                    onSelectGroup(id)
+                    goTo(ShelfPagerV102.SHELF_PAGE)
                 },
-            ) {
-                Box(
-                    Modifier.fillMaxSize().graphicsLayer {
-                        val reveal = ShelfPagerV102.listReveal(pagerState.currentPage, pagerState.currentPageOffsetFraction)
-                        translationX = ShelfPagerV102.listTranslation(reveal) * size.width
-                    },
-                ) {
-                    ShelfListPageV100(
-                        state = state,
-                        onSelectGroup = { id ->
-                            onSelectGroup(id)
-                            goTo(ShelfPagerV102.SHELF_PAGE)
-                        },
-                        onCreateGroup = onCreateGroup,
-                        onRenameGroup = onRenameGroup,
-                        onDeleteGroup = onDeleteGroup,
-                        onOpenBook = onOpenBook,
-                    )
-                }
-            }
+                onCreateGroup = onCreateGroup,
+                onRenameGroup = onRenameGroup,
+                onDeleteGroup = onDeleteGroup,
+                onOpenBook = onOpenBook,
+            )
         } else {
-            Box(Modifier.fillMaxSize()) {
-                LocalShelfHomeV100(
-                    state = state,
-                    importState = importState,
-                    onOpenBook = onOpenBook,
-                    onLongPressBook = onLongPressBook,
-                    onImport = onImport,
-                    onCancelImport = onCancelImport,
-                    onMine = onMine,
-                    onOpenShelfList = { goTo(ShelfPagerV102.LIST_PAGE) },
-                )
-            }
+            LocalShelfHomeV100(
+                state = state,
+                importState = importState,
+                onOpenBook = onOpenBook,
+                onLongPressBook = onLongPressBook,
+                onImport = onImport,
+                onCancelImport = onCancelImport,
+                onMine = onMine,
+                onOpenShelfList = { goTo(ShelfPagerV102.LIST_PAGE) },
+            )
         }
     }
 }
 
 private fun Color.luminanceV102(): Float = 0.2126f * red + 0.7152f * green + 0.0722f * blue
 
-/** Gentle press feedback: scales the content to 96 % while pressed. */
+/** Gentle press feedback: scales the content to 97 % while pressed and springs back. */
 @Composable
 private fun rememberPressScaleV102(source: MutableInteractionSource): Float {
     val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.96f else 1f, animationSpec = tween(140), label = "press")
+    val scale by animateFloatAsState(
+        if (pressed) 0.97f else 1f,
+        animationSpec = if (pressed) tween(110) else androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 700f),
+        label = "press",
+    )
     return scale
 }
 
@@ -228,7 +214,7 @@ fun LocalShelfHomeV100(
     val books = state.books.filter { it.groupId == group.id }
     Column(Modifier.fillMaxSize().background(t.background).statusBarsPadding().testTag("shelf_home")) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 8.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp).padding(start = 24.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -236,7 +222,7 @@ fun LocalShelfHomeV100(
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenShelfList)
                     .semantics { contentDescription = "${group.name}，打开书架列表" }
                     .testTag("shelf_title").padding(vertical = 4.dp),
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = t.foreground,
                 maxLines = 1,
@@ -261,9 +247,10 @@ fun LocalShelfHomeV100(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 modifier = Modifier.fillMaxSize().testTag("shelf_grid"),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
+                // V103 (measured): 24 dp margins and gutters → 88 dp covers on a 360 dp screen.
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 40.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 items(books, key = { it.id }) { book ->
                     val source = remember { MutableInteractionSource() }
@@ -284,29 +271,15 @@ fun LocalShelfHomeV100(
                         ShelfCoverV102(book, Modifier.fillMaxWidth())
                         Text(
                             text = book.title,
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            fontSize = 12.5.sp,
-                            lineHeight = 17.sp,
+                            modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            fontWeight = FontWeight.Medium,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
                             color = t.foreground,
                         )
-                        val caption = when {
-                            book.progress.finished -> "已读完"
-                            book.progress.percent != null && book.progress.started -> "已读 ${book.progress.percent}%"
-                            else -> null
-                        }
-                        if (caption != null) {
-                            Text(
-                                text = caption,
-                                modifier = Modifier.padding(top = 2.dp),
-                                fontSize = 10.5.sp,
-                                lineHeight = 14.sp,
-                                color = t.mutedForeground,
-                                maxLines = 1,
-                            )
-                        }
                     }
                 }
             }
@@ -314,23 +287,10 @@ fun LocalShelfHomeV100(
     }
 }
 
-/** A shelf cover with the soft printed-book shadow (Apple Books / 微信读书 style). */
+/** V103: a square, unshadowed shelf cover (the reference prints covers flat on the page). */
 @Composable
 private fun ShelfCoverV102(book: LocalShelfBook, modifier: Modifier = Modifier, targetWidthPx: Int = 360) {
-    val shape = RoundedCornerShape(COVER_RADIUS_V102)
-    val dark = LocalLanghuanUiTokens.current.background.luminanceV102() < 0.5f
-    BookCoverV100(
-        book,
-        modifier
-            .aspectRatio(BOOK_COVER_RATIO_V100)
-            .shadow(
-                elevation = if (dark) 0.dp else 4.dp,
-                shape = shape,
-                ambientColor = Color.Black.copy(alpha = 0.18f),
-                spotColor = Color.Black.copy(alpha = 0.22f),
-            ),
-        targetWidthPx = targetWidthPx,
-    )
+    BookCoverV100(book, modifier.aspectRatio(BOOK_COVER_RATIO_V100), targetWidthPx = targetWidthPx)
 }
 
 @Composable
@@ -397,7 +357,7 @@ private fun EmptyShelfV100(onImport: () -> Unit, defaultShelf: Boolean, modifier
 
 /**
  * 书架列表: big bold title with search and + on the right; each shelf is a row with a square
- * checkbox (filled blue for the current shelf), the bold name, a gray count and ···, followed by
+ * checkbox (V103: outline only, as in the reference), the bold name, a gray count and ···, followed by
  * a strip of its covers. Search filters shelves and books by name, title or author.
  */
 @Composable
@@ -419,7 +379,7 @@ fun ShelfListPageV100(
     val needle = query.trim()
     Column(Modifier.fillMaxSize().background(t.background).statusBarsPadding().testTag("shelf_list_page")) {
         Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 8.dp),
+            Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (searching) {
@@ -443,7 +403,7 @@ fun ShelfListPageV100(
                 }
                 TextButton(onClick = { searching = false; query = "" }) { Text("取消", color = t.primary, fontSize = 15.sp) }
             } else {
-                Text("书架列表", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = t.foreground, modifier = Modifier.weight(1f))
+                Text("书架列表", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = t.foreground, modifier = Modifier.weight(1f))
                 IconButton(onClick = { searching = true }, modifier = Modifier.testTag("shelf_list_search")) {
                     Icon(ThinIconsV102.Search, contentDescription = "搜索", modifier = Modifier.size(24.dp), tint = t.foreground)
                 }
@@ -514,18 +474,12 @@ fun ShelfListPageV100(
     }
 }
 
+/** V103: the reference's square outline box (1.5 dp hairline, never filled). */
 @Composable
-private fun ShelfCheckboxV102(checked: Boolean) {
+private fun ShelfCheckboxV102() {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(4.dp)
-    Box(
-        Modifier.size(18.dp).clip(shape)
-            .background(if (checked) t.primary else Color.Transparent)
-            .border(1.3.dp, if (checked) t.primary else t.mutedForeground.copy(alpha = 0.7f), shape),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (checked) Icon(ThinIconsV102.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = t.primaryForeground)
-    }
+    val shape = RoundedCornerShape(1.5.dp)
+    Box(Modifier.size(18.dp).border(1.5.dp, t.foreground.copy(alpha = 0.82f), shape))
 }
 
 @Composable
@@ -541,27 +495,33 @@ private fun ShelfGroupRowV100(
 ) {
     val t = LocalLanghuanUiTokens.current
     var menu by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("shelf_group_${group.id}")) {
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .semantics { stateDescription = if (selected) "当前书架" else "" }
+            .testTag("shelf_group_${group.id}"),
+    ) {
+        // V103 (measured): box at 19 dp, name at 55 dp, ··· ending 16 dp from the edge; a 0.5 dp
+        // divider inset 16 dp under the name row, the cover strip below it.
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 6.dp, top = 10.dp, bottom = 6.dp),
+            Modifier.fillMaxWidth().height(60.dp).padding(start = 19.dp, end = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ShelfCheckboxV102(selected)
-            Spacer(Modifier.width(12.dp))
+            ShelfCheckboxV102()
+            Spacer(Modifier.width(18.dp))
             Text(
                 group.name,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = t.foreground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false).testTag("shelf_group_name_${group.id}"),
             )
-            Text("（$count）", fontSize = 13.sp, color = t.mutedForeground)
+            Text("（$count）", fontSize = 13.sp, color = t.mutedForeground.copy(alpha = 0.8f))
             Spacer(Modifier.weight(1f))
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.testTag("shelf_group_menu_${group.id}")) {
-                    Icon(ThinIconsV102.More, contentDescription = "书架操作", tint = t.secondaryForeground)
+                    Icon(ThinIconsV102.More, contentDescription = "书架操作", tint = t.foreground)
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = t.card) {
                     DropdownMenuItem(text = { Text("打开") }, onClick = { menu = false; onClick() })
@@ -572,24 +532,24 @@ private fun ShelfGroupRowV100(
                 }
             }
         }
+        Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(0.5.dp).background(t.border))
         if (books.isNotEmpty()) {
             LazyRow(
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 items(books, key = { it.id }) { book ->
                     val source = remember { MutableInteractionSource() }
                     val scale = rememberPressScaleV102(source)
                     Box(
-                        Modifier.width(64.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+                        Modifier.width(60.dp).graphicsLayer { scaleX = scale; scaleY = scale }
                             .clickable(interactionSource = source, indication = null) { onOpenBook(book.id) },
                     ) {
                         BookCoverV100(book, Modifier.fillMaxWidth().aspectRatio(BOOK_COVER_RATIO_V100), targetWidthPx = 200)
                     }
                 }
             }
-        } else Spacer(Modifier.height(8.dp))
-        Box(Modifier.padding(start = 20.dp).fillMaxWidth().height(0.5.dp).background(t.border))
+        } else Spacer(Modifier.height(56.dp))
     }
 }
 
@@ -773,4 +733,5 @@ fun DeleteBookDialogV100(book: LocalShelfBook, onDismiss: () -> Unit, onConfirm:
     )
 }
 
-internal val COVER_RADIUS_V102 = 3.dp
+/** V103: square covers, as printed (the reference draws no rounding and no shadow). */
+internal val COVER_RADIUS_V102 = 0.dp
