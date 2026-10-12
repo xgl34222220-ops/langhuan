@@ -252,7 +252,8 @@ internal fun ReaderMenuV30(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.30f))
+                // V103: barely-there scrim — the reference keeps the paper bright above the sheet.
+                .background(Color.Black.copy(alpha = 0.08f))
                 .pointerInput(onDismiss) { detectTapGestures(onTap = { onDismiss() }) }
                 .semantics { dismiss { onDismiss(); true } },
             contentAlignment = Alignment.BottomCenter,
