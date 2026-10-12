@@ -382,7 +382,7 @@ fun FlatIconCellV93(
         !enabled -> t.mutedForeground.copy(alpha = 0.4f)
         destructive -> t.destructive
         active -> t.primary
-        else -> t.foreground.copy(alpha = 0.78f)
+        else -> t.foreground.copy(alpha = 0.86f)
     }
     val interactive = if (toggle != null) {
         Modifier.toggleable(value = toggle, enabled = enabled, role = Role.Switch, onValueChange = { onClick() })
@@ -398,16 +398,17 @@ fun FlatIconCellV93(
     ) {
         Box(
             modifier = Modifier
-                .size(46.dp)
+                .size(52.dp)
                 .background(
-                    color = if (active) t.primary.copy(alpha = 0.10f) else t.foreground.copy(alpha = 0.045f),
+                    // V102: sampled reference circles — #EFF2F3 idle, pale blue #EDF3FC when on.
+                    color = if (active) t.accent else t.muted,
                     shape = CircleShape,
                 ),
             contentAlignment = Alignment.Center,
         ) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = glyph)
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(7.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),

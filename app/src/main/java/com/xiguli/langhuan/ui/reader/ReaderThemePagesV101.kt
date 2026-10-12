@@ -277,7 +277,7 @@ internal fun ReaderThemeCardV101(
                     .align(Alignment.TopStart)
                     .padding(12.dp)
                     .size(26.dp)
-                    .background(Color(0xFF2F7BF6), CircleShape),
+                    .background(t.primary, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Rounded.Check, contentDescription = "已选择", tint = Color.White, modifier = Modifier.size(18.dp))
@@ -369,7 +369,7 @@ private fun ReaderMoreThemesPageV101(
                                     text = if (added) "已添加" else "添加",
                                     modifier = Modifier
                                         .clip(CircleShape)
-                                        .background(if (added) t.foreground.copy(alpha = 0.08f) else Color(0xFF2F7BF6))
+                                        .background(if (added) t.foreground.copy(alpha = 0.08f) else t.primary)
                                         .clickable(enabled = !added) { settings.installTheme(spec.key) }
                                         .padding(horizontal = 14.dp, vertical = 4.dp),
                                     color = if (added) t.mutedForeground else Color.White,
@@ -480,7 +480,7 @@ private fun ReaderNewThemePageV101(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(CircleShape)
-                .background(Color(0xFF2F7BF6))
+                .background(t.primary)
                 .clickable {
                     if (settings.addCustomTheme(preview)) onDone()
                     else error = "自定义主题最多 ${ReaderThemeCatalogV101.MAX_CUSTOM} 个，请先删除一些"
@@ -507,7 +507,7 @@ private fun ReaderSwatchRowV101(label: String, swatches: List<Long>, value: Long
                     .size(30.dp)
                     .clip(CircleShape)
                     .background(Color(swatch.toInt()))
-                    .border(if (selected) 2.dp else 0.5.dp, if (selected) Color(0xFF2F7BF6) else t.border, CircleShape)
+                    .border(if (selected) 2.dp else 0.5.dp, if (selected) t.primary else t.border, CircleShape)
                     .clickable { onPick(swatch) }
                     .semantics { contentDescription = "$label ${"%08X".format(swatch)}"; this.selected = selected },
             )

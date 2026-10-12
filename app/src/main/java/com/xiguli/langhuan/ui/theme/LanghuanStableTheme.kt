@@ -195,7 +195,7 @@ private val LanghuanDarkColorScheme = darkColorScheme(
      * 直接复用 v3 background 作为高对比前景，
      * 不新增额外色值。
      */
-    onPrimary = LanghuanDarkUiTokens.background,
+    onPrimary = LanghuanDarkUiTokens.primaryForeground,
 
     primaryContainer = LanghuanDarkUiTokens.accent,
     onPrimaryContainer = LanghuanDarkUiTokens.accentForeground,

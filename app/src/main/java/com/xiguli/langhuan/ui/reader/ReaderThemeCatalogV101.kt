@@ -83,7 +83,7 @@ internal object ReaderThemeCatalogV101 {
 
     /** Shown in the day list on first run, in this order. */
     val BUILT_IN_DAY: List<ReaderThemeSpecV101> = listOf(
-        spec("tea", "番茄", "鲸落", 0xFFDCD8C2, 0xFF1C1A16, ReaderThemeDecorV101.BAMBOO),
+        spec("tea", "番茄", "鲸落", 0xFFDAD8C2, 0xFF2C2A31, ReaderThemeDecorV101.BAMBOO),
         spec("green", "绿", "竹青", 0xFFCFE0CB, 0xFF1D2A1C, ReaderThemeDecorV101.ARC),
         spec("sheep", "书卷", "书香", 0xFFEBDDBF, 0xFF3A2E1F, ReaderThemeDecorV101.ARC),
         spec("qidian", "起点护眼色", "文章一代颜风流", 0xFFC7DFC4, 0xFF20301F, ReaderThemeDecorV101.ARC),

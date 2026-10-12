@@ -141,7 +141,7 @@ internal fun ReaderPillSliderV101(
     onValue: (Float) -> Unit,
 ) {
     val fraction = ((value - range.start) / (range.endInclusive - range.start)).coerceIn(0f, 1f)
-    val track = if (theme.dark) Color(0xFF2A2A2D) else Color(0xFFF1F1F3)
+    val track = if (theme.dark) Color(0xFF2A2A2D) else Color(0xFFEFF2F3)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()

@@ -33,12 +33,12 @@ internal data class ReaderThemeV30(
     val imagePath: String? = null,
     val subtitle: String = "",
 ) {
-    val sheet: Color get() = if (dark) Color(0xFF1F1F21) else Color(0xFFFFFFFF)
-    val sheetText: Color get() = if (dark) Color(0xFFE8E8EA) else Color(0xFF1C1C1E)
-    val sheetMuted: Color get() = if (dark) Color(0xFF8C8C92) else Color(0xFF8E8E93)
-    val sheetDivider: Color get() = if (dark) Color(0xFF2E2E31) else Color(0xFFEFEFF1)
-    val sheetTile: Color get() = if (dark) Color(0xFF2A2A2D) else Color(0xFFF5F5F7)
-    val accent: Color get() = if (dark) Color(0xFF5B9CFF) else Color(0xFF2F7BF6)
+    val sheet: Color get() = if (dark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF)
+    val sheetText: Color get() = if (dark) Color(0xFFECECEC) else Color(0xFF1F292A)
+    val sheetMuted: Color get() = if (dark) Color(0xFF8A8A8E) else Color(0xFF858585)
+    val sheetDivider: Color get() = if (dark) Color(0xFF2C2C2E) else Color(0xFFEBEBEB)
+    val sheetTile: Color get() = if (dark) Color(0xFF2A2A2D) else Color(0xFFEFF2F3)
+    val accent: Color get() = if (dark) Color(0xFF5B92F0) else Color(0xFF3371E5)
 }
 
 /** Built-in palettes (V101 catalog); custom themes resolve through [ReaderThemeRegistryV101]. */
