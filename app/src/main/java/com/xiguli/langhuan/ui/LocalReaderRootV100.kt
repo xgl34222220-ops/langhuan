@@ -63,7 +63,9 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
         vm.rememberImportTarget(id)
         importVm.consumeImportedBook()
     }
-    LaunchedEffect(importState.message, importState.error) {
+    LaunchedEffect(importState.message, importState.error, importState.externalRequestUri) {
+        // An import opened from another app reports its result in its own dialog.
+        if (importState.externalRequestUri != null) return@LaunchedEffect
         val text = importState.error ?: importState.message ?: return@LaunchedEffect
         Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
         importVm.clearFeedback()
