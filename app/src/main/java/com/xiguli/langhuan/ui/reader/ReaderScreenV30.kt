@@ -122,7 +122,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal enum class ReaderMenuTabV30 { DETAILS, DIRECTORY, MORE }
 
 internal enum class ReaderMenuPanelV30 {
-    MAIN, THEME, FONT, SIZE, SPACING, TURN, SEARCH, STATS
+    MAIN, THEME, FONT, SIZE, SPACING, TURN, SEARCH, STATS,
+    /** V101 屏幕遮罩 (brightness, warm light, paper texture) and 定位. */
+    LIGHT, LOCATE,
 }
 
 private class ReaderTurnHolderV30 {
@@ -234,6 +236,9 @@ internal fun ReaderSessionV30(
     val backdropPaint = rememberReaderBackdropPaintV92(settings, baseTheme)
     val theme = remember(baseTheme, backdropPaint) { baseTheme.copy(backdrop = backdropPaint) }
     val mode = settings.turnMode
+    // V101 背景跟随: night mode follows the system dark mode while that switch is on.
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    LaunchedEffect(systemDark, settings.followSystemNight) { settings.applySystemNight(systemDark) }
     val v3Tokens = LocalLanghuanUiTokens.current
 
     /* ------------------------------ Position ------------------------------ */
@@ -657,6 +662,16 @@ internal fun ReaderSessionV30(
         if (bookmarkError != null) edgeHint = bookmarkError
     }
 
+    /** V101 下拉书签: pulling the page down toggles the current chapter's bookmark. */
+    fun togglePullBookmark() {
+        val number = currentChapter?.chapterNumber ?: return
+        val marking = number.toString() !in bookmarks
+        applyBookmarkResult(
+            ReaderBookmarkStoreV49.setMarked(prefs, book.id, number, marking),
+            if (marking) "已添加书签" else "已移除书签",
+        )
+    }
+
     /* ------------------- Selection / Notes / Highlights ------------------- */
     var selection by remember { mutableStateOf<ReaderSelectionV30?>(null) }
     var noteEditorFor by remember { mutableStateOf<ReaderSelectionV30?>(null) }
@@ -767,6 +782,7 @@ internal fun ReaderSessionV30(
         )
     }
     var menuPanel by remember { mutableStateOf(ReaderMenuPanelV30.MAIN) }
+    var quickAdjust by remember { mutableStateOf<ReaderQuickAdjustV101?>(null) }
 
     fun openMenu() {
         finishTurnNow()
@@ -1080,6 +1096,7 @@ internal fun ReaderSessionV30(
 
     BackHandler {
         when {
+            quickAdjust != null -> quickAdjust = null
             menuVisible && menuPanel != ReaderMenuPanelV30.MAIN -> {
                 menuPanel = ReaderMenuPanelV30.MAIN
             }
@@ -1191,6 +1208,7 @@ internal fun ReaderSessionV30(
                         mode,
                         settings.fullNext,
                         settings.clickAnimation,
+                        settings.pullBookmark,
                         geometry,
                     ) {
                         if (!interactionEnabled || waitingForOnlineBody) {
@@ -1210,6 +1228,7 @@ internal fun ReaderSessionV30(
                             var direction = 0
                             var released = false
                             var longPressed = false
+                            var pullDown = false
                             val width = size.width.toFloat()
                             val longPressAt =
                                 down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
@@ -1270,6 +1289,7 @@ internal fun ReaderSessionV30(
                                         abs(totalY) > slop * 2f && abs(totalY) > abs(totalX)
                                     ) {
                                         blocked = true
+                                        pullDown = settings.pullBookmark && selection == null && totalY > 0f
                                     }
                                 }
                                 if (dragging) {
@@ -1317,6 +1337,14 @@ internal fun ReaderSessionV30(
                                 abs(totalX) <= slop && abs(totalY) <= slop
                             ) {
                                 tapAt(down.position)
+                            } else if (
+                                released && pullDown && !longPressed &&
+                                totalY > 96.dp.toPx() && abs(totalX) < totalY * 0.7f
+                            ) {
+                                haptics.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                                )
+                                togglePullBookmark()
                             }
                         }
                     }
@@ -1698,6 +1726,16 @@ internal fun ReaderSessionV30(
             )
         }
 
+        /* --------------------------- V101 quick sliders --------------------------- */
+        quickAdjust?.let { adjust ->
+            ReaderQuickAdjustOverlayV101(
+                adjust = adjust,
+                settings = settings,
+                theme = theme,
+                onDismiss = { quickAdjust = null },
+            )
+        }
+
         /* ------------------------------- Reader menu ------------------------------- */
         ReaderMenuV30(
             visible = menuVisible,
@@ -1777,6 +1815,16 @@ internal fun ReaderSessionV30(
                 }
             },
             onRenameChapter = chapterOps.rename,
+            onQuickAdjust = { adjust ->
+                menuVisible = false
+                quickAdjust = adjust
+            },
+            onLocateBook = { index, fraction ->
+                menuVisible = false
+                val chapter = chapters.getOrNull(index)
+                val anchor = if (chapter == null) 0 else (chapter.content.length * fraction).toInt()
+                jumpTo(index, anchor)
+            },
         )
     }
 }

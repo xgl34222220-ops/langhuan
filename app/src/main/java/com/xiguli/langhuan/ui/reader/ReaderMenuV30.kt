@@ -45,6 +45,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -77,6 +80,16 @@ import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.ViewCarousel
 import androidx.compose.material.icons.outlined.WbSunny
+import androidx.compose.material.icons.outlined.Title
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.StayCurrentPortrait
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Anchor
+import androidx.compose.material.icons.outlined.Gradient
+import androidx.compose.material.icons.outlined.Landscape
+import androidx.compose.material.icons.outlined.CropPortrait
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.ScreenLockRotation
 import com.xiguli.langhuan.ui.design.FlatIconCellV93
 import com.xiguli.langhuan.ui.design.FlatListRowV93
 import com.xiguli.langhuan.ui.design.FlatSwitchV93
@@ -140,6 +153,7 @@ import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -209,6 +223,8 @@ internal fun ReaderMenuV30(
     onListen: () -> Unit,
     onRenameChapter: (Int, String) -> Unit,
     onOpenOriginalEdition: (() -> Unit)? = null,
+    onQuickAdjust: (ReaderQuickAdjustV101) -> Unit = {},
+    onLocateBook: (Int, Float) -> Unit = { index, _ -> onJumpChapter(index, 0) },
 ) {
     if (!visible) return
     val t = LocalLanghuanUiTokens.current
@@ -249,7 +265,8 @@ internal fun ReaderMenuV30(
                 // 注意：当前仓库 ReaderBookmarkStoreV49 的持久层仍然是
                 // chapterNumber 级书签。ReaderMenu 只消费 Screen 提供的
                 // onToggleBookmark，不额外虚构新的 page bookmark API。
-                ReaderMenuPrimaryActionsV30(
+                // V101: like the reference, 「更多」 and the settings pages carry no book header.
+                if (panel == ReaderMenuPanelV30.MAIN && tab != ReaderMenuTabV30.MORE) ReaderMenuPrimaryActionsV30(
                     title = book.title,
                     chapterLabel = chapters.getOrNull(chapterIndex)
                         ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
@@ -335,7 +352,7 @@ internal fun ReaderMenuV30(
                                         listening = listening,
                                         onListen = onListen,
                                         onPanel = onPanel,
-                                        onLocate = { onTab(ReaderMenuTabV30.DIRECTORY) },
+                                        onQuickAdjust = onQuickAdjust,
                                         onRenameChapter = onRenameChapter,
                                         onOpenOriginalEdition = onOpenOriginalEdition,
                                     )
@@ -343,8 +360,24 @@ internal fun ReaderMenuV30(
                             }
                         }
                         ReaderMenuPanelV30.THEME -> {
+                            ReaderThemePagesV101(
+                                settings = settings,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.LIGHT -> {
                             ReaderThemePanelV30(
                                 settings = settings,
+                                onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
+                            )
+                        }
+                        ReaderMenuPanelV30.LOCATE -> {
+                            ReaderLocatePanelV101(
+                                chapters = chapters,
+                                chapterIndex = chapterIndex,
+                                pageIndex = pageIndex,
+                                pageCount = pageCount,
+                                onLocate = onLocateBook,
                                 onBack = { onPanel(ReaderMenuPanelV30.MAIN) },
                             )
                         }
@@ -1051,7 +1084,7 @@ private fun ReaderMoreTabV30(
     listening: Boolean,
     onListen: () -> Unit,
     onPanel: (ReaderMenuPanelV30) -> Unit,
-    onLocate: () -> Unit,
+    onQuickAdjust: (ReaderQuickAdjustV101) -> Unit,
     onRenameChapter: (Int, String) -> Unit,
     onOpenOriginalEdition: (() -> Unit)? = null,
 ) {
@@ -1060,41 +1093,25 @@ private fun ReaderMoreTabV30(
     val currentChapter = chapters.getOrNull(chapterIndex)
     var renameOpen by remember { mutableStateOf(false) }
 
-    // V93: everything in 「更多」 is a 4-column grid of round line-icon cells with small grey
-    // labels (the reference reader's settings grid). Switches become toggle cells whose glyph
-    // and label turn the accent colour when on; panels open from plain cells.
+    // V101: the reference reader's 5 x 4 line-icon grid. Toggle cells turn blue when on; every
+    // cell is wired to a real reader behaviour. Extra actions sit in a quiet row below.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = windowHeight * 0.58f)
+            .heightIn(max = windowHeight * 0.62f)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = t.space3, vertical = t.space2),
+            .padding(horizontal = t.space3, vertical = t.space2)
+            .testTag("reader_more_grid"),
     ) {
         ReaderIconGridV93(
             listOf(
-                ReaderGridItemV93(Icons.Outlined.Headphones, if (listening) "停止听书" else "听书", active = listening, onClick = onListen),
-                ReaderGridItemV93(Icons.Outlined.BarChart, "阅读统计") { onPanel(ReaderMenuPanelV30.STATS) },
-                ReaderGridItemV93(Icons.Outlined.Search, "全文搜索") { onPanel(ReaderMenuPanelV30.SEARCH) },
-                ReaderGridItemV93(Icons.Outlined.MyLocation, "定位", onClick = onLocate),
-            ) + listOfNotNull(
-                // This EPUB opens in 文字版 because that was the last choice; offer the way back.
-                onOpenOriginalEdition?.let { ReaderGridItemV93(Icons.Outlined.AutoStories, "切换到原版", onClick = it) },
-            ),
-        )
-        ReaderGridLabelV93("排版")
-        ReaderIconGridV93(
-            listOf(
                 ReaderGridItemV93(Icons.Outlined.Checkroom, "主题") { onPanel(ReaderMenuPanelV30.THEME) },
-                ReaderGridItemV93(Icons.Outlined.TextFields, "字体") { onPanel(ReaderMenuPanelV30.FONT) },
-                ReaderGridItemV93(Icons.Outlined.FormatSize, "字号") { onPanel(ReaderMenuPanelV30.SIZE) },
-                ReaderGridItemV93(Icons.Outlined.FormatLineSpacing, "行距与排版") { onPanel(ReaderMenuPanelV30.SPACING) },
-                ReaderGridItemV93(Icons.Outlined.ViewCarousel, "翻页方式") { onPanel(ReaderMenuPanelV30.TURN) },
-            ),
-        )
-        ReaderGridLabelV93("翻页")
-        ReaderIconGridV93(
-            listOf(
-                ReaderGridItemV93(Icons.Outlined.SwapVert, "上下滚动", toggle = settings.turnMode == ReaderTurnModeV30.SCROLL) {
+                ReaderGridItemV93(Icons.Outlined.Title, "字体") { onPanel(ReaderMenuPanelV30.FONT) },
+                ReaderGridItemV93(Icons.Outlined.FormatSize, "字号") { onQuickAdjust(ReaderQuickAdjustV101.SIZE) },
+                ReaderGridItemV93(Icons.Outlined.FormatLineSpacing, "行段") { onQuickAdjust(ReaderQuickAdjustV101.SPACING) },
+
+                ReaderGridItemV93(Icons.Outlined.LocationOn, "定位") { onPanel(ReaderMenuPanelV30.LOCATE) },
+                ReaderGridItemV93(Icons.Outlined.SwapVert, "上下翻页", toggle = settings.turnMode == ReaderTurnModeV30.SCROLL) {
                     if (settings.turnMode != ReaderTurnModeV30.SCROLL) settings.selectTurnMode(ReaderTurnModeV30.SCROLL)
                     else settings.selectTurnMode(settings.lastPagedMode)
                 },
@@ -1104,21 +1121,12 @@ private fun ReaderMoreTabV30(
                         else ReaderTurnModeV30.COVER,
                     )
                 },
-                ReaderGridItemV93(Icons.Outlined.TouchApp, "点击动画", toggle = settings.clickAnimation) {
-                    settings.clickAnimation = !settings.clickAnimation
-                },
-                ReaderGridItemV93(Icons.Outlined.Fullscreen, "全屏下一页", toggle = settings.fullNext) {
-                    settings.fullNext = !settings.fullNext
-                },
+                ReaderGridItemV93(Icons.Outlined.Search, "全文搜索") { onPanel(ReaderMenuPanelV30.SEARCH) },
+
                 ReaderGridItemV93(Icons.AutoMirrored.Outlined.VolumeUp, "音量键翻页", toggle = settings.volumeTurn) {
                     settings.volumeTurn = !settings.volumeTurn
                 },
-            ),
-        )
-        ReaderGridLabelV93("屏幕")
-        ReaderIconGridV93(
-            listOf(
-                ReaderGridItemV93(Icons.Outlined.WbSunny, "屏幕常亮", toggle = settings.keepScreen) {
+                ReaderGridItemV93(Icons.Outlined.StayCurrentPortrait, "屏幕常亮", toggle = settings.keepScreen) {
                     settings.keepScreen = !settings.keepScreen
                 },
                 ReaderGridItemV93(Icons.Outlined.Schedule, "时间电量", toggle = settings.showTimeBattery) {
@@ -1127,18 +1135,47 @@ private fun ReaderMoreTabV30(
                 ReaderGridItemV93(Icons.Outlined.CropFree, "沉浸式", toggle = settings.immersive) {
                     settings.immersive = !settings.immersive
                 },
-                ReaderGridItemV93(Icons.Outlined.ScreenLockPortrait, "锁定竖屏", toggle = settings.lockPortrait) {
+
+                ReaderGridItemV93(Icons.Outlined.Fingerprint, "点击动画", toggle = settings.clickAnimation) {
+                    settings.clickAnimation = !settings.clickAnimation
+                },
+                ReaderGridItemV93(Icons.Outlined.BookmarkBorder, "下拉书签", toggle = settings.pullBookmark) {
+                    settings.pullBookmark = !settings.pullBookmark
+                },
+                ReaderGridItemV93(Icons.Outlined.Anchor, "全屏下一页", toggle = settings.fullNext) {
+                    settings.fullNext = !settings.fullNext
+                },
+                ReaderGridItemV93(
+                    Icons.Outlined.Gradient, "屏幕遮罩",
+                    active = settings.warmth > 0f || settings.brightness >= 0f,
+                ) { onPanel(ReaderMenuPanelV30.LIGHT) },
+
+                ReaderGridItemV93(Icons.Outlined.Landscape, "背景跟随", toggle = settings.followSystemNight) {
+                    settings.followSystemNight = !settings.followSystemNight
+                },
+                ReaderGridItemV93(Icons.Outlined.CropPortrait, "状态栏", toggle = settings.showStatusBar) {
+                    settings.showStatusBar = !settings.showStatusBar
+                },
+                ReaderGridItemV93(Icons.Outlined.PhoneAndroid, "导航栏", toggle = settings.showNavigationBar) {
+                    settings.showNavigationBar = !settings.showNavigationBar
+                },
+                ReaderGridItemV93(Icons.Outlined.ScreenLockRotation, "锁定竖屏", toggle = settings.lockPortrait) {
                     settings.lockPortrait = !settings.lockPortrait
                 },
             ),
         )
-        ReaderGridLabelV93("书籍与章节")
+        ReaderGridLabelV93("其他")
         ReaderIconGridV93(
-            listOf(
+            listOfNotNull(
+                ReaderGridItemV93(Icons.Outlined.Headphones, if (listening) "停止听书" else "听书", active = listening, onClick = onListen),
+                ReaderGridItemV93(Icons.Outlined.BarChart, "阅读统计") { onPanel(ReaderMenuPanelV30.STATS) },
+                ReaderGridItemV93(Icons.Outlined.ViewCarousel, "翻页动画") { onPanel(ReaderMenuPanelV30.TURN) },
                 ReaderGridItemV93(Icons.Outlined.DriveFileRenameOutline, "重命名章节", enabled = currentChapter != null) { renameOpen = true },
+                // This EPUB opens in 文字版 because that was the last choice; offer the way back.
+                onOpenOriginalEdition?.let { ReaderGridItemV93(Icons.Outlined.AutoStories, "切换到原版", onClick = it) },
             ),
         )
-        Spacer(Modifier.height(t.space3))
+        Spacer(Modifier.height(t.space2))
         Text(
             text = "《${book.title}》 · 共 ${chapters.size} 章",
             modifier = Modifier.padding(horizontal = t.space2),
@@ -1178,15 +1215,13 @@ private fun ReaderThemePanelV30(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = t.space4).padding(bottom = t.space4),
     ) {
-        ReaderPanelHeaderV30(title = "阅读主题", onBack = onBack)
+        ReaderPanelHeaderV30(title = "屏幕遮罩", onBack = onBack)
         Text(
-            text = "正文主题独立于琅嬛 App 的浅色 / 深色主题。",
+            text = "亮度、暖光遮罩和纸张纹理只作用于正文页面。",
             style = MaterialTheme.typography.bodySmall,
             color = t.mutedForeground,
         )
         Spacer(Modifier.height(t.space4))
-        ReaderThemeGridV30(settings = settings, compact = false)
-        Spacer(Modifier.height(t.space5))
         // V92: brightness, warm light and paper backdrop live with the colour themes.
         ReaderLightAndBackdropSectionV92(settings = settings)
     }
@@ -1198,12 +1233,9 @@ private fun ReaderThemeGridV30(
     compact: Boolean,
 ) {
     val t = LocalLanghuanUiTokens.current
-    val orderedKeys = listOf(
-        "paper", "sheep", "tea", "green", "langhuan", "pink", "white", "night",
-    )
-    val options = orderedKeys.mapNotNull { key ->
-        READER_THEMES_V30.firstOrNull { it.key == key }
-    }
+    // V101: the installed day themes plus the selected night theme.
+    val orderedKeys = (settings.dayInstalled + settings.nightTheme).distinct().take(8)
+    val options = orderedKeys.map { key -> readerThemeV30(key) }
     options.chunked(4).forEachIndexed { rowIndex, row ->
         if (rowIndex > 0) Spacer(Modifier.height(t.space2))
         Row(
@@ -1299,24 +1331,65 @@ private fun ReaderFontPanelV30(
     onBack: () -> Unit,
 ) {
     val t = LocalLanghuanUiTokens.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var imported by remember { mutableStateOf(ReaderFontStoreV10.list(context)) }
+    var importing by remember { mutableStateOf(false) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    // V101: import a TTF / OTF from storage (validated, copied into app storage).
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        importing = true
+        scope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ReaderFontStoreV10.import(context, uri)
+            }
+            importing = false
+            result.onSuccess { asset ->
+                importError = null
+                imported = ReaderFontStoreV10.list(context)
+                settings.fontKey = ReaderSettingsV30.CUSTOM_FONT_PREFIX + asset.path
+            }.onFailure { importError = it.message ?: "字体导入失败" }
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             // The menu body has a bounded height; landscape and large font scales used to
             // clip the lower rows of settings panels with no way to reach them.
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = t.space4).padding(bottom = t.space4),
+            .padding(horizontal = t.space4).padding(bottom = t.space4)
+            .testTag("reader_font_panel"),
     ) {
-        ReaderPanelHeaderV30(title = "字体", onBack = onBack)
+        ReaderPanelHeaderV30(
+            title = "字体",
+            onBack = onBack,
+            action = {
+                ReaderInlineTextActionV30(
+                    text = if (importing) "导入中…" else "导入字体",
+                    onClick = {
+                        if (!importing) picker.launch(
+                            arrayOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf",
+                                "application/x-font-otf", "application/font-sfnt", "application/octet-stream"),
+                        )
+                    },
+                )
+            },
+        )
         ReaderTypesetPreviewV91(settings = settings)
         Spacer(Modifier.height(t.space3))
         val fonts = listOf(
             Triple("sans", "系统黑体", FontFamily.SansSerif),
             Triple("serif", "系统宋体", FontFamily.Serif),
             Triple("mono", "等宽字体", FontFamily.Monospace),
-        )
+        ) + imported.map { asset ->
+            Triple(ReaderSettingsV30.CUSTOM_FONT_PREFIX + asset.path, asset.name, ReaderFontStoreV10.family(asset.path) ?: FontFamily.Default)
+        }
         fonts.forEach { (key, label, family) ->
             val selected = settings.fontKey == key
+            val custom = key.startsWith(ReaderSettingsV30.CUSTOM_FONT_PREFIX)
             val shape = RoundedCornerShape(t.radiusMd)
             Row(
                 modifier = Modifier
@@ -1328,10 +1401,12 @@ private fun ReaderFontPanelV30(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = label,
+                        text = if (custom) "$label · 已导入" else label,
                         style = MaterialTheme.typography.bodyLarge,
                         color = if (selected) t.primary else t.foreground,
                         fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "琅嬛福地，书香一卷",
@@ -1347,9 +1422,28 @@ private fun ReaderFontPanelV30(
                         contentDescription = null,
                         tint = t.primary,
                     )
+                } else if (custom) {
+                    val asset = imported.firstOrNull { ReaderSettingsV30.CUSTOM_FONT_PREFIX + it.path == key }
+                    if (asset != null) {
+                        IconButton(onClick = {
+                            if (deleteReaderFontV11(context, asset)) imported = ReaderFontStoreV10.list(context)
+                        }) {
+                            Icon(Icons.Rounded.DeleteOutline, contentDescription = "删除字体 ${asset.name}", tint = t.mutedForeground)
+                        }
+                    }
                 }
             }
         }
+        importError?.let {
+            Spacer(Modifier.height(t.space2))
+            ReaderInlineErrorV30(text = it)
+        }
+        Text(
+            text = "支持从手机存储导入 TTF / OTF 字体（最大 24 MB），仅保存在本机。",
+            modifier = Modifier.padding(top = t.space2),
+            style = MaterialTheme.typography.bodySmall,
+            color = t.mutedForeground,
+        )
         Spacer(Modifier.height(t.space3))
         ReaderSectionTitleV30(title = "字重")
         Spacer(Modifier.height(t.space2))
@@ -2423,17 +2517,7 @@ private fun ReaderDialogButtonsV30(
 /*                                  Helpers                                   */
 /* -------------------------------------------------------------------------- */
 
-private fun readerThemeDisplayNameV30(key: String): String = when (key) {
-    "paper" -> "纸白"
-    "sheep" -> "暖纸"
-    "tea" -> "茶纸"
-    "green" -> "青叶"
-    "langhuan" -> "雾蓝"
-    "pink" -> "樱粉"
-    "white" -> "纯白"
-    "night" -> "夜间"
-    else -> "纸白"
-}
+private fun readerThemeDisplayNameV30(key: String): String = readerThemeV30(key).name
 
 private fun readerFontLabelV30(key: String): String = when (key) {
     "serif" -> "系统宋体"
