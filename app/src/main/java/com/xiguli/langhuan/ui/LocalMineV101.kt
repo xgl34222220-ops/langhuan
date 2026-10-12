@@ -266,7 +266,7 @@ private fun MineRowV101(icon: ImageVector, label: String, hint: String, tag: Str
         val t = com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens.current
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = t.foreground)
         Spacer(Modifier.width(19.dp))
-        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = t.foreground, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.foreground, modifier = Modifier.weight(1f))
         Text(hint, fontSize = 12.sp, color = t.mutedForeground, maxLines = 1)
     }
 }

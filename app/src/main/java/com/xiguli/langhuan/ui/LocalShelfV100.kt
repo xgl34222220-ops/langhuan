@@ -508,17 +508,19 @@ private fun ShelfGroupRowV100(
         ) {
             ShelfCheckboxV102()
             Spacer(Modifier.width(18.dp))
-            Text(
-                group.name,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = t.foreground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false).testTag("shelf_group_name_${group.id}"),
-            )
-            Text("（$count）", fontSize = 13.sp, color = t.mutedForeground.copy(alpha = 0.8f))
-            Spacer(Modifier.weight(1f))
+            // Name and count share one weighted slot so ··· sits at the same x on every row.
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    group.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = t.foreground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).testTag("shelf_group_name_${group.id}"),
+                )
+                Text("（$count）", fontSize = 13.sp, color = t.mutedForeground.copy(alpha = 0.8f), maxLines = 1)
+            }
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.testTag("shelf_group_menu_${group.id}")) {
                     Icon(ThinIconsV102.More, contentDescription = "书架操作", tint = t.foreground)
