@@ -335,27 +335,3 @@ private fun CoverTabV100(
         }
     }
 }
-
-/** 我的: phase 1 placeholder; phase 2 fills it with reading settings, themes and statistics. */
-@Composable
-fun MinePageV100(onBack: () -> Unit, bookCount: Int, shelfCount: Int) {
-    BackHandler(onBack = onBack)
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().testTag("mine_page")) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回") }
-            Text("我的", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-            Text("本地阅读", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("$bookCount 本书 · $shelfCount 个书架", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp))
-        }
-        listOf("阅读设置", "主题外观", "阅读统计", "书签与笔记", "关于琅嬛").forEach { label ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                Text("即将推出", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            HorizontalDivider(Modifier.padding(start = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-        }
-    }
-}

@@ -143,10 +143,11 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                         onOpenBook = ::openBook,
                     )
                 }
-                route == "mine" -> MinePageV100(
-                    onBack = { route = "shelf" },
-                    bookCount = state.books.size,
+                route == "mine" -> LocalMinePageV101(
+                    books = state.books,
                     shelfCount = state.shelf.groups.size,
+                    onBack = { route = "shelf" },
+                    onOpenBook = ::openBook,
                 )
                 route.startsWith("detail:") -> {
                     val id = route.removePrefix("detail:")
