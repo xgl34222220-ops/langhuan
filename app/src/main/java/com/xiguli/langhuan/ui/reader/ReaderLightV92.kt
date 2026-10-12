@@ -113,6 +113,9 @@ internal class ReaderBackdropPaintV92(
     val veil: Color = Color.Transparent,
     /** V93: ink colour for the 竹影 corner decoration; Transparent when not used. */
     val bambooInk: Color = Color.Transparent,
+    /** V101 theme decorations; Transparent when not used. */
+    val arcInk: Color = Color.Transparent,
+    val flowerInk: Color = Color.Transparent,
 )
 
 /** Window brightness override value for a stored setting (-1 = follow the system). */
@@ -173,6 +176,8 @@ internal fun DrawScope.drawReaderBackdropV92(
             }
             paint.texture?.let { drawRect(brush = it, size = Size(pageWidth, pageHeight)) }
             if (paint.bambooInk.alpha > 0f) drawReaderBambooV93(paint.bambooInk, pageWidth, pageHeight)
+            if (paint.arcInk.alpha > 0f) drawReaderArcsV101(paint.arcInk, pageWidth, pageHeight)
+            if (paint.flowerInk.alpha > 0f) drawReaderBlossomV101(paint.flowerInk, pageWidth, pageHeight)
         }
     }
 }
@@ -309,17 +314,23 @@ internal fun rememberReaderBackdropPaintV92(settings: ReaderSettingsV30, theme: 
     val context = LocalContext.current
     val backdrop = ReaderBackdropV92.of(settings.backdrop)
     val imageVersion = settings.backdropImageVersion
-    val image by produceState<ImageBitmap?>(initialValue = null, backdrop, imageVersion) {
-        value = if (backdrop != ReaderBackdropV92.IMAGE) null else withContext(Dispatchers.IO) {
+    // V101: with no V92 texture chosen, the theme's own decoration (or custom picture) is drawn.
+    val themeImage = theme.imagePath.takeIf { backdrop == ReaderBackdropV92.NONE && theme.decor == ReaderThemeDecorV101.IMAGE }
+    val image by produceState<ImageBitmap?>(initialValue = null, backdrop, imageVersion, themeImage) {
+        value = withContext(Dispatchers.IO) {
             runCatching {
-                val file = readerBackdropImageFileV92(context)
-                if (file.exists()) BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() else null
+                val file = when {
+                    backdrop == ReaderBackdropV92.IMAGE -> readerBackdropImageFileV92(context)
+                    themeImage != null -> File(themeImage)
+                    else -> null
+                }
+                if (file != null && file.exists()) BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() else null
             }.getOrNull()
         }
     }
-    return remember(backdrop, theme.key, theme.text, theme.page, image) {
+    return remember(backdrop, theme.key, theme.text, theme.page, theme.decor, image) {
         when (backdrop) {
-            ReaderBackdropV92.NONE -> null
+            ReaderBackdropV92.NONE -> readerThemeDecorPaintV101(theme, image)
             ReaderBackdropV92.IMAGE -> image?.let {
                 ReaderBackdropPaintV92(image = it, veil = theme.page.copy(alpha = if (theme.dark) 0.55f else 0.42f))
             }
@@ -333,8 +344,64 @@ internal fun rememberReaderBackdropPaintV92(settings: ReaderSettingsV30, theme: 
     }
 }
 
+/** The decoration that belongs to a V101 theme, or null for a plain page. */
+internal fun readerThemeDecorPaintV101(theme: ReaderThemeV30, image: ImageBitmap? = null): ReaderBackdropPaintV92? =
+    when (theme.decor) {
+        ReaderThemeDecorV101.NONE -> null
+        ReaderThemeDecorV101.BAMBOO -> ReaderBackdropPaintV92(bambooInk = theme.text.copy(alpha = if (theme.dark) 0.10f else 0.13f))
+        ReaderThemeDecorV101.ARC -> ReaderBackdropPaintV92(arcInk = theme.page.readerDecorInkV101(theme.dark))
+        ReaderThemeDecorV101.FLOWER -> ReaderBackdropPaintV92(flowerInk = theme.text.copy(alpha = if (theme.dark) 0.10f else 0.12f))
+        ReaderThemeDecorV101.IMAGE -> image?.let {
+            ReaderBackdropPaintV92(image = it, veil = theme.page.copy(alpha = if (theme.dark) 0.55f else 0.42f))
+        }
+    }
+
+/** A tone a little lighter (light themes) or darker-lighter (dark themes) than the page. */
+private fun Color.readerDecorInkV101(dark: Boolean): Color =
+    if (dark) Color.White.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.45f)
+
+/** V101 arcs: two broad concentric bands sweeping out of the lower-left corner (theme cards). */
+internal fun DrawScope.drawReaderArcsV101(ink: Color, pageWidth: Float, pageHeight: Float) {
+    val unit = minOf(pageWidth, pageHeight)
+    val center = Offset(pageWidth * 0.92f, pageHeight * 1.02f)
+    val outer = unit * 0.78f
+    val band = unit * 0.13f
+    drawCircle(ink, radius = outer, center = center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = band))
+    drawCircle(ink.copy(alpha = ink.alpha * 0.7f), radius = outer - band * 1.9f, center = center,
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width = band * 0.8f))
+}
+
+/** V101 花开: a thin branch with five-petal blossoms in the top-right corner. */
+internal fun DrawScope.drawReaderBlossomV101(ink: Color, pageWidth: Float, pageHeight: Float) {
+    val unit = minOf(pageWidth, pageHeight) / 360f
+    val right = pageWidth
+    val branch = androidx.compose.ui.graphics.Path().apply {
+        moveTo(right + 4f * unit, 24f * unit)
+        quadraticTo(right - 70f * unit, 40f * unit, right - 128f * unit, 112f * unit)
+    }
+    drawPath(branch, ink, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.4f * unit, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+    fun blossom(cx: Float, cy: Float, r: Float) {
+        for (i in 0 until 5) {
+            val angle = Math.toRadians(i * 72.0 - 90.0)
+            val px = cx + kotlin.math.cos(angle).toFloat() * r * 0.9f
+            val py = cy + kotlin.math.sin(angle).toFloat() * r * 0.9f
+            drawCircle(ink, radius = r * 0.62f, center = Offset(px, py))
+        }
+        drawCircle(ink.copy(alpha = (ink.alpha * 1.6f).coerceAtMost(1f)), radius = r * 0.32f, center = Offset(cx, cy))
+    }
+    blossom(right - 40f * unit, 40f * unit, 12f * unit)
+    blossom(right - 92f * unit, 70f * unit, 15f * unit)
+    blossom(right - 124f * unit, 116f * unit, 10f * unit)
+    blossom(right - 20f * unit, 92f * unit, 8f * unit)
+}
+
 /** Copies and downsizes a picked picture into app storage. Returns false on any failure. */
-internal suspend fun importReaderBackdropImageV92(context: Context, uri: Uri, maxEdgePx: Int = 1600): Boolean =
+internal suspend fun importReaderBackdropImageV92(
+    context: Context,
+    uri: Uri,
+    maxEdgePx: Int = 1600,
+    target: File = readerBackdropImageFileV92(context),
+): Boolean =
     withContext(Dispatchers.IO) {
         runCatching {
             val resolver = context.contentResolver
@@ -346,7 +413,6 @@ internal suspend fun importReaderBackdropImageV92(context: Context, uri: Uri, ma
             val options = BitmapFactory.Options().apply { inSampleSize = sample }
             val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
                 ?: return@runCatching false
-            val target = readerBackdropImageFileV92(context)
             target.parentFile?.mkdirs()
             val temp = File(target.parentFile, target.name + ".tmp")
             temp.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it) }

@@ -27,6 +27,11 @@ internal data class ReaderThemeV30(
     val dark: Boolean = false,
     /** V92 paper texture / gallery picture painted under the text of every page. */
     val backdrop: ReaderBackdropPaintV92? = null,
+    /** V101 decoration of the theme itself (used when no V92 texture is chosen). */
+    val decor: ReaderThemeDecorV101 = ReaderThemeDecorV101.NONE,
+    /** V101 picture of a custom theme. */
+    val imagePath: String? = null,
+    val subtitle: String = "",
 ) {
     val sheet: Color get() = if (dark) Color(0xFF1F1F21) else Color(0xFFFFFFFF)
     val sheetText: Color get() = if (dark) Color(0xFFE8E8EA) else Color(0xFF1C1C1E)
@@ -36,19 +41,13 @@ internal data class ReaderThemeV30(
     val accent: Color get() = if (dark) Color(0xFF5B9CFF) else Color(0xFF2F7BF6)
 }
 
-internal val READER_THEMES_V30 = listOf(
-    ReaderThemeV30("paper", "纸白", Color(0xFFF7F5EF), Color(0xFF1E1D1B), Color(0xFF9A968C)),
-    ReaderThemeV30("tea", "番茄", Color(0xFFDDD7C1), Color(0xFF1C1A16), Color(0xFF8C8672)),
-    ReaderThemeV30("sheep", "羊皮", Color(0xFFEBDDBF), Color(0xFF3A2E1F), Color(0xFF9A8763)),
-    ReaderThemeV30("green", "青叶", Color(0xFFD3E4CF), Color(0xFF1D2A1C), Color(0xFF708069)),
-    ReaderThemeV30("langhuan", "雾蓝", Color(0xFFE3E8EF), Color(0xFF1C2129), Color(0xFF7D8694)),
-    ReaderThemeV30("pink", "樱粉", Color(0xFFF4E4E1), Color(0xFF2E2121), Color(0xFF9E8581)),
-    ReaderThemeV30("white", "纯白", Color(0xFFFFFFFF), Color(0xFF151515), Color(0xFF9B9B9B)),
-    ReaderThemeV30("night", "夜间", Color(0xFF151516), Color(0xFFA8A8AA), Color(0xFF5E5E62), dark = true),
-)
+/** Built-in palettes (V101 catalog); custom themes resolve through [ReaderThemeRegistryV101]. */
+internal val READER_THEMES_V30: List<ReaderThemeV30> = ReaderThemeCatalogV101.ALL_BUILT_IN.map { it.toTheme() }
 
 internal fun readerThemeV30(key: String): ReaderThemeV30 =
-    READER_THEMES_V30.firstOrNull { it.key == key } ?: READER_THEMES_V30.first()
+    READER_THEMES_V30.firstOrNull { it.key == key }
+        ?: ReaderThemeRegistryV101.custom.firstOrNull { it.key == key }?.toTheme()
+        ?: READER_THEMES_V30.first()
 
 /**
  * Absolute page geometry in px. Pagination uses [bodyWidth]/[bodyHeight]; the renderer uses the
@@ -352,8 +351,13 @@ private fun DrawScope.drawContextAlphaV30(alpha: Float, block: DrawScope.() -> U
 }
 
 /** Maps theme keys written by older reader versions onto the V30 palette. */
-internal fun readerThemeKeyV30(key: String): String = when (key) {
-    in READER_THEMES_V30.map { it.key } -> key
+internal fun readerThemeKeyV30(key: String): String = when {
+    key in READER_THEMES_V30.map { it.key } -> key
+    key.startsWith(ReaderThemeCatalogV101.CUSTOM_PREFIX) -> key
+    else -> readerLegacyThemeKeyV30(key)
+}
+
+private fun readerLegacyThemeKeyV30(key: String): String = when (key) {
     "tomato" -> "tea"
     "mint" -> "green"
     "mist", "ink" -> "langhuan"
