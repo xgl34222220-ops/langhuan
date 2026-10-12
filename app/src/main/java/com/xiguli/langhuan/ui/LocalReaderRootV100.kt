@@ -58,9 +58,12 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importVm.importUri(uri)
     }
+    // A book opened from another app is opened once its import result dialog is closed.
+    var pendingExternalOpenId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(importState.importedBookId) {
         val id = importState.importedBookId ?: return@LaunchedEffect
         vm.rememberImportTarget(id)
+        if (importState.externalRequestUri != null) pendingExternalOpenId = id
         importVm.consumeImportedBook()
     }
     LaunchedEffect(importState.message, importState.error, importState.externalRequestUri) {
@@ -102,6 +105,13 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
         ReaderEditionPreferenceV90.save(ReaderEditionPreferenceV90.prefs(appContext), id, ReaderEditionV90.ORIGINAL)
         vm.closeBook()
         route = "shelf"
+        openBook(id)
+    }
+
+    LaunchedEffect(pendingExternalOpenId, importState.externalRequestUri, state.libraryLoaded, state.isBusy, epubOpening) {
+        val id = pendingExternalOpenId ?: return@LaunchedEffect
+        if (importState.externalRequestUri != null || !state.libraryLoaded || state.isBusy || epubOpening) return@LaunchedEffect
+        pendingExternalOpenId = null
         openBook(id)
     }
 
