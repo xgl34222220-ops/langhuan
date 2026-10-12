@@ -1,5 +1,15 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
+import com.xiguli.langhuan.ui.design.ThinIconsV102
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -106,30 +116,31 @@ fun BookDetailPageV100(
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().testTag("book_detail")) {
         Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回") }
-            Text("图书详情", modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onBack) { Icon(ThinIconsV102.Back, contentDescription = "返回", modifier = Modifier.size(24.dp)) }
+            Text("图书详情", modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             IconButton(
                 onClick = { onSave(title, author, choice) },
                 enabled = title.isNotBlank(),
                 modifier = Modifier.testTag("detail_save"),
-            ) { Icon(Icons.Outlined.Check, contentDescription = "保存") }
+            ) { Icon(ThinIconsV102.Check, contentDescription = "保存", modifier = Modifier.size(24.dp)) }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             CoverImageOrGeneratedV100(
                 path = previewPath,
                 title = title.ifBlank { book.title },
                 author = author,
                 style = previewStyle,
-                modifier = Modifier.width(88.dp).aspectRatio(BOOK_COVER_RATIO_V100),
+                modifier = Modifier.width(84.dp).aspectRatio(BOOK_COVER_RATIO_V100)
+                    .shadow(3.dp, RoundedCornerShape(COVER_RADIUS_V102), ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.2f)),
             )
-            Spacer(Modifier.width(20.dp))
+            Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
                 EditableFieldV100("书名", title, { title = it }, "detail_title")
                 Spacer(Modifier.height(10.dp))
                 EditableFieldV100("作者", author, { author = it }, "detail_author", placeholder = "未知作者")
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             DetailTabLabelV100("详情", tab == DetailTabV100.DETAILS, "detail_tab_details") { tab = DetailTabV100.DETAILS }
             Spacer(Modifier.width(24.dp))
             DetailTabLabelV100("封面", tab == DetailTabV100.COVER, "detail_tab_cover") { tab = DetailTabV100.COVER }
@@ -157,21 +168,26 @@ private fun currentCoverKeyV100(book: LocalShelfBook): String = when {
 
 @Composable
 private fun EditableFieldV100(label: String, value: String, onChange: (String) -> Unit, tag: String, placeholder: String = "") {
-    Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val t = LocalLanghuanUiTokens.current
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    val line by animateColorAsState(if (focused) t.primary else t.border, animationSpec = tween(200), label = "underline")
+    Text(label, fontSize = 12.sp, color = t.mutedForeground)
     Box(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         if (value.isEmpty() && placeholder.isNotEmpty()) {
-            Text(placeholder, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            Text(placeholder, fontSize = 16.sp, color = t.mutedForeground.copy(alpha = 0.7f))
         }
         BasicTextField(
             value = value,
             onValueChange = { onChange(it.replace("\n", "").take(60)) },
             singleLine = true,
-            textStyle = TextStyle(fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            textStyle = TextStyle(fontSize = 16.sp, color = t.foreground),
+            cursorBrush = SolidColor(t.primary),
+            interactionSource = source,
             modifier = Modifier.fillMaxWidth().testTag(tag),
         )
     }
-    HorizontalDivider(Modifier.padding(top = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+    Box(Modifier.padding(top = 8.dp).fillMaxWidth().height(if (focused) 1.5.dp else 0.5.dp).background(line))
 }
 
 @Composable
@@ -188,7 +204,7 @@ private fun DetailTabLabelV100(text: String, selected: Boolean, tag: String, onC
         )
         Spacer(Modifier.height(8.dp))
         Box(
-            Modifier.width(22.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
+            Modifier.width(16.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
                 .background(if (selected) MaterialTheme.colorScheme.onBackground else androidx.compose.ui.graphics.Color.Transparent),
         )
     }
@@ -200,12 +216,19 @@ private fun DetailsTabV100(book: LocalShelfBook, groupName: String, detail: Loca
     val total = detail?.chapterCount ?: book.meta.chapterCount ?: book.chapterTotal
     val currentNumber = detail?.currentChapterNumber ?: (book.chapterIndex + 1).coerceAtLeast(if (book.progress.started) 1 else 0)
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 18.dp)
             .testTag("detail_details_tab"),
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(BookFacts.formatPercent(fraction), fontSize = 44.sp, fontWeight = FontWeight.Bold, lineHeight = 46.sp)
-            Text("%", fontSize = 18.sp, modifier = Modifier.padding(start = 2.dp, bottom = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                BookFacts.formatPercent(fraction),
+                fontSize = 46.sp,
+                lineHeight = 48.sp,
+                fontFamily = PROGRESS_FONT_V102,
+                letterSpacing = (-0.5).sp,
+                color = LocalLanghuanUiTokens.current.foreground,
+            )
+            Text("%", fontSize = 15.sp, fontFamily = PROGRESS_FONT_V102, modifier = Modifier.padding(start = 3.dp, bottom = 8.dp), color = LocalLanghuanUiTokens.current.mutedForeground)
             Spacer(Modifier.weight(1f))
             Text(
                 text = if (total > 0) "读到 ${currentNumber.coerceAtMost(total)} / $total 章" else "尚未阅读",
@@ -224,7 +247,10 @@ private fun DetailsTabV100(book: LocalShelfBook, groupName: String, detail: Loca
         LinearProgressIndicator(
             progress = { (fraction ?: 0f).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(3.dp).clip(RoundedCornerShape(2.dp)),
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            color = LocalLanghuanUiTokens.current.primary,
+            trackColor = LocalLanghuanUiTokens.current.track,
+            drawStopIndicator = {},
+            gapSize = 0.dp,
         )
         Spacer(Modifier.height(20.dp))
         val words = detail?.wordCount ?: book.meta.wordCount
@@ -240,13 +266,13 @@ private fun DetailsTabV100(book: LocalShelfBook, groupName: String, detail: Loca
             "最近阅读" to BookFacts.formatTime(book.lastReadAt),
         )
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                .padding(horizontal = 18.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .background(LocalLanghuanUiTokens.current.input)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
         ) {
             rows.forEach { (label, value) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(label, fontSize = 13.5.sp, color = LocalLanghuanUiTokens.current.mutedForeground)
                     Spacer(Modifier.width(24.dp))
                     Text(
                         value,
@@ -293,7 +319,7 @@ private fun CoverTabV100(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(ThinIconsV102.Image, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("从相册选择", fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -313,13 +339,14 @@ private fun CoverTabV100(
                     targetWidthPx = 240,
                 )
                 if (key == selectedKey) {
-                    Icon(
-                        Icons.Outlined.CheckCircle,
-                        contentDescription = "已选择",
-                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(22.dp)
-                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(11.dp)),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                    Box(
+                        Modifier.align(Alignment.TopStart).padding(6.dp).size(20.dp)
+                            .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+                            .border(1.5.dp, Color.White, androidx.compose.foundation.shape.CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(ThinIconsV102.Check, contentDescription = "已选择", modifier = Modifier.size(14.dp), tint = Color.White)
+                    }
                 }
                 if (key == "o" || key.startsWith("c:")) {
                     Text(
@@ -335,3 +362,7 @@ private fun CoverTabV100(
         }
     }
 }
+
+/** Condensed bold numerals for the big 进度 figure (reference: a geometric/condensed display face). */
+private val PROGRESS_FONT_V102: FontFamily =
+    FontFamily(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD))

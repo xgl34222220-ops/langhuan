@@ -129,7 +129,7 @@ fun LocalMinePageV101(
 @Composable
 private fun MineTopBarV101(title: String, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回") }
+        IconButton(onClick = onBack) { Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Back, contentDescription = "返回", modifier = Modifier.size(24.dp)) }
         Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -163,7 +163,7 @@ private fun MineHomeV101(books: List<LocalShelfBook>, shelfCount: Int, onBack: (
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回") }
+            IconButton(onClick = onBack) { Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Back, contentDescription = "返回", modifier = Modifier.size(24.dp)) }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
@@ -180,7 +180,7 @@ private fun MineHomeV101(books: List<LocalShelfBook>, shelfCount: Int, onBack: (
             ) {
                 val img = avatar
                 if (img != null) Image(img, contentDescription = "头像", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                else Icon(Icons.Outlined.Person, contentDescription = "设置头像", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
+                else Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Person, contentDescription = "设置头像", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f).clickable { editing = true }.testTag("mine_name")) {
@@ -196,11 +196,11 @@ private fun MineHomeV101(books: List<LocalShelfBook>, shelfCount: Int, onBack: (
         }
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(8.dp))
-        MineRowV101(Icons.Outlined.BarChart, "阅历", "今日 ${ReaderStatsV35.format(stats.today)}", "mine_row_stats") { onPage(MinePageV101.STATS) }
-        MineRowV101(Icons.Outlined.FormatQuote, "摘抄", "划线与书签", "mine_row_excerpts") { onPage(MinePageV101.EXCERPTS) }
-        MineRowV101(Icons.Outlined.TaskAlt, "读过", "$finished 本", "mine_row_finished") { onPage(MinePageV101.FINISHED) }
+        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Chart, "阅历", "今日 ${ReaderStatsV35.format(stats.today)}", "mine_row_stats") { onPage(MinePageV101.STATS) }
+        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Quote, "摘抄", "划线与书签", "mine_row_excerpts") { onPage(MinePageV101.EXCERPTS) }
+        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Done, "读过", "$finished 本", "mine_row_finished") { onPage(MinePageV101.FINISHED) }
         Spacer(Modifier.height(8.dp))
-        MineRowV101(Icons.Outlined.Settings, "设置", "阅读默认 · 关于", "mine_row_settings") { onPage(MinePageV101.SETTINGS) }
+        MineRowV101(com.xiguli.langhuan.ui.design.ThinIconsV102.Settings, "设置", "阅读默认 · 关于", "mine_row_settings") { onPage(MinePageV101.SETTINGS) }
     }
 
     if (editing) {
@@ -239,14 +239,16 @@ private fun MineFigureV101(value: String, label: String) {
 @Composable
 private fun MineRowV101(icon: ImageVector, label: String, hint: String, tag: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 15.dp).testTag(tag),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 16.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+        val t = com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens.current
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = t.foreground)
         Spacer(Modifier.width(14.dp))
-        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Text(hint, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, fontSize = 15.sp, color = t.foreground, modifier = Modifier.weight(1f))
+        Text(hint, fontSize = 12.sp, color = t.mutedForeground)
+        Spacer(Modifier.width(4.dp))
+        Icon(com.xiguli.langhuan.ui.design.ThinIconsV102.Chevron, contentDescription = null, modifier = Modifier.size(16.dp), tint = t.mutedForeground)
     }
 }
 
