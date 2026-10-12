@@ -175,7 +175,8 @@ class ReaderThemeSettingsV101Test {
     /* ------------------------------ Quick / 定位 ------------------------------ */
 
     @Test fun pillSliderSnapsToStepsInsideTheRange() {
-        assertEquals(1.8f, readerSnapV101(1.83f, 1.2f..2.4f, 0.05f), 0.0001f)
+        assertEquals(1.85f, readerSnapV101(1.83f, 1.2f..2.4f, 0.05f), 0.0001f)
+        assertEquals(1.8f, readerSnapV101(1.81f, 1.2f..2.4f, 0.05f), 0.0001f)
         assertEquals(12f, readerSnapV101(3f, 12f..34f, 1f), 0f)
         assertEquals(34f, readerSnapV101(99f, 12f..34f, 1f), 0f)
     }
