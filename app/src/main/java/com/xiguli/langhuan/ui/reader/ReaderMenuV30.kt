@@ -232,7 +232,16 @@ internal fun ReaderMenuV30(
 ) {
     if (!visible) return
     val t = LocalLanghuanUiTokens.current
-    val maxHeight = readerMenuWindowHeightV63() * 0.88f
+    // V103: in portrait the sheet stops near two thirds of the window (reference / 微信读书), so the
+    // page — book name, centred chapter title, bamboo — stays visible above it. Landscape keeps
+    // the tall sheet because its window is short.
+    val windowSize = LocalWindowInfo.current.containerSize
+    val portrait = windowSize.height > windowSize.width
+    val maxHeight = readerMenuWindowHeightV63() * when {
+        !portrait -> 0.88f
+        panel == ReaderMenuPanelV30.MAIN -> 0.64f
+        else -> 0.78f
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
