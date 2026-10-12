@@ -32,9 +32,9 @@ import com.xiguli.langhuan.ui.epub.ReaderEditionV90
 import kotlinx.coroutines.delay
 
 /**
- * Local-only root: 书架 is home (no bottom bar). 书架列表 is a page to its left (swipe right, or
- * tap the title), + imports, the person icon opens 我的, long-press opens the book sheet, and
- * 查看详情 opens 图书详情.
+ * Local-only root: 书架 is home (no bottom bar). V104: home is a three-page pager — 书架列表 to the
+ * left (swipe right, or tap the title), 我的 to the right (swipe left, or the person icon). + imports,
+ * long-press opens the book sheet, and 查看详情 pushes 图书详情 over the pager.
  */
 @Composable
 fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) {
@@ -45,11 +45,14 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
     val context = LocalContext.current
     val appContext = context.applicationContext
 
-    // Routes: "shelf" (the 书架列表 ⇄ 正在阅读 pager), "mine", "reader", "detail:<id>".
-    // "shelves" is the pre-V102 full-screen list; it now opens the pager on the list page.
+    // Routes: "shelf" (the 书架列表 ⇄ 正在阅读 ⇄ 我的 pager), "reader", "detail:<id>".
+    // "shelves" / "mine" are pre-V104 saved routes; they now open the pager on that page.
     var route by rememberSaveable { mutableStateOf("shelf") }
     val shelfPager = rememberPagerState(initialPage = ShelfPagerV102.pageForRoute(route)) { ShelfPagerV102.PAGE_COUNT }
-    if (route == "shelves") route = "shelf"
+    if (route == "shelves" || route == "mine") route = "shelf"
+    // True while a 我的 sub-page (阅历 / 摘抄 / 读过 / 设置) is open: the pager stops swiping and
+    // back belongs to 我的.
+    var mineSubPage by rememberSaveable { mutableStateOf(false) }
     var sheetBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var moveBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteBookId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -146,7 +149,7 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                     }
                 }
             } else {
-                val overlay = route.takeIf { it == "mine" || it.startsWith("detail:") }
+                val overlay = route.takeIf { it.startsWith("detail:") }
                 // 图书详情's loaded facts stay until the page has slid off (reopening reloads them).
                 fun popOverlay() {
                     route = "shelf"
@@ -163,22 +166,25 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                             onLongPressBook = { sheetBookId = it },
                             onImport = { importLauncher.launch(arrayOf("*/*")) },
                             onCancelImport = importVm::cancelImport,
-                            onMine = { route = "mine" },
                             onSelectGroup = { id -> vm.selectGroup(id) },
                             onCreateGroup = { vm.createGroup(it) },
                             onRenameGroup = { id, name -> vm.renameGroup(id, name) },
                             onDeleteGroup = { vm.deleteGroup(it) },
-                            backEnabled = overlay == null,
-                        )
+                            backEnabled = overlay == null && !mineSubPage,
+                            swipeEnabled = overlay == null && !mineSubPage,
+                        ) { visible, onBack ->
+                            LocalMinePageV101(
+                                books = state.books,
+                                shelfCount = state.shelf.groups.size,
+                                visible = visible,
+                                onBack = onBack,
+                                onOpenBook = ::openBook,
+                                onSubPageChanged = { mineSubPage = it },
+                            )
+                        }
                     },
                 ) { target ->
                     when {
-                        target == "mine" -> LocalMinePageV101(
-                            books = state.books,
-                            shelfCount = state.shelf.groups.size,
-                            onBack = ::popOverlay,
-                            onOpenBook = ::openBook,
-                        )
                         target.startsWith("detail:") -> {
                             val id = target.removePrefix("detail:")
                             val book = state.books.firstOrNull { it.id == id }

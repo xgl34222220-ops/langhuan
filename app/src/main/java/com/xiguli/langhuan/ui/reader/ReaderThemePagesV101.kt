@@ -164,7 +164,7 @@ private fun ReaderThemeListPageV101(
                 }
             },
         )
-        Spacer(Modifier.height(t.space2))
+        Spacer(Modifier.height(t.space3))
         keys.chunked(2).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = t.space3),
@@ -196,6 +196,7 @@ private fun ReaderThemeListPageV101(
             else "白天使用选中的日间主题；主题保存在本机。",
             style = MaterialTheme.typography.bodySmall,
             color = t.mutedForeground,
+            modifier = Modifier.padding(top = t.space1, start = t.space1, end = t.space1),
         )
     }
 }
@@ -239,14 +240,15 @@ internal fun ReaderThemeCardV101(
             }
         }
     }
-    val shape = RoundedCornerShape(10.dp)
+    // V104: 12 dp corners and a hairline ring on every card; the selection gets an accent ring too.
+    val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.72f)
             .clip(shape)
             .background(theme.page)
-            .border(0.5.dp, t.border.copy(alpha = 0.5f), shape)
+            .border(if (selected) 1.5.dp else 0.5.dp, if (selected) t.primary else t.border.copy(alpha = 0.7f), shape)
             .clickable(role = Role.RadioButton, onClick = onClick)
             .semantics { contentDescription = "主题 ${theme.name}"; this.selected = selected }
             .testTag("reader_theme_card_${theme.key}"),
@@ -277,12 +279,13 @@ internal fun ReaderThemeCardV101(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(12.dp)
-                    .size(26.dp)
-                    .background(t.primary, CircleShape),
+                    .padding(10.dp)
+                    .size(24.dp)
+                    .background(t.primary, CircleShape)
+                    .border(1.5.dp, Color.White, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.Check, contentDescription = "已选择", tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Check, contentDescription = "已选择", tint = Color.White, modifier = Modifier.size(16.dp))
             }
         }
         if (onMenu != null) {
@@ -373,6 +376,7 @@ private fun ReaderMoreThemesPageV101(
             text = "主题随应用内置，添加后出现在主题列表，无需联网下载。",
             style = MaterialTheme.typography.bodySmall,
             color = t.mutedForeground,
+            modifier = Modifier.padding(horizontal = t.space1),
         )
         Spacer(Modifier.height(t.space3))
         extras.distinctBy { it.key }.chunked(2).forEach { row ->

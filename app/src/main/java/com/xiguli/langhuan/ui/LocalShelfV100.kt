@@ -99,10 +99,12 @@ import kotlinx.coroutines.launch
 private val PAGE_EASING_V102 = com.xiguli.langhuan.ui.design.PagePushV103.spec<Float>()
 
 /**
- * V102 home: two horizontally swiped pages. Page 0 is 书架列表 (left), page 1 the current shelf.
- * V103: like the reference, both pages stay attached and follow the finger 1:1 — no parallax,
- * dim or edge shadow. Tapping a shelf there selects it and slides back; back (including the
- * predictive back swipe) drags the list off with the finger.
+ * V104 home: three horizontally swiped pages — 书架列表 (left), 正在阅读 (centre, home) and 我的
+ * (right). Like the reference, neighbouring pages stay attached and follow the finger 1:1 — no
+ * parallax, dim or edge shadow. Tapping a shelf in the list selects it and slides back; the person
+ * icon slides to 我的; back (including the predictive back swipe) drags either side page back to
+ * the centre with the finger. Nested horizontal scrolling (the list's cover strips) consumes the
+ * drag first and hands the overscroll to the pager.
  */
 @Composable
 fun LocalShelfPagerV102(
@@ -113,30 +115,41 @@ fun LocalShelfPagerV102(
     onLongPressBook: (String) -> Unit,
     onImport: () -> Unit,
     onCancelImport: () -> Unit,
-    onMine: () -> Unit,
     onSelectGroup: (String) -> Unit,
     onCreateGroup: (String) -> Unit,
     onRenameGroup: (String, String) -> Unit,
     onDeleteGroup: (String) -> Unit,
     backEnabled: Boolean = true,
+    swipeEnabled: Boolean = true,
+    mine: @Composable (visible: Boolean, onBack: () -> Unit) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     fun goTo(page: Int) {
         scope.launch { pagerState.animateScrollToPage(page, animationSpec = PAGE_EASING_V102) }
     }
-    PredictiveBackHandler(enabled = backEnabled && ShelfPagerV102.backTarget(pagerState.currentPage) != null) { events ->
+    // The page a predictive back gesture started on: the handler stays registered while the
+    // pager is dragged past the midpoint (currentPage flips to the centre half-way).
+    var backFrom by remember { mutableStateOf<Int?>(null) }
+    PredictiveBackHandler(
+        enabled = backEnabled && (backFrom != null || ShelfPagerV102.backTarget(pagerState.settledPage) != null),
+    ) { events ->
+        val from = backFrom ?: pagerState.settledPage
+        backFrom = from
+        val direction = ShelfPagerV102.backDirection(from)
         var applied = 0f
         try {
             events.collect { event ->
                 val width = pagerState.layoutInfo.pageSize.toFloat()
-                val target = ShelfPagerV102.backDrag(event.progress) * width
+                val target = ShelfPagerV102.backDrag(event.progress) * width * direction
                 val delta = target - applied
                 applied = target
                 pagerState.scroll { scrollBy(delta) }
             }
-            ShelfPagerV102.backTarget(ShelfPagerV102.LIST_PAGE)?.let(::goTo)
+            backFrom = null
+            ShelfPagerV102.backTarget(from)?.let(::goTo)
         } catch (cancel: kotlin.coroutines.cancellation.CancellationException) {
-            goTo(ShelfPagerV102.LIST_PAGE)
+            backFrom = null
+            goTo(from)
             throw cancel
         }
     }
@@ -144,11 +157,12 @@ fun LocalShelfPagerV102(
         state = pagerState,
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag("shelf_pager"),
         beyondViewportPageCount = 1,
+        userScrollEnabled = swipeEnabled,
         flingBehavior = PagerDefaults.flingBehavior(state = pagerState, snapPositionalThreshold = 0.22f),
         key = { it },
     ) { page ->
-        if (page == ShelfPagerV102.LIST_PAGE) {
-            ShelfListPageV100(
+        when (page) {
+            ShelfPagerV102.LIST_PAGE -> ShelfListPageV100(
                 state = state,
                 onSelectGroup = { id ->
                     onSelectGroup(id)
@@ -159,15 +173,17 @@ fun LocalShelfPagerV102(
                 onDeleteGroup = onDeleteGroup,
                 onOpenBook = onOpenBook,
             )
-        } else {
-            LocalShelfHomeV100(
+            ShelfPagerV102.MINE_PAGE -> mine(pagerState.settledPage == ShelfPagerV102.MINE_PAGE) {
+                goTo(ShelfPagerV102.SHELF_PAGE)
+            }
+            else -> LocalShelfHomeV100(
                 state = state,
                 importState = importState,
                 onOpenBook = onOpenBook,
                 onLongPressBook = onLongPressBook,
                 onImport = onImport,
                 onCancelImport = onCancelImport,
-                onMine = onMine,
+                onMine = { goTo(ShelfPagerV102.MINE_PAGE) },
                 onOpenShelfList = { goTo(ShelfPagerV102.LIST_PAGE) },
             )
         }
@@ -320,33 +336,22 @@ private fun ImportBannerV100(importState: LocalBookImportUiStateV1, onCancel: ()
 @Composable
 private fun EmptyShelfV100(onImport: () -> Unit, defaultShelf: Boolean, modifier: Modifier = Modifier) {
     val t = LocalLanghuanUiTokens.current
-    Column(
-        modifier.fillMaxWidth().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+    com.xiguli.langhuan.ui.design.EmptyStateV104(
+        art = com.xiguli.langhuan.ui.design.EmptyArtV104.SHELF,
+        title = if (defaultShelf) "书架还是空的" else "这个书架还没有书",
+        body = "导入手机里的 TXT、EPUB 等本地文件，\n或在书上长按把它移到这里。",
+        modifier = modifier.padding(bottom = 48.dp).testTag("shelf_empty"),
     ) {
-        Box(Modifier.size(76.dp).background(t.muted, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(ThinIconsV102.Book, contentDescription = null, modifier = Modifier.size(32.dp), tint = t.mutedForeground)
-        }
-        Text(
-            if (defaultShelf) "书架还是空的" else "这个书架还没有书",
-            modifier = Modifier.padding(top = 20.dp),
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = t.foreground,
-        )
-        Text(
-            "支持导入 TXT、EPUB 等本地文件",
-            modifier = Modifier.padding(top = 6.dp),
-            fontSize = 13.sp,
-            color = t.mutedForeground,
-        )
+        val source = remember { MutableInteractionSource() }
+        val scale = rememberPressScaleV102(source)
         Box(
-            Modifier.padding(top = 22.dp).height(42.dp).clip(CircleShape).background(t.primary)
-                .clickable(onClick = onImport).testTag("shelf_empty_import").padding(horizontal = 26.dp),
+            Modifier.graphicsLayer { scaleX = scale; scaleY = scale }
+                .height(44.dp).clip(CircleShape).background(t.primary)
+                .clickable(interactionSource = source, indication = null, onClick = onImport)
+                .testTag("shelf_empty_import").padding(horizontal = 28.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("导入本地书籍", color = t.primaryForeground, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text("导入本地书籍", color = t.primaryForeground, fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -474,12 +479,21 @@ fun ShelfListPageV100(
     }
 }
 
-/** V103: the reference's square outline box (1.5 dp hairline, never filled). */
+/**
+ * V104: the reference's square hairline box; the shelf shown on 正在阅读 gets an accent box with
+ * a thin tick so the current shelf reads at a glance.
+ */
 @Composable
-private fun ShelfCheckboxV102() {
+private fun ShelfCheckboxV102(selected: Boolean) {
     val t = LocalLanghuanUiTokens.current
-    val shape = RoundedCornerShape(1.5.dp)
-    Box(Modifier.size(18.dp).border(1.5.dp, t.foreground.copy(alpha = 0.82f), shape))
+    val shape = RoundedCornerShape(3.dp)
+    if (selected) {
+        Box(Modifier.size(18.dp).background(t.primary, shape), contentAlignment = Alignment.Center) {
+            Icon(ThinIconsV102.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+        }
+    } else {
+        Box(Modifier.size(18.dp).border(1.5.dp, t.foreground.copy(alpha = 0.35f), shape))
+    }
 }
 
 @Composable
@@ -506,7 +520,7 @@ private fun ShelfGroupRowV100(
             Modifier.fillMaxWidth().height(60.dp).padding(start = 19.dp, end = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ShelfCheckboxV102()
+            ShelfCheckboxV102(selected)
             Spacer(Modifier.width(18.dp))
             // Name and count share one weighted slot so ··· sits at the same x on every row.
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -519,7 +533,7 @@ private fun ShelfGroupRowV100(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).testTag("shelf_group_name_${group.id}"),
                 )
-                Text("（$count）", fontSize = 13.sp, color = t.mutedForeground.copy(alpha = 0.8f), maxLines = 1)
+                Text("  $count 本", fontSize = 12.sp, color = t.mutedForeground, maxLines = 1)
             }
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.testTag("shelf_group_menu_${group.id}")) {
@@ -551,7 +565,14 @@ private fun ShelfGroupRowV100(
                     }
                 }
             }
-        } else Spacer(Modifier.height(56.dp))
+        } else {
+            Text(
+                "还没有书 · 长按书籍可移到这里",
+                modifier = Modifier.padding(start = 55.dp, top = 14.dp, bottom = 22.dp),
+                fontSize = 12.sp,
+                color = t.mutedForeground.copy(alpha = 0.8f),
+            )
+        }
     }
 }
 

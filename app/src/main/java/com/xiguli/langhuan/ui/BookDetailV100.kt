@@ -123,19 +123,20 @@ fun BookDetailPageV100(
                 modifier = Modifier.testTag("detail_save"),
             ) { Icon(ThinIconsV102.Check, contentDescription = "保存", modifier = Modifier.size(24.dp)) }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        // V104: a larger cover lifted by a soft shadow, the editable fields beside it on the 16 dp grid.
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             CoverImageOrGeneratedV100(
                 path = previewPath,
                 title = title.ifBlank { book.title },
                 author = author,
                 style = previewStyle,
-                modifier = Modifier.width(84.dp).aspectRatio(BOOK_COVER_RATIO_V100)
-                    .shadow(3.dp, RoundedCornerShape(COVER_RADIUS_V102), ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.2f)),
+                modifier = Modifier.width(96.dp).aspectRatio(BOOK_COVER_RATIO_V100)
+                    .shadow(6.dp, RoundedCornerShape(COVER_RADIUS_V102), ambientColor = Color.Black.copy(alpha = 0.10f), spotColor = Color.Black.copy(alpha = 0.22f)),
             )
-            Spacer(Modifier.width(18.dp))
+            Spacer(Modifier.width(20.dp))
             Column(Modifier.weight(1f)) {
                 EditableFieldV100("书名", title, { title = it }, "detail_title")
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(16.dp))
                 EditableFieldV100("作者", author, { author = it }, "detail_author", placeholder = "未知作者")
             }
         }
@@ -215,7 +216,7 @@ private fun DetailsTabV100(book: LocalShelfBook, groupName: String, detail: Loca
     val total = detail?.chapterCount ?: book.meta.chapterCount ?: book.chapterTotal
     val currentNumber = detail?.currentChapterNumber ?: (book.chapterIndex + 1).coerceAtLeast(if (book.progress.started) 1 else 0)
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 18.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp)
             .testTag("detail_details_tab"),
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -251,7 +252,7 @@ private fun DetailsTabV100(book: LocalShelfBook, groupName: String, detail: Loca
             drawStopIndicator = {},
             gapSize = 0.dp,
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
         val words = detail?.wordCount ?: book.meta.wordCount
         val rows = listOf(
             "文件名称" to book.file.fileName.ifBlank { "《${book.title}》" },
@@ -264,23 +265,30 @@ private fun DetailsTabV100(book: LocalShelfBook, groupName: String, detail: Loca
             "导入时间" to BookFacts.formatTime(book.importedAt),
             "最近阅读" to BookFacts.formatTime(book.lastReadAt),
         )
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .background(LocalLanghuanUiTokens.current.input)
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-        ) {
-            rows.forEach { (label, value) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, fontSize = 13.5.sp, color = LocalLanghuanUiTokens.current.mutedForeground)
-                    Spacer(Modifier.width(24.dp))
-                    Text(
-                        value,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.End,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+        // V104: grouped facts — file, content, place — each a rounded card with inset hairlines.
+        val t = LocalLanghuanUiTokens.current
+        listOf(rows.subList(0, 3), rows.subList(3, 6), rows.subList(6, rows.size)).forEachIndexed { group, part ->
+            if (group > 0) Spacer(Modifier.height(12.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .background(t.input)
+                    .padding(horizontal = 16.dp),
+            ) {
+                part.forEachIndexed { index, (label, value) ->
+                    if (index > 0) Box(Modifier.fillMaxWidth().height(0.5.dp).background(t.border))
+                    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, fontSize = 13.sp, color = t.mutedForeground)
+                        Spacer(Modifier.width(24.dp))
+                        Text(
+                            value,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.End,
+                            fontSize = 14.sp,
+                            color = t.foreground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -306,14 +314,15 @@ private fun CoverTabV100(
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize().testTag("detail_cover_tab"),
-        contentPadding = PaddingValues(20.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item(span = { GridItemSpan(1) }) {
             Column(
                 Modifier.fillMaxWidth().aspectRatio(BOOK_COVER_RATIO_V100).clip(RoundedCornerShape(4.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp))
+                    .background(LocalLanghuanUiTokens.current.input)
+                    .border(0.5.dp, LocalLanghuanUiTokens.current.border, RoundedCornerShape(4.dp))
                     .clickable(onClick = onGallery).testTag("cover_gallery"),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,

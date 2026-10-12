@@ -29,8 +29,10 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * V100 local shelf: 书架 home, 书架列表 (V102: a page to the left, opened by swiping right; the
- * half-way frame is captured too), the long-press sheet and 图书详情 (both tabs), in light and dark. Screenshots land in reader-qa as local-*.png for the PR contact sheet.
+ * V100 local shelf: 书架 home, 书架列表 (a page to the left, opened by swiping right), 我的 (V104:
+ * a page to the right, opened by swiping left or the person icon; half-way frames of both swipes
+ * are captured), the empty-shelf state, the long-press sheet and 图书详情 (both tabs), in light
+ * and dark. Screenshots land in reader-qa as local-*.png for the PR contact sheet.
  */
 class LocalShelfV100DeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
@@ -77,6 +79,32 @@ class LocalShelfV100DeviceTest {
             up()
         }
         waitOnScreen("shelf_list_page")
+    }
+
+    /**
+     * V104: drags left on 正在阅读 to reveal 我的 (the right-hand page). Captures the half-way
+     * frame, then finishes the drag and waits for 我的 to settle.
+     */
+    private fun swipeOpenMine(suffix: String) {
+        rule.waitForIdle()
+        SystemClock.sleep(500)
+        rule.waitForIdle()
+        val pager = rule.onNodeWithTag("shelf_pager")
+        pager.performTouchInput {
+            down(Offset(width * 0.88f, height * 0.55f))
+            repeat(9) { moveBy(Offset(-width * 0.05f, 0f)) }
+        }
+        rule.waitForIdle()
+        val left = { tag: String -> rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().map { it.boundsInRoot.left } }
+        val moved = left("shelf_home")
+        Log.i("LocalShelfV100", "mid-swipe mine $suffix shelf_home=$moved mine=${left("mine_page")}")
+        shot("local-mine-swipe-$suffix")
+        assertTrue("mid-swipe: the shelf did not follow the finger to 我的 ($moved)", moved.any { it < -40f })
+        pager.performTouchInput {
+            repeat(6) { moveBy(Offset(-width * 0.05f, 0f)) }
+            up()
+        }
+        waitOnScreen("mine_page")
     }
 
     private fun backEvent(progress: Float) = androidx.activity.BackEventCompat(8f, 1200f, progress, androidx.activity.BackEventCompat.EDGE_LEFT)
@@ -163,6 +191,7 @@ class LocalShelfV100DeviceTest {
         context.getSharedPreferences("shelf_ui_v1", 0).edit().clear().commit()
         val ids = seed()
         val first = ids.first()
+        val store = { ShelfLibraryCodec.decode(File(context.filesDir, ShelfLibraryStore.FILE_NAME).readText())!! }
         try {
             for (mode in listOf(LanghuanThemeMode.LIGHT, LanghuanThemeMode.DARK)) {
                 val suffix = if (mode == LanghuanThemeMode.LIGHT) "light" else "dark"
@@ -218,6 +247,21 @@ class LocalShelfV100DeviceTest {
                     rule.onNodeWithTag("shelf_name_field").performTextReplacement("18禁$token")
                     rule.onNodeWithTag("shelf_name_confirm").performClick()
                     waitText("18禁$token")
+                    // The new shelf is empty: open it for the empty-state frame, then go back to 默认.
+                    rule.waitUntil(10_000) { store().groups.any { it.name == "18禁$token" } }
+                    val emptyId = store().groups.first { it.name == "18禁$token" }.id
+                    rule.onNodeWithTag("shelf_group_name_$emptyId", useUnmergedTree = true).performClick()
+                    waitOnScreen("shelf_home")
+                    waitTag("shelf_empty_import")
+                    settle()
+                    shot("local-shelf-empty-$suffix")
+                    rule.onNodeWithTag("shelf_title").performClick()
+                    waitOnScreen("shelf_list_page")
+                    rule.onNodeWithTag("shelf_group_name_${ShelfLibrary.DEFAULT_GROUP_ID}", useUnmergedTree = true).performClick()
+                    waitOnScreen("shelf_home")
+                    waitTag("shelf_grid")
+                    rule.onNodeWithTag("shelf_title").performClick()
+                    waitOnScreen("shelf_list_page")
                 }
                 settle()
                 shot("local-shelf-list-$suffix")
@@ -230,20 +274,26 @@ class LocalShelfV100DeviceTest {
                 waitOnScreen("shelf_home")
                 waitTag("shelf_grid")
                 if (mode == LanghuanThemeMode.LIGHT) {
-                    // shelf → 我的 push part-way, settled 我的, then a predictive back at 35 % / 70 %.
+                    // V104: 我的 is the page to the right. The person icon slides there (captured
+                    // part-way), predictive back drags it home at 35 % / 70 %, and a left swipe
+                    // follows the finger there too.
                     midPush("local-mine-push-mid-$suffix", 96) { rule.onNodeWithTag("shelf_mine").performClick() }
-                    waitTag("mine_row_stats")
+                    waitOnScreen("mine_page")
+                    waitTag("mine_week_card")
                     settle()
                     shot("local-mine-shelfflow-$suffix")
                     predictiveBack("local-mine-back-$suffix", 0.35f, 0.7f)
-                    waitTag("shelf_grid")
                     waitOnScreen("shelf_home")
+                    swipeOpenMine(suffix)
+                    settle()
+                    rule.onNodeWithTag("mine_back").performClick()
+                    waitOnScreen("shelf_home")
+                    waitTag("shelf_grid")
                 }
             }
 
             // 移动书架: the second book moves to the new shelf and leaves 正在阅读.
             val moving = ids[1]
-            val store = { ShelfLibraryCodec.decode(File(context.filesDir, ShelfLibraryStore.FILE_NAME).readText())!! }
             val groupId = store().groups.first { it.name == "18禁$token" }.id
             rule.onNodeWithTag("shelf_book_$moving").performTouchInput { longClick() }
             waitTag("sheet_move")
@@ -266,12 +316,13 @@ class LocalShelfV100DeviceTest {
             rule.waitUntil(10_000) { store().books[first]?.author == "海晏山·改" }
             assertEquals(ShelfLibrary.DEFAULT_GROUP_ID, store().books.getValue(first).groupId)
 
-            // 我的 placeholder opens from the person icon.
+            // 我的 opens from the person icon; back slides home.
             rule.onNodeWithTag("shelf_mine").performClick()
-            waitTag("mine_page")
+            waitOnScreen("mine_page")
             settle()
             shot("local-mine-dark")
             rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+            waitOnScreen("shelf_home")
             waitTag("shelf_grid")
             assertTrue(rule.onAllNodes(hasText("书城")).fetchSemanticsNodes().isEmpty())
         } finally {

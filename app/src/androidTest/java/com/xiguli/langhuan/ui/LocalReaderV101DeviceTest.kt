@@ -40,6 +40,11 @@ class LocalReaderV101DeviceTest {
     private fun waitGone(tag: String, timeout: Long = 20_000) =
         rule.waitUntil(timeout) { rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty() }
 
+    /** V104: 我的 stays composed beside the shelf in the home pager; wait until it is the page on screen. */
+    private fun waitOnScreen(tag: String, timeout: Long = 20_000) = rule.waitUntil(timeout) {
+        rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().any { kotlin.math.abs(it.boundsInRoot.left) < 2f }
+    }
+
     private fun settle() {
         rule.mainClock.advanceTimeBy(900)
         rule.waitForIdle()
@@ -140,8 +145,9 @@ class LocalReaderV101DeviceTest {
                 back() // reader -> shelf
                 waitTag("shelf_book_$id")
 
-                // 我的.
+                // 我的 (the page to the right of the shelf).
                 rule.onNodeWithTag("shelf_mine").performClick()
+                waitOnScreen("mine_page")
                 waitTag("mine_row_stats")
                 if (mode == LanghuanThemeMode.LIGHT) {
                     rule.onNodeWithTag("mine_name").performClick()
@@ -159,6 +165,7 @@ class LocalReaderV101DeviceTest {
                 shot("local-mine-stats-$suffix")
                 back()
                 back()
+                waitOnScreen("shelf_home")
                 waitTag("shelf_book_$id")
             }
             assertTrue(rule.onAllNodes(hasText("签到")).fetchSemanticsNodes().isEmpty())
