@@ -1,5 +1,7 @@
 package com.xiguli.langhuan.ui
 
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -61,13 +63,23 @@ class LocalShelfV100DeviceTest {
             repeat(9) { moveBy(Offset(width * 0.05f, 0f)) }
         }
         rule.waitForIdle()
-        assertTrue("mid-swipe: neither page settled", !onScreen("shelf_list_page") && !onScreen("shelf_home"))
-        deviceWindowEvidenceV46("local-shelf-swipe-$suffix")
+        val left = { tag: String -> rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().map { it.boundsInRoot.left } }
+        val moved = left("shelf_home")
+        Log.i("LocalShelfV100", "mid-swipe $suffix shelf_home=$moved list=${left("shelf_list_page")}")
+        shot("local-shelf-swipe-$suffix")
+        assertTrue("mid-swipe: the shelf did not follow the finger ($moved)", moved.any { it > 40f })
         pager.performTouchInput {
             repeat(6) { moveBy(Offset(width * 0.05f, 0f)) }
             up()
         }
         waitOnScreen("shelf_list_page")
+    }
+
+    /** Lets the render thread present the settled frame before the window screenshot. */
+    private fun shot(label: String) {
+        rule.waitForIdle()
+        SystemClock.sleep(600)
+        deviceWindowEvidenceV46(label)
     }
 
     private fun settle() {
@@ -119,14 +131,14 @@ class LocalShelfV100DeviceTest {
                 waitTag("shelf_book_$first")
                 rule.onNodeWithTag("shelf_title").assertExistsCompat()
                 settle()
-                deviceWindowEvidenceV46("local-shelf-$suffix")
+                shot("local-shelf-$suffix")
 
                 // Long-press sheet.
                 rule.onNodeWithTag("shelf_book_$first").performTouchInput { longClick() }
                 waitTag("book_action_sheet")
                 waitText("查看详情")
                 settle()
-                deviceWindowEvidenceV46("local-sheet-$suffix")
+                shot("local-sheet-$suffix")
 
                 // 图书详情 · 详情.
                 rule.onNodeWithTag("sheet_detail").performClick()
@@ -137,14 +149,14 @@ class LocalShelfV100DeviceTest {
                 }
                 waitText("文件大小")
                 settle()
-                deviceWindowEvidenceV46("local-detail-$suffix")
+                shot("local-detail-$suffix")
 
                 // 图书详情 · 封面.
                 rule.onNodeWithTag("detail_tab_cover").performClick()
                 waitTag("detail_cover_tab")
                 waitTag("cover_gallery")
                 settle()
-                deviceWindowEvidenceV46("local-detail-cover-$suffix")
+                shot("local-detail-cover-$suffix")
                 rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
                 waitTag("shelf_grid")
                 waitOnScreen("shelf_home")
@@ -167,7 +179,7 @@ class LocalShelfV100DeviceTest {
                     waitText("18禁$token")
                 }
                 settle()
-                deviceWindowEvidenceV46("local-shelf-list-$suffix")
+                shot("local-shelf-list-$suffix")
                 rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
                 waitOnScreen("shelf_home")
                 waitTag("shelf_grid")
@@ -182,7 +194,7 @@ class LocalShelfV100DeviceTest {
             rule.onNodeWithTag("sheet_move").performClick()
             waitTag("move_to_$groupId")
             settle()
-            deviceWindowEvidenceV46("local-move-sheet-dark")
+            shot("local-move-sheet-dark")
             rule.onNodeWithTag("move_to_$groupId").performClick()
             waitGone("shelf_book_$moving")
             rule.waitUntil(10_000) { store().books[moving]?.groupId == groupId }
@@ -202,7 +214,7 @@ class LocalShelfV100DeviceTest {
             rule.onNodeWithTag("shelf_mine").performClick()
             waitTag("mine_page")
             settle()
-            deviceWindowEvidenceV46("local-mine-dark")
+            shot("local-mine-dark")
             rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
             waitTag("shelf_grid")
             assertTrue(rule.onAllNodes(hasText("书城")).fetchSemanticsNodes().isEmpty())

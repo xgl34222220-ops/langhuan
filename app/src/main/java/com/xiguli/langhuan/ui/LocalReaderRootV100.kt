@@ -1,5 +1,16 @@
 package com.xiguli.langhuan.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -126,8 +137,8 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
-            when {
-                route == "reader" -> {
+            if (route == "reader") {
+                run {
                     BackHandler {
                         vm.closeBook()
                         route = "shelf"
@@ -145,14 +156,20 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                         )
                     }
                 }
-                route == "mine" -> LocalMinePageV101(
+            } else AnimatedContent(
+                targetState = route,
+                transitionSpec = { routeTransitionV102(initialState, targetState) },
+                label = "route",
+            ) { target ->
+              when {
+                target == "mine" -> LocalMinePageV101(
                     books = state.books,
                     shelfCount = state.shelf.groups.size,
                     onBack = { route = "shelf" },
                     onOpenBook = ::openBook,
                 )
-                route.startsWith("detail:") -> {
-                    val id = route.removePrefix("detail:")
+                target.startsWith("detail:") -> {
+                    val id = target.removePrefix("detail:")
                     val book = state.books.firstOrNull { it.id == id }
                     if (book == null) {
                         if (state.libraryLoaded) route = "shelf"
@@ -189,6 +206,7 @@ fun LocalReaderRootV100(externalBooks: ExternalBookImportCoordinatorV1? = null) 
                     onRenameGroup = { id, name -> vm.renameGroup(id, name) },
                     onDeleteGroup = { vm.deleteGroup(it) },
                 )
+              }
             }
         }
     }
@@ -288,4 +306,20 @@ private fun LocalReaderHostV100(
         interactionEnabled = readerMounted,
         onOpenOriginalEdition = onOpenOriginalEdition,
     )
+}
+
+/**
+ * V102 page motion (≈260 ms, standard easing): 图书详情 and 我的 slide in a short way from the
+ * right over a fade; returning to the shelf fades back. No scrim is drawn over the pages.
+ */
+private fun AnimatedContentTransitionScope<String>.routeTransitionV102(from: String, to: String): ContentTransform {
+    val forward = to != "shelf" && from == "shelf"
+    val back = to == "shelf" && from != "shelf"
+    val spec = tween<IntOffset>(260, easing = FastOutSlowInEasing)
+    val fade = tween<Float>(220, easing = FastOutSlowInEasing)
+    return when {
+        forward -> (slideInHorizontally(spec) { it / 6 } + fadeIn(fade)) togetherWith fadeOut(tween(160))
+        back -> fadeIn(fade) togetherWith (slideOutHorizontally(spec) { it / 6 } + fadeOut(fade))
+        else -> fadeIn(fade) togetherWith fadeOut(fade)
+    }
 }

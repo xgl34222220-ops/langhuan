@@ -2,9 +2,9 @@ package com.xiguli.langhuan.ui
 
 /**
  * V102 shelf navigation: 书架列表 is a page to the LEFT of 正在阅读. The user drags right to
- * reveal the list and left to return; the pager tracks the finger. While the shelf slides off,
- * the list underneath moves slower (parallax) and the shelf casts a soft edge shadow, so the
- * shelf's left column stays visible at the right edge mid-swipe, like the reference.
+ * reveal the list and left to return; the pager tracks the finger, so the shelf's left column
+ * stays visible at the right edge mid-swipe, like the reference. Inside its clipped slot the list
+ * lags behind (parallax), is lightly dimmed and shaded where the shelf meets it.
  *
  * Pure functions here are unit-tested; the composable only feeds them the pager position.
  */
@@ -24,8 +24,8 @@ internal object ShelfPagerV102 {
         (SHELF_PAGE - (currentPage + currentPageOffsetFraction)).coerceIn(0f, 1f)
 
     /**
-     * Extra horizontal shift of the list page (fraction of page width, positive = right). The
-     * shelf page is drawn over it, so the list appears to emerge from underneath.
+     * Extra horizontal shift of the list content inside its clipped page slot (fraction of page
+     * width, positive = right), so the list appears to emerge from underneath the shelf.
      */
     fun listTranslation(reveal: Float): Float = (1f - reveal.coerceIn(0f, 1f)) * LIST_PARALLAX
 

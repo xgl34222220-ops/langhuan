@@ -66,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -84,7 +85,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import com.xiguli.langhuan.data.shelf.ShelfGroup
 import com.xiguli.langhuan.data.shelf.ShelfLibrary
 import com.xiguli.langhuan.ui.design.LocalLanghuanUiTokens
@@ -133,54 +133,50 @@ fun LocalShelfPagerV102(
         key = { it },
     ) { page ->
         if (page == ShelfPagerV102.LIST_PAGE) {
+            // The list lags inside its own (clipped) slot — parallax without ever overlapping the
+            // shelf — and is dimmed plus shaded at its right edge while the shelf still covers it.
             Box(
-                Modifier.fillMaxSize().graphicsLayer {
+                Modifier.fillMaxSize().clipToBounds().drawWithContent {
+                    drawContent()
                     val reveal = ShelfPagerV102.listReveal(pagerState.currentPage, pagerState.currentPageOffsetFraction)
-                    translationX = ShelfPagerV102.listTranslation(reveal) * size.width
-                },
-            ) {
-                ShelfListPageV100(
-                    state = state,
-                    onSelectGroup = { id ->
-                        onSelectGroup(id)
-                        goTo(ShelfPagerV102.SHELF_PAGE)
-                    },
-                    onCreateGroup = onCreateGroup,
-                    onRenameGroup = onRenameGroup,
-                    onDeleteGroup = onDeleteGroup,
-                    onOpenBook = onOpenBook,
-                )
-                Box(
-                    Modifier.matchParentSize()
-                        .graphicsLayer {
-                            alpha = ShelfPagerV102.listDim(
-                                ShelfPagerV102.listReveal(pagerState.currentPage, pagerState.currentPageOffsetFraction),
-                            ) / ShelfPagerV102.LIST_DIM
-                        }
-                        .background(Color.Black.copy(alpha = ShelfPagerV102.LIST_DIM)),
-                )
-            }
-        } else {
-            Box(
-                Modifier.fillMaxSize().zIndex(1f).drawWithContent {
-                    val strength = ShelfPagerV102.shelfEdgeShadow(
-                        ShelfPagerV102.listReveal(pagerState.currentPage, pagerState.currentPageOffsetFraction),
-                    )
+                    val dim = ShelfPagerV102.listDim(reveal)
+                    if (dim > 0f) drawRect(Color.Black.copy(alpha = dim))
+                    val strength = ShelfPagerV102.shelfEdgeShadow(reveal)
                     if (strength > 0f) {
                         val w = 18.dp.toPx()
                         drawRect(
                             brush = Brush.horizontalGradient(
                                 listOf(Color.Transparent, shadowColor.copy(alpha = shadowColor.alpha * strength)),
-                                startX = -w,
-                                endX = 0f,
+                                startX = size.width - w,
+                                endX = size.width,
                             ),
-                            topLeft = Offset(-w, 0f),
+                            topLeft = Offset(size.width - w, 0f),
                             size = Size(w, size.height),
                         )
                     }
-                    drawContent()
                 },
             ) {
+                Box(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        val reveal = ShelfPagerV102.listReveal(pagerState.currentPage, pagerState.currentPageOffsetFraction)
+                        translationX = ShelfPagerV102.listTranslation(reveal) * size.width
+                    },
+                ) {
+                    ShelfListPageV100(
+                        state = state,
+                        onSelectGroup = { id ->
+                            onSelectGroup(id)
+                            goTo(ShelfPagerV102.SHELF_PAGE)
+                        },
+                        onCreateGroup = onCreateGroup,
+                        onRenameGroup = onRenameGroup,
+                        onDeleteGroup = onDeleteGroup,
+                        onOpenBook = onOpenBook,
+                    )
+                }
+            }
+        } else {
+            Box(Modifier.fillMaxSize()) {
                 LocalShelfHomeV100(
                     state = state,
                     importState = importState,
