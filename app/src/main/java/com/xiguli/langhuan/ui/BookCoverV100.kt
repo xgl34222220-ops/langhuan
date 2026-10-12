@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -85,7 +86,8 @@ fun GeneratedCoverV100(title: String, author: String, style: Int, modifier: Modi
     val cleanTitle = title.trim().ifBlank { "未命名" }
     val cleanAuthor = author.trim()
     BoxWithConstraints(
-        modifier = modifier.background(
+        // The cover's type is decoration: the shelf item already carries the title for a11y/tests.
+        modifier = modifier.clearAndSetSemantics { }.background(
             if (d.paper2 != null) Brush.verticalGradient(listOf(d.paper, d.paper2)) else Brush.verticalGradient(listOf(d.paper, d.paper)),
         ),
     ) {

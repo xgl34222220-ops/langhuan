@@ -96,10 +96,12 @@ class LocalShelfV100DeviceTest {
         }
         rule.waitForIdle()
         val left = { tag: String -> rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().map { it.boundsInRoot.left } }
-        val moved = left("shelf_home")
-        Log.i("LocalShelfV100", "mid-swipe mine $suffix shelf_home=$moved mine=${left("mine_page")}")
+        // boundsInRoot clips at the window edge, so track 我的 coming in from the right instead.
+        val width = rule.onNodeWithTag("shelf_pager").fetchSemanticsNode().size.width
+        val mine = left("mine_page")
+        Log.i("LocalShelfV100", "mid-swipe mine $suffix shelf_home=${left("shelf_home")} mine=$mine width=$width")
         shot("local-mine-swipe-$suffix")
-        assertTrue("mid-swipe: the shelf did not follow the finger to 我的 ($moved)", moved.any { it < -40f })
+        assertTrue("mid-swipe: 我的 did not follow the finger ($mine of $width)", mine.any { it > 40f && it < width - 40f })
         pager.performTouchInput {
             repeat(6) { moveBy(Offset(-width * 0.05f, 0f)) }
             up()
@@ -192,6 +194,19 @@ class LocalShelfV100DeviceTest {
         val ids = seed()
         val first = ids.first()
         val store = { ShelfLibraryCodec.decode(File(context.filesDir, ShelfLibraryStore.FILE_NAME).readText())!! }
+        // A week of reading time so 我的 shows its chart and streak (restored afterwards).
+        val statsPrefs = context.getSharedPreferences("reader_stats_v35", 0)
+        val savedStats = statsPrefs.all.toMap()
+        run {
+            val format = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+            val minutes = listOf(22L, 64L, 35L, 0L, 48L, 18L, 26L) // today first, then each day back
+            val editor = statsPrefs.edit()
+            minutes.forEachIndexed { back, m ->
+                val day = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -back) }
+                editor.putLong("day_" + format.format(day.time), m * 60L)
+            }
+            editor.putLong("total", 41L * 3600L + 20L * 60L).putLong("pages", 3260L).putLong("chapters", 214L).commit()
+        }
         try {
             for (mode in listOf(LanghuanThemeMode.LIGHT, LanghuanThemeMode.DARK)) {
                 val suffix = if (mode == LanghuanThemeMode.LIGHT) "light" else "dark"
@@ -327,6 +342,16 @@ class LocalShelfV100DeviceTest {
             assertTrue(rule.onAllNodes(hasText("书城")).fetchSemanticsNodes().isEmpty())
         } finally {
             rule.runOnUiThread { LanghuanThemeModeStateV50.set(rule.activity, LanghuanThemeMode.FOLLOW_SYSTEM) }
+            statsPrefs.edit().clear().also { editor ->
+                savedStats.forEach { (key, value) ->
+                    when (value) {
+                        is Long -> editor.putLong(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is String -> editor.putString(key, value)
+                    }
+                }
+            }.commit()
             runBlocking { ids.forEach { runCatching { StoryProjectManager(context).deleteBook(it) } } }
         }
     }

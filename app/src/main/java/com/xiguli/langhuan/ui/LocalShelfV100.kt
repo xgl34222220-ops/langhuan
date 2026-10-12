@@ -559,7 +559,8 @@ private fun ShelfGroupRowV100(
                     val scale = rememberPressScaleV102(source)
                     Box(
                         Modifier.width(60.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-                            .clickable(interactionSource = source, indication = null) { onOpenBook(book.id) },
+                            .clickable(interactionSource = source, indication = null) { onOpenBook(book.id) }
+                            .semantics { contentDescription = "打开《${book.title}》" },
                     ) {
                         BookCoverV100(book, Modifier.fillMaxWidth().aspectRatio(BOOK_COVER_RATIO_V100), targetWidthPx = 200)
                     }
