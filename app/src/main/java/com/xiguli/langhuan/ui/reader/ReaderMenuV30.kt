@@ -249,6 +249,10 @@ internal fun ReaderMenuV30(
         // after API 35 landscape cutout fitting. Keep controls inside safe edges below.
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
+        // V103: drop the platform dialog dim (≈60% black); only the light scrim below remains,
+        // so the paper above the sheet stays bright like the reference.
+        val dialogWindow = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+        androidx.compose.runtime.SideEffect { dialogWindow?.setDimAmount(0f) }
         Box(
             modifier = Modifier
                 .fillMaxSize()
