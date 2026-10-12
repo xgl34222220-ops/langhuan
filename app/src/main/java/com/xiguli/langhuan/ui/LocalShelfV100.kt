@@ -236,7 +236,7 @@ fun LocalShelfHomeV100(
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenShelfList)
                     .semantics { contentDescription = "${group.name}，打开书架列表" }
                     .testTag("shelf_title").padding(vertical = 4.dp),
-                fontSize = 23.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = t.foreground,
                 maxLines = 1,
@@ -443,7 +443,7 @@ fun ShelfListPageV100(
                 }
                 TextButton(onClick = { searching = false; query = "" }) { Text("取消", color = t.primary, fontSize = 15.sp) }
             } else {
-                Text("书架列表", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = t.foreground, modifier = Modifier.weight(1f))
+                Text("书架列表", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = t.foreground, modifier = Modifier.weight(1f))
                 IconButton(onClick = { searching = true }, modifier = Modifier.testTag("shelf_list_search")) {
                     Icon(ThinIconsV102.Search, contentDescription = "搜索", modifier = Modifier.size(24.dp), tint = t.foreground)
                 }

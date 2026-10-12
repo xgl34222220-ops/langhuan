@@ -398,7 +398,7 @@ fun FlatIconCellV93(
     ) {
         Box(
             modifier = Modifier
-                .size(52.dp)
+                .size(48.dp)
                 .background(
                     // V102: sampled reference circles — #EFF2F3 idle, pale blue #EDF3FC when on.
                     color = if (active) t.accent else t.muted,

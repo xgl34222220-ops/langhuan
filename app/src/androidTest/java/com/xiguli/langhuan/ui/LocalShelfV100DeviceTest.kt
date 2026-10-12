@@ -168,7 +168,7 @@ class LocalShelfV100DeviceTest {
                 // Tapping the title still opens the list; tapping a shelf there slides back.
                 rule.onNodeWithTag("shelf_title").performClick()
                 waitOnScreen("shelf_list_page")
-                rule.onNodeWithTag("shelf_group_name_${ShelfLibrary.DEFAULT_GROUP_ID}").performClick()
+                rule.onNodeWithTag("shelf_group_${ShelfLibrary.DEFAULT_GROUP_ID}").performClick()
                 waitOnScreen("shelf_home")
                 swipeOpenShelfList(suffix)
                 if (mode == LanghuanThemeMode.LIGHT) {
