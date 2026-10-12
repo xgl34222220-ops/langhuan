@@ -297,6 +297,16 @@ class LocalShelfV100DeviceTest {
                     waitTag("mine_week_card")
                     settle()
                     shot("local-mine-shelfflow-$suffix")
+                    // The 本周阅读 card opens 阅历 (seeded week); back returns to 我的.
+                    rule.onNodeWithTag("mine_week_card").performClick()
+                    waitTag("mine_stats")
+                    settle()
+                    shot("local-mine-week-$suffix")
+                    rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+                    settle()
+                    waitGone("mine_stats")
+                    waitTag("mine_week_card")
+                    settle()
                     predictiveBack("local-mine-back-$suffix", 0.35f, 0.7f)
                     waitOnScreen("shelf_home")
                     swipeOpenMine(suffix)
