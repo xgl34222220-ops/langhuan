@@ -224,6 +224,8 @@ internal fun ReaderThemeCardV101(
     onClick: () -> Unit,
     onMenu: (() -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
+    // V103 更多主题: name in the top-left corner and the pill alone at the bottom-right (reference).
+    gallery: Boolean = false,
 ) {
     val t = LocalLanghuanUiTokens.current
     val context = LocalContext.current
@@ -295,7 +297,28 @@ internal fun ReaderThemeCardV101(
                 Icon(Icons.Rounded.MoreVert, contentDescription = null, tint = theme.text.copy(alpha = 0.35f), modifier = Modifier.size(20.dp))
             }
         }
-        Column(
+        if (gallery) {
+            Column(modifier = Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 14.dp, end = 14.dp)) {
+                Text(
+                    text = theme.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = theme.text.copy(alpha = 0.88f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (theme.subtitle.isNotBlank()) {
+                    Text(
+                        text = theme.subtitle,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = theme.text.copy(alpha = 0.45f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            footer?.let { Box(modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) { it() } }
+        } else Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .fillMaxWidth(0.62f)
@@ -360,20 +383,26 @@ private fun ReaderMoreThemesPageV101(
                 row.forEach { spec ->
                     val added = spec.key in installed
                     Box(modifier = Modifier.weight(1f)) {
+                        val theme = spec.toTheme()
                         ReaderThemeCardV101(
-                            theme = spec.toTheme(),
+                            theme = theme,
                             selected = false,
                             onClick = { settings.installTheme(spec.key) },
+                            gallery = true,
                             footer = {
+                                // Pill tinted from the theme's own ink (reference), blue once more legible.
+                                val pill = if (added) theme.text.copy(alpha = 0.10f)
+                                else if (theme.dark) Color(0xFF5B92F0) else Color(0xFF3371E5)
                                 Text(
                                     text = if (added) "已添加" else "添加",
                                     modifier = Modifier
                                         .clip(CircleShape)
-                                        .background(if (added) t.foreground.copy(alpha = 0.08f) else t.primary)
+                                        .background(pill)
                                         .clickable(enabled = !added) { settings.installTheme(spec.key) }
-                                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                                    color = if (added) t.mutedForeground else Color.White,
+                                        .padding(horizontal = 16.dp, vertical = 5.dp),
+                                    color = if (added) theme.text.copy(alpha = 0.55f) else Color.White,
                                     fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
                                 )
                             },
                         )

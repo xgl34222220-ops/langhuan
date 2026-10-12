@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -146,6 +147,8 @@ internal fun ReaderPillSliderV101(
         modifier = Modifier
             .fillMaxWidth()
             .height(40.dp)
+            // V103: a soft lift so the pill reads as floating over the paper.
+            .shadow(6.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
             .clip(CircleShape)
             .background(track)
             .semantics {

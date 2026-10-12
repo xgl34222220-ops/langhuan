@@ -475,7 +475,9 @@ internal fun readerPaginateChapterV30(
             val gap = raws.lastOrNull()?.let {
                 readerLineGapV43(it.descent, ascent, spec.titleLineHeightPx, 0f)
             } ?: 0f
-            raws += Raw(text, true, 0, null, ascent, descent, ReaderSlotV30(descent - ascent, gap))
+            // V103: the chapter heading is centred on the page, like the reference reader.
+            val centred = arrayOf(text) to floatArrayOf(((width - titlePaint.measureText(text)) / 2f).coerceAtLeast(0f))
+            raws += Raw(text, true, 0, centred, ascent, descent, ReaderSlotV30(descent - ascent, gap))
         }
     }
 

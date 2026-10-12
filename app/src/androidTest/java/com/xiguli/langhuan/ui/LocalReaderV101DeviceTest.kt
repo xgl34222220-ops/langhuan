@@ -45,6 +45,13 @@ class LocalReaderV101DeviceTest {
         rule.waitForIdle()
     }
 
+    /** Lets the render thread present the settled frame (sheet rise, page swap) before capture. */
+    private fun shot(label: String) {
+        rule.waitForIdle()
+        android.os.SystemClock.sleep(700)
+        deviceWindowEvidenceV46(label)
+    }
+
     private fun back() {
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         settle()
@@ -91,13 +98,13 @@ class LocalReaderV101DeviceTest {
                 // 更多: the 5 x 4 grid.
                 openMenu()
                 rule.onNodeWithText("背景跟随").assertExistsCompat()
-                deviceWindowEvidenceV46("local-reader-more-$suffix")
+                shot("local-reader-more-$suffix")
 
                 // 目录: header + current chapter highlighted.
                 rule.onNodeWithContentDescription("阅读菜单：目录").performClick()
                 rule.waitUntil(10_000) { rule.onAllNodes(hasText("正在阅读")).fetchSemanticsNodes().isNotEmpty() }
                 settle()
-                deviceWindowEvidenceV46("local-reader-toc-$suffix")
+                shot("local-reader-toc-$suffix")
 
                 // 行段: the menu closes and pill sliders float over the page.
                 rule.onNodeWithContentDescription("阅读菜单：更多").performClick()
@@ -105,7 +112,7 @@ class LocalReaderV101DeviceTest {
                 rule.onNodeWithText("行段").performClick()
                 waitTag("reader_quick_adjust")
                 settle()
-                deviceWindowEvidenceV46("local-reader-spacing-$suffix")
+                shot("local-reader-spacing-$suffix")
                 back()
                 waitGone("reader_quick_adjust")
 
@@ -121,13 +128,13 @@ class LocalReaderV101DeviceTest {
                     rule.waitUntil(10_000) { prefs.getString("dayTheme", null) == "tea" }
                 }
                 settle()
-                deviceWindowEvidenceV46("local-reader-theme-$suffix")
+                shot("local-reader-theme-$suffix")
                 rule.onNodeWithTag("reader_theme_add").performClick()
                 waitTag("reader_theme_more")
                 rule.onNodeWithTag("reader_theme_more").performClick()
                 waitTag("reader_theme_more_page")
                 settle()
-                deviceWindowEvidenceV46("local-reader-theme-more-$suffix")
+                shot("local-reader-theme-more-$suffix")
                 back() // theme pages -> menu main
                 back() // close menu
                 back() // reader -> shelf
@@ -145,11 +152,11 @@ class LocalReaderV101DeviceTest {
                     assertEquals("惜故里", LocalProfileStoreV101.name(LocalProfileStoreV101.prefs(context)))
                 }
                 settle()
-                deviceWindowEvidenceV46("local-mine-$suffix")
+                shot("local-mine-$suffix")
                 rule.onNodeWithTag("mine_row_stats").performClick()
                 waitTag("mine_stats")
                 settle()
-                deviceWindowEvidenceV46("local-mine-stats-$suffix")
+                shot("local-mine-stats-$suffix")
                 back()
                 back()
                 waitTag("shelf_book_$id")

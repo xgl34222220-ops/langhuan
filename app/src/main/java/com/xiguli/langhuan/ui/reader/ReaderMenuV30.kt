@@ -5,6 +5,10 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -247,6 +251,12 @@ internal fun ReaderMenuV30(
             // V93: a plain white bottom sheet attached to the screen edge (top corners only),
             // no outline; the sheet colour runs under the navigation bar.
             val panelShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+            // V103: the sheet rises from the bottom edge (Apple Books / 微信读书 style) instead of popping in.
+            val rise = remember { MutableTransitionState(false) }.apply { targetState = true }
+            AnimatedVisibility(
+                visibleState = rise,
+                enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(200)),
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -423,6 +433,7 @@ internal fun ReaderMenuV30(
                 if (panel == ReaderMenuPanelV30.MAIN) {
                     ReaderMenuTabsV30(tab = tab, onTab = onTab)
                 }
+            }
             }
         }
     }

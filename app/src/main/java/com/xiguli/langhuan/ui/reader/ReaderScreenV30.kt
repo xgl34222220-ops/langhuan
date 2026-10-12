@@ -504,8 +504,8 @@ internal fun ReaderSessionV30(
         val chapterLabel = chapter
             ?.let { readerDisplayChapterTitleV13(it.title, it.chapterNumber) }
             .orEmpty()
-        // V93 顶栏：只留当前章节名（灰色小字），像参考阅读器那样安静；没有章节名时退回书名。
-        val header = chapterLabel.ifBlank { book.title }
+        // V103 顶栏：参考阅读器左上角是灰色小字书名（大号章节标题已居中排在正文首页）；没有书名时退回章节名。
+        val header = book.title.ifBlank { chapterLabel }
         return ReaderChromeInfoV30(
             chapterTitle = header,
             // V93 页脚：右侧「1/12  1%」——本章页码与全书进度，不再加文字前缀。

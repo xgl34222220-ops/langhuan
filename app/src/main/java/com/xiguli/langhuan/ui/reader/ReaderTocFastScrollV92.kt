@@ -52,7 +52,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 
 /** Tables of contents shorter than this scroll fine with a finger; no fast-scroll bar. */
-internal const val READER_TOC_FAST_SCROLL_MIN_V92 = 60
+internal const val READER_TOC_FAST_SCROLL_MIN_V92 = 30
 internal const val READER_TOC_FAST_SCROLL_LABEL_V92 = "目录快速滚动"
 /** Width reserved on the right of the list for the fast-scroll touch strip. */
 internal val READER_TOC_FAST_SCROLL_GUTTER_V92 = 28.dp
@@ -153,21 +153,14 @@ internal fun BoxScope.ReaderTocFastScrollerV92(
         val thumbPx = with(density) { thumbHeight.toPx() }
         val fraction = if (dragging && trackPx > 0f) (touchY / trackPx).coerceIn(0f, 1f) else thumbFraction
         val thumbTop = ((trackPx - thumbPx) * fraction).roundToInt()
-        // Faint rail so the strip is discoverable without competing with chapter titles.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxHeight()
-                .width(2.dp)
-                .background(t.border.copy(alpha = 0.6f), CircleShape),
-        )
+        // V103: no rail — just the reference's slim blue pill, brighter while in use.
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset { IntOffset(0, thumbTop) }
-                .size(width = 6.dp, height = thumbHeight)
-                .alpha(thumbAlpha)
-                .background(if (active) t.primary else t.mutedForeground, CircleShape),
+                .size(width = 5.dp, height = thumbHeight)
+                .alpha(0.55f + 0.45f * thumbAlpha)
+                .background(t.primary, CircleShape),
         )
     }
 
